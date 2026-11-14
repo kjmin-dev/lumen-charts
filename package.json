@@ -1,0 +1,42 @@
+{
+	"name": "lumen-charts-monorepo",
+	"private": true,
+	"type": "module",
+	"description": "High-performance financial charting engine for the web.",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kjmin-dev/lumen-charts.git"
+	},
+	"engines": {
+		"node": ">=20"
+	},
+	"scripts": {
+		"build": "pnpm -r --filter \"./packages/*\" run build",
+		"clean": "pnpm -r --filter \"./packages/*\" run clean",
+		"typecheck": "tsc -p tsconfig.json",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"lint": "biome check .",
+		"format": "biome check --write .",
+		"dev": "pnpm --filter @lumen-charts/example-vanilla dev",
+		"changeset": "changeset",
+		"version-packages": "changeset version",
+		"release": "pnpm build && changeset publish"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.6.7",
+		"@changesets/cli": "^3.0.3",
+		"@types/react": "^19.3.0",
+		"@types/react-dom": "^19.3.0",
+		"happy-dom": "^21.0.4",
+		"react": "^19.3.1",
+		"react-dom": "^19.3.1",
+		"solid-js": "^1.9.19",
+		"svelte": "^5.57.3",
+		"typescript": "^7.0.2",
+		"vite": "^8.3.8",
+		"vitest": "^5.1.0",
+		"vue": "^3.5.45"
+	},
+	"packageManager": "pnpm@11.20.0"
+}

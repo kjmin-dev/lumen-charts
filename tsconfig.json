@@ -1,0 +1,16 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"paths": {
+			"@lumen-charts/core": ["./packages/core/src/index.ts"],
+			"@lumen-charts/engine": ["./packages/engine/src/index.ts"],
+			"@lumen-charts/react": ["./packages/react/src/index.ts"],
+			"@lumen-charts/vue": ["./packages/vue/src/index.ts"],
+			"@lumen-charts/svelte": ["./packages/svelte/src/index.ts"],
+			"@lumen-charts/solid": ["./packages/solid/src/index.ts"],
+			"lumen-charts": ["./packages/lumen-charts/src/index.ts"]
+		}
+	},
+	"include": ["./packages/*/src", "packages/*/test", "examples/*/src", "vitest.config.ts"]
+}
