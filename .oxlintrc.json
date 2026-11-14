@@ -1,0 +1,30 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"plugins": ["typescript", "unicorn", "oxc", "import", "react", "vitest"],
+	"categories": {
+		"correctness": "error",
+		"suspicious": "warn",
+		"perf": "warn"
+	},
+	"env": {
+		"browser": true,
+		"es2024": true
+	},
+	"ignorePatterns": ["**/dist/**", "**/node_modules/**", "coverage/**"],
+	"rules": {
+		"import/no-cycle": "error",
+		"typescript/consistent-type-imports": "error",
+		"typescript/no-explicit-any": "error",
+		"react-hooks/exhaustive-deps": "error",
+		"react-hooks/rules-of-hooks": "error",
+		"no-underscore-dangle": "off"
+	},
+	"overrides": [
+		{
+			"files": ["**/test/**", "*.config.ts"],
+			"env": {
+				"node": true
+			}
+		}
+	]
+}

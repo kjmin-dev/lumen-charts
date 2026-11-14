@@ -28,9 +28,10 @@ Requires Node 20+ and pnpm.
 pnpm install
 pnpm dev          # vanilla example with live reload
 pnpm test         # unit tests (run against sources, no build needed)
-pnpm typecheck
-pnpm lint         # pnpm format to apply fixes
-pnpm build        # emit dist/ for every package
+pnpm typecheck    # tsrs (Rust port of the TypeScript 7 checker)
+pnpm lint         # Oxlint
+pnpm format       # Oxfmt; pnpm format:check only reports
+pnpm build        # emit dist/ for every package with tsc
 ```
 
 Versioning uses Changesets: run `pnpm changeset` in a pull request that changes a package.

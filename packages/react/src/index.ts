@@ -15,13 +15,14 @@ export const LumenChart = forwardRef<ChartApi | null, LumenChartProps>(function 
 	const container = useRef<HTMLDivElement>(null);
 	const chart = useRef<ChartApi | null>(null);
 	const { options, className, style } = props;
+	// The chart is created once with the first options; later changes go through applyOptions below.
+	const initialOptions = useRef(options);
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: the chart is created once; later option changes go through applyOptions below
 	useEffect(() => {
 		if (container.current === null) {
 			return;
 		}
-		const instance = createChart(container.current, options);
+		const instance = createChart(container.current, initialOptions.current);
 		chart.current = instance;
 		return () => {
 			chart.current = null;
