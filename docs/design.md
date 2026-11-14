@@ -1,169 +1,170 @@
-# 고성능 차트 엔진 설계 최종안
+# High-performance chart engine design
 
-두 차례의 분석을 종합하고, 독립 검토자의 적대적 검증을 반영한 판본이다.
+This design combines two analyses of TradingView's charts and incorporates an independent reviewer's adversarial review of the first draft.
 
-근거 표기
+Evidence tags:
 
-- [소스] Lightweight Charts v5.3.0 소스 확인
-- [실측] Apple M1, V8·JavaScriptCore 벤치마크 (실행 간 편차 20~30%)
-- [검토 실측] 적대적 검토 중 수행한 실험 (시스템 부하가 높아 편차 ±50%)
-- [가정] 미검증. 측정 게이트로 확인해야 함
+- **[source]**: read in the Lightweight Charts v5.3.0 source.
+- **[measured]**: benchmark on an Apple M1 under V8 and JavaScriptCore. Runs varied by 20 to 30%.
+- **[review]**: experiment run during the adversarial review. The machine was under heavy load, so absolute numbers varied by up to 50%.
+- **[assumption]**: not verified. A measurement gate has to confirm it.
 
-## 1. 종합 판정
+## 1. Findings
 
-### 1.1 두 분석이 일치하고 채택하는 것
+### 1.1 Adopted from both analyses
 
-- 무효화 단계 + rAF 프레임당 1회 병합 [소스]
-- pane·축별 캔버스 레이어 분리 [소스]
-- 서수 인덱스 시간축, 가중치 기반 눈금 [소스]
-- 물리 픽셀 좌표계 정수 스내핑, 봉·심지 폭 홀짝 맞춤 [소스]
-- Model / View / Renderer 분리, 상태 없는 렌더러 [소스]
-- 브랜드 타입으로 좌표계 혼동 차단 [소스]
-- 컬럼형 TypedArray 저장 [실측: 객체 배열 대비 2.8~4.7배]
-- 렌더링과 프레임 경로는 JS 유지 [실측: 보이는 봉 2000개 연산 0.7~2.6µs]
-- Canvas 2D 기본, GPU는 선택 레이어
+- Invalidation levels, merged into one draw per `requestAnimationFrame` [source].
+- Separate canvas layers per pane and per axis [source].
+- Ordinal index time scale with weighted tick marks [source].
+- Integer snapping in physical pixels, with bar and wick widths kept at the same parity [source].
+- Separate model, view and renderer, with stateless renderers [source].
+- Branded types to keep coordinate spaces apart [source].
+- Columnar `TypedArray` storage [measured: 2.8 to 4.7 times faster than arrays of objects].
+- Rendering and per-frame code stay in JavaScript [measured: work on 2,000 visible bars takes 0.7 to 2.6 µs].
+- Canvas 2D by default. GPU rendering is an optional layer.
 
-### 1.2 2차 분석 보고서에 대한 판정
+### 1.2 Verdicts on the second analysis
 
-| 주장                                  | 판정        | 근거                                                                               |
-| ------------------------------------- | ----------- | ---------------------------------------------------------------------------------- |
-| 양봉·음봉을 단일 Path로 묶어 fill 1회 | 사실 아님   | 봉마다 `fillRect`, 색이 바뀔 때만 `fillStyle` 변경 [소스]                          |
-| 핫 루프 Zero-Allocation               | 절반만 맞음 | draw 루프는 대체로 할당이 없다. 그러나 틱 경로가 전체 봉을 새 객체로 만든다 [소스] |
-| PlotList가 불변/증분형                | 절반만 맞음 | 통째 교체라 "불변"은 맞고 "증분"은 틀리다. 30행 청크 min/max 캐시는 맞다 [소스]    |
-| 코어 번들 ~45KB gzip                  | 부정확      | 45KB는 CI 상한(brotli)이다 [소스]                                                  |
-| Relaxed SIMD로 FMA 활용               | 기각        | Safari 지원 미확인, 플랫폼별 결과 차이                                             |
-| WASM+SIMD가 지표 계산 4~15배          | 기각        | 점화식 지표는 SIMD 불가, WASM ≈ JS (0.97~1.5배) [실측]                             |
-| 100만 개 min/max 0.12ms 등 성능표     | 추정치      | 실측은 f64 0.36ms, f32 0.17ms [실측]                                               |
-| 기준가 델타 f32로 지표 계산           | 기각        | f32 유효숫자 약 7자리. f32는 렌더 좌표 출력에만 쓴다                               |
-| 드로잉 히트테스트에 R-Tree 내장       | 보류        | 필요 규모 미검증                                                                   |
-| WebGL 컨텍스트 개수 제한              | 채택        | GPU 레이어는 페이지당 공유 컨텍스트 1개                                            |
-| WASM 메모리 무복사 뷰                 | 조건부 채택 | 같은 스레드 안에서만 성립. WASM 메모리는 스레드 간 전송 불가 [검토 실측]           |
-| Zig ≈ Rust                            | 채택        | 둘 다 LLVM. C ABI 직접 노출 시 Rust도 커널 11개 5.1KB [실측]                       |
+| Claim                                                                         | Verdict                  | Evidence                                                                                                                  |
+| ----------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| Up and down candles are batched into one path with a single fill              | False                    | Each bar uses its own `fillRect`; `fillStyle` changes only when the color changes [source]                                |
+| The hot loop allocates nothing                                                | Half right               | The draw loop mostly allocates nothing, but each tick rebuilds every bar as a new object [source]                         |
+| `PlotList` is immutable and incremental                                       | Half right               | It is replaced whole, so "immutable" holds and "incremental" does not. The 30-row chunked min/max cache is real [source]  |
+| Core bundle is about 45 KB gzip                                               | Inaccurate               | 45 KB is the CI limit, measured with brotli [source]                                                                      |
+| Use Relaxed SIMD for fused multiply-add                                       | Rejected                 | Safari support is unconfirmed, and results differ by platform                                                             |
+| WASM with SIMD speeds up indicators 4 to 15 times                             | Rejected                 | Recursive indicators cannot use SIMD; WASM runs at 0.97 to 1.5 times JavaScript [measured]                                |
+| Its performance table (for example, min/max over 1 million values in 0.12 ms) | Estimates                | Measured: 0.36 ms for f64, 0.17 ms for f32 [measured]                                                                     |
+| Compute indicators using f32 deltas from a base price                         | Rejected                 | f32 holds about 7 significant digits. f32 is used only for render coordinates                                             |
+| Built-in R-tree for drawing hit tests                                         | Deferred                 | The scale that needs it is unverified                                                                                     |
+| Browsers limit the number of WebGL contexts                                   | Adopted                  | The GPU layer shares one context per page                                                                                 |
+| Zero-copy views over WASM memory                                              | Adopted with a condition | Holds only within one thread; WASM memory cannot be transferred between threads [review]                                  |
+| Zig and Rust perform about the same                                           | Adopted                  | Both compile through LLVM. Rust binaries stay small too: exposing a plain C ABI, 11 kernels compiled to 5.1 KB [measured] |
 
-### 1.3 초안에 대한 적대적 검증 결과
+### 1.3 Results of the adversarial review
 
-| 초안의 결정                     | 판정             | 수정                                                                 |
-| ------------------------------- | ---------------- | -------------------------------------------------------------------- |
-| 메인이 저장소 소유, 워커에 전송 | 성립 안 함       | 엔진(워커)이 단일 소유, 메인은 창 캐시만 (3절)                       |
-| 워커 필수                       | 원칙과 충돌      | CSP로 워커가 막히면 메인 스레드 시분할 폴백                          |
-| 타임스탬프 합집합 시간축        | 인덱스 불변 깨짐 | 메인 시리즈 타임라인 기준으로 매핑                                   |
-| 앞쪽 추가 O(1)                  | 과장             | 청크 연결만 O(1). 누적형 지표는 재계산                               |
-| 서버와 비트 일치                | 비현실적         | JS = WASM 비트 일치만 보장, 서버와는 허용오차                        |
-| 커널 `(버퍼, 오프셋, 길이)`     | 부족             | 상태 구조체와 이전 청크 꼬리(carry) 추가                             |
-| 배율 4 LOD, 메모리 +33%         | 결함 다수        | 레벨 16부터 시작, 꼬리 재스캔, NaN 규칙 명시 (4.2절)                 |
-| Tail 무효화 단계                | 조건 미정의      | 기본안에서 제외, 측정 후 결정                                        |
-| 통과 기준                       | 측정 불가        | 배치 평균·p99, 기기·해상도 명시 (9절)                                |
-| LOD를 새 쟁점처럼 서술          | 누락             | Lightweight Charts에 이미 conflation이 있다. 기준선은 이를 켜고 잰다 |
+| Draft decision                                          | Verdict                    | Change                                                                                                         |
+| ------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Main thread owns the store and transfers it to a worker | Does not hold              | The engine (worker) is the only owner; the main thread keeps a window cache (section 3)                        |
+| A worker is required                                    | Conflicts with principle 4 | If CSP blocks workers, the engine runs time-sliced on the main thread                                          |
+| Time scale built from the union of all timestamps       | Breaks stable indexes      | Map every series onto the main series' timeline                                                                |
+| Prepending history is O(1)                              | Overstated                 | Only linking the chunk is O(1); cumulative indicators are recomputed                                           |
+| Bit-for-bit match with server results                   | Unrealistic                | Guarantee bit equality between JavaScript and WASM only; compare with the server within a tolerance            |
+| Kernel signature `(buffer, offset, length)`             | Insufficient               | Add a state struct and the tail of the previous chunk (carry)                                                  |
+| LOD with factor 4 and 33% extra memory                  | Several defects            | Start at level 16, rebuild the last bucket from its members on tail updates, define NaN handling (section 4.2) |
+| A "tail" invalidation level                             | Conditions undefined       | Left out of the baseline; decided after measurement                                                            |
+| Pass criteria                                           | Not measurable             | Batch averages and p99, with fixed devices and resolution (section 9)                                          |
+| LOD described as a new idea                             | Omission                   | Lightweight Charts already ships conflation; the baseline is measured with it on                               |
 
-깨려 했으나 깨지 못한 것: 청크 저장의 스캔 비용(연속 대비 1.4~1.8배 느리지만 절대값 무의미) [검토 실측], 집계 캔들의 시각적 유효성, Relaxed SIMD와 f32 저장 기각.
+The review tried and failed to break three points: the scan cost of chunked storage (1.4 to 1.8 times slower than a contiguous buffer, negligible in absolute terms) [review], the visual validity of aggregated candles, and the rejection of Relaxed SIMD and f32 storage.
 
-## 2. 설계 원칙
+## 2. Principles
 
-1. 프레임당 작업량은 보이는 픽셀 수에, 틱당 작업량은 상수에 묶는다.
-2. 알고리즘(LOD, 증분 계산)을 저수준 최적화(SIMD, GPU)보다 먼저 적용한다.
-3. 모든 최적화는 측정 게이트를 통과해야 채택한다.
-4. 호스트 페이지에 요구 사항을 두지 않는다. 워커, WASM, SharedArrayBuffer는 모두 선택이고 폴백이 있다.
+1. Per-frame work is bounded by the number of visible pixels. Per-tick work is constant.
+2. Algorithms (LOD, incremental computation) come before low-level optimization (SIMD, GPU).
+3. An optimization is adopted only after it passes a measurement gate.
+4. Impose no requirements on the host page. Workers, WASM and `SharedArrayBuffer` are all optional and have fallbacks.
 
-## 3. 전체 구조
+## 3. Architecture
 
 ```
-메인 스레드                              데이터 엔진 (워커, 막히면 메인 시분할)
-┌──────────────────────────────┐       ┌──────────────────────────────────┐
-│ API / Datafeed 어댑터         │ 봉·틱 │ 청크 저장소 (단일 소유)            │
-│ 모델: TimeScale, PriceScale   │──────▶│ LOD 피라미드                       │
-│ 창 캐시: 가시 범위 ±2화면 원본 │       │ 지표 엔진 (전체·증분, 상태 보유)   │
-│          + 거친 LOD 레벨 전체  │◀──────│ 파생 시리즈 (Heikin-Ashi 등)       │
-│ 뷰 → f32 좌표 버퍼            │ 스냅샷│ 커널: JS 기본 / WASM 선택          │
-│ 렌더러: Canvas 2D 3레이어      │ ·패치 │ (WASM 메모리는 이 스레드 안에서만) │
-│ 입력·히트테스트·드로잉         │       └──────────────────────────────────┘
-└──────────────────────────────┘
+Main thread                              Data engine (worker; time-sliced on main if blocked)
+┌───────────────────────────────┐       ┌───────────────────────────────────┐
+│ API and Datafeed adapter      │ bars, │ Chunked store (single owner)      │
+│ Model: TimeScale, PriceScale  │ ticks │ LOD pyramid                       │
+│ Window cache: raw bars for    │──────▶│ Indicator engine (full and        │
+│   the visible range ±2 screens│       │   incremental, holds state)       │
+│   and every coarse LOD level  │◀──────│ Derived series (Heikin-Ashi, ...) │
+│ View: f32 coordinate buffers  │ snap- │ Kernels: JavaScript, optional WASM│
+│ Renderer: Canvas 2D, 3 layers │ shots,│ (WASM memory stays in this thread)│
+│ Input, hit testing, drawings  │patches└───────────────────────────────────┘
+└───────────────────────────────┘
 ```
 
-- **소유권**: 히스토리와 지표 상태는 엔진만 가진다. 메인으로는 창 스냅샷을 복사해 보낸다 [실측: 8MB당 0.26ms].
-- **창 캐시**: 메인은 가시 범위 ±2화면의 원본과 거친 LOD 레벨 전체를 가진다. 빠른 스크롤로 창을 벗어나면 거친 레벨로 먼저 그리고, 원본이 도착하면 교체한다.
-- **틱 경로**: 틱은 엔진으로 보내고, 엔진이 "꼬리 봉 + 모든 지표의 꼬리 값"을 한 메시지(패치)로 돌려준다. 메인은 패치를 한 번에 적용하므로 봉과 지표가 어긋나지 않는다.
-- **동일 인터페이스**: 엔진은 비동기 인터페이스 하나로 감싼다. 워커에서 돌든 메인에서 시분할로 돌든 호출 측 코드는 같다.
-- **렌더러 이식성**: 렌더러는 "컨텍스트 + 좌표 버퍼"만 받는다. OffscreenCanvas 이전은 5단계 선택 사항이다.
+- **Ownership**: only the engine holds history and indicator state. It copies window snapshots to the main thread [measured: 0.26 ms per 8 MB].
+- **Window cache**: the main thread keeps raw bars for the visible range plus two screens on each side, and every coarse LOD level. If a fast scroll leaves the window, it draws from a coarse level and swaps in raw bars when they arrive.
+- **Tick path**: ticks go to the engine, which replies with a single message (patch) holding the tail bar and the tail value of every indicator. The main thread applies the patch at once, so bars and indicators never disagree.
+- **One interface**: the engine sits behind one asynchronous interface. Calling code is the same whether it runs in a worker or time-sliced on the main thread.
+- **Portable renderer**: a renderer receives only a context and coordinate buffers. Moving it to `OffscreenCanvas` is an optional step in stage 5.
 
-## 4. 데이터 계층
+## 4. Data layer
 
-### 4.1 청크형 컬럼 저장소
+### 4.1 Chunked column store
 
-- 컬럼: time, open, high, low, close, volume. 모두 Float64. 봉당 48바이트.
-- 청크는 8192행이고, 6개 컬럼을 ArrayBuffer 하나에 담는다.
-- 청크의 덱으로 구성해 뒤쪽 추가와 앞쪽 추가의 연결 비용이 O(1)이다.
-- 전역 인덱스는 부호 있는 정수이고 원점을 고정한다. 과거 데이터를 앞에 붙여도 기존 인덱스가 변하지 않는다.
-- 메모리 상한을 둔다. 상한을 넘으면 가시 범위에서 먼 청크를 버리고 필요할 때 Datafeed에 다시 요청한다. 1000만 봉은 480MB라 모바일에서 전량 보유할 수 없다.
+- Columns: time, open, high, low, close and volume, all Float64 (48 bytes per bar).
+- A chunk holds 8,192 rows, with all six columns in one `ArrayBuffer`.
+- Chunks form a deque, so linking a chunk at either end is O(1).
+- The global index is a signed integer with a fixed origin. Prepending history leaves existing indexes unchanged.
+- Memory has a cap. Past the cap, the engine drops chunks far from the visible range and requests them again from the Datafeed when needed. Ten million bars take 480 MB, more than a mobile browser can hold.
 
-### 4.2 LOD 피라미드
+### 4.2 LOD pyramid
 
-- 레벨은 16, 64, 256, …(배율 4)이다. 픽셀당 봉 1~16개 구간은 원본을 그릴 때 열 단위로 병합한다(4K 폭에서 최대 약 6만 봉).
-- 버킷 경계는 `floor(전역 인덱스 / 레벨 크기)`로 고정한다. 4의 배수가 아닌 앞쪽 추가에서도 왼쪽 끝 부분 버킷만 고치면 된다.
-- 레벨별 컬럼:
-  - OHLC 시리즈: 처음 시가, 최고, 최저, 마지막 종가.
-  - 거래량: 최댓값. 합계로 두면 레벨 전환 때 막대 높이가 4배 튄다.
-  - 라인·지표 시리즈: 최소, 최대, 처음, 끝. 종가만 쓰면 극값을 놓친다 [검토 실측: 레벨 64에서 버킷의 77%가 최댓값을 0.2% 넘게 놓침].
-- 추가 메모리: OHLCV 약 7%, 라인 시리즈 약 27%.
-- NaN은 집계에서 건너뛴다. 버킷 전체가 NaN이면 NaN이다.
-- 꼬리 갱신은 마지막 버킷의 형제를 다시 스캔한다(최대 16행 또는 자식 4개). 정정으로 고가가 내려갈 수 있어 단순 병합은 틀린다.
-- 가시 범위 min/max는 피라미드 조회 + 양 끝 원본 스캔으로 구한다.
+- Levels are 16, 64, 256 and so on, each 4 times the last. Between 1 and 16 bars per pixel, raw bars are merged per pixel column at draw time (at most about 60,000 bars at 4K width).
+- Bucket boundaries are fixed at `floor(global index / level size)`. A prepend that is not a multiple of 4 only touches the leftmost partial bucket.
+- Columns per level:
+  - OHLC series: first open, highest high, lowest low, last close.
+  - Volume: the maximum. A sum would make bars jump fourfold at each level change.
+  - Line and indicator series: minimum, maximum, first and last. Using the close alone loses extremes [review: at level 64, 77% of buckets missed the true maximum by more than 0.2%].
+- Extra memory: about 7% for OHLCV and 27% for a line series.
+- NaN values are skipped during aggregation. A bucket that holds only NaN is NaN.
+- A tail update rebuilds the last bucket from its members (at most 16 raw rows at level 16, or 4 child buckets above it). A correction can lower the high, so merging in the new value alone gives wrong results.
+- Visible-range min/max comes from pyramid lookups plus raw scans at both ends.
 
-### 4.3 시간축
+### 4.3 Time scale
 
-- 서수 인덱스 + `barSpacing`, `rightOffset`.
-- 메인 시리즈의 타임라인이 기준이다. 보조 시리즈(비교 심볼)는 메인 타임라인에 매핑하고, 메인에 없는 시각의 봉은 직전 메인 봉에 합친다.
-- 세션, 타임존, 서머타임은 표시 계층에서 처리한다. 눈금 가중치는 타임존에 의존하므로 타임존 변경 시 다시 계산한다.
-- Renko 같은 비시간 차트는 엔진의 파생 시리즈로 만들고, 시간축에는 자체 서수 인덱스를 준다.
+- Ordinal indexes, positioned by `barSpacing` and `rightOffset`.
+- The main series' timeline is the reference. Secondary series (comparison symbols) are mapped onto it; a bar at a time the main series lacks merges into the preceding main bar.
+- Sessions, time zones and daylight saving are handled in the display layer. Tick weights depend on the time zone, so they are recomputed when it changes.
+- Non-time charts such as Renko are derived series in the engine, with their own ordinal index on the time scale.
 
-## 5. 계산 계층
+## 5. Compute layer
 
-- 지표는 엔진에서 계산한다. 전체 계산은 로드, 파라미터 변경, 앞쪽 추가 때 한다. 틱에는 증분 갱신을 한다.
-- 앞쪽 추가 시 EMA 같은 누적형 지표는 시작점이 바뀌므로 전체를 다시 계산한다. 완료 전까지 메인은 기존 값을 그대로 보여준다.
-- 커널 인터페이스는 `(버퍼, 오프셋, 길이, 상태, carry)`다. 상태는 EMA의 이전 값 같은 누적값이고, carry는 이전 청크의 꼬리(이동 윈도 길이만큼)다.
-- 결정성: 같은 시작점과 같은 알고리즘에서 JS와 WASM의 결과가 비트 단위로 같아야 한다 [검토 실측: 불일치 0건]. 서버 계산과는 허용오차로 비교한다. 시작점이 다르면 비트가 달라진다 [검토 실측].
-- WASM 채택 조건: 프로파일에서 해당 커널의 비중 확인, JS 폴백과 동등성 테스트 통과, CSP 차단 시 자동 폴백. SIMD는 순서가 무관한 min/max·집계에만 쓴다.
+- Indicators run in the engine. Full computation happens on load, on parameter change and on prepend; ticks update incrementally.
+- On prepend, cumulative indicators such as EMA start from a new point and are recomputed in full. Until that finishes, the main thread keeps showing the old values.
+- The kernel signature is `(buffer, offset, length, state, carry)`. State holds running values such as the previous EMA; carry holds the tail of the previous chunk, sized to the moving window.
+- Determinism: with the same starting point and algorithm, JavaScript and WASM results must match bit for bit [review: zero mismatches]. Results are compared with the server within a tolerance, because a different starting point changes the bits [review].
+- WASM is adopted for a kernel only when profiling shows the kernel takes a meaningful share of frame or load time, an equivalence test against the JavaScript version passes, and the engine falls back to JavaScript when CSP blocks WASM. SIMD is used only for order-independent min/max and aggregation.
 
-## 6. 렌더 계층
+## 6. Render layer
 
-- Canvas 2D, pane당 3레이어: 시리즈(그리드·시리즈·지표), 드로잉(확정된 도구), 오버레이(크로스헤어·현재가 선·편집 중 드로잉).
-- 무효화 4단계: None, Cursor(오버레이만), Light(시리즈 레이어), Full(레이아웃 포함). rAF로 프레임당 1회 병합.
-- 마지막 봉만 다시 그리는 부분 갱신은 기본안에서 뺀다. 자동 스케일 변화, 미래로 이동해 그리는 지표, 선 이음매에서 깨지기 때문이다. Light 비용이 예산을 넘을 때만 다시 검토한다.
-- 뷰는 좌표를 재사용 Float32Array에 채운다. 프레임 경로에서 객체를 할당하지 않는다.
-- 캔들은 `fillRect` + 색상별 패스로 시작한다. 단일 Path 배칭과의 우열은 [가정]이다.
-- 캔버스 수와 크기에 상한을 둔다. 다분할 × 3레이어 × DPR 조합이 모바일 캔버스 메모리 한도를 넘을 수 있어, 한도에 가까우면 드로잉·오버레이 레이어를 합친다.
-- GPU 레이어는 히트맵·틱 산점도 전용 선택 모듈이다. 페이지당 WebGL2 컨텍스트 1개를 공유한다.
+- Canvas 2D with three layers per pane: series (grid, series, indicators), drawings (placed drawings) and overlay (crosshair, last-price line, drawing being edited).
+- Four invalidation levels: None, Cursor (overlay only), Light (series layer) and Full (including layout). Changes merge into one draw per `requestAnimationFrame`.
+- Partial redraw (redrawing only the last bar) is left out of the baseline. It breaks when autoscale changes, when an indicator is drawn shifted into the future, and at line joins. It is reconsidered only if Light invalidation exceeds its budget.
+- Views write coordinates into reused `Float32Array`s and allocate no objects on the frame path.
+- Candles start with `fillRect` and one pass per color. Whether batching into one path is faster is an [assumption].
+- The number and size of canvases are capped. Split layouts times three layers times device pixel ratio can exceed mobile canvas memory, so near the cap the drawing and overlay layers merge.
+- The GPU layer is an optional module for heatmaps and tick scatter plots. It shares one WebGL2 context per page.
 
-## 7. 인터랙션
+## 7. Interaction
 
-- Pointer Events로 통일하고 관성 스크롤을 둔다.
-- 히트테스트: 시리즈는 인덱스 계산, 드로잉은 시간 범위로 거른 뒤 선형 탐색. 공간 인덱스는 측정 후 추가한다.
-- 드로잉은 (시간, 가격)으로 저장한다. 차트 상태와 드로잉은 버전이 붙은 직렬화 형식으로 저장·복원한다.
+- Pointer Events for all input, with kinetic scrolling.
+- Hit testing: series by index arithmetic; drawings filtered by time range, then scanned linearly. A spatial index is added only after measurement.
+- Drawings are stored as (time, price) pairs. Chart state and drawings are saved and restored in a versioned serialization format.
 
-## 8. 외부 계약과 범위
+## 8. External contract and scope
 
-- Datafeed는 TradingView의 pull형 계약과 형태를 맞추되 구현은 독자 작성한다. 봉 정정·삭제, 해상도 전환을 계약에 포함한다.
-- 가격축: 다중 가격축, 로그·퍼센트·100 기준 지수, 틱 사이즈 기반 포맷.
-- 플러그인: 커스텀 시리즈, pane·시리즈 프리미티브.
-- 코어는 프레임워크 의존성 없음. TypeScript strict, ESM, tree-shaking.
-- 접근성: 키보드 조작과 스크린 리더용 데이터 요약을 범위에 넣는다.
-- 범위 밖: 사용자 스크립트 언어(Pine 류). 엔진 격리 구조가 이후 수용한다.
+- The Datafeed matches the shape of TradingView's pull-based contract, with our own implementation. The contract covers bar corrections, deletions and resolution changes.
+- Price axes: multiple axes; logarithmic, percentage and indexed-to-100 modes; formatting by tick size.
+- Plugins: custom series, plus pane and series primitives.
+- The core has no framework dependency: strict TypeScript, ESM, tree-shakeable.
+- Accessibility: keyboard control and a data summary for screen readers are in scope.
+- Out of scope: a user scripting language like Pine. The isolated engine leaves room for one later.
 
-## 9. 단계와 측정 게이트
+## 9. Stages and measurement gates
 
-측정 조건: 기준 기기 2종(데스크톱 1, 중급 안드로이드 1), 뷰포트와 DPR 고정. 틱 비용은 1만 틱 배치의 평균과 p99로 잰다(브라우저 타이머 해상도로는 단건 측정 불가). 프레임은 JS 시간과 래스터 포함 프레임 간격을 따로 잰다. 아래 수치는 제안값이며 0단계 기준선으로 보정한다.
+Conditions: two reference devices (one desktop, one mid-range Android) with a fixed viewport and device pixel ratio. Tick cost is the average and p99 over a batch of 10,000 ticks, because browser timers are too coarse for single ticks. Two frame metrics are recorded separately: JavaScript time, and frame interval including rasterization. The numbers below are proposals to be calibrated against the stage 0 baseline.
 
-| 단계 | 내용                                                                      | 통과 기준                                                             |
-| ---- | ------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| 0    | 벤치 하네스. Lightweight Charts를 conflation 켠 상태와 끈 상태로 측정     | 틱 비용, 프레임 시간, 메모리, 로드 시간 기준선                        |
-| 1    | 엔진 인터페이스(워커 + 메인 폴백), 청크 저장소, 시간축, 캔들·라인, 무효화 | 100만 봉에서 틱 평균 0.1ms·p99 1ms, 팬·줌 프레임 p95 8ms              |
-| 2    | LOD, 창 캐시, 앞쪽 추가, 메모리 상한                                      | 1000만 포인트 라인 팬·줌 p95 16ms, 앞쪽 추가 후 화면 갱신 100ms 이내  |
-| 3    | 지표 엔진, 파생 시리즈, 플러그인                                          | 지표 20개에서 틱→패치 적용 p99 4ms, 앞쪽 추가 시 지표 재계산 1초 이내 |
-| 4    | 드로잉, 저장·복원, 다중 가격축, 세션·타임존                               | 드로잉 1000개에서 호버 p99 1ms                                        |
-| 5    | 선택: WASM 커널, GPU 레이어, OffscreenCanvas, 부분 갱신                   | 각각 프로파일 근거가 있을 때만                                        |
+| Stage | Scope                                                                                                          | Pass criteria                                                                                |
+| ----- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| 0     | Benchmark harness: Lightweight Charts with conflation on and off                                               | Baselines for tick cost, frame time, memory and load time                                    |
+| 1     | Engine interface (worker and main-thread fallback), chunked store, time scale, candles and lines, invalidation | With 1 million bars: tick average 0.1 ms and p99 1 ms; pan and zoom frames p95 8 ms          |
+| 2     | LOD, window cache, prepend, memory cap                                                                         | 10 million line points: pan and zoom p95 16 ms; screen updated within 100 ms of a prepend    |
+| 3     | Indicator engine, derived series, plugins                                                                      | 20 indicators: tick to applied patch p99 4 ms; indicators recomputed within 1 s of a prepend |
+| 4     | Drawings, save and restore, multiple price axes, sessions and time zones                                       | 1,000 drawings: hover p99 1 ms                                                               |
+| 5     | Optional: WASM kernels, GPU layer, `OffscreenCanvas`, partial redraw                                           | Each only with profiling evidence                                                            |
 
-## 10. 남은 불확실성
+## 10. Open questions
 
-- Lightweight Charts의 틱당 O(N)은 소스 독해 결과다. 브라우저 실측은 0단계에서 한다.
-- 창 캐시 방식의 빠른 스크롤 체감 품질은 미검증이다. 2단계에서 거친 레벨 → 원본 교체가 눈에 띄는지 확인한다.
-- 벤치마크는 Apple M1 한 대다. x86, Firefox, 안드로이드는 미측정이다.
-- 검토 실측은 시스템 부하가 높은 상태에서 했다. 방향은 유효하나 절대값은 다시 재야 한다.
+- The O(N) cost per tick in Lightweight Charts comes from reading the source. Stage 0 measures it in a browser.
+- Visual quality during fast scrolling with the window cache is unverified. Stage 2 checks whether the swap from a coarse level to raw bars is visible.
+- Benchmarks ran on one Apple M1. x86, Firefox and Android are unmeasured.
+- The review's experiments ran on a heavily loaded machine. Their direction holds; their absolute numbers need re-measuring.
