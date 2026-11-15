@@ -9,6 +9,7 @@ import {
 	type SeriesKind,
 	TICK_STRIDE,
 	TIME_PATCH,
+	type TimelineResolution,
 	type WindowSnapshot,
 	levelColumnCount,
 	levelCount,
@@ -28,6 +29,8 @@ const EVICT_SLICE = 32;
 const BUCKET_SHIFT = 4;
 /** Numbers a tick keeps while it waits: its time and values. */
 const TICK_ROW = TICK_STRIDE - 1;
+/** Gaps between bars the typical spacing at either end of the timeline is the median of. */
+const INTERVAL_ROWS = 64;
 
 /** Value column (counted from the first value column) each level column of a kind is built from. */
 const LINE_SOURCES: readonly number[] = [0, 0, 0, 0];
@@ -373,6 +376,9 @@ export class EngineCore {
 				break;
 			case 'plugin':
 				this._indicators.load(command.url);
+				break;
+			case 'resolve':
+				event.resolved = this._resolveTimes(command.times);
 				break;
 		}
 	}
@@ -1227,6 +1233,88 @@ export class EngineCore {
 			throw new Error('lumen-charts: the time of a main bar that was let go was needed');
 		}
 		return at === time ? index : index - 1;
+	}
+
+	/** Logical positions of times on the main timeline (see `TimelineResolution`). Reads only. */
+	private _resolveTimes(times: Float64Array): TimelineResolution {
+		const positions = times;
+		const main = this._main;
+		const store = main?.store;
+		if (store === undefined || store.length === 0) {
+			positions.fill(NaN);
+			return { positions, firstTime: NaN, lastTime: NaN, headInterval: NaN, tailInterval: NaN };
+		}
+		const first = store.first;
+		const end = store.end;
+		const firstTime = store.firstTime();
+		const lastTime = store.lastTime();
+		// The first and last chunk are always held, so their times are there.
+		const headInterval = medianGap(store, first, Math.min(end, first + INTERVAL_ROWS + 1));
+		const tailInterval = medianGap(store, Math.max(first, end - INTERVAL_ROWS - 1), end);
+		for (let i = 0; i < times.length; i++) {
+			const time = times[i]!;
+			let position: number;
+			if (time !== time) {
+				position = NaN;
+			} else if (time <= firstTime) {
+				position = first - (firstTime - time) / headInterval;
+			} else if (time >= lastTime) {
+				position = end - 1 + (time - lastTime) / tailInterval;
+			} else {
+				position = this._interpolate(store, time);
+			}
+			positions[i] = position;
+		}
+		return { positions, firstTime, lastTime, headInterval, tailInterval };
+	}
+
+	/** Position of a time strictly between the first and the last main bar. */
+	private _interpolate(store: ChunkedStore, time: number): number {
+		const index = store.lowerBound(time);
+		if (index === index) {
+			const at = store.timeAt(index);
+			if (at === time) {
+				return index;
+			}
+			// The bar before may be the last of a chunk let go, whose last time the chunk keeps.
+			let before = store.timeAt(index - 1);
+			if (before !== before) {
+				before = store.chunkLastTime(store.gridOf(index - 1));
+			}
+			return index - 1 + (time - before) / (at - before);
+		}
+		// Inside a chunk without its times: between the bucket times the levels keep (every 16th bar),
+		// or the chunk's first and last time if the levels are not built.
+		const grid = store.chunkOf(time);
+		const lo = Math.max(store.first, grid << CHUNK_SHIFT);
+		const hi = Math.min(store.end, (grid + 1) << CHUNK_SHIFT) - 1;
+		let fromRow = lo;
+		let fromTime = store.chunkFirstTime(grid);
+		let toRow = hi;
+		let toTime = store.chunkLastTime(grid);
+		const level = this._levels > 0 ? this._time.levels[0]! : null;
+		if (level !== null) {
+			let a = (lo >> BUCKET_SHIFT) + 1;
+			let b = hi >> BUCKET_SHIFT;
+			// Buckets a..b start inside the chunk; find the last one that starts at or before `time`.
+			while (a <= b) {
+				const mid = (a + b) >> 1;
+				const start = level.value(0, mid);
+				if (start <= time) {
+					fromRow = mid << BUCKET_SHIFT;
+					fromTime = start;
+					a = mid + 1;
+				} else {
+					toRow = mid << BUCKET_SHIFT;
+					toTime = start;
+					b = mid - 1;
+				}
+			}
+		}
+		if (fromTime === time) {
+			return fromRow;
+		}
+		return fromRow + ((toRow - fromRow) * (time - fromTime)) / (toTime - fromTime);
 	}
 
 	/**
@@ -2962,6 +3050,40 @@ function heldTick(state: SeriesState, row: Float64Array, offset: number, seq: nu
 		fetchable: undefined,
 		side: NaN,
 	};
+}
+
+/**
+ * Median gap between consecutive times of rows `[from, to)`, or 1 ms with fewer than two rows. Rows
+ * of a chunk without its times are skipped. The median ignores the odd long gap (a weekend, a
+ * session break) that a mean would not.
+ */
+function medianGap(store: ChunkedStore, from: number, to: number): number {
+	const gaps = new Float64Array(Math.max(0, to - from - 1));
+	let count = 0;
+	let previous = store.timeAt(from);
+	for (let row = from + 1; row < to; row++) {
+		const time = store.timeAt(row);
+		const gap = time - previous;
+		if (gap === gap) {
+			gaps[count++] = gap;
+		}
+		previous = time;
+	}
+	if (count === 0) {
+		return 1;
+	}
+	// At most 64 numbers: an insertion sort is plenty.
+	for (let i = 1; i < count; i++) {
+		const value = gaps[i]!;
+		let j = i - 1;
+		while (j >= 0 && gaps[j]! > value) {
+			gaps[j + 1] = gaps[j]!;
+			j--;
+		}
+		gaps[j + 1] = value;
+	}
+	const gap = gaps[count >> 1]!;
+	return gap > 0 ? gap : 1;
 }
 
 /** First row of the finest bucket holding `row`, not before `first`. */

@@ -243,6 +243,15 @@ export class EngineClient {
 		return this._send({ type: 'window', level, start, count, capacity }, NO_TRANSFER);
 	}
 
+	/**
+	 * Asks where `times` fall on the main timeline (see `TimelineResolution`), as of the commands sent
+	 * before. `times` is handed over to the engine, which writes the positions into it: do not use it
+	 * afterwards. Returns the command's `seq`, which the answering event carries as `ack`.
+	 */
+	public resolveTimes(times: Float64Array): number {
+		return this._send({ type: 'resolve', times }, [times.buffer as ArrayBuffer]);
+	}
+
 	/** Resolves once every command issued so far has been answered. */
 	public whenIdle(): Promise<void> {
 		if (this.pending === 0) {
@@ -289,8 +298,8 @@ export class EngineClient {
 		// Buffered ticks were issued first, so they go first.
 		this._flushTicks();
 		const seq = ++this._seq;
-		// Windows, limits and fetched rows change nothing a later call could depend on.
-		if (body.type !== 'window' && body.type !== 'limit' && body.type !== 'rows') {
+		// Windows, limits, fetched rows and time lookups change nothing a later call could depend on.
+		if (body.type !== 'window' && body.type !== 'limit' && body.type !== 'rows' && body.type !== 'resolve') {
 			this._dataSeq = seq;
 		}
 		this._post({ ...body, seq } as Command, transfer);
