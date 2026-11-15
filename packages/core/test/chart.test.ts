@@ -1,5 +1,6 @@
 import { type ChartApi, type DatafeedRequest, createChart, themes } from '@lumen-charts/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { timeZone } from '../src/model/time-zone';
 
 describe('createChart', () => {
 	let container: HTMLDivElement;
@@ -1153,6 +1154,29 @@ describe('chart with series', () => {
 			chart.applyOptions({ localization: { timeZone: 'UTC' } });
 			await settle();
 			expect(axisLabels()).toEqual(utc);
+		});
+
+		it('looks offsets up when the zone changes or bars arrive, not in the frames that draw them', async () => {
+			const zone = timeZone('Asia/Seoul');
+			chart.addSeries('candlestick').setData(candles(20_000, START));
+			chart.timeScale().setVisibleLogicalRange({ from: 5000, to: 5400 });
+			await settle();
+			const before = zone.samples;
+			chart.applyOptions({ localization: { timeZone: 'Asia/Seoul' } });
+			// The table was built in the call, for the bars on screen.
+			expect(zone.samples).toBeGreaterThan(before);
+			const built = zone.samples;
+			await settle();
+			// Across the whole history, one view at a time.
+			const panFrom = async (from: number): Promise<void> => {
+				if (from < 19_000) {
+					chart.timeScale().setVisibleLogicalRange({ from, to: from + 1000 });
+					await settle();
+					await panFrom(from + 1900);
+				}
+			};
+			await panFrom(0);
+			expect(zone.samples).toBe(built);
 		});
 
 		it('refuses an unknown time zone or a malformed schedule and keeps the options', async () => {

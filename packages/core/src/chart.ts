@@ -318,9 +318,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 		const input = mergeOptions(this._input, options);
 		if (options.localization !== undefined || options.sessions !== undefined) {
-			// Throws a RangeError for an unknown time zone or locale, or a malformed session schedule,
-			// before anything changes.
-			this._time.apply(resolveOptions(input, false));
+			// Throws before anything changes.
+			this._applyTime(resolveOptions(input, false));
 		}
 		this._input = input;
 		this._watchScheme();
@@ -932,12 +931,21 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		for (const axis of this._axes) {
 			axis.fitTicks = -1;
 		}
+		this._applyTime(options);
+		this._syncSizing();
+		this._computeLayout();
+	}
+
+	/**
+	 * Takes over the time zone, locale and session options. When they change, the offsets of the
+	 * bars on screen are looked up now rather than in the frame that draws them. Throws a RangeError
+	 * for an unknown time zone or locale, or a malformed schedule, and then changes nothing.
+	 */
+	private _applyTime(options: ChartOptions): void {
 		const drawn = this._drawn;
 		if (this._time.apply(options) && drawn !== null && drawn.count > 0) {
 			this._time.cover(drawn.time[0]!, drawn.time[drawn.count - 1]!);
 		}
-		this._syncSizing();
-		this._computeLayout();
 	}
 
 	/**

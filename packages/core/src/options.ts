@@ -138,7 +138,9 @@ export interface LocalizationOptions {
 	 * Time zone whose wall-clock time the time axis and the crosshair show: an IANA name such as
 	 * `America/New_York`, `UTC` (default), or `local` for the system's zone. Bar times stay UTC
 	 * milliseconds; only what is shown changes, and labels fall on the zone's day, month and year
-	 * starts through daylight saving changes. An unknown name throws a RangeError.
+	 * starts through daylight saving changes. Daily and longer bars (at least 20 hours apart) are
+	 * dates and keep their UTC date, as daily bars stamped at 00:00 UTC would otherwise show the
+	 * day before west of UTC. An unknown name throws a RangeError.
 	 */
 	timeZone: string;
 	/**
