@@ -1,6 +1,6 @@
 import { resolve as resolvePath } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { type EngineClient, type EngineEvent, createEngine } from '@lumen-charts/engine';
+import { type EngineClient, type EngineEvent, LocalTransport, createEngine } from '@lumen-charts/engine';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeWorker } from './fake-worker';
 import { ohlcv } from './helpers';
@@ -236,4 +236,26 @@ describe('indicator plugins', () => {
 			engine.destroy();
 		});
 	}
+});
+
+describe('LocalTransport', () => {
+	it('keeps computing indicators when a command ends just as its slice does', async () => {
+		// Every reading of the clock moves it 5 ms on: each slice ends right after the step it began with.
+		let clock = 0;
+		vi.spyOn(performance, 'now').mockImplementation(() => (clock += 5));
+		const transport = new LocalTransport();
+		const events: EngineEvent[] = [];
+		transport.onevent = event => {
+			events.push(event);
+		};
+		const inputs = [{ series: 1, column: 4 }];
+		transport.post({ type: 'add', seq: 1, series: 1, kind: 'ohlcv' }, []);
+		transport.post({ type: 'set', seq: 2, series: 1, count: 100, data: ohlcv(100) }, []);
+		transport.post({ type: 'indicator', seq: 3, id: 10, name: 'sma', params: [5], inputs, outputs: [11] }, []);
+		await vi.waitFor(() => {
+			expect(events.some(event => event.ack === 3 && event.stale && event.computing === undefined)).toBe(true);
+		}, WAIT);
+		transport.close();
+		vi.restoreAllMocks();
+	});
 });

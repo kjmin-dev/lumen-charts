@@ -406,9 +406,12 @@ export class LocalTransport implements EngineTransport {
 				if (this._head >= this._queue.length) {
 					this._queue.length = 0;
 					this._head = 0;
-					// Indicator values the chart waits for are computed in tasks like commands, not in idle time.
-					while (this._core.urgent && performance.now() < deadline) {
-						this._core.backgroundStep();
+					// Indicator values the chart waits for are computed in tasks like commands, not in idle
+					// time; at least one step per task, so they get there however busy the thread is.
+					if (this._core.urgent) {
+						do {
+							this._core.backgroundStep();
+						} while (this._core.urgent && performance.now() < deadline);
 					}
 					this._notify();
 					if (this._core.urgent) {
@@ -437,8 +440,11 @@ export class LocalTransport implements EngineTransport {
 				this.onevent?.(event);
 			}
 			if (performance.now() >= deadline) {
-				if (this._current !== null || this._head < this._queue.length) {
+				// The last command may have finished just now and left background work behind it.
+				if (this._current !== null || this._head < this._queue.length || this._core.urgent) {
 					this._schedule();
+				} else if (this._core.busy) {
+					this._scheduleIdle();
 				}
 				return;
 			}
