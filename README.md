@@ -2,9 +2,9 @@
 
 High-performance financial charting engine for the web.
 
-> Status: stage 1 of the [design](docs/design.md). Candlestick and line series on an ordinal time
-> scale, with the data engine in a worker, panning, zooming and live updates. Level of detail,
-> indicators and drawings are later stages.
+> Status: stage 2 of the [design](docs/design.md). Candlestick and line series on an ordinal time
+> scale, with the data engine in a worker, panning, zooming, live updates, level of detail and a
+> memory limit backed by a datafeed. Indicators and drawings are later stages.
 
 ## Usage
 
@@ -29,6 +29,38 @@ everything handed over so far is on screen. If the page blocks workers, the engi
 thread in slices of a few milliseconds, behind the same interface. Pass `worker: false` to force
 that, or `worker: () => new Worker(...)` when a bundler needs the worker created in application
 code (the worker entry is `@lumen-charts/engine/worker`).
+
+Wide views draw from levels of detail: the engine keeps buckets of 16, 64, 256, ... bars (first
+open, highest high, lowest low, last close; the largest volume), and above 16 bars per device pixel
+the chart draws the coarsest level whose buckets fit a pixel column. Frame time stops growing with
+the number of bars in view, and the main thread holds buckets instead of bars for wide views.
+
+### History on demand: datafeed and memory limit
+
+```ts
+const chart = createChart(element, { memoryLimit: 64 * 1024 * 1024 });
+const candles = chart.addSeries('candlestick', {
+	datafeed: {
+		// Bars with times in [from, to] (UTC ms, inclusive): `countBack` of them, oldest first, in
+		// any format setData accepts.
+		getBars: ({ from, to, countBack }) => fetchBars(symbol, from, to),
+	},
+});
+candles.setData(history);
+```
+
+With a datafeed, the engine may let go of bars far from the view once it holds more than
+`memoryLimit` bytes, and asks the datafeed for them when the view comes back. The levels of detail
+and the time of every bar stay in memory, so zoomed-out views keep drawing, the finest level is
+shown while bars are on their way, and the bars that come back are checked against the ones let go:
+bars that differ in number or time are refused with a console warning. A failed request is tried
+again the next time the bars are needed, after a pause that grows from 1 s to 30 s. The same bars are
+never requested twice at once. Without a datafeed nothing is ever let go.
+
+The limit is a target: the bars around the view, the first and last chunk of 8,192 bars, the levels
+and the time column always stay. For now it applies only while the series with the datafeed is the
+only series with data; other series, corrections and deletions through the datafeed, resolution
+changes and cancelling requests are follow-ups (design section 8).
 
 ### Themes and display options
 

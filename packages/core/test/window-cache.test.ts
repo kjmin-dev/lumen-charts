@@ -263,6 +263,19 @@ describe('WindowCache by level', () => {
 		expect(source(0, 70_000, 80_000)).toBeUndefined();
 	});
 
+	it('pauses only the rows that could not be fetched again', () => {
+		const cache = new WindowCache();
+		cache.apply(event({ end: 1_000_000, stale: true }), columns);
+		const request = cache.plan(0, 500_000, 500_100, 0, 1_000_000)!;
+		const empty = { level: 0, start: request.start, count: 0, capacity: 0, time: new Float64Array(0), series: [] };
+		cache.apply(event({ end: 1_000_000, window: { ...empty, incomplete: true } }), columns);
+		cache.raw.holdOff(performance.now() + 60_000);
+		expect(cache.raw.loading).toBe(false);
+		expect(cache.plan(0, 500_000, 500_100, 0, 1_000_000)).toBeNull();
+		// Elsewhere in history nothing failed.
+		expect(cache.plan(0, 100_000, 100_100, 0, 1_000_000)).not.toBeNull();
+	});
+
 	it('keeps the window drawn even when it is far from the level wanted', () => {
 		const cache = new WindowCache();
 		cache.apply(windowEvent(0, 1000, 1000), columns);

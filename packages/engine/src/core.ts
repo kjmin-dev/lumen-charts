@@ -1,8 +1,10 @@
-import { CHUNK_MASK, CHUNK_ROWS, TIME } from './chunk';
+import { CHUNK_MASK, CHUNK_ROWS, CHUNK_SHIFT, TIME } from './chunk';
 import {
 	type Command,
 	type EngineEvent,
+	type FetchRequest,
 	type Patch,
+	type RestoreResult,
 	type SeriesKind,
 	TICK_STRIDE,
 	TIME_PATCH,
@@ -17,6 +19,8 @@ import { ChunkedStore } from './store';
 
 /** Rows of the main timeline a bulk level-of-detail build handles between two yields. */
 const BUILD_SLICE = 65_536;
+/** Most chunks one fetch request asks for. */
+const FETCH_CHUNKS = 16;
 
 /** Value column (counted from the first value column) each level column of a kind is built from. */
 const LINE_SOURCES: readonly number[] = [0, 0, 0, 0];
@@ -30,6 +34,8 @@ interface SeriesState {
 	/** Level-of-detail buckets of this series' values on the main timeline. */
 	readonly pyramid: Pyramid;
 	readonly sources: readonly number[];
+	/** Rows can be fetched again (the series has a datafeed), so they may be let go under the memory limit. */
+	readonly fetchable: boolean;
 	/**
 	 * Main-timeline rows changed by the command being run, as `[from, to)` pairs. Rows far apart
 	 * (a correction of an old bar and an update of the last one) stay separate runs, so a patch
@@ -86,6 +92,20 @@ export class EngineCore {
 	private readonly _specs: number[] = [];
 	private readonly _ranges: number[] = [];
 
+	/** Memory the engine aims to stay under, in bytes. */
+	private _limit = Infinity;
+	/** Rows of the last raw window asked for, which are kept when the limit lets rows go. */
+	private _pinFrom = NaN;
+	private _pinTo = NaN;
+	/** Fetch requests out for the main series: first row to end row. */
+	private readonly _requests = new Map<number, number>();
+	/** Chunks (grid numbers) of the main series being fetched. */
+	private readonly _fetching = new Set<number>();
+	/** A raw window waiting for rows to come back. */
+	private _deferred: { start: number; count: number; capacity: number } | null = null;
+	/** Epoch the fetch requests belong to. */
+	private _fetchEpoch = 0;
+
 	public *run(command: Command): Generator<undefined, EngineEvent, undefined> {
 		const event: EngineEvent = { ack: command.seq, epoch: 0, first: 0, end: 0, stale: false, rejected: 0 };
 		switch (command.type) {
@@ -99,6 +119,7 @@ export class EngineCore {
 					valueColumns,
 					pyramid: new Pyramid(kind === 'ohlcv' ? OHLCV_AGGREGATES : LINE_AGGREGATES),
 					sources: kind === 'ohlcv' ? OHLCV_SOURCES : LINE_SOURCES,
+					fetchable: command.fetchable === true,
 					runs: [],
 					run: 0,
 				};
@@ -116,6 +137,7 @@ export class EngineCore {
 					this._pending.delete(state.pyramid);
 					this._build = null;
 					if (state === this._main) {
+						this._dropFetches(event);
 						this._main = null;
 						if (this._electMain()) {
 							this._rebuildAll();
@@ -156,6 +178,7 @@ export class EngineCore {
 					// valid, except for the first bucket of each level, which can gain rows.
 					yield* this._extendLeft(oldFirst);
 					this._boundaryPatches(oldFirst, event);
+					this._enforceLimit();
 				} else {
 					if (this._main !== null && store.first < oldFirst) {
 						const main = this._main.store;
@@ -174,9 +197,27 @@ export class EngineCore {
 			case 'window':
 				if (command.level > 0) {
 					yield* this._drain();
+				} else if (this._deferWindow(command.start, command.count, command.capacity, event)) {
+					break;
 				}
 				yield* this._window(command.level, command.start, command.count, command.capacity, event);
+				if (command.level === 0) {
+					// The rows kept around the view moved with it; those left behind may go now.
+					this._enforceLimit();
+				}
 				break;
+			case 'limit':
+				this._limit = command.bytes > 0 ? command.bytes : Infinity;
+				this._enforceLimit();
+				break;
+			case 'rows':
+				yield* this._restore(command.series, command.start, command.count, command.data, event);
+				break;
+		}
+		if (this._epoch !== this._fetchEpoch) {
+			// Indexes were re-based: rows asked for under the old ones are not wanted any more.
+			this._fetchEpoch = this._epoch;
+			this._dropFetches(event);
 		}
 		const main = this._main;
 		event.epoch = this._epoch;
@@ -192,6 +233,30 @@ export class EngineCore {
 		return this._pending.size > 0;
 	}
 
+	/** Bytes held by every store and pyramid. */
+	public get byteLength(): number {
+		let bytes = this._time.byteLength;
+		for (const state of this._series.values()) {
+			bytes += state.store.byteLength + state.pyramid.byteLength;
+		}
+		return bytes;
+	}
+
+	/**
+	 * Memory held, and how much of it the memory limit could still let go: value columns of chunks
+	 * of a fetchable main series away from the last raw window, the first chunk and the last one.
+	 */
+	public get memory(): { bytes: number; limit: number; evictable: number } {
+		const main = this._main;
+		let evictable = 0;
+		if (this._evicting() && main !== null) {
+			const store = main.store;
+			const freed = store.chunkBytes - store.rows * Float64Array.BYTES_PER_ELEMENT;
+			evictable = this._evictionCandidates().length * freed;
+		}
+		return { bytes: this.byteLength, limit: this._limit, evictable };
+	}
+
 	/**
 	 * Runs one slice of the background build of level-of-detail buckets. Returns true while more
 	 * remains. A host calls this when no command is waiting; commands that need the buckets finish
@@ -205,7 +270,12 @@ export class EngineCore {
 		if (this._build.next().done === true) {
 			this._build = null;
 		}
-		return this._pending.size > 0;
+		if (this._pending.size > 0) {
+			return true;
+		}
+		// Rows can only be let go once the levels that summarize them are built.
+		this._enforceLimit();
+		return false;
 	}
 
 	/** Event for a command that threw: it tells the client the command is over and what still holds. */
@@ -321,6 +391,7 @@ export class EngineCore {
 		}
 		const mainBefore = this._main;
 		const endBefore = mainBefore === null ? 0 : mainBefore.store.end;
+		const bytesBefore = mainBefore === null ? 0 : mainBefore.store.byteLength;
 		let id = NaN;
 		let state: SeriesState | undefined;
 		for (let i = 0, offset = 0; i < count; i++, offset += TICK_STRIDE) {
@@ -357,7 +428,8 @@ export class EngineCore {
 				} else {
 					// A correction of an older bar. Inserting a bar in the middle would shift indexes, so it is refused.
 					index = store.lowerBound(time);
-					if (store.value(TIME, index) !== time) {
+					// So is a correction of a bar whose values were let go: its bucket could not be rebuilt.
+					if (store.value(TIME, index) !== time || store.isEvicted(store.gridOf(index))) {
 						event.rejected++;
 						continue;
 					}
@@ -426,6 +498,10 @@ export class EngineCore {
 			}
 		}
 		this._emit(event);
+		// Only after the patches are copied: the chunk that was last a moment ago may go now.
+		if (main.store.byteLength !== bytesBefore) {
+			this._enforceLimit();
+		}
 	}
 
 	/** Adds one raw patch spec per run of changed rows of a series (and the time column for the main series). */
@@ -605,6 +681,215 @@ export class EngineCore {
 		}
 	}
 
+	// Memory limit
+
+	/** True while the limit applies: a finite limit, a fetchable main series, and no other series with data. */
+	private _evicting(): boolean {
+		const main = this._main;
+		if (this._limit === Infinity || main === null || !main.fetchable) {
+			return false;
+		}
+		// Other series are drawn aligned to the main one and are not fetchable, so for now a chart
+		// with several series keeps everything.
+		for (const state of this._series.values()) {
+			if (state !== main && state.store.length > 0) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Chunks of the main series whose values could be let go, farthest from the last raw window
+	 * first. The first and last chunks stay (prepends rebuild the first bucket, ticks write the last
+	 * bar), and so do the chunks of the last raw window and those being fetched.
+	 */
+	private _evictionCandidates(): number[] {
+		const store = this._main!.store;
+		const first = store.gridOf(store.first);
+		const last = store.gridOf(store.end - 1);
+		let pinFrom = Math.max(store.first, this._pinFrom);
+		let pinTo = Math.min(store.end, this._pinTo);
+		if (!(pinTo > pinFrom)) {
+			pinFrom = store.end - 1;
+			pinTo = store.end;
+		}
+		const pinFirst = store.gridOf(pinFrom);
+		const pinLast = store.gridOf(pinTo - 1);
+		const candidates: number[] = [];
+		for (let grid = first + 1; grid < last; grid++) {
+			if ((grid < pinFirst || grid > pinLast) && !store.isEvicted(grid) && !this._fetching.has(grid)) {
+				candidates.push(grid);
+			}
+		}
+		const distance = (grid: number): number => (grid < pinFirst ? pinFirst - grid : grid - pinLast);
+		candidates.sort((a, b) => distance(b) - distance(a));
+		return candidates;
+	}
+
+	/**
+	 * Lets go of the values of chunks far from the view until the engine holds no more than the limit,
+	 * or nothing more can go. Levels of detail and the time column always stay, so zoomed-out views
+	 * keep drawing and fetched rows can be checked against the ones let go.
+	 */
+	private _enforceLimit(): void {
+		if (this._pending.size > 0 || !this._evicting()) {
+			return;
+		}
+		let bytes = this.byteLength;
+		if (bytes <= this._limit) {
+			return;
+		}
+		const store = this._main!.store;
+		for (const grid of this._evictionCandidates()) {
+			bytes -= store.evict(grid);
+			if (bytes <= this._limit) {
+				break;
+			}
+		}
+	}
+
+	/**
+	 * Holds back a raw window over rows that were let go and asks for them again. Returns true when the
+	 * window has to wait; it then comes with the event of the command that brings the rows back.
+	 */
+	private _deferWindow(start: number, count: number, capacity: number, event: EngineEvent): boolean {
+		const main = this._main;
+		if (main === null) {
+			return false;
+		}
+		const store = main.store;
+		const from = Math.min(Math.max(start, store.first), store.end);
+		const to = Math.max(from, Math.min(start + count, store.end));
+		this._pinFrom = from;
+		this._pinTo = to;
+		// A newer raw window replaces one still waiting.
+		this._deferred = null;
+		if (Number.isNaN(store.firstEvicted(from, to))) {
+			return false;
+		}
+		this._deferred = { start, count, capacity };
+		this._fetch(main, from, to, event);
+		this._enforceLimit();
+		return true;
+	}
+
+	/** Asks for the chunks among rows `[from, to)` that were let go and are not asked for yet. */
+	private _fetch(main: SeriesState, from: number, to: number, event: EngineEvent): void {
+		const store = main.store;
+		const last = store.gridOf(to - 1);
+		let grid = store.gridOf(from);
+		while (grid <= last) {
+			if (!store.isEvicted(grid) || this._fetching.has(grid)) {
+				grid++;
+				continue;
+			}
+			let runEnd = grid;
+			while (
+				runEnd + 1 <= last &&
+				runEnd + 1 - grid < FETCH_CHUNKS &&
+				store.isEvicted(runEnd + 1) &&
+				!this._fetching.has(runEnd + 1)
+			) {
+				runEnd++;
+			}
+			const startRow = Math.max(grid << CHUNK_SHIFT, store.first);
+			const endRow = Math.min((runEnd + 1) << CHUNK_SHIFT, store.end);
+			for (let g = grid; g <= runEnd; g++) {
+				this._fetching.add(g);
+			}
+			this._requests.set(startRow, endRow);
+			const request: FetchRequest = {
+				series: main.id,
+				start: startRow,
+				end: endRow,
+				from: store.value(TIME, startRow),
+				to: store.value(TIME, endRow - 1),
+			};
+			(event.fetch ??= []).push(request);
+			grid = runEnd + 1;
+		}
+	}
+
+	/**
+	 * Takes rows fetched again. They must be exactly the rows let go: as many, with the same times.
+	 * Anything else is refused, so global indexes can never shift.
+	 */
+	private *_restore(
+		series: number,
+		start: number,
+		count: number,
+		data: Float64Array | null,
+		event: EngineEvent,
+	): Generator<undefined, void, undefined> {
+		const main = this._main;
+		const end = this._requests.get(start);
+		const result: RestoreResult = {
+			series,
+			start,
+			expected: end === undefined ? 0 : end - start,
+			received: data === null ? 0 : count,
+			outcome: 'failed',
+		};
+		event.restored = result;
+		if (main === null || main.id !== series || end === undefined) {
+			// Nothing was asked for there (any more): an answer that arrived after a new load.
+			return;
+		}
+		this._requests.delete(start);
+		const store = main.store;
+		const first = store.gridOf(start);
+		const last = store.gridOf(end - 1);
+		for (let grid = first; grid <= last; grid++) {
+			this._fetching.delete(grid);
+		}
+		if (data !== null) {
+			if (matchesTimes(store, data, count, start, end)) {
+				for (let grid = first; grid <= last; grid++) {
+					store.restore(grid, data, count, Math.max(grid << CHUNK_SHIFT, store.first) - start);
+				}
+				result.outcome = 'restored';
+			} else {
+				result.outcome = 'mismatch';
+			}
+		}
+		const deferred = this._deferred;
+		if (deferred !== null) {
+			const from = Math.min(Math.max(deferred.start, store.first), store.end);
+			const to = Math.max(from, Math.min(deferred.start + deferred.count, store.end));
+			if (result.outcome !== 'restored' && start < to && end > from) {
+				// The window cannot be completed now: answer it empty, so the view can fall back to a
+				// coarse level and ask again later.
+				this._deferred = null;
+				event.window = {
+					level: 0,
+					start: from,
+					count: 0,
+					capacity: 0,
+					time: new Float64Array(0),
+					series: [],
+					incomplete: true,
+				};
+			} else if (Number.isNaN(store.firstEvicted(from, to))) {
+				this._deferred = null;
+				yield* this._window(0, deferred.start, deferred.count, deferred.capacity, event);
+			}
+		}
+		this._enforceLimit();
+	}
+
+	/** Forgets every fetch request, answering a raw window that waits for one with an empty window. */
+	private _dropFetches(event: EngineEvent): void {
+		this._requests.clear();
+		this._fetching.clear();
+		if (this._deferred !== null) {
+			this._deferred = null;
+			event.window ??= { level: 0, start: 0, count: 0, capacity: 0, time: new Float64Array(0), series: [] };
+		}
+		this._pinFrom = NaN;
+		this._pinTo = NaN;
+	}
+
 	// Level of detail
 
 	/** Finishes the background build, yielding between slices. */
@@ -769,6 +1054,16 @@ export class EngineCore {
 				const chunk = store.chunkAt(r);
 				const row = r & CHUNK_MASK;
 				const n = Math.min(CHUNK_ROWS - row, hi - r);
+				if (owner !== null && chunk.columns.length < store.columnCount) {
+					// Values let go: they read as missing rather than as anything made up.
+					const groups = ((r + n - 1) >> shift) - (r >> shift) + 1;
+					for (let c = 0; c < columns; c++) {
+						block.fill(NaN, c * stride + at, c * stride + at + groups);
+					}
+					at += groups;
+					r += n;
+					continue;
+				}
 				for (let c = 0; c < columns; c++) {
 					sources[c] = chunk.columns[owner === null ? TIME : owner.sources[c]! + 1]!;
 					bases[c] = r - row;
@@ -853,6 +1148,8 @@ export class EngineCore {
 		}
 		let columns = store.chunkAt(j).columns;
 		let timeColumn = columns[TIME]!;
+		// A chunk whose values were let go reads as missing values.
+		let held = columns.length === store.columnCount;
 		let row = j & CHUNK_MASK;
 		for (let k = 0; k < rows && j < end; k++) {
 			const next = times[k + 1]!;
@@ -867,7 +1164,9 @@ export class EngineCore {
 			// As in every other aggregation, rows without a value are skipped, and a group made only
 			// of such rows has no value.
 			do {
-				if (valueColumns === 1) {
+				if (!held) {
+					// Nothing to merge.
+				} else if (valueColumns === 1) {
 					const value = columns[1]![row]!;
 					if (value === value) {
 						close = value;
@@ -899,6 +1198,7 @@ export class EngineCore {
 				if (row === CHUNK_ROWS && j < end) {
 					columns = store.chunkAt(j).columns;
 					timeColumn = columns[TIME]!;
+					held = columns.length === store.columnCount;
 					row = 0;
 				}
 			} while (j < end && timeColumn[row]! < next);
@@ -937,6 +1237,28 @@ function markDirty(state: SeriesState, index: number): void {
 	} else if (index >= runs[r + 1]!) {
 		runs[r + 1] = index + 1;
 	}
+}
+
+/** True when `data` (column-major, time first, `count` rows) holds exactly the times of rows `[start, end)`. */
+function matchesTimes(store: ChunkedStore, data: Float64Array, count: number, start: number, end: number): boolean {
+	if (count !== end - start) {
+		return false;
+	}
+	let index = start;
+	while (index < end) {
+		const chunk = store.chunkAt(index);
+		const row = index & CHUNK_MASK;
+		const n = Math.min(CHUNK_ROWS - row, end - index);
+		const time = chunk.columns[TIME]!;
+		const offset = index - start - row;
+		for (let r = row; r < row + n; r++) {
+			if (time[r] !== data[offset + r]) {
+				return false;
+			}
+		}
+		index += n;
+	}
+	return true;
 }
 
 /** Inserts `[from, to)` into a list of ranges kept sorted by start (lists hold a few entries). */

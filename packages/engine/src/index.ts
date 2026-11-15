@@ -21,8 +21,10 @@ export { type EngineScope, type EngineTransport, LocalTransport, WorkerTransport
 export {
 	type Command,
 	type EngineEvent,
+	type FetchRequest,
 	type Patch,
 	type ReadyMessage,
+	type RestoreResult,
 	type SeriesBlock,
 	type SeriesKind,
 	TICK_STRIDE,

@@ -70,13 +70,45 @@ export const TICK_STRIDE = 7;
  * Bulk data is column-major with time first: column `c` occupies `data[c * count, (c + 1) * count)`.
  */
 export type Command =
-	| { type: 'add'; seq: number; series: number; kind: SeriesKind }
+	/** `fetchable`: rows of this series can be fetched again, so they may be let go under a memory limit. */
+	| { type: 'add'; seq: number; series: number; kind: SeriesKind; fetchable?: boolean }
 	| { type: 'remove'; seq: number; series: number }
 	| { type: 'set'; seq: number; series: number; count: number; data: Float64Array }
 	| { type: 'prepend'; seq: number; series: number; count: number; data: Float64Array }
 	| { type: 'ticks'; seq: number; count: number; data: Float64Array }
 	/** Rows (level 0) or buckets (level >= 1) `[start, start + count)` of one level. */
-	| { type: 'window'; seq: number; level: number; start: number; count: number; capacity: number };
+	| { type: 'window'; seq: number; level: number; start: number; count: number; capacity: number }
+	/** Memory the engine aims to stay under, in bytes; `Infinity` for no limit. */
+	| { type: 'limit'; seq: number; bytes: number }
+	/**
+	 * Rows fetched again for a `FetchRequest` starting at `start`, column-major with time first, or
+	 * null when fetching failed.
+	 */
+	| { type: 'rows'; seq: number; series: number; start: number; count: number; data: Float64Array | null };
+
+/**
+ * Rows `[start, end)` of a series that the engine let go under its memory limit and needs again,
+ * with the times of the first and last of them (UTC milliseconds, inclusive).
+ */
+export interface FetchRequest {
+	series: number;
+	start: number;
+	end: number;
+	from: number;
+	to: number;
+}
+
+/** What became of rows handed back with a `rows` command. */
+export interface RestoreResult {
+	series: number;
+	start: number;
+	/** Rows expected. */
+	expected: number;
+	/** Rows received. */
+	received: number;
+	/** `restored`: the rows are back; `failed`: fetching failed; `mismatch`: the rows were not the ones let go. */
+	outcome: 'restored' | 'failed' | 'mismatch';
+}
 
 /**
  * Values of one series over a range of main-timeline rows or buckets, column-major without the
@@ -93,6 +125,11 @@ export interface SeriesBlock {
  */
 export interface WindowSnapshot {
 	level: number;
+	/**
+	 * Set on an empty raw window whose rows are not in memory and could not be fetched again. The
+	 * client should draw a coarse level meanwhile and ask again later.
+	 */
+	incomplete?: boolean;
 	start: number;
 	count: number;
 	capacity: number;
@@ -131,6 +168,13 @@ export interface EngineEvent {
 	window?: WindowSnapshot;
 	/** Changed rows of the raw level and the changed buckets of every coarse level. */
 	patches?: Patch[];
+	/**
+	 * Rows the engine needs fetched again: a raw window over them waits until they are back (or
+	 * fetching failed) and comes with a later event.
+	 */
+	fetch?: FetchRequest[];
+	/** Outcome of the rows handed back by the command this event answers. */
+	restored?: RestoreResult;
 }
 
 /** First message a worker host sends, before any event. */

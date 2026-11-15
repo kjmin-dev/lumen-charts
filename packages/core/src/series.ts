@@ -19,6 +19,37 @@ import {
 } from './options';
 import { SeriesView } from './views/series-view';
 
+/** Bars the chart asks a datafeed for: the ones with times in `[from, to]`, which it held before. */
+export interface DatafeedRequest {
+	/** Time of the first bar, UTC milliseconds (inclusive). */
+	from: number;
+	/** Time of the last bar, UTC milliseconds (inclusive). */
+	to: number;
+	/** Number of bars in `[from, to]`. */
+	countBack: number;
+}
+
+/**
+ * A source the chart can fetch history from again. With a datafeed and the chart's `memoryLimit`,
+ * the data engine may let go of bars far from the view and ask for them when they are needed.
+ * Requests for the same bars are never in flight twice; a failed request is tried again the next
+ * time the bars are needed, after a pause that grows with every failure (1 s up to 30 s).
+ */
+export interface Datafeed<T extends SeriesType = SeriesType> {
+	/**
+	 * Resolves to the bars with times in `[request.from, request.to]`, oldest first, in any format
+	 * `setData` accepts (bars outside the range are ignored). They must be the bars handed over
+	 * before: bars that differ in number or time are refused with a console warning, and the chart
+	 * keeps drawing a coarser level of detail there.
+	 */
+	getBars(request: DatafeedRequest): Promise<SeriesTypes[SeriesType & T]['data']>;
+}
+
+/** Options `addSeries` takes: the series options, and a datafeed to fetch its history from again. */
+export type SeriesCreateOptions<T extends SeriesType> = Partial<SeriesTypes[T]['options']> & {
+	datafeed?: Datafeed<T>;
+};
+
 /** What each series type takes: its options, one update, and a whole history. */
 export interface SeriesTypes {
 	candlestick: { options: CandlestickOptions; bar: OhlcBar; data: readonly OhlcBar[] | OhlcColumns };
@@ -60,6 +91,9 @@ export class Series implements SeriesApi {
 	public close = EMPTY;
 	/** Cache version the columns above were taken from. */
 	public columnsVersion = -1;
+
+	/** Where bars let go under the memory limit are fetched back from. */
+	public datafeed: Datafeed | null = null;
 
 	/** Latest known value, for the last-value line. */
 	public lastValue = NaN;
@@ -148,6 +182,30 @@ export class Series implements SeriesApi {
 			this.low = value;
 			this.close = value;
 		}
+	}
+
+	/** Packs bars a datafeed returned, keeping only those with times in `[from, to]`. */
+	public packFetched(bars: SeriesTypes[SeriesType]['data'], from: number, to: number): Packed {
+		const packed = this._pack(bars);
+		const { count } = packed;
+		const columns = packed.data.length / Math.max(1, count);
+		let lo = 0;
+		while (lo < count && !(packed.data[lo]! >= from)) {
+			lo++;
+		}
+		let hi = count;
+		while (hi > lo && !(packed.data[hi - 1]! <= to)) {
+			hi--;
+		}
+		if (lo === 0 && hi === count) {
+			return packed;
+		}
+		const n = hi - lo;
+		const data = new Float64Array(n * columns);
+		for (let c = 0; c < columns; c++) {
+			data.set(packed.data.subarray(c * count + lo, c * count + hi), c * n);
+		}
+		return { data, count: n };
 	}
 
 	private _pack(data: SeriesTypes[SeriesType]['data']): Packed {

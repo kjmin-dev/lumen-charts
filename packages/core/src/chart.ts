@@ -28,7 +28,7 @@ import {
 } from './render/chrome';
 import { Layer } from './render/layer';
 import { drawCandles, drawLine } from './render/series';
-import { Series, type SeriesApi, type SeriesType, type SeriesTypes } from './series';
+import { Series, type SeriesApi, type SeriesCreateOptions, type SeriesType } from './series';
 import { type Geometry, candleWidths, placeElements } from './views/series-view';
 
 /** A range of logical positions: bar `i` covers `[i - 0.5, i + 0.5)`. */
@@ -65,7 +65,11 @@ export interface ChartApi {
 	resize(width: number, height: number): void;
 	/** Root element created by the chart inside the container. */
 	element(): HTMLElement;
-	addSeries<T extends SeriesType>(type: T, options?: Partial<SeriesTypes[T]['options']>): SeriesApi<T>;
+	/**
+	 * Adds a series. Pass a `datafeed` to let the chart fetch its history again, which lets the
+	 * `memoryLimit` option apply to it.
+	 */
+	addSeries<T extends SeriesType>(type: T, options?: SeriesCreateOptions<T>): SeriesApi<T>;
 	removeSeries(series: SeriesApi): void;
 	timeScale(): TimeScaleApi;
 	/** Resolves once all data handed over so far has been applied and painted. */
@@ -129,6 +133,12 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	private _destroyed = false;
 	private _deferred: Deferred[] = [];
 	private _idle: (() => void)[] = [];
+	/** Limit last sent to the engine. */
+	private _memoryLimit = Infinity;
+	/** Datafeed requests in flight, by series and first row. */
+	private readonly _fetches = new Set<string>();
+	/** Pause before asking again for rows whose fetch failed; grows with every failure. */
+	private _fetchBackoff = 0;
 
 	private _crosshairVisible = false;
 	private _crosshairX = 0;
@@ -208,14 +218,20 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 		return this._root;
 	}
 
-	public addSeries<T extends SeriesType>(type: T, options: Partial<SeriesTypes[T]['options']> = {}): SeriesApi<T> {
+	public addSeries<T extends SeriesType>(type: T, options: SeriesCreateOptions<T> = {}): SeriesApi<T> {
 		if (this._engine === null && !this._destroyed) {
 			this._engine = createEngine({ worker: this._options.worker });
 			this._engine.onevent = this._onEvent;
+			this._memoryLimit = this._options.memoryLimit;
+			if (this._memoryLimit !== Infinity) {
+				this._engine.setMemoryLimit(this._memoryLimit);
+			}
 		}
+		const { datafeed, ...style } = options;
 		const kind = type === 'candlestick' ? 'ohlcv' : 'line';
-		const id = this._engine?.addSeries(kind) ?? -1;
-		const series = new Series(this, id, type, options as Partial<CandlestickOptions> | Partial<LineOptions>);
+		const id = this._engine?.addSeries(kind, datafeed !== undefined) ?? -1;
+		const series = new Series(this, id, type, style as Partial<CandlestickOptions> | Partial<LineOptions>);
+		series.datafeed = (datafeed as Series['datafeed'] | undefined) ?? null;
 		this._series.push(series);
 		return series as unknown as SeriesApi<T>;
 	}
@@ -376,6 +392,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 			scale.reset(this._options.timeScale.barSpacing, this._options.timeScale.rightOffset);
 		}
 		this._trackLastValues(event);
+		if (event.fetch !== undefined || event.restored !== undefined || event.window?.incomplete === true) {
+			this._handleFetches(event);
+		}
 		// A failed command changes nothing on screen, and redrawing for it would only repeat the request.
 		let changed =
 			event.failed !== true &&
@@ -425,7 +444,75 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	}
 
 	private _isIdle(): boolean {
-		return this._destroyed || (this._frame === null && (this._engine === null || this._engine.pending === 0));
+		return (
+			this._destroyed ||
+			(this._frame === null && this._fetches.size === 0 && (this._engine === null || this._engine.pending === 0))
+		);
+	}
+
+	/**
+	 * Fetches rows the engine let go and needs again from the series' datafeed, and hands them back.
+	 * The engine checks them against the rows it let go; a raw window waits for them meanwhile, and the
+	 * chart draws a coarse level where it has nothing else.
+	 */
+	private _handleFetches(event: EngineEvent): void {
+		const restored = event.restored;
+		if (restored !== undefined) {
+			if (restored.outcome === 'restored') {
+				this._fetchBackoff = 0;
+			} else if (restored.outcome === 'mismatch') {
+				console.warn(
+					`lumen-charts: the datafeed returned ${restored.received} bars where ${restored.expected} were expected; ` +
+						'they do not match the bars they replace and were ignored.',
+				);
+			}
+		}
+		if (event.window?.incomplete === true) {
+			// The rows could not be fetched: draw what the levels show and ask again after a pause.
+			this._fetchBackoff = Math.min(30_000, Math.max(1000, this._fetchBackoff * 2));
+			this._cache.raw.holdOff(performance.now() + this._fetchBackoff);
+		}
+		for (const request of event.fetch ?? []) {
+			const engine = this._engine;
+			const series = this._series.find(entry => entry.id === request.series);
+			const key = `${request.series}:${request.start}`;
+			if (engine === null || this._fetches.has(key)) {
+				continue;
+			}
+			if (series?.datafeed === null || series === undefined) {
+				engine.restoreRows(request.series, request.start, null, 0);
+				continue;
+			}
+			this._fetches.add(key);
+			const { from, to, start, end } = request;
+			const done = (data: Float64Array | null, count: number): void => {
+				this._fetches.delete(key);
+				// After destroy the engine is gone, and nothing waits for the rows.
+				this._engine?.restoreRows(series.id, start, data, count);
+				this._settle();
+			};
+			let pending: Promise<unknown>;
+			try {
+				pending = series.datafeed.getBars({ from, to, countBack: end - start });
+			} catch (error) {
+				pending = Promise.reject(error);
+			}
+			pending.then(
+				bars => {
+					let packed: { data: Float64Array; count: number };
+					try {
+						packed = series.packFetched(bars as never, from, to);
+					} catch {
+						done(null, 0);
+						return;
+					}
+					done(packed.data, packed.count);
+				},
+				() => {
+					done(null, 0);
+				},
+			);
+		}
 	}
 
 	private _settle(): void {
@@ -453,6 +540,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 		}
 		this._options = next;
 		this._applyResolved(next);
+		if (this._engine !== null && next.memoryLimit !== this._memoryLimit) {
+			this._memoryLimit = next.memoryLimit;
+			this._engine.setMemoryLimit(next.memoryLimit);
+		}
 		this.invalidate(INVALIDATE_FULL);
 	}
 
@@ -651,9 +742,22 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 		const engine = this._engine;
 		if (engine !== null && !scale.isEmpty) {
 			const level = this._levelFor(scale.barSpacing * ratio);
-			const request = this._cache.plan(level, scale.from, scale.to, scale.first, scale.end);
+			const cache = this._cache;
+			const request = cache.plan(level, scale.from, scale.to, scale.first, scale.end);
 			if (request !== null) {
 				engine.requestWindow(request.start, request.count, request.capacity, request.level);
+			}
+			// While the raw rows for the view are on their way (fetched again, or a fast scroll left the
+			// window), the finest level is drawn instead of nothing.
+			const raw = cache.held(0);
+			const visibleFrom = Math.max(scale.first, Math.ceil(scale.from - 0.5));
+			const visibleTo = Math.min(scale.end, Math.floor(scale.to + 0.5) + 1);
+			const covered = raw !== null && raw.rowsFrom(scale.first) <= visibleFrom && raw.rowsTo(scale.end) >= visibleTo;
+			if (level === 0 && !covered && scale.end - scale.first >= 16) {
+				const fallback = cache.plan(1, scale.from, scale.to, scale.first, scale.end);
+				if (fallback !== null) {
+					engine.requestWindow(fallback.start, fallback.count, fallback.capacity, fallback.level);
+				}
 			}
 		}
 	}

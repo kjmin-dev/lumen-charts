@@ -47,6 +47,16 @@ export class LevelWindow {
 	private _stale = false;
 	private _requested = false;
 	/**
+	 * After a snapshot came back incomplete, none over the same items is planned before `_retryAt`
+	 * (`performance.now()`); `[_retryFrom, _retryTo)` are the items of that snapshot.
+	 */
+	private _retryAt = 0;
+	private _retryFrom = 0;
+	private _retryTo = 0;
+	/** Items of the last snapshot planned. */
+	private _plannedFrom = 0;
+	private _plannedTo = 0;
+	/**
 	 * True while the last cached item is the last of the timeline. Only then does a new item
 	 * directly follow the cached ones, with every series' values for it arriving as patches.
 	 */
@@ -102,6 +112,13 @@ export class LevelWindow {
 
 	public cancelRequest(): void {
 		this._requested = false;
+	}
+
+	/** Plans no snapshot over the items of the last one planned before `time` (`performance.now()`). */
+	public holdOff(time: number): void {
+		this._retryAt = time;
+		this._retryFrom = this._plannedFrom;
+		this._retryTo = this._plannedTo;
 	}
 
 	public clearDirty(): void {
@@ -227,10 +244,16 @@ export class LevelWindow {
 		if (!this._stale && needFrom >= this.start && needTo <= this.start + this.count) {
 			return null;
 		}
+		// Rows that could not be fetched again are asked for only after a pause.
+		if (needFrom < this._retryTo && needTo > this._retryFrom && performance.now() < this._retryAt) {
+			return null;
+		}
 		const start = Math.max(lo, visibleFrom - 2 * screen);
 		const stop = Math.min(hi, visibleTo + 2 * screen);
 		const count = stop - start;
 		this._requested = true;
+		this._plannedFrom = start;
+		this._plannedTo = stop;
 		const room = this.shift === 0 ? TAIL_ROOM : Math.max(16, TAIL_ROOM >> this.shift);
 		return { level: this.level, start, count, capacity: count + (stop === hi ? room : 0) };
 	}

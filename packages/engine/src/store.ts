@@ -38,6 +38,9 @@ export class ChunkedStore {
 	private _end = 0;
 	/** Index the first row goes to while the store is empty. */
 	private _origin = 0;
+	private _bytes = 0;
+	/** Chunks whose value columns were let go; only their time column is held. */
+	private _evicted = 0;
 
 	public constructor(columnCount: number, shift: number = CHUNK_SHIFT) {
 		this.columnCount = columnCount;
@@ -62,11 +65,88 @@ export class ChunkedStore {
 
 	/** Bytes held by the chunks. */
 	public get byteLength(): number {
-		return this._chunks.length * this.columnCount * this.rows * Float64Array.BYTES_PER_ELEMENT;
+		return this._bytes;
+	}
+
+	/** Bytes one chunk with every column takes. */
+	public get chunkBytes(): number {
+		return this.columnCount * this.rows * Float64Array.BYTES_PER_ELEMENT;
+	}
+
+	/** Number of chunks that hold only their time column. */
+	public get evictedCount(): number {
+		return this._evicted;
+	}
+
+	/** Grid number of the chunk holding `index`. */
+	public gridOf(index: number): number {
+		return index >> this.shift;
+	}
+
+	/** True when the chunk with grid number `grid` holds only its time column. */
+	public isEvicted(grid: number): boolean {
+		return this._chunks[grid - this._base]!.columns.length < this.columnCount;
+	}
+
+	/** Grid number of the first evicted chunk among rows `[from, to)`, or NaN if every one is held. */
+	public firstEvicted(from: number, to: number): number {
+		if (this._evicted === 0 || to <= from) {
+			return NaN;
+		}
+		for (let grid = from >> this.shift, last = (to - 1) >> this.shift; grid <= last; grid++) {
+			if (this.isEvicted(grid)) {
+				return grid;
+			}
+		}
+		return NaN;
+	}
+
+	/**
+	 * Lets go of the value columns of one chunk and keeps its time column, so its rows can still be
+	 * found by time and checked when they come back. Returns the bytes freed.
+	 */
+	public evict(grid: number): number {
+		const slot = grid - this._base;
+		const chunk = this._chunks[slot]!;
+		if (chunk.columns.length < this.columnCount) {
+			return 0;
+		}
+		const time = new Float64Array(this.rows);
+		time.set(chunk.columns[TIME]!);
+		this._chunks[slot] = { buffer: time.buffer, columns: [time], start: chunk.start, end: chunk.end };
+		const freed = chunk.buffer.byteLength - time.buffer.byteLength;
+		this._bytes -= freed;
+		this._evicted++;
+		return freed;
+	}
+
+	/**
+	 * Gives an evicted chunk its value columns back from rows of column-major `data` (columns
+	 * `total` long, time first), whose row `from` is the chunk's first row.
+	 */
+	public restore(grid: number, data: Float64Array, total: number, from: number): void {
+		const slot = grid - this._base;
+		const old = this._chunks[slot]!;
+		if (old.columns.length === this.columnCount) {
+			return;
+		}
+		const chunk = createChunk(this.columnCount, this.rows);
+		chunk.start = old.start;
+		chunk.end = old.end;
+		chunk.columns[TIME]!.set(old.columns[TIME]!);
+		const n = old.end - old.start;
+		for (let c = 1; c < this.columnCount; c++) {
+			copy(chunk.columns[c]!, old.start, data, c * total + from, n);
+		}
+		this._chunks[slot] = chunk;
+		this._bytes += chunk.buffer.byteLength - old.buffer.byteLength;
+		this._evicted--;
 	}
 
 	/** Drops every row. The next row appended or prepended gets index `origin`. */
 	public clear(origin = 0): void {
+		this._bytes = 0;
+		this._evicted = 0;
 		this._chunks = [];
 		this._base = 0;
 		this._origin = origin;
@@ -208,6 +288,7 @@ export class ChunkedStore {
 			return last;
 		}
 		const chunk = createChunk(this.columnCount, this.rows);
+		this._bytes += chunk.buffer.byteLength;
 		chunks.push(chunk);
 		return chunk;
 	}
@@ -223,6 +304,7 @@ export class ChunkedStore {
 			return head;
 		}
 		const chunk = createChunk(this.columnCount, this.rows);
+		this._bytes += chunk.buffer.byteLength;
 		chunk.start = this.rows;
 		chunk.end = this.rows;
 		// A store holds at most a few thousand chunk references, so shifting them costs far less than the copy.
@@ -234,6 +316,7 @@ export class ChunkedStore {
 	/** Links the first chunk, placed on the grid so that its next free row is the origin. */
 	private _seed(): Chunk {
 		const chunk = createChunk(this.columnCount, this.rows);
+		this._bytes += chunk.buffer.byteLength;
 		const origin = this._origin;
 		const row = origin & this.mask;
 		chunk.start = row;
