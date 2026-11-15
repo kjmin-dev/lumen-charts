@@ -1,3 +1,5 @@
+import type { IndicatorInfo } from './indicators/definition';
+
 /** Kind of a series store: OHLCV keeps six columns, a line keeps time and one value. */
 export type SeriesKind = 'ohlcv' | 'line';
 
@@ -66,7 +68,7 @@ export const TICK_STRIDE = 7;
 /**
  * Commands sent to the engine. `seq` increases by one per command; every command is answered by
  * exactly one event carrying the same number in `ack`. Work the engine finishes between commands
- * (indicator values recomputed) comes with a notice: an extra event whose
+ * (indicator values recomputed, a plugin module loaded) comes with a notice: an extra event whose
  * `ack` repeats the last command answered.
  *
  * Bulk data is column-major with time first: column `c` occupies `data[c * count, (c + 1) * count)`.
@@ -100,7 +102,9 @@ export type Command =
 			inputs: IndicatorInputRef[];
 			outputs: number[];
 	  }
-	| { type: 'removeIndicator'; seq: number; id: number };
+	| { type: 'removeIndicator'; seq: number; id: number }
+	/** Loads a plugin module of indicators; the outcome comes with a later event's `plugins`. */
+	| { type: 'plugin'; seq: number; url: string };
 
 /**
  * Where an indicator input reads from: column `column` of series `series` (column 0 is the main
@@ -110,6 +114,14 @@ export type Command =
 export interface IndicatorInputRef {
 	series: number;
 	column: number;
+}
+
+/** Outcome of loading a plugin module. */
+export interface PluginResult {
+	url: string;
+	/** The indicators the module registered; absent when loading failed. */
+	indicators?: IndicatorInfo[];
+	error?: string;
 }
 
 /**
@@ -217,6 +229,8 @@ export interface EngineEvent {
 	 * values stay until the new ones are swapped in, which an event with `stale` reports.
 	 */
 	computing?: number;
+	/** Plugin modules that finished loading, or failed to, since the last event. */
+	plugins?: PluginResult[];
 }
 
 /** First message a worker host sends, before any event. */

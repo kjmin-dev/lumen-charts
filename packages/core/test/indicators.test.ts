@@ -1,3 +1,5 @@
+import { resolve as resolvePath } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { type ChartApi, createChart } from '@lumen-charts/core';
 import { computeIndicator, macd, resolveParams, rsi, sma } from '@lumen-charts/engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -224,6 +226,21 @@ describe('indicators on a chart', () => {
 		const foreign = other.addSeries('line');
 		expect(() => series.addIndicator('sma', { inputs: [{ series: foreign }] })).toThrow(/of this chart/);
 		other.destroy();
+	});
+
+	it('loads indicators from a plugin module into the engine on this thread', async () => {
+		const data = candles(800);
+		const series = chart.addSeries('candlestick');
+		series.setData(data);
+		const infos = await chart.registerIndicators(pathToFileURL(resolvePath('packages/engine/test/fixtures/plugin.ts')));
+		expect(infos.map(info => info.name)).toEqual(['test-momentum', 'test-range']);
+		const momentum = series.addIndicator('test-momentum', { params: { period: 5 } });
+		await settle();
+		expect(momentum.output().type).toBe('histogram');
+		expect(momentum.output().lastValue()).toBeCloseTo(data.close[799]! - data.close[794]!, 10);
+		await expect(
+			chart.registerIndicators(pathToFileURL(resolvePath('packages/engine/test/fixtures/missing.js'))),
+		).rejects.toThrow(/Could not load/);
 	});
 
 	it('draws a histogram series of its own, from a base of zero', async () => {

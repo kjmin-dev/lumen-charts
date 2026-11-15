@@ -1,7 +1,12 @@
+import { resolve as resolvePath } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { type EngineClient, type EngineEvent, createEngine } from '@lumen-charts/engine';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeWorker } from './fake-worker';
 import { ohlcv } from './helpers';
+
+/** Module loading goes through the bundler's transform, which can take a while on a busy machine. */
+const WAIT = { timeout: 10_000 };
 
 function collect(engine: EngineClient): EngineEvent[] {
 	const events: EngineEvent[] = [];
@@ -190,4 +195,45 @@ describe('EngineClient with a worker', () => {
 		expect(events.length).toBe(1);
 		engine.destroy();
 	});
+});
+
+describe('indicator plugins', () => {
+	const pluginUrl = pathToFileURL(resolvePath('packages/engine/test/fixtures/plugin.ts')).href;
+
+	for (const mode of ['worker', 'local'] as const) {
+		it(`loads a module of indicators and computes them in the engine (${mode})`, async () => {
+			vi.stubGlobal('Worker', FakeWorker);
+			const engine = createEngine({ worker: mode === 'worker' ? () => new FakeWorker() as unknown as Worker : false });
+			const events = collect(engine);
+			const series = engine.addSeries('ohlcv');
+			engine.setData(series, ohlcv(100), 100);
+			engine.loadPlugin(pluginUrl);
+			await vi.waitFor(() => {
+				expect(events.some(event => event.plugins !== undefined)).toBe(true);
+			}, WAIT);
+			expect(engine.mode).toBe(mode);
+			const result = events.find(event => event.plugins !== undefined)!.plugins![0]!;
+			expect(result.url).toBe(pluginUrl);
+			expect(result.indicators!.map(info => info.name)).toEqual(['test-momentum', 'test-range']);
+			const inputs = [
+				{ series, column: 2 },
+				{ series, column: 3 },
+			];
+			const { outputs } = engine.addIndicator('test-range', [], inputs, 1);
+			// The values are computed in the background and announced by a notice.
+			await vi.waitFor(() => {
+				expect(events.some(event => event.stale && event.computing === undefined && event.patches !== undefined)).toBe(
+					true,
+				);
+			}, WAIT);
+			engine.requestWindow(0, 100, 100);
+			await engine.whenIdle();
+			const window = events[events.length - 1]!.window!;
+			const values = window.series.find(entry => entry.series === outputs[0])!.data;
+			// High minus low is 4 on every bar of the helper's data, summed from the first bar.
+			expect(Array.from(values.subarray(0, 5))).toEqual([4, 8, 12, 16, 20]);
+			expect(values[99]).toBe(400);
+			engine.destroy();
+		});
+	}
 });

@@ -179,6 +179,14 @@ export class EngineClient {
 	}
 
 	/**
+	 * Has the engine import a module of indicator definitions from `url`, in the worker or on this
+	 * thread. The outcome comes with a later event's `plugins`.
+	 */
+	public loadPlugin(url: string): void {
+		this._send({ type: 'plugin', url }, NO_TRANSFER);
+	}
+
+	/**
 	 * Replaces the data of a series. `data` is column-major with time first and is handed over to
 	 * the engine: do not use it afterwards.
 	 */

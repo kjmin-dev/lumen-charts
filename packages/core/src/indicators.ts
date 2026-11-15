@@ -3,6 +3,7 @@ import {
 	type EngineClient,
 	type IndicatorInfo,
 	type IndicatorInputRef,
+	type PluginResult,
 	SOURCE_COLUMNS,
 	indicatorInfo,
 	resolveParams,
@@ -92,7 +93,7 @@ function outputDefaults(info: IndicatorInfo['outputs'][number]): Partial<AnySeri
 	return { color, lineWidth: 1.5, priceLineVisible: false, crosshairMarkerVisible: false };
 }
 
-/** Definitions the chart knows, by name: the built-ins. */
+/** Definitions the chart knows, by name: the built-ins, then those registered from plugin modules. */
 export function builtinInfos(): Map<string, IndicatorInfo> {
 	const map = new Map<string, IndicatorInfo>();
 	for (const definition of BUILTIN_INDICATORS) {
@@ -306,11 +307,13 @@ export interface ChartIndicatorsHost extends IndicatorHost {
 	ensureEngine(): EngineClient | null;
 	/** Forgets what the window cache holds of a series. */
 	forget(series: number): void;
+	/** URL relative module URLs are resolved against. */
+	baseUrl(): string;
 }
 
 /**
- * The indicators of a chart: definitions by name and instances in creation order (an indicator reads
- * only earlier ones, which keeps the engine's order topological).
+ * The indicators of a chart: definitions by name, instances in creation order (an indicator reads
+ * only earlier ones, which keeps the engine's order topological), and modules being loaded.
  */
 export class ChartIndicators {
 	/** Indicators the engine is still computing, from the latest event. */
@@ -318,6 +321,10 @@ export class ChartIndicators {
 	private readonly _host: ChartIndicatorsHost;
 	private readonly _list: Indicator[] = [];
 	private readonly _definitions = builtinInfos();
+	private readonly _plugins = new Map<
+		string,
+		{ resolve: (infos: IndicatorInfo[]) => void; reject: (error: Error) => void }[]
+	>();
 
 	public constructor(host: ChartIndicatorsHost) {
 		this._host = host;
@@ -326,7 +333,7 @@ export class ChartIndicators {
 	public add(source: unknown, name: string, options: DeepPartial<IndicatorOptions>): IndicatorApi {
 		const info = this._definitions.get(name);
 		if (info === undefined) {
-			throw new Error(`Unknown indicator "${name}"`);
+			throw new Error(`Unknown indicator "${name}": register it with registerIndicators first`);
 		}
 		const series = outputSeries(source) ?? (source instanceof Series ? source : null);
 		if (series === null || !this._host.seriesList.includes(series)) {
@@ -378,6 +385,49 @@ export class ChartIndicators {
 				this.remove(indicator);
 			}
 		}
+	}
+
+	/** Has the engine load a module of indicators; settled by `settlePlugins`. */
+	public register(url: string | URL): Promise<readonly IndicatorInfo[]> {
+		const engine = this._host.ensureEngine();
+		if (engine === null) {
+			return Promise.reject(new Error('The chart was destroyed'));
+		}
+		const href = new URL(String(url), this._host.baseUrl()).href;
+		return new Promise((resolve, reject) => {
+			const waiters = this._plugins.get(href) ?? [];
+			waiters.push({ resolve, reject });
+			this._plugins.set(href, waiters);
+			engine.loadPlugin(href);
+		});
+	}
+
+	/** Settles the waiters of `register` for modules the engine finished loading. */
+	public settlePlugins(results: readonly PluginResult[]): void {
+		for (const result of results) {
+			const waiters = this._plugins.get(result.url) ?? [];
+			this._plugins.delete(result.url);
+			for (const info of result.indicators ?? []) {
+				this._definitions.set(info.name, info);
+			}
+			for (const { resolve, reject } of waiters) {
+				if (result.indicators === undefined) {
+					reject(new Error(`Could not load indicators from ${result.url}: ${result.error ?? 'unknown error'}`));
+				} else {
+					resolve(result.indicators);
+				}
+			}
+		}
+	}
+
+	/** Rejects every module still loading: the chart is gone. */
+	public destroy(): void {
+		for (const waiters of this._plugins.values()) {
+			for (const { reject } of waiters) {
+				reject(new Error('The chart was destroyed'));
+			}
+		}
+		this._plugins.clear();
 	}
 
 	/**

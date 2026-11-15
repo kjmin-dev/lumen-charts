@@ -1,9 +1,15 @@
 import { CHUNK_ROWS, CHUNK_SHIFT } from '../chunk';
-import { type IndicatorInputRef, type SeriesBlock, levelCount, levelShift } from '../protocol';
+import { type IndicatorInputRef, type PluginResult, type SeriesBlock, levelCount, levelShift } from '../protocol';
 import { FIRST, LAST, MAX, MIN, Pyramid, aggregate, storeBuckets } from '../pyramid';
 import { ChunkedStore } from '../store';
 import { BUILTIN_INDICATORS } from './builtins';
-import { type IndicatorDefinition, resolveParams } from './definition';
+import {
+	type IndicatorDefinition,
+	type IndicatorInfo,
+	definitionError,
+	indicatorInfo,
+	resolveParams,
+} from './definition';
 import { type InputReader, Runner } from './runner';
 
 /** What the indicator engine needs from the data engine. */
@@ -153,7 +159,7 @@ function aggregatesOf(outputs: number): number[] {
  * at the last committed row, and the bar still forming is computed from a copy of it.
  */
 export class IndicatorEngine {
-	/** Called when work finished outside a command and a notice is waiting. */
+	/** Called when work finished outside a command (a plugin module loaded) and a notice is waiting. */
 	public onwake: (() => void) | null = null;
 	private readonly _host: IndicatorHost;
 	private readonly _definitions = new Map<string, IndicatorDefinition>();
@@ -164,6 +170,7 @@ export class IndicatorEngine {
 	private _swapped = false;
 	/** Instances swapped since the last notice, whose latest values go with it. */
 	private readonly _fresh = new Set<Instance>();
+	private readonly _plugins: PluginResult[] = [];
 	/** Reused arguments of `aggregate`. */
 	private readonly _sourcesScratch: Float64Array[] = [];
 	private readonly _bases: number[] = [];
@@ -314,6 +321,60 @@ export class IndicatorEngine {
 		}
 	}
 
+	/**
+	 * Loads a plugin module and registers the indicators it exports (its default export or an
+	 * `indicators` export: a definition or an array of them). The result arrives with a notice.
+	 */
+	public load(url: string): void {
+		const done = (result: PluginResult): void => {
+			this._plugins.push(result);
+			this.onwake?.();
+		};
+		let loading: Promise<unknown>;
+		try {
+			// Bundlers must leave the URL to the browser: it names a module of the application.
+			loading = import(/* @vite-ignore */ /* webpackIgnore: true */ url);
+		} catch (error) {
+			loading = Promise.reject(error);
+		}
+		loading.then(
+			module => {
+				try {
+					done({ url, indicators: this.register(module) });
+				} catch (error) {
+					done({ url, error: error instanceof Error ? error.message : String(error) });
+				}
+			},
+			(error: unknown) => {
+				done({ url, error: error instanceof Error ? error.message : String(error) });
+			},
+		);
+	}
+
+	/** Registers the definitions a plugin module exports. Throws if one is malformed or its name is taken. */
+	public register(module: unknown): IndicatorInfo[] {
+		const exports = module as { default?: unknown; indicators?: unknown };
+		const value = exports.indicators ?? exports.default;
+		const list = Array.isArray(value) ? (value as unknown[]) : [value];
+		const definitions: IndicatorDefinition[] = [];
+		for (const entry of list) {
+			const error = definitionError(entry);
+			if (error !== null) {
+				throw new Error(`Invalid indicator definition: ${error}`);
+			}
+			const definition = entry as IndicatorDefinition;
+			const existing = this._definitions.get(definition.name);
+			if (existing !== undefined && existing !== definition) {
+				throw new Error(`An indicator named "${definition.name}" is already registered`);
+			}
+			definitions.push(definition);
+		}
+		for (const definition of definitions) {
+			this._definitions.set(definition.name, definition);
+		}
+		return definitions.map(indicatorInfo);
+	}
+
 	/** Rows were fetched again: recomputations waiting for them go on. */
 	public rowsRestored(): void {
 		for (const instance of this._instances) {
@@ -334,6 +395,14 @@ export class IndicatorEngine {
 				instance.job = null;
 			}
 		}
+	}
+
+	/** Plugin results waiting to be reported. */
+	public takePlugins(): PluginResult[] | null {
+		if (this._plugins.length === 0) {
+			return null;
+		}
+		return this._plugins.splice(0);
 	}
 
 	// Changes of the data

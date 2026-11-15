@@ -1,4 +1,11 @@
-import { type EngineClient, type EngineEvent, columnCount, createEngine, levelFor } from '@lumen-charts/engine';
+import {
+	type EngineClient,
+	type EngineEvent,
+	type IndicatorInfo,
+	columnCount,
+	createEngine,
+	levelFor,
+} from '@lumen-charts/engine';
 import { type LevelWindow, WindowCache } from './data/window-cache';
 import { ChartIndicators, type IndicatorApi, type IndicatorOptions, type IndicatorOutputApi } from './indicators';
 import { Interaction, type InteractionHost } from './input/interaction';
@@ -84,7 +91,8 @@ export interface ChartApi {
 	 * the data engine, with the worker when there is one. Its outputs are series on the main timeline,
 	 * drawn on the price pane and included in autoscale; ticks of the source update them in the same
 	 * message as the bars. `name` is a built-in (`sma`, `ema`, `wma`, `rsi`, `macd`, `bollinger`,
-	 * `atr`, `stochastic`, `vwap`, `highest`, `lowest`). Values appear once computed in the background. Throws for an unknown name
+	 * `atr`, `stochastic`, `vwap`, `highest`, `lowest`) or an indicator registered with
+	 * `registerIndicators`. Values appear once computed in the background. Throws for an unknown name
 	 * and a `RangeError` for a parameter out of bounds.
 	 */
 	addIndicator(
@@ -94,6 +102,14 @@ export interface ChartApi {
 	): IndicatorApi;
 	/** Removes an indicator, and every indicator that reads its outputs. */
 	removeIndicator(indicator: IndicatorApi): void;
+	/**
+	 * Loads a module of custom indicators into the data engine (in the worker, or on this thread
+	 * without one) and resolves with what it registered. The module exports indicator definitions:
+	 * a default export or an `indicators` export holding one or an array (see `defineIndicator`). It
+	 * is imported by URL, so it must be a standalone ES module the page's content security policy
+	 * allows (`script-src`), resolved against the document's base URL.
+	 */
+	registerIndicators(url: string | URL): Promise<readonly IndicatorInfo[]>;
 	timeScale(): TimeScaleApi;
 	/**
 	 * Resolves once all data handed over so far has been applied and painted. A chart outside the
@@ -240,6 +256,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 			ensureEngine: () => this._ensureEngine(),
 			invalidate: level => this.invalidate(level),
 			forget: series => this._cache.removeSeries(series),
+			baseUrl: () => container.ownerDocument.baseURI,
 			addIndicator: (source, name, settings) => this.addIndicator(source, name, settings),
 			removeIndicator: indicator => this.removeIndicator(indicator),
 		});
@@ -313,6 +330,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 		this._indicators.remove(indicator);
 	}
 
+	public registerIndicators(url: string | URL): Promise<readonly IndicatorInfo[]> {
+		return this._indicators.register(url);
+	}
+
 	public timeScale(): TimeScaleApi {
 		return this;
 	}
@@ -355,6 +376,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 		this._engine?.destroy();
 		this._engine = null;
 		this._deferred = [];
+		this._indicators.destroy();
 		this._settleApplied();
 		this._pane.release();
 		this._priceAxis.release();
@@ -444,7 +466,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 
 	// Data flow
 
-	/** The data engine, created with the first series. */
+	/** The data engine, created with the first series (or plugin module). */
 	private _ensureEngine(): EngineClient | null {
 		if (this._engine === null && !this._destroyed) {
 			this._engine = createEngine({ worker: this._options.worker });
@@ -517,6 +539,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 		}
 		this._trackLastValues(event);
 		this._indicators.computing = event.computing ?? 0;
+		if (event.plugins !== undefined) {
+			this._indicators.settlePlugins(event.plugins);
+		}
 		if (event.fetch !== undefined || event.restored !== undefined || event.window?.incomplete === true) {
 			this._handleFetches(event);
 		}

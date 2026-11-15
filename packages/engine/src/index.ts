@@ -53,6 +53,7 @@ export {
 	type HostMessage,
 	type IndicatorInputRef,
 	type Patch,
+	type PluginResult,
 	type ReadyMessage,
 	type RestoreResult,
 	type SeriesBlock,

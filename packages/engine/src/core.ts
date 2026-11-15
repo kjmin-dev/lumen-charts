@@ -118,7 +118,7 @@ export class EngineCore {
 	private _readScratch = new Float64Array(0);
 
 	/**
-	 * Called when work finished outside a command and a notice is waiting;
+	 * Called when work finished outside a command (a plugin module loaded) and a notice is waiting;
 	 * the host then calls `takeNotice`. Background steps can leave notices too, without this call.
 	 */
 	public onwake: (() => void) | null = null;
@@ -251,6 +251,9 @@ export class EngineCore {
 			case 'removeIndicator':
 				this._indicators.remove(command.id);
 				break;
+			case 'plugin':
+				this._indicators.load(command.url);
+				break;
 		}
 		if (this._epoch !== this._fetchEpoch) {
 			// Indexes were re-based: rows asked for under the old ones are not wanted any more.
@@ -318,17 +321,21 @@ export class EngineCore {
 
 	/**
 	 * An event that is not the answer to a command, or null: indicator values swapped in (the windows
-	 * held are stale; the latest values come as patches) or rows to fetch again. Its `ack` repeats
+	 * held are stale; the latest values come as patches) or plugin modules loaded. Its `ack` repeats
 	 * the last command answered.
 	 */
 	public takeNotice(): EngineEvent | null {
 		this._specs.length = 0;
 		const swapped = this._indicators.takeNotice(this._specs);
+		const plugins = this._indicators.takePlugins();
 		const fetch = this._background.fetch;
-		if (!swapped && fetch === undefined) {
+		if (!swapped && plugins === null && fetch === undefined) {
 			return null;
 		}
 		const event: EngineEvent = { ack: this._lastAck, epoch: 0, first: 0, end: 0, stale: swapped, rejected: 0 };
+		if (plugins !== null) {
+			event.plugins = plugins;
+		}
 		if (fetch !== undefined) {
 			event.fetch = fetch;
 			delete this._background.fetch;

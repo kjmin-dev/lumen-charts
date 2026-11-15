@@ -1,3 +1,4 @@
+import { resolve as resolvePath } from 'node:path';
 import {
 	BUILTIN_INDICATORS,
 	CHUNK_ROWS,
@@ -12,8 +13,12 @@ import {
 	levelShift,
 	resolveParams,
 } from '@lumen-charts/engine';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { counts } from './fixtures/plugin';
 import { random, run } from './helpers';
+
+/** Module loading goes through the bundler's transform, which can take a while on a busy machine. */
+const WAIT = { timeout: 10_000 };
 
 const MIN = 60_000;
 
@@ -340,6 +345,50 @@ describe('indicator engine', () => {
 		expect(checkLevel(core, model, added, 3)).toBeNull();
 	});
 
+	it('recomputes a windowed indicator only near the old first bar, a cumulative one in full', async () => {
+		const core = new EngineCore();
+		run(core, { type: 'add', series: MAIN, kind: 'ohlcv' });
+		const count = 6 * CHUNK_ROWS;
+		const data = candles(count, 4);
+		run(core, { type: 'set', series: MAIN, count, data: data.slice() });
+		core.onwake = () => undefined;
+		run(core, { type: 'plugin', url: resolvePath('packages/engine/test/fixtures/plugin.ts') });
+		await vi.waitFor(() => {
+			expect(core.takeNotice()?.plugins?.[0]?.indicators?.length).toBe(2);
+		}, WAIT);
+		run(core, {
+			type: 'indicator',
+			id: 50,
+			name: 'test-momentum',
+			params: [10],
+			inputs: [{ series: MAIN, column: 4 }],
+			outputs: [51],
+		});
+		run(core, {
+			type: 'indicator',
+			id: 52,
+			name: 'test-range',
+			params: [],
+			inputs: [
+				{ series: MAIN, column: 2 },
+				{ series: MAIN, column: 3 },
+			],
+			outputs: [53],
+		});
+		drain(core);
+		counts.momentum = 0;
+		counts.range = 0;
+		const batch = 1000;
+		run(core, { type: 'prepend', series: MAIN, count: batch, data: candles(batch, 8, -batch * MIN) });
+		drain(core);
+		// The new rows and the rest of the old first chunk, against everything for the running sum.
+		expect(counts.momentum).toBe(batch + CHUNK_ROWS);
+		expect(counts.range).toBe(count + batch);
+		// The momentum of the first old bars now reaches into the prepended ones.
+		const window = run(core, { type: 'window', level: 0, start: 0, count: 2, capacity: 2 });
+		expect(block(window, 51)[0]).not.toBeNaN();
+	});
+
 	it('recomputes on a parameter change and keeps the old values until then', () => {
 		const { core, model, added } = loaded(3000);
 		const target = added.find(entry => entry.spec.definition.name === 'ema')!;
@@ -403,5 +452,20 @@ describe('indicator engine', () => {
 		drain(core);
 		const event = run(core, { type: 'window', level: 0, start: 0, count: 6, capacity: 6 });
 		expect(Array.from(block(event, 61))).toEqual([10, NaN, 20, NaN, 30, NaN]);
+	});
+
+	it('reports a plugin that fails to load', async () => {
+		const core = new EngineCore();
+		let woken = 0;
+		core.onwake = () => {
+			woken++;
+		};
+		run(core, { type: 'plugin', url: resolvePath('packages/engine/test/fixtures/missing.js') });
+		await vi.waitFor(() => {
+			expect(woken).toBeGreaterThan(0);
+		}, WAIT);
+		const notice = core.takeNotice()!;
+		expect(notice.plugins![0]!.error).toBeTypeOf('string');
+		expect(notice.plugins![0]!.indicators).toBeUndefined();
 	});
 });

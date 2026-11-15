@@ -166,8 +166,8 @@ export function attachEngineHost(scope: EngineScope): void {
 	};
 
 	/**
-	 * Posts what an engine's work outside its commands finished (indicator values swapped in, rows to
-	 * fetch again), as a notice tagged with the engine.
+	 * Posts what an engine's work outside its commands finished (indicator values swapped in, a
+	 * plugin module loaded, rows to fetch again), as a notice tagged with the engine.
 	 */
 	const notify = (hosted: Hosted): void => {
 		const notice = hosted.core.takeNotice();
@@ -246,7 +246,7 @@ export function attachEngineHost(scope: EngineScope): void {
 		let hosted = engines.get(id);
 		if (hosted === undefined) {
 			const created: Hosted = { id, core: new EngineCore(), queue: [], head: 0, command: null, run: null };
-			// Work that finishes between commands goes out as soon as it is known.
+			// A plugin module loads between commands; its outcome goes out as soon as it is known.
 			created.core.onwake = () => notify(created);
 			hosted = created;
 			engines.set(id, hosted);
