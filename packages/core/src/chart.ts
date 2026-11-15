@@ -322,7 +322,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 	}
 
 	public getVisibleLogicalRange(): LogicalRange | null {
-		this._ensureSize();
+		this._syncView();
 		const scale = this.scale;
 		return scale.isEmpty || scale.width <= 0 ? null : { from: scale.from, to: scale.to };
 	}
@@ -364,7 +364,16 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 
 	/** Read phase of a frame: everything the draw needs from the layout, before any chart writes. */
 	public frameRead(): void {
+		this._syncView();
+	}
+
+	/**
+	 * Brings the pane size and the view up to date with the layout and with pointer input that waits
+	 * for it. Called before the view is read or changed outside a frame, so calls apply in order.
+	 */
+	private _syncView(): void {
 		this._ensureSize();
+		this._interaction.resolve();
 	}
 
 	// Data flow
@@ -379,7 +388,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 		}
 		const engine = this._engine;
 		if (engine === null || !engine.dataPending) {
-			this._ensureSize();
+			this._syncView();
 			action();
 			this.invalidate(INVALIDATE_LIGHT);
 			return;
@@ -417,6 +426,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 			(scale.version !== version || event.stale || event.window !== undefined || event.patches !== undefined);
 		const deferred = this._deferred;
 		while (deferred.length > 0 && deferred[0]!.seq <= event.ack) {
+			// Pointer input from before the call comes first.
+			this._interaction.resolve();
 			deferred.shift()!.action();
 			changed = true;
 		}
