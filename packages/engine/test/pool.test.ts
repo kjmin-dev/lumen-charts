@@ -22,6 +22,12 @@ const factory = (): Worker => new FakeWorker() as unknown as Worker;
 const other = (): Worker => new FakeWorker() as unknown as Worker;
 const firstWorker = (): FakeWorker => FakeWorker.created[0]!;
 const engineIds = (worker: FakeWorker): (number | undefined)[] => worker.received.map(message => message.engine);
+/** The notice of indicator values swapped in, which answers no command: it carries their latest values. */
+const swapNotice = (events: EngineEvent[]): EngineEvent | undefined =>
+	events.find(event => event.stale && event.computing === undefined && event.patches !== undefined);
+/** The values of a series in the last window answered. */
+const windowValues = (events: EngineEvent[], series: number): Float64Array =>
+	events.at(-1)!.window!.series.find(entry => entry.series === series)!.data;
 
 describe('shared engine workers', () => {
 	let engines: EngineClient[];
@@ -295,6 +301,36 @@ describe('shared engine workers', () => {
 		await idle();
 		// The load was started first and takes many slices; the small commands did not wait for it.
 		expect(order).toEqual(['tick', 'window', 'load']);
+	});
+
+	it('computes the indicators of each engine and sends each its own notices', async () => {
+		const a = create();
+		const b = create();
+		const eventsA = collect(a);
+		const eventsB = collect(b);
+		const seriesA = a.addSeries('ohlcv');
+		const seriesB = b.addSeries('ohlcv');
+		a.setData(seriesA, ohlcv(100), 100);
+		b.setData(seriesB, ohlcv(60), 60);
+		const sma = a.addIndicator('sma', [5], [{ series: seriesA, column: 4 }], 1);
+		const highest = b.addIndicator('highest', [3], [{ series: seriesB, column: 2 }], 1);
+		await vi.waitFor(() => {
+			expect(swapNotice(eventsA)).toBeDefined();
+			expect(swapNotice(eventsB)).toBeDefined();
+		});
+		expect(FakeWorker.created.length).toBe(1);
+		// Each notice reached the engine whose data it describes: they differ in length.
+		expect(swapNotice(eventsA)!.end).toBe(100);
+		expect(swapNotice(eventsB)!.end).toBe(60);
+		a.requestWindow(0, 100, 100);
+		b.requestWindow(0, 60, 60);
+		await idle();
+		const smaValues = windowValues(eventsA, sma.outputs[0]!);
+		const highestValues = windowValues(eventsB, highest.outputs[0]!);
+		expect(Number.isNaN(smaValues[3]!)).toBe(true);
+		expect(Number.isNaN(smaValues[4]!)).toBe(false);
+		expect(Number.isNaN(highestValues[1]!)).toBe(true);
+		expect(Number.isNaN(highestValues[59]!)).toBe(false);
 	});
 
 	it('falls back for every engine that waited for a worker that fails', async () => {
