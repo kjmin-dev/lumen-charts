@@ -22,3 +22,4 @@ export {
 } from './options';
 export type { Datafeed, DatafeedRequest, SeriesApi, SeriesCreateOptions, SeriesType, SeriesTypes } from './series';
 export type { BarIndex, Coordinate, Logical, Nominal } from './types';
+export { getMaxWorkers, setMaxWorkers } from '@lumen-charts/engine';

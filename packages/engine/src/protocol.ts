@@ -87,6 +87,15 @@ export type Command =
 	| { type: 'rows'; seq: number; series: number; start: number; count: number; data: Float64Array | null };
 
 /**
+ * What a worker host receives. One worker can serve several engines:
+ * - a command carries the id of its engine in `engine` (0 when absent), and the engine starts with
+ *   its first command;
+ * - `close` lets an engine go with everything it holds. It is not answered, and neither are
+ *   commands of that engine still waiting.
+ */
+export type HostMessage = (Command & { engine?: number }) | { type: 'close'; engine: number };
+
+/**
  * Rows `[start, end)` of a series that the engine let go under its memory limit and needs again,
  * with the times of the first and last of them (UTC milliseconds, inclusive).
  */
@@ -152,6 +161,8 @@ export interface Patch {
 export const TIME_PATCH = -1;
 
 export interface EngineEvent {
+	/** Id of the engine the event comes from, set by a worker host (see `HostMessage`). */
+	engine?: number;
 	/** `seq` of the command this event answers. */
 	ack: number;
 	/** Changes whenever main-timeline indexes are re-based; data from an older epoch must be dropped. */
