@@ -21,6 +21,7 @@ export {
 	type LayoutOptions,
 	type LineOptions,
 	type LineStyle,
+	type PriceScaleMode,
 	type PriceScaleOptions,
 	type SeriesOptionsCommon,
 	type ThemeColors,
@@ -29,6 +30,7 @@ export {
 	type WatermarkOptions,
 	themes,
 } from './options';
+export type { PriceRange, PriceScaleApi } from './price-axes';
 export type {
 	Datafeed,
 	DatafeedRequest,

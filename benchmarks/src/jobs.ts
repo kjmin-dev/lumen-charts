@@ -15,7 +15,8 @@ export type ScenarioName =
 	| 'ind-load'
 	| 'ind-apply'
 	| 'ind-frames'
-	| 'ind-prepend';
+	| 'ind-prepend'
+	| 'axes-frames';
 export const SCENARIOS: readonly ScenarioName[] = [
 	'load',
 	'tick',
@@ -27,6 +28,7 @@ export const SCENARIOS: readonly ScenarioName[] = [
 	'ind-apply',
 	'ind-frames',
 	'ind-prepend',
+	'axes-frames',
 ];
 /** The stage 3 scenarios: the ones above with indicators on the series. */
 export const INDICATOR_SCENARIOS: readonly ScenarioName[] = ['ind-load', 'ind-apply', 'ind-frames', 'ind-prepend'];
@@ -229,6 +231,22 @@ export interface ApplyJob extends JobBase {
 	readonly newBarEvery: number;
 }
 
+/**
+ * How the stage 4 price axes scenario lays out its series, candles and three moving averages (the
+ * first three of the indicator set): all on one normal scale (`one`, the reference), the same on a
+ * logarithmic (`log`) or a percentage scale (`percent`), or each average on an axis of its own, two
+ * left of the pane and one right of the candles' axis (`four`).
+ */
+export type PriceAxesLayout = 'one' | 'log' | 'percent' | 'four';
+export const PRICE_AXES_LAYOUTS: readonly PriceAxesLayout[] = ['one', 'log', 'percent', 'four'];
+
+/** Pan and zoom frames with the series on price axes laid out as `axes` says. */
+export interface AxesFramesJob extends Omit<FramesJob, 'scenario'> {
+	readonly scenario: 'axes-frames';
+	readonly indicators: number;
+	readonly axes: PriceAxesLayout;
+}
+
 export type Job =
 	| LoadJob
 	| TickJob
@@ -239,6 +257,7 @@ export type Job =
 	| ApplyJob
 	| IndicatorFramesJob
 	| IndicatorPrependJob
+	| AxesFramesJob
 	| MultiJob;
 
 /** All times start when `setData` is called, except `convertMs` and the `*WithConversionMs` sums. */
@@ -638,6 +657,8 @@ export function caseId(job: Job): string {
 			return `${base}/${job.motion}-${job.zoom === 'all' ? 'all' : sizeLabel(job.zoom)}/${job.indicators}`;
 		case 'ind-prepend':
 			return `${base}/${sizeLabel(job.batch)}/${job.indicators}`;
+		case 'axes-frames':
+			return `${base}/${job.motion}-${job.zoom === 'all' ? 'all' : sizeLabel(job.zoom)}/${job.axes}`;
 		case 'multi':
 			return `${base}/${job.charts}-charts${job.maxWorkers === null ? '' : `/max-workers-${job.maxWorkers}`}`;
 	}
@@ -788,6 +809,10 @@ const INDICATOR_PREPEND_BATCHES: readonly PrependBatch[] = [
 	{ batch: M, prepends: 3, minPrepends: 2 },
 ];
 const QUICK_INDICATOR_DATASETS: readonly DatasetSpec[] = [{ kind: 'candles', size: 10 * K }];
+// Stage 4: three moving averages on the candles, on price axes laid out four ways.
+const AXES_DATASETS: readonly DatasetSpec[] = [{ kind: 'candles', size: M }];
+const AXES_ZOOMS: readonly ZoomLevel[] = [200, 'all'];
+const AXES_INDICATORS = 3;
 interface MultiCase {
 	readonly dataset: DatasetSpec;
 	readonly charts: number;
@@ -991,6 +1016,31 @@ export function planJobs(options: PlanOptions): Plan {
 					minPrepends,
 					budgetMs,
 				});
+			}
+		}
+	}
+	if (options.scenarios.includes('axes-frames')) {
+		for (const dataset of (quick ? QUICK_INDICATOR_DATASETS : AXES_DATASETS).filter(keep)) {
+			for (const zoom of quick ? QUICK_FRAME_ZOOMS : AXES_ZOOMS) {
+				for (const motion of MOTIONS) {
+					for (const axes of PRICE_AXES_LAYOUTS) {
+						cases.push({
+							scenario: 'axes-frames',
+							dataset,
+							seed,
+							chart,
+							indicators: AXES_INDICATORS,
+							axes,
+							zoom,
+							motion,
+							frames: quick ? 60 : 300,
+							minFrames: quick ? 20 : 30,
+							budgetMs,
+							warmupFrames: quick ? 10 : 30,
+							warmupBudgetMs,
+						});
+					}
+				}
 			}
 		}
 	}

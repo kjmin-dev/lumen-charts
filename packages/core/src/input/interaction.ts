@@ -12,6 +12,18 @@ export interface InteractionHost {
 	invalidate(level: Invalidation): void;
 	/** Position of the crosshair in CSS pixels relative to the pane, or hidden. */
 	setCrosshair(x: number, y: number, visible: boolean): void;
+	/** The price axis drawn on `target` (the element under the pointer), or null. */
+	priceAxisAt(target: EventTarget | null): AxisTarget | null;
+	/** Moves the price scales that do not autoscale with a drag of `dy` CSS pixels. */
+	scrollPrices(dy: number): void;
+}
+
+/** A price axis the pointer can act on. */
+export interface AxisTarget {
+	/** Scales the axis for a drag of `dy` CSS pixels, down showing more. */
+	dragBy(dy: number): void;
+	/** Turns autoscale back on. */
+	resetScale(): void;
 }
 
 /** Slowest release speed that starts kinetic scrolling, in CSS pixels per millisecond. */
@@ -35,6 +47,9 @@ const OP_STRIDE = 3;
 /**
  * Pointer and wheel input: dragging pans, the wheel and two-finger pinch zoom around the pointer,
  * a touch release keeps scrolling with decaying speed, and a hovering mouse moves the crosshair.
+ * Dragging a price axis scales it and a double click on one resets it; dragging the pane up or down
+ * moves the price scales that do not autoscale. The axis under the pointer is the element the
+ * event targets, which needs no layout read.
  *
  * Events carry positions in the viewport, and turning one into a position in the chart needs the
  * chart's place in the viewport, a layout read that can force a synchronous layout. The handlers
@@ -63,6 +78,8 @@ export class Interaction {
 	private _hoverPending = false;
 	private _hoverX = 0;
 	private _hoverY = 0;
+	/** The price axis being dragged, from the press of the first pointer. */
+	private _axis: AxisTarget | null = null;
 
 	public constructor(element: HTMLElement, host: InteractionHost) {
 		this._element = element;
@@ -76,6 +93,7 @@ export class Interaction {
 		element.addEventListener('pointercancel', this._onUp);
 		element.addEventListener('pointerleave', this._onLeave);
 		element.addEventListener('wheel', this._onWheel, { passive: false });
+		element.addEventListener('dblclick', this._onDoubleClick);
 	}
 
 	public destroy(): void {
@@ -86,7 +104,9 @@ export class Interaction {
 		element.removeEventListener('pointercancel', this._onUp);
 		element.removeEventListener('pointerleave', this._onLeave);
 		element.removeEventListener('wheel', this._onWheel);
+		element.removeEventListener('dblclick', this._onDoubleClick);
 		this._pointers.clear();
+		this._axis = null;
 		this._velocity = 0;
 		this._opCount = 0;
 		this._hoverPending = false;
@@ -148,6 +168,7 @@ export class Interaction {
 		}
 		this._velocity = 0;
 		this._pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+		this._axis = this._pointers.size === 1 ? this._host.priceAxisAt(event.target) : null;
 		this._element.setPointerCapture?.(event.pointerId);
 		this._pinchDistance = this._distance();
 		this._sampleTime = event.timeStamp;
@@ -166,6 +187,7 @@ export class Interaction {
 			return;
 		}
 		const dx = event.clientX - pointer.x;
+		const dy = event.clientY - pointer.y;
 		pointer.x = event.clientX;
 		pointer.y = event.clientY;
 		if (this._pointers.size >= 2) {
@@ -181,9 +203,16 @@ export class Interaction {
 			this._pinchDistance = distance;
 			return;
 		}
+		if (this._axis !== null) {
+			this._axis.dragBy(dy);
+			return;
+		}
 		if (dx !== 0) {
 			this._pan(dx);
 			host.invalidate(INVALIDATE_LIGHT);
+		}
+		if (dy !== 0) {
+			host.scrollPrices(dy);
 		}
 		// Keep two samples at least a few milliseconds apart to measure the release speed from.
 		if (event.timeStamp - this._sampleTime > KINETIC_WINDOW / 2) {
@@ -203,7 +232,11 @@ export class Interaction {
 		}
 		this._element.releasePointerCapture?.(event.pointerId);
 		this._pinchDistance = this._distance();
-		if (event.type !== 'pointerup' || event.pointerType !== 'touch' || this._pointers.size > 0) {
+		const scaledAxis = this._axis !== null;
+		if (this._pointers.size === 0) {
+			this._axis = null;
+		}
+		if (event.type !== 'pointerup' || event.pointerType !== 'touch' || this._pointers.size > 0 || scaledAxis) {
 			return;
 		}
 		const elapsed = event.timeStamp - this._previousTime;
@@ -241,6 +274,10 @@ export class Interaction {
 			this._push(OP_WHEEL_ZOOM, event.clientX, Math.exp(-deltaY * rate));
 		}
 		host.invalidate(INVALIDATE_LIGHT);
+	};
+
+	private readonly _onDoubleClick = (event: MouseEvent): void => {
+		this._host.priceAxisAt(event.target)?.resetScale();
 	};
 
 	private _hover(event: PointerEvent): void {

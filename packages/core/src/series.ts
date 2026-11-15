@@ -10,6 +10,7 @@ import {
 } from './data/input';
 import type { IndicatorApi, IndicatorOptions } from './indicators';
 import { INVALIDATE_LIGHT, type Invalidation } from './model/invalidation';
+import type { PriceScale } from './model/price-scale';
 import {
 	type CandlestickOptions,
 	DEFAULT_CANDLESTICK_OPTIONS,
@@ -21,6 +22,7 @@ import {
 	definedOnly,
 	shallowEqual,
 } from './options';
+import type { PriceAxis, PriceScaleApi } from './price-axes';
 import { SeriesView } from './views/series-view';
 
 /** Bars the chart asks a datafeed for: the ones with times in `[from, to]`, which it held before. */
@@ -132,6 +134,17 @@ export interface SeriesApi<T extends SeriesType = SeriesType> {
 	 * `ChartApi.addIndicator`.
 	 */
 	addIndicator(name: string, options?: DeepPartial<IndicatorOptions>): IndicatorApi;
+	/** The price scale the series is drawn on (see the `priceScaleId` option). */
+	priceScale(): PriceScaleApi;
+	/**
+	 * Where a price of this series is drawn, in CSS pixels from the top of the pane, as of the last
+	 * frame; on a percentage or indexed scale, relative to this series' first visible bar. Null before
+	 * the scale has a range, and for a price the scale cannot show (zero or below on a logarithmic
+	 * scale) or a series with no bar in view on a percentage or indexed scale.
+	 */
+	priceToCoordinate(price: number): number | null;
+	/** The price drawn at a coordinate: the inverse of `priceToCoordinate`. */
+	coordinateToPrice(y: number): number | null;
 }
 
 export interface SeriesHost {
@@ -140,6 +153,13 @@ export interface SeriesHost {
 	addIndicator(source: Series, name: string, options?: DeepPartial<IndicatorOptions>): IndicatorApi;
 	/** The series got a new history with the command `seq`: requests for the old one are obsolete. */
 	reloaded(series: Series, seq: number): void;
+	/** The price scale the series is on, following its `priceScaleId`. */
+	priceAxisOf(series: Series): PriceAxis;
+}
+
+/** Equal, NaN included. */
+function sameNumber(a: number, b: number): boolean {
+	return a === b || (a !== a && b !== b);
 }
 
 function defaultOptions(type: SeriesType): AnySeriesOptions {
@@ -182,7 +202,27 @@ export class Series implements SeriesApi {
 	public lastValue = NaN;
 	public lastUp = true;
 
+	/** The price scale the series was last drawn on; the chart follows `priceScaleId` changes. */
+	public axis: PriceAxis | null = null;
+	/** The options `axis` was looked up for: a change of options looks it up again. */
+	public axisOptions: AnySeriesOptions | null = null;
+	/** Whether the last model update put the series on its scale (it was visible). */
+	public scaled = false;
+	/** Price at the first visible bar, on a percentage or indexed scale; NaN otherwise. */
+	public base = Number.NaN;
+	/** Device-pixel rows of prices on the scale, as last drawn: see `deviceY`. */
+	public deviceOffset = 0;
+	public deviceScale = 0;
+	public deviceLog = false;
+
 	private readonly _host: SeriesHost;
+	/** What the last value label was made from, and the label. */
+	private _labelValue = Number.NaN;
+	private _labelBase = Number.NaN;
+	private _labelScale: PriceScale | null = null;
+	private _labelFormat = -1;
+	private _labelOptions: AnySeriesOptions | null = null;
+	private _labelText = '';
 
 	public constructor(
 		host: SeriesHost,
@@ -258,6 +298,75 @@ export class Series implements SeriesApi {
 
 	public addIndicator(name: string, options?: DeepPartial<IndicatorOptions>): IndicatorApi {
 		return this._host.addIndicator(this, name, options);
+	}
+
+	public priceScale(): PriceScaleApi {
+		return this._host.priceAxisOf(this);
+	}
+
+	public priceToCoordinate(price: number): number | null {
+		const scale = this._host.priceAxisOf(this).scale;
+		if (!scale.hasRange) {
+			return null;
+		}
+		const y = scale.priceToY(price, this.base);
+		return Number.isFinite(y) ? y : null;
+	}
+
+	public coordinateToPrice(y: number): number | null {
+		const scale = this._host.priceAxisOf(this).scale;
+		if (!scale.hasRange) {
+			return null;
+		}
+		const price = scale.yToPrice(y, this.base);
+		return Number.isFinite(price) ? price : null;
+	}
+
+	/**
+	 * Sets the device-pixel mapping of this series' prices on `scale` (see `deviceY`). On a percentage
+	 * or indexed scale a value is linear in the price, given the base, so it stays one multiply-add.
+	 */
+	public setProjection(scale: PriceScale, pixelRatio: number): void {
+		let offset = scale.offset * pixelRatio;
+		let factor = scale.scale * pixelRatio;
+		const mode = scale.mode;
+		if (mode === 'percentage' || mode === 'indexed') {
+			// value = price * a + c, with a = 100 / |base| and c = -base * a (+ 100 when indexed).
+			const base = this.base;
+			const a = 100 / Math.abs(base);
+			const c = (mode === 'indexed' ? 100 : 0) - base * a;
+			offset -= c * factor;
+			factor *= a;
+		}
+		this.deviceOffset = offset;
+		this.deviceScale = factor;
+		this.deviceLog = mode === 'logarithmic';
+	}
+
+	/** Device-pixel row of a price, as last drawn; NaN for a price the scale cannot show. */
+	public deviceY(price: number): number {
+		const value = this.deviceLog ? (price > 0 ? Math.log10(price) : Number.NaN) : price;
+		return this.deviceOffset - value * this.deviceScale;
+	}
+
+	/** Label of a value of this series on `scale`, made again only when something it shows changed. */
+	public valueLabel(scale: PriceScale, value: number): string {
+		const options = this.seriesOptions;
+		if (
+			value !== this._labelValue ||
+			!sameNumber(this.base, this._labelBase) ||
+			scale !== this._labelScale ||
+			scale.formatVersion !== this._labelFormat ||
+			options !== this._labelOptions
+		) {
+			this._labelValue = value;
+			this._labelBase = this.base;
+			this._labelScale = scale;
+			this._labelFormat = scale.formatVersion;
+			this._labelOptions = options;
+			this._labelText = scale.format(value, this.base, options.minMove, options.precision);
+		}
+		return this._labelText;
 	}
 
 	/**

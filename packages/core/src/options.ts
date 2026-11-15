@@ -57,17 +57,53 @@ export interface CrosshairOptions {
 	horzLine: CrosshairLineOptions;
 }
 
+/**
+ * How a price scale places prices:
+ *
+ * - `normal`: evenly, by price.
+ * - `logarithmic`: by ratio, so 10 to 20 takes as much room as 100 to 200. Prices at or below zero
+ *   cannot be shown there and are left out; a histogram whose base is not above zero grows from the
+ *   edge of the pane.
+ * - `percentage`: by the change in percent from the price of each series at the first visible bar,
+ *   which lets series of different prices be compared.
+ * - `indexed`: the same change, as an index that is 100 at the first visible bar.
+ */
+export type PriceScaleMode = 'normal' | 'logarithmic' | 'percentage' | 'indexed';
+
+/** Id of the price scale that `ChartOptions.priceScale` configures, and of series by default. */
+export const DEFAULT_PRICE_SCALE_ID = 'default';
+
 export interface PriceScaleOptions {
-	/** When hidden, the pane takes the full width and value labels are not shown. */
+	/**
+	 * Show the axis. A scale without one is an overlay: its series are drawn over the pane, scaled on
+	 * their own, and their value labels go on the default scale's axis, or on the first visible axis
+	 * when that one is hidden. With no visible axis, the pane takes the full width and value labels
+	 * are not shown.
+	 */
 	visible: boolean;
+	/**
+	 * Side of the pane the axis is on. Axes on the same side are laid out from the pane outward: the
+	 * default scale first, then the others in the order `ChartOptions.priceScales` lists them.
+	 */
 	position: 'left' | 'right';
 	borderVisible: boolean;
 	borderColor: string;
 	/**
 	 * Empty space above and below the visible prices, as fractions of the pane height. Their sum is
-	 * kept below 1.
+	 * kept below 1. Overlays use it to share the pane, for example volume in its lower fifth with
+	 * `{ top: 0.8, bottom: 0 }`.
 	 */
 	scaleMargins: { top: number; bottom: number };
+	/** How prices are placed (see `PriceScaleMode`). Changing it fits the scale to its series again. */
+	mode: PriceScaleMode;
+	/**
+	 * Fit the scale to the values of its series in view, in every frame. Dragging the axis turns it
+	 * off and a double click on the axis turns it back on; while it is off, dragging the pane up or
+	 * down moves the scale.
+	 */
+	autoScale: boolean;
+	/** Higher values lower down: the lowest value of the range is at the top. */
+	invertScale: boolean;
 }
 
 export interface TimeScaleOptions {
@@ -108,7 +144,16 @@ export interface ChartOptions {
 	layout: LayoutOptions;
 	grid: GridOptions;
 	crosshair: CrosshairOptions;
+	/** The default price scale (id `default`), on which series are drawn unless they name another. */
 	priceScale: PriceScaleOptions;
+	/**
+	 * Further price scales by id, each with the options of `priceScale`. A series or an indicator
+	 * output goes on one with its `priceScaleId` option. These scales are overlays (`visible: false`)
+	 * until their axis is made visible, and a series may name an id listed nowhere, which gets an
+	 * overlay with these defaults. The id `default` is the scale `priceScale` configures and is
+	 * ignored here. Scales are never removed; hide the axis of one no longer needed.
+	 */
+	priceScales: Record<string, PriceScaleOptions>;
 	timeScale: TimeScaleOptions;
 	watermark: WatermarkOptions;
 	/**
@@ -200,7 +245,11 @@ const BASE_OPTIONS: ChartOptions = {
 		borderVisible: true,
 		borderColor: '',
 		scaleMargins: { top: 0.1, bottom: 0.1 },
+		mode: 'normal',
+		autoScale: true,
+		invertScale: false,
 	},
+	priceScales: {},
 	timeScale: { visible: true, borderVisible: true, borderColor: '', barSpacing: 6, rightOffset: 0 },
 	watermark: { visible: false, text: '', color: '', fontSize: 48, horzAlign: 'center', vertAlign: 'center' },
 	worker: true,
@@ -214,15 +263,60 @@ const BASE_OPTIONS: ChartOptions = {
 export function resolveOptions(input: DeepPartial<ChartOptions>, dark: boolean): ChartOptions {
 	const theme = input.theme ?? BASE_OPTIONS.theme;
 	const name: ThemeName = theme === 'auto' ? (dark ? 'dark' : 'light') : theme === 'dark' ? 'dark' : 'light';
-	return mergeKnown<ChartOptions>(
+	const resolved = mergeKnown<ChartOptions>(
 		mergeKnown<ChartOptions>(BASE_OPTIONS, themes[name] as DeepPartial<ChartOptions>),
 		input,
 	);
+	// Further scales have ids of the user's choosing, which merging known keys would drop.
+	const scales: Record<string, PriceScaleOptions> = {};
+	const given: unknown = input.priceScales;
+	if (isPlain(given)) {
+		const defaults = overlayScaleOptions(name);
+		for (const id of Object.keys(given)) {
+			const entry = given[id];
+			if (id !== DEFAULT_PRICE_SCALE_ID && isPlain(entry)) {
+				scales[id] = mergeKnown<PriceScaleOptions>(defaults, entry as DeepPartial<PriceScaleOptions>);
+			}
+		}
+	}
+	return { ...resolved, priceScales: scales };
+}
+
+const overlayDefaults: Partial<Record<ThemeName, PriceScaleOptions>> = {};
+
+/** Options of a price scale besides the default one that sets none: an overlay, in the theme's colors. */
+export function overlayScaleOptions(theme: ThemeName): PriceScaleOptions {
+	let options = overlayDefaults[theme];
+	if (options === undefined) {
+		options = {
+			...BASE_OPTIONS.priceScale,
+			visible: false,
+			borderColor: themes[theme].priceScale.borderColor,
+			scaleMargins: { ...BASE_OPTIONS.priceScale.scaleMargins },
+		};
+		overlayDefaults[theme] = options;
+	}
+	return options;
 }
 
 export interface SeriesOptionsCommon {
 	/** A hidden series is not drawn and does not take part in autoscaling. */
 	visible: boolean;
+	/**
+	 * Id of the price scale the series is drawn on: `default`, or another id, listed in
+	 * `ChartOptions.priceScales` or not (then the series gets an overlay scale with that id). Can be
+	 * changed at any time.
+	 */
+	priceScaleId: string;
+	/**
+	 * Tick size: the smallest change of the series' prices. Its labels show prices rounded to it, with
+	 * as many decimals as it has (0.25 shows two, 5 none); the axis of a scale whose first series this
+	 * is puts its ticks on multiples of it and labels them the same way. 0 (the default) takes the
+	 * decimals from the step between the axis' ticks, 2 to 8.
+	 */
+	minMove: number;
+	/** Decimals of the series' price labels, overriding those of `minMove`; -1 (the default) sets none. */
+	precision: number;
 	/** Show the latest value as a label on the price axis. */
 	lastValueVisible: boolean;
 	/** Show a horizontal line across the pane at the latest value. */
@@ -271,6 +365,9 @@ export interface HistogramOptions extends SeriesOptionsCommon {
 
 const COMMON_SERIES_OPTIONS: SeriesOptionsCommon = {
 	visible: true,
+	priceScaleId: DEFAULT_PRICE_SCALE_ID,
+	minMove: 0,
+	precision: -1,
 	lastValueVisible: true,
 	priceLineVisible: true,
 	priceLineColor: '',
