@@ -1,4 +1,4 @@
-import { createChart } from '@lumen-charts/core';
+import { DRAWING_TYPES, createChart } from '@lumen-charts/core';
 
 const container = document.getElementById('chart');
 if (container === null) {
@@ -74,5 +74,15 @@ if (params.get('live') !== '0')
 		candles?.update({ time: lastTime, open: barOpen, high: barHigh, low: barLow, close: price });
 		line.update({ time: lastTime, value: lineOnly ? price : smooth });
 	}, 50);
+
+// A button per drawing tool: click it, then click (or drag) on the chart to place the points.
+// Escape cancels, Delete removes the selected drawing; `chart.drawings().toJSON()` saves them.
+const tools = document.getElementById('tools');
+for (const type of DRAWING_TYPES) {
+	const button = document.createElement('button');
+	button.textContent = type;
+	button.addEventListener('click', () => chart.drawings().startTool(type));
+	tools?.append(button);
+}
 
 Object.assign(globalThis, { chart, candles, line, indicators });
