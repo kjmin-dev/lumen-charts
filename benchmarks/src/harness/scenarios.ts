@@ -1,6 +1,6 @@
-import type { AdapterFactory, ChartAdapter, ChartSize } from '../adapter.ts';
+import type { AdapterFactory, ChartAdapter, ChartSize, LogicalRange } from '../adapter.ts';
 import { findAdapter } from '../adapters/index.ts';
-import { type SeriesColumns, TICK_NEW_BAR, generateSeries, generateTicks } from '../data.ts';
+import { DEFAULT_INTERVAL_MS, type SeriesColumns, TICK_NEW_BAR, generateSeries, generateTicks } from '../data.ts';
 import type {
 	AdapterInfo,
 	FramesJob,
@@ -9,13 +9,16 @@ import type {
 	LoadJob,
 	LoadRun,
 	LoadTimings,
-	MemoryResult,
 	MemorySample,
 	PageRunResult,
+	PrependJob,
+	PrependRun,
+	PrependTimings,
 	RunResult,
 	TickJob,
 	TickRun,
 } from '../jobs.ts';
+import { memoryResult } from '../memory.ts';
 import { motionRanges } from '../motion.ts';
 import { summarize } from '../stats.ts';
 import { countDrawCalls } from './draw-calls.ts';
@@ -24,6 +27,7 @@ import {
 	afterNextFrame,
 	frameJsTotal,
 	libraryFrameRuns,
+	recordFrameTimes,
 	requestTimedFrame,
 	startFrameRecording,
 	stopFrameRecording,
@@ -70,6 +74,8 @@ function runScenario(job: Job, factory: AdapterFactory, container: HTMLElement, 
 			return runTick(job, factory, container);
 		case 'frames':
 			return runFrames(job, factory, container);
+		case 'prepend':
+			return runPrepend(job, factory, container, probes);
 	}
 }
 
@@ -112,24 +118,6 @@ async function loadOnce(
 			settledMs: t4 - t1,
 			frameJsMs: frameJsTotal() - js,
 		},
-	};
-}
-
-function difference(after: number | null, before: number | null): number | null {
-	return after === null || before === null ? null : after - before;
-}
-
-function memoryResult(before: MemorySample | null, after: MemorySample | null): MemoryResult | null {
-	if (before === null || after === null) {
-		return null;
-	}
-	return {
-		before,
-		after,
-		retainedBytes: after.totalBytes - before.totalBytes,
-		retainedJsHeapBytes: after.jsHeapBytes - before.jsHeapBytes,
-		retainedBackingStoreBytes: difference(after.backingStoreBytes, before.backingStoreBytes),
-		retainedEmbedderHeapBytes: difference(after.embedderHeapBytes, before.embedderHeapBytes),
 	};
 }
 
@@ -326,15 +314,8 @@ async function runFrames(job: FramesJob, factory: AdapterFactory, container: HTM
 			}
 		}
 
-		// Untimed: one redraw at the starting range, with drawing calls counted. The first move makes
-		// sure the counted one changes the view.
-		const start = ranges[0] ?? { from: 0, to: n - 1 };
-		adapter.setVisibleLogicalRange({ from: start.from + 0.5, to: start.to + 0.5 });
-		await adapter.settle();
-		const drawCalls = await countDrawCalls(async () => {
-			adapter.setVisibleLogicalRange(start);
-			await adapter.settle();
-		});
+		// Untimed: one redraw at the starting range, with drawing calls counted.
+		const drawCalls = await countRedraw(adapter, ranges[0] ?? { from: 0, to: n - 1 });
 
 		return {
 			jsTime: summarize(jsTime),
@@ -343,6 +324,135 @@ async function runFrames(job: FramesJob, factory: AdapterFactory, container: HTM
 			visibleBars,
 			warmupFrames: first - 1,
 			drawCalls,
+		};
+	} finally {
+		adapter.destroy();
+	}
+}
+
+/**
+ * Counts the Canvas 2D calls of one redraw at `range`, untimed. The first move makes sure the
+ * counted one changes the view, and lets a library fetch any rows the view needs beforehand.
+ */
+async function countRedraw(adapter: ChartAdapter, range: LogicalRange): Promise<Record<string, number>> {
+	adapter.setVisibleLogicalRange({ from: range.from + 0.5, to: range.to + 0.5 });
+	await adapter.settle();
+	return countDrawCalls(async () => {
+		adapter.setVisibleLogicalRange(range);
+		await adapter.settle();
+	});
+}
+
+/** Prepends `batch` and times it until the frame that shows it. The view is already set. */
+async function measurePrepend(adapter: ChartAdapter, batch: SeriesColumns): Promise<PrependTimings> {
+	const t0 = performance.now();
+	const prepared = adapter.preparePrepend(batch);
+	const t1 = performance.now();
+	const runs = libraryFrameRuns();
+	const js = frameJsTotal();
+	const frames = recordFrameTimes();
+	// Watched alongside `settle()` rather than awaited before it: `settle()` must start right after
+	// the call, or a library that applies data synchronously would be timed a frame late.
+	let firstFrame = Number.NaN;
+	const firstFrameSeen = afterLibraryFrame(runs).then(
+		() => {
+			firstFrame = performance.now();
+		},
+		// Only reached when the chart never draws, which fails the run below anyway.
+		() => undefined,
+	);
+	adapter.prepend(prepared);
+	const t2 = performance.now();
+	await adapter.settle();
+	const t3 = performance.now();
+	const frameJsMs = frameJsTotal() - js;
+	const stamps = frames.stop();
+	if (libraryFrameRuns() === runs) {
+		// Every prepend in this scenario reaches the screen, so a chart that did not draw lost the data.
+		throw new Error('The chart settled without drawing after prepend');
+	}
+	await firstFrameSeen;
+	const points = [t1, ...stamps.filter(stamp => stamp > t1 && stamp < t3), t3];
+	let longestFrameMs = 0;
+	for (let i = 1; i < points.length; i++) {
+		longestFrameMs = Math.max(longestFrameMs, (points[i] ?? 0) - (points[i - 1] ?? 0));
+	}
+	return {
+		prepareMs: t1 - t0,
+		callMs: t2 - t1,
+		firstFrameMs: firstFrame - t1,
+		shownMs: t3 - t1,
+		frameJsMs,
+		longestFrameMs,
+	};
+}
+
+async function runPrepend(
+	job: PrependJob,
+	factory: AdapterFactory,
+	container: HTMLElement,
+	probes: Probes,
+): Promise<PrependRun> {
+	const { kind } = job.dataset;
+	const data = generateSeries(kind, { seed: job.seed, count: job.dataset.size });
+	await probes.collectGarbage();
+	const before = await probes.measureMemory();
+	const adapter = await createSettled(factory, container, job.chart);
+	try {
+		adapter.setData(prepare(adapter, data));
+		await adapter.settle();
+
+		const half = job.visibleBars / 2;
+		// Logical index and time of the series' first row. Prepends move both back.
+		let first = 0;
+		let firstTime = data.time[0] ?? 0;
+		const prependNext = async (index: number): Promise<PrependTimings> => {
+			// Untimed: a batch that ends one step before the first bar, and the view with the first
+			// bar in its middle, so the left half is empty until the batch arrives.
+			const batch = generateSeries(kind, {
+				seed: job.seed + 2 + index,
+				count: job.batch,
+				startTime: firstTime - job.batch * DEFAULT_INTERVAL_MS,
+			});
+			adapter.setVisibleLogicalRange({ from: first - half, to: first + half - 1 });
+			await adapter.settle();
+			const timings = await measurePrepend(adapter, batch);
+			first -= job.batch;
+			firstTime = batch.time[0] ?? firstTime;
+			return timings;
+		};
+
+		const cold = await prependNext(0);
+		const samples: PrependTimings[] = [];
+		const measureStart = performance.now();
+		while (samples.length < job.prepends) {
+			samples.push(await prependNext(samples.length + 1));
+			if (samples.length >= job.minPrepends && overBudget(measureStart, job.budgetMs)) {
+				break;
+			}
+		}
+
+		// Untimed: the view of the last prepend, whose left half now holds the last batch, and the view
+		// at the new first bar, whose left half is empty.
+		const last = first + job.batch;
+		const shown = await countRedraw(adapter, { from: last - half, to: last + half - 1 });
+		const leftEmpty = await countRedraw(adapter, { from: first - half, to: first + half - 1 });
+
+		await probes.collectGarbage();
+		const after = await probes.measureMemory();
+		const distribution = (key: keyof PrependTimings) => summarize(samples.map(sample => sample[key]));
+		return {
+			cold,
+			prepareMs: distribution('prepareMs'),
+			callMs: distribution('callMs'),
+			firstFrameMs: distribution('firstFrameMs'),
+			shownMs: distribution('shownMs'),
+			frameJsMs: distribution('frameJsMs'),
+			longestFrameMs: distribution('longestFrameMs'),
+			visibleBars: job.visibleBars,
+			finalRows: data.length - first,
+			drawCalls: { shown, leftEmpty },
+			memory: memoryResult(before, after),
 		};
 	} finally {
 		adapter.destroy();

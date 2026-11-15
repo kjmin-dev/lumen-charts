@@ -81,7 +81,8 @@ export interface TickOptions {
 }
 
 const DEFAULT_START_TIME = Date.UTC(2000, 0, 1);
-const DEFAULT_INTERVAL_MS = 60_000;
+/** Time step between rows when `intervalMs` is not given: one minute. */
+export const DEFAULT_INTERVAL_MS = 60_000;
 const DEFAULT_START_PRICE = 100;
 const DEFAULT_NEW_BAR_EVERY = 10;
 

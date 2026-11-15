@@ -1,8 +1,9 @@
 import type { MemorySample } from '../jobs.ts';
+import { type UserAgentMemory, memorySample, splitUserAgentMemory } from '../memory.ts';
 import type { Probes } from './scenarios.ts';
 
 interface PerformanceWithMemory extends Performance {
-	measureUserAgentSpecificMemory?: () => Promise<{ bytes: number }>;
+	measureUserAgentSpecificMemory?: () => Promise<UserAgentMemory>;
 	memory?: { usedJSHeapSize: number };
 }
 
@@ -17,11 +18,11 @@ export function describeProbes(): { garbageCollection: string; memory: string } 
 				: 'unavailable';
 	const memory =
 		window.__benchMeasureMemory !== undefined
-			? 'runner: CDP Runtime.getHeapUsage'
+			? 'runner: CDP Runtime.getHeapUsage of the page and of each dedicated worker'
 			: window.crossOriginIsolated && perf.measureUserAgentSpecificMemory !== undefined
-				? 'page: performance.measureUserAgentSpecificMemory'
+				? 'page: performance.measureUserAgentSpecificMemory (page and dedicated workers)'
 				: perf.memory !== undefined
-					? 'page: performance.memory.usedJSHeapSize'
+					? 'page: performance.memory.usedJSHeapSize (page only)'
 					: 'unavailable';
 	return { garbageCollection, memory };
 }
@@ -29,26 +30,18 @@ export function describeProbes(): { garbageCollection: string; memory: string } 
 async function pageMemory(): Promise<MemorySample | null> {
 	const perf = performance as PerformanceWithMemory;
 	if (window.crossOriginIsolated && perf.measureUserAgentSpecificMemory !== undefined) {
-		// Chromium counts the JavaScript heap and ArrayBuffer backing stores together, not the DOM.
-		// The promise may only resolve after the next garbage collection (up to about 20 s).
-		const { bytes } = await perf.measureUserAgentSpecificMemory();
-		return {
-			method: 'performance.measureUserAgentSpecificMemory (JavaScript heap and ArrayBuffers combined)',
-			jsHeapBytes: bytes,
-			backingStoreBytes: null,
-			embedderHeapBytes: null,
-			totalBytes: bytes,
-		};
+		// Chromium counts the JavaScript heap and ArrayBuffer backing stores together, not the DOM, and
+		// attributes them to the page or to each worker. The promise may only resolve after the next
+		// garbage collection (up to about 20 s).
+		return splitUserAgentMemory(await perf.measureUserAgentSpecificMemory());
 	}
 	if (perf.memory !== undefined) {
 		const bytes = perf.memory.usedJSHeapSize;
-		return {
-			method: 'performance.memory.usedJSHeapSize',
-			jsHeapBytes: bytes,
-			backingStoreBytes: null,
-			embedderHeapBytes: null,
-			totalBytes: bytes,
-		};
+		return memorySample(
+			'performance.memory.usedJSHeapSize',
+			{ jsHeapBytes: bytes, backingStoreBytes: null, embedderHeapBytes: null, totalBytes: bytes },
+			null,
+		);
 	}
 	return null;
 }

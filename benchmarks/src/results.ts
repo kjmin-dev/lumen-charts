@@ -3,7 +3,11 @@
 import type { AdapterInfo, Job, PlannedJob, RunOutcome, RunResult } from './jobs.ts';
 import { type RunSpread, spread } from './stats.ts';
 
-export const RESULTS_SCHEMA_VERSION = 1;
+/**
+ * 2: memory samples include the page's dedicated workers, and `retainedBytes` counts them (it was
+ * the page alone); the prepend scenario.
+ */
+export const RESULTS_SCHEMA_VERSION = 2;
 
 export interface CaseResult {
 	/** Scenario, data set and parameters, without the adapter (see `caseId`). */

@@ -5,8 +5,8 @@ import type { ChartSize } from './adapter.ts';
 import type { SeriesKind } from './data.ts';
 import type { Distribution } from './stats.ts';
 
-export type ScenarioName = 'load' | 'tick' | 'frames';
-export const SCENARIOS: readonly ScenarioName[] = ['load', 'tick', 'frames'];
+export type ScenarioName = 'load' | 'tick' | 'frames' | 'prepend';
+export const SCENARIOS: readonly ScenarioName[] = ['load', 'tick', 'frames', 'prepend'];
 
 export interface DatasetSpec {
 	readonly kind: SeriesKind;
@@ -74,7 +74,32 @@ export interface FramesJob extends JobBase {
 	readonly warmupBudgetMs: number;
 }
 
-export type Job = LoadJob | TickJob | FramesJob;
+/**
+ * Older history added before the first bar while the view shows that first bar in its middle, so
+ * every prepended batch fills the empty left half of the view. Batch `r` is generated older than
+ * the series' current first bar; prepends follow each other like pages of history loaded while
+ * the user keeps scrolling back.
+ */
+export interface PrependJob extends JobBase {
+	readonly scenario: 'prepend';
+	/** Rows per prepend. */
+	readonly batch: number;
+	/**
+	 * Bars in view while prepending: twice the batch, so the batch fills the left half, but at most
+	 * the base data set.
+	 */
+	readonly visibleBars: number;
+	/** Measured prepends: the most a run measures. One more, unmeasured, comes first (`cold`). */
+	readonly prepends: number;
+	/**
+	 * Measuring stops after the first prepend that ends `budgetMs` or later after measuring started,
+	 * once at least `minPrepends` prepends are measured. A budget of 0 always measures `prepends`.
+	 */
+	readonly minPrepends: number;
+	readonly budgetMs: number;
+}
+
+export type Job = LoadJob | TickJob | FramesJob | PrependJob;
 
 /** All times start when `setData` is called, except `convertMs` and the `*WithConversionMs` sums. */
 export interface LoadTimings {
@@ -95,9 +120,8 @@ export interface LoadTimings {
 	frameJsMs: number;
 }
 
-export interface MemorySample {
-	/** How the numbers were obtained. */
-	method: string;
+/** Memory in use by one JavaScript heap, or by several summed. */
+export interface HeapUsage {
 	/** V8 heap in use (JavaScript objects). */
 	jsHeapBytes: number;
 	/** ArrayBuffer backing stores and external strings, or null when the method cannot see them. */
@@ -108,18 +132,44 @@ export interface MemorySample {
 	totalBytes: number;
 }
 
+/** The page's dedicated workers, summed. Each worker has a heap of its own. */
+export interface WorkerHeapUsage extends HeapUsage {
+	/** Number of workers measured. */
+	count: number;
+}
+
+/**
+ * Memory in use. The `HeapUsage` fields describe the page's main thread, as in every results file;
+ * `workers` adds the page's dedicated workers (results before schema 2 have no workers).
+ */
+export interface MemorySample extends HeapUsage {
+	/** How the numbers were obtained. */
+	method: string;
+	/** The page's dedicated workers, or null when the method cannot see them. */
+	workers: WorkerHeapUsage | null;
+	/** Page and workers together: totalBytes + workers.totalBytes (the page alone without workers). */
+	allTotalBytes: number;
+}
+
 export interface MemoryResult {
 	/** Before the measured chart is created, data already generated, after a full GC. */
 	before: MemorySample;
-	/** After the measured load has settled, after a full GC. */
+	/** After the measured work has settled, after a full GC. */
 	after: MemorySample;
-	/** after.totalBytes - before.totalBytes: what the chart retains. */
+	/**
+	 * after.allTotalBytes - before.allTotalBytes: what the chart retains in the page and its workers.
+	 * Before schema 2 this was the page alone, which missed an engine running in a worker.
+	 */
 	retainedBytes: number;
-	/** after.jsHeapBytes - before.jsHeapBytes. */
+	/** after.totalBytes - before.totalBytes: the page's main thread alone. */
+	retainedPageBytes: number;
+	/** Same for the workers' total, or null when they cannot be measured. */
+	retainedWorkerBytes: number | null;
+	/** after.jsHeapBytes - before.jsHeapBytes (page). */
 	retainedJsHeapBytes: number;
-	/** Same for backing stores, or null when the method cannot see them. */
+	/** Same for the page's backing stores, or null when the method cannot see them. */
 	retainedBackingStoreBytes: number | null;
-	/** Same for the embedder heap, or null when the method cannot see it. */
+	/** Same for the page's embedder heap, or null when the method cannot see it. */
 	retainedEmbedderHeapBytes: number | null;
 }
 
@@ -180,7 +230,56 @@ export interface FramesRun {
 	drawCalls: Record<string, number>;
 }
 
-export type RunResult = LoadRun | TickRun | FramesRun;
+/** One prepend. All times start when `prepend` is called, except `prepareMs`. */
+export interface PrependTimings {
+	/** Building the batch in the library's input format (`preparePrepend`), before the call. */
+	prepareMs: number;
+	/** The synchronous `prepend` call. */
+	callMs: number;
+	/**
+	 * Until the main thread has finished the first frame in which the library ran an animation-frame
+	 * callback after the call. That frame does not necessarily show the new bars yet.
+	 */
+	firstFrameMs: number;
+	/**
+	 * Until `settle()`, called right after `prepend`, resolves: the bars are applied and the main
+	 * thread has finished rendering the frame that shows them. This is the prepend-to-screen latency.
+	 */
+	shownMs: number;
+	/** JavaScript time in animation-frame callbacks between the call and `shownMs`. */
+	frameJsMs: number;
+	/**
+	 * Longest gap between the call, every frame that began before `shownMs`, and `shownMs`: how long
+	 * the screen could not be updated (about one refresh interval when nothing blocks).
+	 */
+	longestFrameMs: number;
+}
+
+export interface PrependRun {
+	/** The first prepend of the run, with code paths not yet compiled. Not part of the distributions. */
+	cold: PrependTimings;
+	/** Each field of `PrependTimings` over the measured prepends. */
+	prepareMs: Distribution;
+	callMs: Distribution;
+	firstFrameMs: Distribution;
+	shownMs: Distribution;
+	frameJsMs: Distribution;
+	longestFrameMs: Distribution;
+	/** Bars in view while prepending. */
+	visibleBars: number;
+	/** Rows of the series after the last prepend: the base, the cold batch and the measured ones. */
+	finalRows: number;
+	/**
+	 * Canvas 2D calls in one redraw, counted in untimed passes after the measurement: `shown` with
+	 * the last batch in the left half of the view, `leftEmpty` at the new left edge with the left
+	 * half empty. Shows that the prepended bars are drawn; empty for libraries without Canvas 2D.
+	 */
+	drawCalls: { shown: Record<string, number>; leftEmpty: Record<string, number> };
+	/** Before the chart is created and after the last prepend: what the history and caches hold. */
+	memory: MemoryResult | null;
+}
+
+export type RunResult = LoadRun | TickRun | FramesRun | PrependRun;
 
 export type FailureReason = 'error' | 'timeout' | 'crash';
 
@@ -252,8 +351,24 @@ export function caseId(job: Job): string {
 			return `${base}/${job.view}`;
 		case 'frames':
 			return `${base}/${job.motion}-${job.zoom === 'all' ? 'all' : sizeLabel(job.zoom)}`;
+		case 'prepend':
+			return `${base}/${sizeLabel(job.batch)}`;
 	}
 }
+
+/**
+ * Whether case `id` is selected by `pattern`: every `/`-separated part of the pattern equals the
+ * id's part at the same position, so `frames/line-10m` selects `frames/line-10m/pan-200` but
+ * `frames/candles-1m/pan-200` does not select `frames/candles-1m/pan-2000`.
+ */
+export function matchesCase(id: string, pattern: string): boolean {
+	const idParts = id.split('/');
+	const parts = pattern.split('/').filter(part => part !== '');
+	return parts.length > 0 && parts.length <= idParts.length && parts.every((part, i) => part === idParts[i]);
+}
+
+/** Why an adapter is left out of a data set, or null to run it. */
+export type SkipRule = (adapter: string, dataset: DatasetSpec) => string | null;
 
 export interface PlanOptions {
 	scenarios: readonly ScenarioName[];
@@ -262,6 +377,10 @@ export interface PlanOptions {
 	sizes: readonly number[];
 	/** Keep only data sets of these kinds (empty: all). */
 	kinds: readonly SeriesKind[];
+	/** Keep only cases selected by one of these patterns (see `matchesCase`; empty or absent: all). */
+	cases?: readonly string[];
+	/** Leaves out adapter and data set pairs known to fail, for example a renderer that runs out of memory. */
+	skip?: SkipRule;
 	repeats: number;
 	/** Small sizes and short runs that only check that everything works. */
 	quick: boolean;
@@ -291,6 +410,18 @@ export interface PlannedJob {
 	readonly job: Job;
 }
 
+/** A case an adapter is left out of, and why. */
+export interface SkippedCase {
+	readonly caseId: string;
+	readonly adapter: string;
+	readonly reason: string;
+}
+
+export interface Plan {
+	readonly jobs: PlannedJob[];
+	readonly skipped: SkippedCase[];
+}
+
 const LOAD_DATASETS: readonly DatasetSpec[] = [
 	{ kind: 'candles', size: 100 * K },
 	{ kind: 'candles', size: M },
@@ -304,24 +435,51 @@ const TICK_DATASETS: readonly DatasetSpec[] = [
 	{ kind: 'candles', size: M },
 ];
 const TICK_VIEWS: readonly TickView[] = ['latest', 'all'];
-const FRAME_DATASETS: readonly DatasetSpec[] = [{ kind: 'candles', size: M }];
-const FRAME_ZOOMS: readonly ZoomLevel[] = [200, 2_000, 20_000, 200_000, 'all'];
+// 10M line points are the data set of the stage 2 gate (design section 9).
+const FRAME_DATASETS: readonly DatasetSpec[] = [
+	{ kind: 'candles', size: M },
+	{ kind: 'line', size: 10 * M },
+];
+// Levels at or above the data set size are left out, so 2M only applies to 10M points.
+const FRAME_ZOOMS: readonly ZoomLevel[] = [200, 2_000, 20_000, 200_000, 2 * M, 'all'];
 const MOTIONS: readonly Motion[] = ['pan', 'zoom'];
+const PREPEND_DATASETS: readonly DatasetSpec[] = [
+	{ kind: 'candles', size: M },
+	{ kind: 'line', size: 10 * M },
+];
+
+interface PrependBatch {
+	readonly batch: number;
+	readonly prepends: number;
+	readonly minPrepends: number;
+}
+
+// 10k: a page of history as a datafeed delivers it while the user scrolls. 1M: a bulk load, where
+// the cost proportional to the batch shows. Every measured 1M prepend adds 1M rows, hence fewer.
+const PREPEND_BATCHES: readonly PrependBatch[] = [
+	{ batch: 10 * K, prepends: 20, minPrepends: 5 },
+	{ batch: M, prepends: 5, minPrepends: 3 },
+];
 
 const QUICK_LOAD_DATASETS: readonly DatasetSpec[] = [
 	{ kind: 'candles', size: 10 * K },
 	{ kind: 'line', size: 10 * K },
 ];
 const QUICK_TICK_DATASETS: readonly DatasetSpec[] = [{ kind: 'candles', size: 10 * K }];
-const QUICK_FRAME_DATASETS: readonly DatasetSpec[] = [{ kind: 'candles', size: 10 * K }];
+const QUICK_FRAME_DATASETS: readonly DatasetSpec[] = [
+	{ kind: 'candles', size: 10 * K },
+	{ kind: 'line', size: 10 * K },
+];
 const QUICK_FRAME_ZOOMS: readonly ZoomLevel[] = [200, 'all'];
+const QUICK_PREPEND_DATASETS: readonly DatasetSpec[] = QUICK_FRAME_DATASETS;
+const QUICK_PREPEND_BATCHES: readonly PrependBatch[] = [{ batch: K, prepends: 3, minPrepends: 2 }];
 
 /**
  * Builds the job list. Cases run one after another; within a case the repeats run in order and
  * each repeat runs every adapter back to back, so slow drift of the machine affects all adapters
  * alike.
  */
-export function planJobs(options: PlanOptions): PlannedJob[] {
+export function planJobs(options: PlanOptions): Plan {
 	const { quick, chart, seed } = options;
 	const budgetMs = options.budgetMs ?? DEFAULT_BUDGET_MS;
 	const warmupBudgetMs = budgetMs > 0 ? Math.min(WARMUP_BUDGET_MS, budgetMs) : 0;
@@ -379,16 +537,48 @@ export function planJobs(options: PlanOptions): PlannedJob[] {
 			}
 		}
 	}
-
-	const planned: PlannedJob[] = [];
-	for (const c of cases) {
-		for (let repeat = 0; repeat < options.repeats; repeat++) {
-			for (const adapter of options.adapters) {
-				const job: Job = { ...c, adapter };
-				const id = caseId(job);
-				planned.push({ id: `${id}/${adapter}#${repeat + 1}`, caseId: id, repeat, job });
+	if (options.scenarios.includes('prepend')) {
+		for (const dataset of (quick ? QUICK_PREPEND_DATASETS : PREPEND_DATASETS).filter(keep)) {
+			for (const { batch, prepends, minPrepends } of quick ? QUICK_PREPEND_BATCHES : PREPEND_BATCHES) {
+				cases.push({
+					scenario: 'prepend',
+					dataset,
+					seed,
+					chart,
+					batch,
+					// A view wider than the data cannot be shown: lumen stops zooming out where all of it fits.
+					visibleBars: Math.min(2 * batch, dataset.size),
+					prepends,
+					minPrepends,
+					budgetMs,
+				});
 			}
 		}
 	}
-	return planned;
+
+	const patterns = options.cases ?? [];
+	const jobs: PlannedJob[] = [];
+	const skipped: SkippedCase[] = [];
+	for (const c of cases) {
+		const id = caseId({ ...c, adapter: '' });
+		if (patterns.length > 0 && !patterns.some(pattern => matchesCase(id, pattern))) {
+			continue;
+		}
+		const adapters: string[] = [];
+		for (const adapter of options.adapters) {
+			const reason = options.skip?.(adapter, c.dataset) ?? null;
+			if (reason === null) {
+				adapters.push(adapter);
+			} else {
+				skipped.push({ caseId: id, adapter, reason });
+			}
+		}
+		for (let repeat = 0; repeat < options.repeats; repeat++) {
+			for (const adapter of adapters) {
+				const job: Job = { ...c, adapter };
+				jobs.push({ id: `${id}/${adapter}#${repeat + 1}`, caseId: id, repeat, job });
+			}
+		}
+	}
+	return { jobs, skipped };
 }

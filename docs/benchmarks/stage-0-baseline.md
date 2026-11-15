@@ -388,6 +388,11 @@ pnpm bench --budget 0 --out benchmarks/results/stage-0-baseline.json
 pnpm bench:report benchmarks/results/stage-0-baseline.json
 ```
 
+Since stage 2 the default matrix also has frames on 10M line points and the prepend scenario, and
+it skips Lightweight Charts on 10M line points (the crashes below). The stage 0 matrix is
+`pnpm bench --budget 0 --include-known-crashes --case load,tick,frames/candles-1m --lib
+lwc-conflation-on,lwc-conflation-off`.
+
 The baseline used the default options except the time budget, which did not exist yet: headed
 Playwright Chromium, viewport 1280 × 720, DPR 2, chart 1200 × 600, 5 repeats. `pnpm bench --headless` uses Chromium's new headless mode, which still
 rasterizes on the GPU; Playwright's default headless shell renders with SwiftShader on the CPU and is

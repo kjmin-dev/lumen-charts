@@ -2,7 +2,7 @@
 // with `?auto` and skips all of this.
 
 import type { ChartSize } from '../adapter.ts';
-import { adapters } from '../adapters/index.ts';
+import { adapters, knownFailure } from '../adapters/index.ts';
 import type { SeriesKind } from '../data.ts';
 import { K, M, type PlannedJob, type RunOutcome, SCENARIOS, type ScenarioName, planJobs, sizeLabel } from '../jobs.ts';
 import { type CompletedJob, RESULTS_SCHEMA_VERSION, type ResultsFile, aggregate } from '../results.ts';
@@ -77,7 +77,7 @@ export function setupManualPage(bench: BenchApi, chart: ChartSize): void {
 		running = true;
 		const quick = form.querySelector<HTMLInputElement>('input[name="quick"]')?.checked ?? false;
 		const repeats = Number(form.querySelector<HTMLInputElement>('input[name="repeats"]')?.value ?? '1');
-		const plan = planJobs({
+		const { jobs: plan } = planJobs({
 			scenarios: checkedValues(form, 'scenario') as ScenarioName[],
 			adapters: checkedValues(form, 'adapter'),
 			sizes: quick ? [] : checkedValues(form, 'size').map(label => SIZES.find(s => sizeLabel(s) === label) ?? 0),
@@ -86,6 +86,7 @@ export function setupManualPage(bench: BenchApi, chart: ChartSize): void {
 			quick,
 			chart,
 			seed: 1,
+			skip: knownFailure,
 		});
 		void runPlan(bench, plan, status, table, output, download).finally(() => {
 			running = false;

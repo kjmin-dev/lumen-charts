@@ -27,7 +27,8 @@ export function headline(result: CaseResult): string {
 			return (
 				`first frame ${ms(m('warm.firstFrameMs'))} (with conversion ${ms(m('warm.firstFrameWithConversionMs'))}, ` +
 				`settled ${ms(m('warm.settledMs'))}, cold ${ms(m('cold.firstFrameMs'))}), ` +
-				`retained ${mb(m('memory.retainedBytes'))}`
+				`retained ${mb(m('memory.retainedBytes'))} (page ${mb(m('memory.retainedPageBytes'))}, ` +
+				`workers ${mb(m('memory.retainedWorkerBytes'))})`
 			);
 		case 'tick':
 			return (
@@ -39,6 +40,12 @@ export function headline(result: CaseResult): string {
 			return (
 				`JS p50 ${ms(m('jsTime.p50'))} p95 ${ms(m('jsTime.p95'))}; ` +
 				`interval p50 ${ms(m('interval.p50'))} p95 ${ms(m('interval.p95'))}`
+			);
+		case 'prepend':
+			return (
+				`shown p50 ${ms(m('shownMs.p50'))} p95 ${ms(m('shownMs.p95'))} max ${ms(m('shownMs.max'))}; ` +
+				`first frame p50 ${ms(m('firstFrameMs.p50'))}; call p50 ${ms(m('callMs.p50'))}; ` +
+				`longest frame ${ms(m('longestFrameMs.max'))}; retained ${mb(m('memory.retainedBytes'))}`
 			);
 	}
 }

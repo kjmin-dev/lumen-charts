@@ -121,6 +121,30 @@ export function requestTimedFrame(callback: FrameCallback): void {
 	p.nativeRequest(time => runTimed(p, callback, time, false));
 }
 
+/**
+ * Collects the rAF timestamp of every frame until `stop` is called, including frames in which no
+ * library or harness work runs. Its callback is not timed and not counted as library work, so it
+ * changes neither frame JavaScript time nor `settle()`.
+ */
+export function recordFrameTimes(): { stop(): number[] } {
+	const p = requireProbe();
+	const stamps: number[] = [];
+	let active = true;
+	const onFrame = (time: number): void => {
+		if (active) {
+			stamps.push(time);
+			p.nativeRequest(onFrame);
+		}
+	};
+	p.nativeRequest(onFrame);
+	return {
+		stop: () => {
+			active = false;
+			return stamps;
+		},
+	};
+}
+
 export function startFrameRecording(): void {
 	requireProbe().recorder = new FrameRecorder();
 }

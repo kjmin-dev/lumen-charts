@@ -4,8 +4,8 @@
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { DatasetSpec } from '../src/jobs.ts';
-import { datasetLabel } from '../src/jobs.ts';
+import type { DatasetSpec, SkippedCase } from '../src/jobs.ts';
+import { datasetLabel, sizeLabel } from '../src/jobs.ts';
 import type { CaseResult, ResultsFile } from '../src/results.ts';
 import { type RunSpread, spread } from '../src/stats.ts';
 
@@ -200,25 +200,32 @@ function load(): string {
 	);
 }
 
-function memory(): string {
-	const list = cases.filter(c => c.job.scenario === 'load');
+/**
+ * Memory retained by the chart in the page and in its workers. Results before schema 2 measured the
+ * page alone: their page and worker columns are empty and `Retained` is the page's.
+ */
+function memoryTable(scenario: string, label: (c: CaseResult) => string, points: (c: CaseResult) => number): string {
+	const list = cases.filter(c => c.job.scenario === scenario);
 	const rows: string[][] = [];
-	for (const id of caseIds('load')) {
+	for (const id of caseIds(scenario)) {
 		for (const adapter of adaptersOf(list)) {
 			const c = find(id, adapter);
 			if (c === undefined) {
 				continue;
 			}
-			const size = c.job.dataset.size;
 			const retained = median(c, 'memory.retainedBytes');
 			rows.push([
-				datasetLabel(c.job.dataset),
+				label(c),
 				adapter,
 				cell(c, 'memory.retainedBytes', MIB),
-				retained === undefined ? '–' : number(retained / size),
+				cell(c, 'memory.retainedPageBytes', MIB),
+				cell(c, 'memory.retainedWorkerBytes', MIB),
+				retained === undefined ? '–' : number(retained / points(c)),
 				cell(c, 'memory.retainedJsHeapBytes', MIB),
 				cell(c, 'memory.retainedBackingStoreBytes', MIB),
 				cell(c, 'memory.retainedEmbedderHeapBytes', MIB),
+				cell(c, 'memory.after.workers.backingStoreBytes', MIB),
+				cell(c, 'memory.after.workers.count'),
 				cell(c, 'memory.after.totalBytes', MIB),
 			]);
 		}
@@ -228,14 +235,100 @@ function memory(): string {
 			'Data set',
 			'Adapter',
 			'Retained (MiB)',
+			'Page (MiB)',
+			'Workers (MiB)',
 			'Bytes per point',
-			'JS heap (MiB)',
-			'Backing stores (MiB)',
-			'Embedder heap (MiB)',
+			'Page JS heap (MiB)',
+			'Page backing stores (MiB)',
+			'Page embedder heap (MiB)',
+			'Worker backing stores after (MiB)',
+			'Workers after',
 			'Page total after (MiB)',
 		],
 		rows,
 	);
+}
+
+function memory(): string {
+	return memoryTable(
+		'load',
+		c => datasetLabel(c.job.dataset),
+		c => c.job.dataset.size,
+	);
+}
+
+function prependLabel(c: CaseResult): string {
+	return c.job.scenario === 'prepend'
+		? `${datasetLabel(c.job.dataset)} + ${sizeLabel(c.job.batch)}, ${sizeLabel(c.job.visibleBars)} in view`
+		: c.caseId;
+}
+
+/** Canvas 2D call that draws the series' bars: one `fillRect` per candle body or wick, one `lineTo` per point. */
+function seriesCall(c: CaseResult): string {
+	return c.job.dataset.kind === 'candles' ? 'fillRect' : 'lineTo';
+}
+
+function prepend(): string {
+	const list = cases.filter(c => c.job.scenario === 'prepend');
+	const rows: string[][] = [];
+	for (const id of caseIds('prepend')) {
+		for (const adapter of adaptersOf(list)) {
+			const c = find(id, adapter);
+			if (c === undefined || c.job.scenario !== 'prepend') {
+				continue;
+			}
+			const call = seriesCall(c);
+			const shown = median(c, `drawCalls.shown.${call}`);
+			const empty = median(c, `drawCalls.leftEmpty.${call}`);
+			rows.push([
+				prependLabel(c),
+				adapter,
+				cell(c, 'shownMs.p50', MS),
+				cell(c, 'shownMs.p95', MS),
+				cell(c, 'shownMs.max', MS),
+				cell(c, 'firstFrameMs.p50', MS),
+				cell(c, 'firstFrameMs.p95', MS),
+				cell(c, 'callMs.p50', MS),
+				cell(c, 'callMs.max', MS),
+				cell(c, 'frameJsMs.p50', MS),
+				cell(c, 'longestFrameMs.p50', MS),
+				cell(c, 'longestFrameMs.max', MS),
+				cell(c, 'prepareMs.p50', MS),
+				cell(c, 'cold.shownMs', MS),
+				cell(c, 'shownMs.count'),
+				shown === undefined || empty === undefined ? '–' : `${call} ${number(shown)} / ${number(empty)}`,
+				hostIdle(c),
+			]);
+		}
+	}
+	return (
+		table(
+			[
+				'Data set + batch, view',
+				'Adapter',
+				'Shown p50',
+				'Shown p95',
+				'Shown max',
+				'First frame p50',
+				'First frame p95',
+				'Call p50',
+				'Call max',
+				'Frame JS p50',
+				'Longest frame p50',
+				'Longest frame max',
+				'Prepare p50',
+				'Cold shown',
+				'Prepends measured',
+				'Series calls, shown / left empty',
+				'Host CPU idle',
+			],
+			rows,
+		) + `\nAll times in ms. ${runsNote(list)}\n`
+	);
+}
+
+function prependMemory(): string {
+	return memoryTable('prepend', prependLabel, c => median(c, 'finalRows') ?? Number.NaN);
 }
 
 function tick(): string {
@@ -402,15 +495,33 @@ function failures(): string {
 	return lines.length === 0 ? 'None.\n' : `${lines.join('\n')}\n`;
 }
 
-const sections: [string, () => string][] = [
+/** Adapters the runner left out of cases they are known to fail on. */
+function skippedCases(): string {
+	const lines: string[] = [];
+	for (const r of results) {
+		const runner = (r.environment['runner'] ?? {}) as { skipped?: SkippedCase[] };
+		for (const { caseId, adapter, reason } of runner.skipped ?? []) {
+			lines.push(`- ${caseId} ${adapter}: ${reason}`);
+		}
+	}
+	return lines.length === 0 ? 'None.\n' : `${lines.join('\n')}\n`;
+}
+
+// The scenario of each section, if any: sections without results of it are left out.
+const sections: [string, () => string, string?][] = [
 	['Environment', environment],
-	['Load', load],
-	['Memory after load', memory],
-	['Tick', tick],
-	['Tick cost against data set size (sync avg, ratio to the smallest size)', scaling],
-	['Pan and zoom frames', frames],
+	['Load', load, 'load'],
+	['Memory after load', memory, 'load'],
+	['Tick', tick, 'tick'],
+	['Tick cost against data set size (sync avg, ratio to the smallest size)', scaling, 'tick'],
+	['Pan and zoom frames', frames, 'frames'],
+	['Prepend', prepend, 'prepend'],
+	['Memory after the prepends', prependMemory, 'prepend'],
 	['Failed runs', failures],
+	['Skipped cases', skippedCases],
 ];
-for (const [title, render] of sections) {
-	process.stdout.write(`## ${title}\n\nValues: median over runs (min–max).\n\n${render()}\n`);
+for (const [title, render, scenario] of sections) {
+	if (scenario === undefined || caseIds(scenario).length > 0) {
+		process.stdout.write(`## ${title}\n\nValues: median over runs (min–max).\n\n${render()}\n`);
+	}
 }
