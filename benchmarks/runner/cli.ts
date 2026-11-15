@@ -3,7 +3,7 @@
 // Usage: pnpm bench [options]; pnpm bench --help lists them.
 
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import { dirname, relative, resolve } from 'node:path';
@@ -15,6 +15,7 @@ import { adapters, knownFailure } from '../src/adapters/index.ts';
 import type { SeriesKind } from '../src/data.ts';
 import type { PageEnvironment } from '../src/harness/environment.ts';
 import { headline } from '../src/headline.ts';
+import { redactLocalPaths } from '../src/redact.ts';
 import {
 	type AdapterInfo,
 	DEFAULT_BUDGET_MS,
@@ -214,6 +215,21 @@ function machineEnvironment(): Record<string, unknown> {
 	};
 }
 
+/** Local directories that must not appear in a results file, each with what replaces it. */
+function localPrefixes(): [string, string][] {
+	const prefixes: [string, string][] = [[os.homedir(), '~']];
+	const tmp = os.tmpdir();
+	prefixes.push([tmp, '$TMPDIR']);
+	try {
+		// On macOS the temporary directory is reached through a symbolic link (/var -> /private/var).
+		prefixes.push([realpathSync(tmp), '$TMPDIR']);
+	} catch {
+		// Not resolvable: the unresolved path is replaced.
+	}
+	return prefixes;
+}
+
+/** Text of a `chrome://` page, with local paths removed (see `redactLocalPaths`). */
 async function scrapeChromePage(browser: Browser, url: string, selector: string): Promise<string | null> {
 	const context = await browser.newContext();
 	try {
@@ -221,7 +237,7 @@ async function scrapeChromePage(browser: Browser, url: string, selector: string)
 		await page.goto(url, { timeout: 10_000 });
 		await page.waitForTimeout(500);
 		const text = await page.locator(selector).first().innerText({ timeout: 5_000 });
-		return text.trim();
+		return redactLocalPaths(text.trim(), localPrefixes());
 	} catch {
 		return null;
 	} finally {
