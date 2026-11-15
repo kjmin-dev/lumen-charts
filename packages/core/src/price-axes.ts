@@ -26,11 +26,12 @@ export interface PriceScaleApi {
 	/** Width of the axis in CSS pixels; 0 for an overlay. */
 	width(): number;
 	/**
-	 * The values in view: prices on a normal or logarithmic scale, percent or index values on a
-	 * percentage or indexed one. Null until the scale has shown something.
+	 * The range of values fitted between the scale's margins: prices on a normal or logarithmic
+	 * scale, percent or index values on a percentage or indexed one. Null until the scale has shown
+	 * something.
 	 */
 	getVisibleRange(): PriceRange | null;
-	/** Shows these values (in the units of `getVisibleRange`) and turns autoscale off. */
+	/** Fits these values (in the units of `getVisibleRange`) between the margins and turns autoscale off. */
 	setVisibleRange(range: PriceRange): void;
 	/**
 	 * Where a price is drawn on this scale; on a percentage or indexed scale, relative to the first

@@ -375,6 +375,40 @@ describe('price axes', () => {
 		expect(range()).toEqual(before);
 	});
 
+	it('reuses its arrays from frame to frame on every mode and axis', async () => {
+		chart.applyOptions({
+			priceScale: { mode: 'logarithmic' },
+			priceScales: { left: { visible: true, position: 'left', mode: 'percentage', invertScale: true } },
+		});
+		const candlesSeries = chart.addSeries('candlestick');
+		candlesSeries.setData(candles(5000));
+		const levels = chart.addSeries('line', { priceScaleId: 'left' });
+		levels.setData(line(5000, i => 1000 + (i % 100)));
+		chart.timeScale().setVisibleLogicalRange({ from: 3000, to: 3200 });
+		await settle();
+		const arrays = () => {
+			const views = [candlesSeries, levels].map(
+				series => (series as unknown as { view: Record<string, unknown> }).view,
+			);
+			return [
+				...['default', 'left'].map(id => (axisOf(id) as unknown as { tickYs: Float32Array }).tickYs),
+				...views.flatMap(view =>
+					['open', 'high', 'low', 'close', 'x', 'yOpen', 'yHigh', 'yLow', 'yClose'].map(key => view[key]),
+				),
+			];
+		};
+		const before = arrays();
+		for (let i = 1; i <= 20; i++) {
+			chart.timeScale().setVisibleLogicalRange({ from: 3000 + i * 3, to: 3200 + i * 3 });
+			pointer(chart.element(), 'pointermove', 200 + i, 100 + i);
+			runFrames();
+		}
+		await settle();
+		const after = arrays();
+		expect(after).toHaveLength(before.length);
+		after.forEach((array, i) => expect(array).toBe(before[i]));
+	});
+
 	it('keeps an autoscaled scale in place when the pane is dragged up or down', async () => {
 		chart.addSeries('candlestick').setData(candles(1000));
 		await settle();

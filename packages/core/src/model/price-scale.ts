@@ -277,6 +277,9 @@ export class PriceScale {
 	 * Recomputes ticks at least `spacing` CSS pixels apart, if the scale changed since the last call.
 	 * Ticks are round values: multiples of 1, 2 or 5 times a power of ten (and of the tick size) on a
 	 * linear scale; on a logarithmic one, round prices whose step grows with the price.
+	 *
+	 * Ticks cover the pane, but not more than `spacing` pixels beyond the range: a scale whose margins
+	 * keep it in a band of the pane (an oscillator below the prices) labels that band only.
 	 */
 	public updateTicks(spacing: number): void {
 		if (this._ticksVersion === this.version && this._ticksSpacing === spacing) {
@@ -289,20 +292,24 @@ export class PriceScale {
 		if (this.height <= 0 || !this.hasRange) {
 			return;
 		}
+		const a = this.yToValue(0);
+		const b = this.yToValue(this.height);
+		const reach = spacing / Math.abs(this._scale);
+		const low = Math.max(Math.min(a, b), this.min - reach);
+		const high = Math.min(Math.max(a, b), this.max + reach);
 		if (this.mode === 'logarithmic') {
-			this._logTicks(spacing);
+			this._logTicks(spacing, low, high);
 		} else {
-			this._linearTicks(spacing);
+			this._linearTicks(spacing, low, high);
 		}
 	}
 
-	private _linearTicks(spacing: number): void {
+	/** Ticks of a linear scale between the values `from` and `to`, bottom to top. */
+	private _linearTicks(spacing: number, from: number, to: number): void {
 		const step = this._step(spacing / Math.abs(this._scale), this.mode === 'normal');
 		this._setDecimals(step);
-		const a = this.yToValue(0);
-		const b = this.yToValue(this.height);
-		const low = Math.ceil(Math.min(a, b) / step);
-		const high = Math.floor(Math.max(a, b) / step);
+		const low = Math.ceil(from / step);
+		const high = Math.floor(to / step);
 		const percent = this.mode === 'percentage';
 		let count = 0;
 		for (let k = low; k <= high && count < MAX_TICKS; k++) {
@@ -321,7 +328,8 @@ export class PriceScale {
 	}
 
 	/**
-	 * Ticks of a logarithmic scale, bottom to top, on round prices at least `spacing` pixels apart.
+	 * Ticks of a logarithmic scale between the values `from` and `to`, bottom to top, on round prices
+	 * at least `spacing` pixels apart.
 	 *
 	 * Over a range of less than a factor of `LOG_UNIFORM_SPAN`, the ticks are multiples of one step,
 	 * the one the top needs, and look like those of a linear scale. Over a wider range the step grows
@@ -329,11 +337,9 @@ export class PriceScale {
 	 * to the price `spacing` pixels higher (1, 2, 4, 10, 20, 40, ... over decades; every decade or
 	 * every few once decades get narrow).
 	 */
-	private _logTicks(spacing: number): void {
-		const a = this.yToValue(0);
-		const b = this.yToValue(this.height);
-		const bottom = 10 ** Math.min(a, b);
-		const top = 10 ** Math.max(a, b);
+	private _logTicks(spacing: number, from: number, to: number): void {
+		const bottom = 10 ** from;
+		const top = 10 ** to;
 		// The price ratio `spacing` pixels span.
 		const ratio = 10 ** (spacing / Math.abs(this._scale));
 		const uniform = top < bottom * LOG_UNIFORM_SPAN;

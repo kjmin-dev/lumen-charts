@@ -313,6 +313,22 @@ describe('PriceScale ticks', () => {
 		expect(ps.tickLabels[0]).toBe('100.000');
 	});
 
+	it('labels only the band of the pane a scale with wide margins fills', () => {
+		for (const mode of ['normal', 'logarithmic'] as const) {
+			const ps = new PriceScale();
+			ps.setHeight(400);
+			ps.setMode(mode);
+			ps.setMargins(0.75, 0);
+			ps.setRange(ps.toValue(30), ps.toValue(70));
+			ps.updateTicks(40);
+			expect(ps.tickCount).toBeGreaterThanOrEqual(2);
+			for (const y of rows(ps, 40)) {
+				// The band is the lowest quarter; ticks reach at most one spacing above it.
+				expect(y).toBeGreaterThanOrEqual(100 - 40 - 1e-6);
+			}
+		}
+	});
+
 	it('changes the generation of the ticks only when they are recomputed or cleared', () => {
 		const ps = scaleFor('normal');
 		ps.updateTicks(40);
