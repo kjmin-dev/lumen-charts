@@ -10,6 +10,13 @@ type Prepared = { kind: 'candles'; columns: CandleColumns } | { kind: 'line'; co
 
 type AnySeries = SeriesApi<'candlestick'> | SeriesApi<'line'>;
 
+type Feed = (from: number, to: number) => SeriesColumns;
+
+/** A datafeed in lumen's shape over a function of the page. */
+function datafeedOf(feed: Feed) {
+	return { getBars: ({ from, to }: { from: number; to: number }) => Promise.resolve(feed(from, to)) } as never;
+}
+
 class LumenAdapter implements ChartAdapter<Prepared> {
 	private readonly _chart: ChartApi;
 	private _series: AnySeries | null = null;
@@ -56,27 +63,52 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 		}
 	}
 
-	public setDataWithDatafeed(
-		data: Prepared,
-		datafeed: (from: number, to: number) => SeriesColumns,
-		memoryLimit: number,
-	): void {
+	public setDataWithDatafeed(data: Prepared, datafeed: Feed, memoryLimit: number): void {
 		this._chart.applyOptions({ memoryLimit });
 		this._replaceSeries();
-		const getBars = ({ from, to }: { from: number; to: number }) => Promise.resolve(datafeed(from, to));
 		if (data.kind === 'candles') {
-			const series = this._chart.addSeries('candlestick', { datafeed: { getBars } as never });
+			const series = this._chart.addSeries('candlestick', { datafeed: datafeedOf(datafeed) });
 			this._series = series;
 			this._kind = 'candles';
 			const { time, open, high, low, close } = data.columns;
 			series.setData({ time, open, high, low, close });
 		} else {
-			const series = this._chart.addSeries('line', { datafeed: { getBars } as never });
+			const series = this._chart.addSeries('line', { datafeed: datafeedOf(datafeed) });
 			this._series = series;
 			this._kind = 'line';
 			const { time, value } = data.columns;
 			series.setData({ time, value });
 		}
+	}
+
+	public addSeriesWithDatafeed(data: Prepared, datafeed: Feed | null): void {
+		if (data.kind !== 'line') {
+			throw new Error('Secondary series are lines');
+		}
+		const series = this._chart.addSeries('line', datafeed === null ? {} : { datafeed: datafeedOf(datafeed) });
+		const { time, value } = data.columns;
+		series.setData({ time, value });
+	}
+
+	public reloadWithDatafeed(data: Prepared, datafeed: Feed): void {
+		if (this._series === null || this._kind !== 'line' || data.kind !== 'line') {
+			throw new Error('Reloading needs a line series with a datafeed');
+		}
+		const { time, value } = data.columns;
+		(this._series as SeriesApi<'line'>).setData({ time, value }, { datafeed: datafeedOf(datafeed) });
+	}
+
+	public correctBar(time: number, value: number): void {
+		(this._series as SeriesApi<'line'>).update({ time, value });
+	}
+
+	public removeBars(from: number, to: number): void {
+		const series = this._series as SeriesApi<'line'> & { removeBars?: (range: { from: number; to: number }) => void };
+		// The code of earlier stages, measured with the same harness, has no deletions.
+		if (typeof series.removeBars !== 'function') {
+			throw new Error('This version of lumen cannot remove bars');
+		}
+		series.removeBars({ from, to });
 	}
 
 	public preparePrepend(data: CandleColumns | LineColumns): Prepared {

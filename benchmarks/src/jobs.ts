@@ -123,6 +123,14 @@ export interface PrependJob extends JobBase {
 }
 
 /**
+ * What a refetch case runs. `jumps`: one series with a datafeed, and the jumps. `several`: the same
+ * series, a second one with a datafeed on the same times and a third without one over the last
+ * tenth of them, and the jumps. `ops`: one series with a datafeed, a few jumps, then timed
+ * corrections, deletions and a change of resolution.
+ */
+export type RefetchVariant = 'jumps' | 'several' | 'ops';
+
+/**
  * A series with a datafeed under a memory limit, for libraries that can fetch history again. Once
  * the library has let rows go, the view jumps from one region of old history to the next at a
  * zoom that shows single bars, so a jump that lands on rows let go makes the library fetch them
@@ -131,6 +139,7 @@ export interface PrependJob extends JobBase {
  */
 export interface RefetchJob extends JobBase {
 	readonly scenario: 'refetch';
+	readonly variant: RefetchVariant;
 	/** Memory limit handed to the library, in bytes. */
 	readonly memoryLimit: number;
 	/** Bars in view at every jump. */
@@ -410,11 +419,27 @@ export interface PrependRun {
 	memory: MemoryResult | null;
 }
 
+/** Operations on history let go, each timed from the call until `settle()` resolves. */
+export interface RefetchOperations {
+	/** Correcting a bar in view, which is in memory. */
+	correctHeldMs: Distribution;
+	/** Correcting a bar far from the view, which was let go: its bars are fetched again first. */
+	correctLetGoMs: Distribution;
+	/** Removing 10 bars in the middle of history let go, which moves the bars on one side. */
+	removeMs: Distribution;
+	/** Switching to 5-minute bars: a new history of a fifth of the bars, with a datafeed for them. */
+	resolutionMs: number;
+	/** Calls of the old datafeed after the switch (none expected). */
+	staleFetches: number;
+}
+
 export interface RefetchRun {
 	/** The first jump, with code paths not yet compiled. Not part of the distributions. */
 	coldShownMs: number;
 	/** From `setVisibleLogicalRange` until `settle()` resolves with the region drawn. */
 	shownMs: Distribution;
+	/** Animation frames the library ran during a jump, up to the one that shows the region. */
+	shownFrames: Distribution;
 	/** Datafeed calls during one jump. */
 	fetches: Distribution;
 	/** Rows the datafeed returned during one jump. */
@@ -424,10 +449,14 @@ export interface RefetchRun {
 	visibleBars: number;
 	memoryLimit: number;
 	rows: number;
+	/** Series on the chart. */
+	series: number;
 	/** Before the chart is created and once the library has let rows go, before the first jump. */
 	memoryAfterLoad: MemoryResult | null;
 	/** Before the chart is created and after the last jump. */
 	memory: MemoryResult | null;
+	/** The `ops` variant only. */
+	operations: RefetchOperations | null;
 }
 
 /**
@@ -600,7 +629,7 @@ export function caseId(job: Job): string {
 		case 'prepend':
 			return `${base}/${sizeLabel(job.batch)}`;
 		case 'refetch':
-			return `${base}/${job.memoryLimit / 2 ** 20}mib`;
+			return `${base}/${job.memoryLimit / 2 ** 20}mib/${job.variant}`;
 		case 'ind-load':
 			return `${base}/${job.indicators}`;
 		case 'ind-apply':
@@ -724,13 +753,26 @@ const PREPEND_BATCHES: readonly PrependBatch[] = [
 	{ batch: M, prepends: 5, minPrepends: 3 },
 ];
 
+interface RefetchCase {
+	readonly dataset: DatasetSpec;
+	readonly memoryLimit: number;
+	readonly variant: RefetchVariant;
+}
+
 // The stage 2 gate's data set. 128 MiB is below what 10M points take with their levels (about
-// 185 MiB), so most of the old history is let go before the first jump.
-const REFETCH_CASES: readonly { dataset: DatasetSpec; memoryLimit: number }[] = [
-	{ dataset: { kind: 'line', size: 10 * M }, memoryLimit: 128 * 2 ** 20 },
+// 185 MiB), so most of the old history is let go before the first jump. 1 MiB is below anything a
+// library can keep, so what it holds then is its floor. Three series at 256 MiB: the two with a
+// datafeed take about 370 MiB with their levels.
+const REFETCH_CASES: readonly RefetchCase[] = [
+	{ dataset: { kind: 'line', size: 10 * M }, memoryLimit: 128 * 2 ** 20, variant: 'jumps' },
+	{ dataset: { kind: 'line', size: 10 * M }, memoryLimit: 2 ** 20, variant: 'jumps' },
+	{ dataset: { kind: 'line', size: 10 * M }, memoryLimit: 256 * 2 ** 20, variant: 'several' },
+	{ dataset: { kind: 'line', size: 10 * M }, memoryLimit: 128 * 2 ** 20, variant: 'ops' },
 ];
-const QUICK_REFETCH_CASES: readonly { dataset: DatasetSpec; memoryLimit: number }[] = [
-	{ dataset: { kind: 'line', size: 100 * K }, memoryLimit: 1.5 * 2 ** 20 },
+const QUICK_REFETCH_CASES: readonly RefetchCase[] = [
+	{ dataset: { kind: 'line', size: 100 * K }, memoryLimit: 1.5 * 2 ** 20, variant: 'jumps' },
+	{ dataset: { kind: 'line', size: 100 * K }, memoryLimit: 3 * 2 ** 20, variant: 'several' },
+	{ dataset: { kind: 'line', size: 100 * K }, memoryLimit: 1.5 * 2 ** 20, variant: 'ops' },
 ];
 
 // Stage 3: 20 indicators on candles. 100k is where Lightweight Charts, which takes one line series
@@ -860,17 +902,19 @@ export function planJobs(options: PlanOptions): Plan {
 	}
 
 	if (options.scenarios.includes('refetch')) {
-		for (const { dataset, memoryLimit } of quick ? QUICK_REFETCH_CASES : REFETCH_CASES) {
+		for (const { dataset, memoryLimit, variant } of quick ? QUICK_REFETCH_CASES : REFETCH_CASES) {
 			if (keep(dataset)) {
+				const ops = variant === 'ops';
 				cases.push({
 					scenario: 'refetch',
+					variant,
 					dataset,
 					seed,
 					chart,
 					memoryLimit,
 					visibleBars: 2_000,
-					jumps: quick ? 3 : 20,
-					minJumps: quick ? 2 : 5,
+					jumps: quick || ops ? 3 : 20,
+					minJumps: quick || ops ? 2 : 5,
 					budgetMs,
 				});
 			}

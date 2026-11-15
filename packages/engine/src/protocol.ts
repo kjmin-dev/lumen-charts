@@ -77,18 +77,25 @@ export type Command =
 	/** `fetchable`: rows of this series can be fetched again, so they may be let go under a memory limit. */
 	| { type: 'add'; seq: number; series: number; kind: SeriesKind; fetchable?: boolean }
 	| { type: 'remove'; seq: number; series: number }
-	| { type: 'set'; seq: number; series: number; count: number; data: Float64Array }
+	/**
+	 * Replaces the rows of a series: a new history, for example at another resolution. Requests out
+	 * for the old rows are cancelled. `fetchable` changes whether rows may be let go (unchanged when
+	 * absent).
+	 */
+	| { type: 'set'; seq: number; series: number; count: number; data: Float64Array; fetchable?: boolean }
 	| { type: 'prepend'; seq: number; series: number; count: number; data: Float64Array }
 	| { type: 'ticks'; seq: number; count: number; data: Float64Array }
+	/** Removes the bars of a series with times in `[from, to]` (UTC milliseconds, inclusive). */
+	| { type: 'delete'; seq: number; series: number; from: number; to: number }
 	/** Rows (level 0) or buckets (level >= 1) `[start, start + count)` of one level. */
 	| { type: 'window'; seq: number; level: number; start: number; count: number; capacity: number }
 	/** Memory the engine aims to stay under, in bytes; `Infinity` for no limit. */
 	| { type: 'limit'; seq: number; bytes: number }
 	/**
-	 * Rows fetched again for a `FetchRequest` starting at `start`, column-major with time first, or
+	 * Rows fetched again for the `FetchRequest` with id `request`, column-major with time first, or
 	 * null when fetching failed.
 	 */
-	| { type: 'rows'; seq: number; series: number; start: number; count: number; data: Float64Array | null }
+	| { type: 'rows'; seq: number; request: number; count: number; data: Float64Array | null }
 	/**
 	 * Adds an indicator instance, or changes one (same `id`): its outputs become derived series with
 	 * the ids in `outputs`. `params` follow the definition's order.
@@ -135,21 +142,34 @@ export type HostMessage = (Command & { engine?: number }) | { type: 'close'; eng
 
 /**
  * Rows `[start, end)` of a series that the engine let go under its memory limit and needs again,
- * with the times of the first and last of them (UTC milliseconds, inclusive).
+ * with the times of the first and last of them (UTC milliseconds, inclusive). `start` and `end`
+ * index the series' own rows; for the main series they are main-timeline indexes.
  */
 export interface FetchRequest {
+	/** Unique for the engine's lifetime; the rows are handed back under it, and `cancel` names it. */
+	id: number;
 	series: number;
 	start: number;
 	end: number;
 	from: number;
 	to: number;
+	/**
+	 * Times of bars that deletions waiting on the series remove, as `[from, to]` pairs: the answer
+	 * may leave them out. Its other bars are checked against the times the engine kept (every 16th
+	 * bar, and the first and last of each chunk) rather than a checksum of all of them.
+	 */
+	removing?: number[];
 }
 
 /** What became of rows handed back with a `rows` command. */
 export interface RestoreResult {
+	request: number;
 	series: number;
 	start: number;
-	/** Rows expected. */
+	/**
+	 * Rows expected; 0 for a request the engine no longer needs as it was made: cancelled, its rows
+	 * replaced, or bars removed there by a deletion that waits (which asks for them again).
+	 */
 	expected: number;
 	/** Rows received. */
 	received: number;
@@ -172,6 +192,8 @@ export interface SeriesBlock {
  */
 export interface WindowSnapshot {
 	level: number;
+	/** `seq` of the `window` command this snapshot answers. */
+	request?: number;
 	/**
 	 * Set on an empty raw window whose rows are not in memory and could not be fetched again. The
 	 * client should draw a coarse level meanwhile and ask again later.
@@ -218,10 +240,12 @@ export interface EngineEvent {
 	/** Changed rows of the raw level and the changed buckets of every coarse level. */
 	patches?: Patch[];
 	/**
-	 * Rows the engine needs fetched again: a raw window over them waits until they are back (or
-	 * fetching failed) and comes with a later event.
+	 * Rows the engine needs fetched again: a raw window over them, or an operation that needs them,
+	 * waits until they are back (or fetching failed) and comes with a later event.
 	 */
 	fetch?: FetchRequest[];
+	/** Ids of fetch requests whose rows are no longer needed: the view moved away, or they were replaced. */
+	cancel?: number[];
 	/** Outcome of the rows handed back by the command this event answers. */
 	restored?: RestoreResult;
 	/**
@@ -231,6 +255,18 @@ export interface EngineEvent {
 	computing?: number;
 	/** Plugin modules that finished loading, or failed to, since the last event. */
 	plugins?: PluginResult[];
+	/**
+	 * Operations of this command that wait for rows let go and take effect in a later event: rows of
+	 * a batch of ticks, or 0 for a `set`, `prepend` or `delete`.
+	 */
+	waiting?: number[];
+	/**
+	 * Operations that waited and took effect in this event, as pairs of the `seq` of their command
+	 * and their row. A `set` or `remove` of a series drops its waiting operations.
+	 */
+	applied?: number[];
+	/** Operations that waited and were refused in this event (a correction of a bar that is gone), as in `applied`. */
+	refused?: number[];
 }
 
 /** First message a worker host sends, before any event. */

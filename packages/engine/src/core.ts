@@ -16,18 +16,30 @@ import {
 	valueColumnCount,
 } from './protocol';
 import { LINE_AGGREGATES, OHLCV_AGGREGATES, Pyramid, TIME_AGGREGATES, aggregate, storeBuckets } from './pyramid';
-import { ChunkedStore } from './store';
+import { ANCHOR_SHIFT, ChunkedStore, SUMMARY_BYTES } from './store';
 
 /** Rows of the main timeline a bulk level-of-detail build handles between two yields. */
 const BUILD_SLICE = 65_536;
 /** Most chunks one fetch request asks for. */
 const FETCH_CHUNKS = 16;
-
-const NO_RUNS: readonly number[] = [];
+/** Most chunks let go in one go (about 3 ms of summaries on an Apple M1). */
+const EVICT_SLICE = 32;
+/** log2 of the rows per bucket of the finest level. */
+const BUCKET_SHIFT = 4;
+/** Numbers a tick keeps while it waits: its time and values. */
+const TICK_ROW = TICK_STRIDE - 1;
 
 /** Value column (counted from the first value column) each level column of a kind is built from. */
 const LINE_SOURCES: readonly number[] = [0, 0, 0, 0];
 const OHLCV_SOURCES: readonly number[] = [0, 1, 2, 3, 4];
+
+const EMPTY = new Float64Array(0);
+const NO_RUNS: readonly number[] = [];
+
+/** What a correction of an older bar can do now. */
+const APPLY = 0;
+const WAIT = 1;
+const REFUSE = 2;
 
 interface SeriesState {
 	readonly id: number;
@@ -38,7 +50,7 @@ interface SeriesState {
 	readonly pyramid: Pyramid;
 	readonly sources: readonly number[];
 	/** Rows can be fetched again (the series has a datafeed), so they may be let go under the memory limit. */
-	readonly fetchable: boolean;
+	fetchable: boolean;
 	/**
 	 * Main-timeline rows changed by the command being run, as `[from, to)` pairs. Rows far apart
 	 * (a correction of an old bar and an update of the last one) stay separate runs, so a patch
@@ -47,6 +59,88 @@ interface SeriesState {
 	runs: number[];
 	/** Position in `runs` of the run touched last. */
 	run: number;
+	/** Chunks (grid numbers of this series' store) being fetched. */
+	readonly fetching: Set<number>;
+	/**
+	 * Operations of this series waiting for rows let go, oldest first. While one waits, later ones
+	 * of the series wait behind it, so they take effect in the order they were made.
+	 */
+	readonly queue: Held[];
+}
+
+/** An operation that waits for rows let go before it takes effect. */
+interface Held {
+	readonly state: SeriesState;
+	/** `seq` of the command it came with, and its row in a batch of ticks (0 for other commands). */
+	readonly seq: number;
+	readonly row: number;
+	readonly type: 'tick' | 'set' | 'prepend' | 'delete';
+	/** A tick: its time and values. A set or prepend: its rows, column-major with time first. */
+	readonly data: Float64Array;
+	readonly count: number;
+	/** Times a deletion covers, inclusive. */
+	readonly from: number;
+	readonly to: number;
+	/** A set: whether rows may be let go from now on (unchanged when undefined). */
+	readonly fetchable: boolean | undefined;
+	/**
+	 * A deletion in the middle: 1 when the rows before the gap move up, 0 when those after it move
+	 * down, NaN until decided. Decided once, so what it needs does not change while it waits.
+	 */
+	side: number;
+}
+
+/** Rows of a series being fetched again. */
+interface Request {
+	readonly id: number;
+	readonly state: SeriesState;
+	readonly start: number;
+	readonly end: number;
+	/**
+	 * For the chunks deletions remove bars from: the times the deletions waiting on the series remove,
+	 * as `[from, to]` pairs (null otherwise). The source has usually removed those bars already, so
+	 * they may come back without them.
+	 */
+	readonly cuts: readonly number[] | null;
+}
+
+/** A raw window waiting for rows to come back. */
+interface DeferredWindow {
+	readonly seq: number;
+	readonly start: number;
+	readonly count: number;
+	readonly capacity: number;
+}
+
+/**
+ * Buckets of a secondary series to rebuild because its bars with times in `[from, to]` came back
+ * with other values than the ones let go; they wait for the other members of those buckets.
+ */
+interface Rebuild {
+	readonly state: SeriesState;
+	readonly from: number;
+	readonly to: number;
+}
+
+/** How a deletion is carried out. */
+interface DeletePlan {
+	mode: 'none' | 'all' | 'head' | 'tail' | 'middle';
+	/** Rows removed: `[d0, d1)`. */
+	d0: number;
+	d1: number;
+	/** In the middle: the rows before the gap move up to close it; else the rows after it move down. */
+	moveHead: boolean;
+}
+
+/** A chunk the memory limit could let go of now. */
+interface Candidate {
+	readonly state: SeriesState;
+	readonly grid: number;
+	readonly keepTime: boolean;
+	/** Keeps the time of every 16th row (secondary series: the levels keep those of the main one). */
+	readonly anchors: boolean;
+	readonly distance: number;
+	readonly bytes: number;
 }
 
 /** Patch layout collected before one buffer is allocated for all patches of an event. */
@@ -72,6 +166,12 @@ const SPEC_STRIDE = 5;
  * the pyramids to be built in the background (`backgroundStep`), so a load is answered as soon as
  * the rows are stored; the first command that needs them finishes the build first. Prepends and
  * ticks update only the buckets that hold changed rows, always from all of their members.
+ *
+ * Memory limit: chunks of series that can be fetched again are let go far from the view once the
+ * levels are built (see `_candidates`). Anything that needs rows let go waits for them: a raw window
+ * until its rows are back, a correction of a bar until its bucket can be rebuilt from all members,
+ * and an operation that moves rows (a deletion) until every row it moves is back; later operations
+ * of that series wait behind it.
  */
 export class EngineCore {
 	private readonly _series = new Map<number, SeriesState>();
@@ -94,28 +194,62 @@ export class EngineCore {
 	/** Reused patch bookkeeping. */
 	private readonly _specs: number[] = [];
 	private readonly _ranges: number[] = [];
+	/** State before a batch of changes, see `_beginChanges`. */
+	private _changeMain: SeriesState | null = null;
+	private _changeEnd = 0;
 
 	/** Memory the engine aims to stay under, in bytes. */
 	private _limit = Infinity;
+	/** More chunks are over the limit and could go than one call of `_enforceLimit` lets go. */
+	private _overLimit = false;
 	/** Rows of the last raw window asked for, which are kept when the limit lets rows go. */
 	private _pinFrom = NaN;
 	private _pinTo = NaN;
-	/** Fetch requests out for the main series: first row to end row. */
-	private readonly _requests = new Map<number, number>();
-	/** Chunks (grid numbers) of the main series being fetched. */
-	private readonly _fetching = new Set<number>();
+	/** Fetch requests out, by id. */
+	private readonly _requests = new Map<number, Request>();
+	private _nextRequest = 1;
 	/** A raw window waiting for rows to come back. */
-	private _deferred: { start: number; count: number; capacity: number } | null = null;
-	/** Epoch the fetch requests belong to. */
-	private _fetchEpoch = 0;
+	private _deferred: DeferredWindow | null = null;
+	/** Corrections of older bars waiting for rows let go. They hold up nothing else. */
+	private readonly _corrections: Held[] = [];
+	private readonly _rebuilds: Rebuild[] = [];
+	/**
+	 * True while the main timeline is being replaced and another series misses rows its levels must
+	 * be rebuilt from: until they are back there is no main timeline, and data operations wait.
+	 */
+	private _takeover = false;
+	/** Chunks that waiting work needs, kept in memory until it has run. */
+	private readonly _wanted = new Map<SeriesState, Set<number>>();
+	/**
+	 * True while a command runs. Nothing is let go meanwhile, not even by a level build it finishes:
+	 * a command may have checked that the rows it needs are held before it builds.
+	 */
+	private _running = false;
+	/** Chunks an operation needs, collected by the `_need*` methods. */
+	private readonly _needStates: SeriesState[] = [];
+	private readonly _needGrids: number[] = [];
+	/** Whether each of them holds bars the deletion being planned removes. */
+	private readonly _needCut: boolean[] = [];
+	private readonly _plan: DeletePlan = { mode: 'none', d0: 0, d1: 0, moveHead: false };
+	/**
+	 * Deletions after which a series' indexes are re-based: the bars of several of them came back
+	 * as one gap, so how many each removed is unknown (see `_restoreCut`).
+	 */
+	private readonly _rebaseAfter = new Map<SeriesState, Held>();
 
 	/** Indicators and their derived series. */
 	private readonly _indicators: IndicatorEngine;
 	/** `seq` of the last command answered, which a notice repeats. */
 	private _lastAck = 0;
-	/** Collects fetch requests made between commands, which the next notice carries. */
+	/** Collects fetch requests made and cancelled between commands, which the next notice carries. */
 	private readonly _background: EngineEvent = { ack: 0, epoch: 0, first: 0, end: 0, stale: false, rejected: 0 };
 	private _readScratch = new Float64Array(0);
+	/**
+	 * Main rows `[_readFrom, _readTo)` an indicator recomputation reads next (with the rows it asks
+	 * for ahead), kept in memory and fetched again while it runs (see `_ensureRows`).
+	 */
+	private _readFrom = NaN;
+	private _readTo = NaN;
 
 	/**
 	 * Called when work finished outside a command (a plugin module loaded) and a notice is waiting;
@@ -136,6 +270,21 @@ export class EngineCore {
 
 	public *run(command: Command): Generator<undefined, EngineEvent, undefined> {
 		const event: EngineEvent = { ack: command.seq, epoch: 0, first: 0, end: 0, stale: false, rejected: 0 };
+		this._running = true;
+		try {
+			yield* this._command(command, event);
+		} finally {
+			this._running = false;
+		}
+		// Once per command, after its patches and window are copied: a chunk that was the last one, or
+		// in the last window, a moment ago may go now. Under the limit this is a sum of a few numbers.
+		this._enforceLimit();
+		this._lastAck = command.seq;
+		this._finish(event);
+		return event;
+	}
+
+	private *_command(command: Command, event: EngineEvent): Generator<undefined, void, undefined> {
 		switch (command.type) {
 			case 'add': {
 				const kind = command.kind;
@@ -150,6 +299,8 @@ export class EngineCore {
 					fetchable: command.fetchable === true,
 					runs: [],
 					run: 0,
+					fetching: new Set(),
+					queue: [],
 				};
 				this._series.set(command.series, state);
 				if (this._main !== null) {
@@ -158,92 +309,61 @@ export class EngineCore {
 				}
 				break;
 			}
-			case 'remove': {
-				const state = this._series.get(command.series);
-				if (state !== undefined) {
-					this._series.delete(command.series);
-					this._pending.delete(state.pyramid);
-					this._build = null;
-					if (state === this._main) {
-						this._dropFetches(event);
-						this._main = null;
-						if (this._electMain()) {
-							this._rebuildAll();
-						}
-						event.stale = true;
-					} else {
-						this._indicators.seriesChanged(command.series);
-					}
-				}
+			case 'remove':
+				yield* this._remove(command.series, event);
 				break;
-			}
-			case 'set': {
+			case 'set':
+			case 'prepend':
+			case 'delete': {
 				const state = this._series.get(command.series);
 				if (state === undefined) {
-					event.rejected = command.count;
+					event.rejected = command.type === 'delete' ? 0 : command.count;
 					break;
 				}
-				event.rejected = yield* this._set(state, command.data, command.count);
-				event.stale = true;
-				break;
-			}
-			case 'prepend': {
-				const state = this._series.get(command.series);
-				if (state === undefined) {
-					event.rejected = command.count;
-					break;
-				}
-				if (state.store.length === 0) {
-					event.rejected = yield* this._set(state, command.data, command.count);
-					event.stale = true;
-					break;
-				}
-				yield* this._drain();
-				const store = state.store;
-				const oldFirst = store.first;
-				const oldFirstTime = store.firstTime();
-				event.rejected = yield* this._prepend(store, command.data, command.count);
-				if (state === this._main) {
-					// Prepending to the main series keeps every existing index, so the client's windows stay
-					// valid, except for the first bucket of each level, which can gain rows.
-					yield* this._extendLeft(oldFirst);
-					this._boundaryPatches(oldFirst, event);
-					this._indicators.prepended(oldFirst);
-					this._enforceLimit();
-				} else {
-					if (this._main !== null && store.first < oldFirst) {
-						const main = this._main.store;
-						const lo = Math.max(main.first, this._mainIndex(store.firstTime()));
-						const hi = this._mainIndex(oldFirstTime) + 1;
-						yield* this._refreshSliced(state.pyramid, state, lo, hi);
-					}
-					this._indicators.seriesChanged(state.id);
-					event.stale = true;
-				}
+				const deletion = command.type === 'delete';
+				yield* this._operation(
+					{
+						state,
+						seq: command.seq,
+						row: 0,
+						type: command.type,
+						data: deletion ? EMPTY : command.data,
+						count: deletion ? 0 : command.count,
+						from: deletion ? command.from : 0,
+						to: deletion ? command.to : 0,
+						fetchable: command.type === 'set' ? command.fetchable : undefined,
+						side: NaN,
+					},
+					event,
+				);
 				break;
 			}
 			case 'ticks':
-				yield* this._drain();
-				this._ticks(command.data, command.count, event);
+				yield* this._ticks(command.seq, command.data, command.count, event);
 				break;
-			case 'window':
-				if (command.level > 0) {
-					yield* this._drain();
-				} else if (this._deferWindow(command.start, command.count, command.capacity, event)) {
+			case 'window': {
+				const main = this._main;
+				if (command.level > 0 || main === null || this._takeover) {
+					if (command.level > 0) {
+						yield* this._drain();
+					}
+					yield* this._window(command.level, command.start, command.count, command.capacity, command.seq, event);
 					break;
 				}
-				yield* this._window(command.level, command.start, command.count, command.capacity, event);
-				if (command.level === 0) {
-					// The rows kept around the view moved with it; those left behind may go now.
-					this._enforceLimit();
-				}
+				const store = main.store;
+				const from = Math.min(Math.max(command.start, store.first), store.end);
+				this._pinFrom = from;
+				this._pinTo = Math.max(from, Math.min(command.start + command.count, store.end));
+				// A newer raw window replaces one still waiting; requests only the old one needed are cancelled.
+				this._deferred = { seq: command.seq, start: command.start, count: command.count, capacity: command.capacity };
+				yield* this._progress(event);
 				break;
+			}
 			case 'limit':
 				this._limit = command.bytes > 0 ? command.bytes : Infinity;
-				this._enforceLimit();
 				break;
 			case 'rows':
-				yield* this._restore(command.series, command.start, command.count, command.data, event);
+				yield* this._restore(command.request, command.count, command.data, event);
 				break;
 			case 'indicator':
 				this._indicators.set(command.id, command.name, command.params, command.inputs, command.outputs);
@@ -255,19 +375,14 @@ export class EngineCore {
 				this._indicators.load(command.url);
 				break;
 		}
-		if (this._epoch !== this._fetchEpoch) {
-			// Indexes were re-based: rows asked for under the old ones are not wanted any more.
-			this._fetchEpoch = this._epoch;
-			this._dropFetches(event);
-		}
-		this._lastAck = command.seq;
-		this._finish(event);
-		return event;
 	}
 
-	/** True while level-of-detail buckets are waiting to be built or indicators to be recomputed. */
+	/**
+	 * True while level-of-detail buckets are waiting to be built, indicators to be recomputed, or
+	 * chunks to be let go.
+	 */
 	public get busy(): boolean {
-		return this._pending.size > 0 || this._indicators.busy;
+		return this._pending.size > 0 || this._indicators.busy || this._overLimit;
 	}
 
 	/**
@@ -288,48 +403,52 @@ export class EngineCore {
 	}
 
 	/**
-	 * Memory held, and how much of it the memory limit could still let go: value columns of chunks
-	 * of a fetchable main series away from the last raw window, the first chunk and the last one.
+	 * Memory held, and how much of it the memory limit could still let go: chunks of fetchable series
+	 * away from the last raw window and from the edges of the timeline (see `_candidates`). Also the
+	 * fetch requests out and the operations waiting for rows let go, to tell that none is forgotten.
 	 */
-	public get memory(): { bytes: number; limit: number; evictable: number } {
-		const main = this._main;
+	public get memory(): { bytes: number; limit: number; evictable: number; requests: number; waiting: number } {
 		let evictable = 0;
-		if (this._evicting() && main !== null) {
-			const store = main.store;
-			const freed = store.chunkBytes - store.rows * Float64Array.BYTES_PER_ELEMENT;
-			evictable = this._evictionCandidates().length * freed;
+		if (this._pending.size === 0 && this._evicting()) {
+			for (const candidate of this._candidates()) {
+				evictable += candidate.bytes;
+			}
 		}
-		return { bytes: this.byteLength, limit: this._limit, evictable };
+		let waiting = this._corrections.length + this._rebuilds.length;
+		for (const state of this._series.values()) {
+			waiting += state.queue.length;
+		}
+		return { bytes: this.byteLength, limit: this._limit, evictable, requests: this._requests.size, waiting };
 	}
 
 	/**
 	 * Runs one slice of background work: indicator recomputations first, then the build of
-	 * level-of-detail buckets. Returns true while more remains. A host calls this when no command is
-	 * waiting, and afterwards `takeNotice`; commands that need the buckets finish the build themselves.
+	 * level-of-detail buckets, then letting go of chunks over the memory limit. Returns true while
+	 * more remains. A host calls this when no command is waiting, and afterwards `takeNotice`;
+	 * commands that need the buckets finish the build themselves.
 	 */
 	public backgroundStep(): boolean {
-		const computing = this._indicators.busy;
-		if (this._indicators.step()) {
+		if (this._indicators.step() || this._buildStep()) {
 			return true;
 		}
-		if (computing) {
-			// Rows the recomputation read may go now.
-			this._enforceLimit();
-		}
-		return this._buildStep();
+		// Rows can only be let go once the levels that summarize them are built, and rows a
+		// recomputation read may go once it is done with them.
+		this._enforceLimit();
+		return this._overLimit;
 	}
 
 	/**
 	 * An event that is not the answer to a command, or null: indicator values swapped in (the windows
-	 * held are stale; the latest values come as patches) or plugin modules loaded. Its `ack` repeats
-	 * the last command answered.
+	 * held are stale; the latest values come as patches), plugin modules loaded, or rows to fetch
+	 * again for a recomputation (and requests no longer needed). Its `ack` repeats the last command
+	 * answered.
 	 */
 	public takeNotice(): EngineEvent | null {
 		this._specs.length = 0;
 		const swapped = this._indicators.takeNotice(this._specs);
 		const plugins = this._indicators.takePlugins();
-		const fetch = this._background.fetch;
-		if (!swapped && plugins === null && fetch === undefined) {
+		const { fetch, cancel } = this._background;
+		if (!swapped && plugins === null && fetch === undefined && cancel === undefined) {
 			return null;
 		}
 		const event: EngineEvent = { ack: this._lastAck, epoch: 0, first: 0, end: 0, stale: swapped, rejected: 0 };
@@ -340,27 +459,15 @@ export class EngineCore {
 			event.fetch = fetch;
 			delete this._background.fetch;
 		}
+		if (cancel !== undefined) {
+			event.cancel = cancel;
+			delete this._background.cancel;
+		}
 		if (swapped) {
 			this._emit(event);
 		}
 		this._finish(event);
 		return event;
-	}
-
-	private _buildStep(): boolean {
-		if (this._pending.size === 0) {
-			return false;
-		}
-		this._build ??= this._buildAll();
-		if (this._build.next().done === true) {
-			this._build = null;
-		}
-		if (this._pending.size > 0) {
-			return true;
-		}
-		// Rows can only be let go once the levels that summarize them are built.
-		this._enforceLimit();
-		return false;
 	}
 
 	/** Event for a command that threw: it tells the client the command is over and what still holds. */
@@ -378,21 +485,69 @@ export class EngineCore {
 		};
 	}
 
-	/** Picks the main series. Returns true (and starts a new epoch) if it changed. */
-	private _electMain(): boolean {
-		let next: SeriesState | null = null;
+	// Timeline
+
+	/** Picks the main series. */
+	private _electMain(): void {
+		this._main = this._firstWithData();
+	}
+
+	/** The first series in creation order that has data: the one whose timeline is the main one. */
+	private _firstWithData(): SeriesState | null {
 		for (const state of this._series.values()) {
 			if (state.store.length > 0) {
-				next = state;
+				return state;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The main timeline was replaced (new rows, or another main series). Every pyramid is built again
+	 * over it, which needs every row of every series: if a series misses rows let go, there is no
+	 * main timeline until they are back (`_takeover`).
+	 */
+	private _timelineChanged(event: EngineEvent): void {
+		this._main = null;
+		this._pending.clear();
+		this._build = null;
+		let missing = false;
+		for (const state of this._series.values()) {
+			if (state.store.length > 0 && state.store.evictedCount > 0) {
+				missing = true;
 				break;
 			}
 		}
-		if (next === this._main) {
-			return false;
+		this._takeover = missing;
+		if (!missing) {
+			this._electMain();
+			this._rebuildAll();
 		}
-		this._main = next;
+		this._rebase(event);
+	}
+
+	/**
+	 * Indexes now mean other bars: a raw window waiting for rows is answered empty, pins are dropped,
+	 * and indicator values, which are kept by index, are dropped and computed again.
+	 */
+	private _rebase(event: EngineEvent): void {
 		this._epoch++;
-		return true;
+		this._indicators.timelineChanged();
+		this._pinFrom = NaN;
+		this._pinTo = NaN;
+		const deferred = this._deferred;
+		if (deferred !== null) {
+			this._deferred = null;
+			event.window ??= {
+				level: 0,
+				request: deferred.seq,
+				start: 0,
+				count: 0,
+				capacity: 0,
+				time: EMPTY,
+				series: [],
+			};
+		}
 	}
 
 	/** Fills in the extent of the main timeline and the indicators still computing. */
@@ -420,17 +575,159 @@ export class EngineCore {
 		this._build = null;
 	}
 
-	private *_set(state: SeriesState, data: Float64Array, count: number): Generator<undefined, number, undefined> {
+	// Operations
+
+	/** Runs a set, prepend or delete now, or holds it until the rows it needs are back. */
+	private *_operation(op: Held, event: EngineEvent): Generator<undefined, void, undefined> {
+		const state = op.state;
+		if (op.type === 'set') {
+			// A new history replaces everything that still waits for the old one.
+			this._forget(state, event);
+		}
+		// A set can take over even while the timeline is being replaced: it brings all of its rows.
+		const blocked = op.type === 'set' ? false : this._takeover || state.queue.length > 0;
+		if (blocked || !this._ready(op)) {
+			this._hold(op, event);
+		} else {
+			yield* this._apply(op, event, false);
+		}
+		if (this._busyWaiting()) {
+			yield* this._progress(event);
+		}
+	}
+
+	private _hold(op: Held, event: EngineEvent): void {
+		op.state.queue.push(op);
+		(event.waiting ??= []).push(op.row);
+	}
+
+	/** True when something waits for rows let go or requests are out. */
+	private _busyWaiting(): boolean {
+		if (
+			this._takeover ||
+			this._deferred !== null ||
+			this._requests.size > 0 ||
+			this._corrections.length > 0 ||
+			this._rebuilds.length > 0
+		) {
+			return true;
+		}
+		for (const state of this._series.values()) {
+			if (state.queue.length > 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** True when `op` can take effect now; otherwise the chunks it needs are in `_need*`. */
+	private _ready(op: Held): boolean {
+		const state = op.state;
+		if (op.type === 'tick') {
+			return this._tickReady(state, op.data[0]!);
+		}
+		const main = this._main;
+		this._clearNeeds();
+		if (main !== null && state !== main && main.store.timelessCount > 0 && (op.type !== 'set' || op.count > 0)) {
+			// Another series is drawn on the main timeline, which takes the time of every main bar.
+			this._needTimeless(main);
+			return false;
+		}
+		switch (op.type) {
+			case 'set':
+				return true;
+			case 'delete':
+				return this._planDelete(op, this._plan);
+			default:
+				return this._prependReady(state);
+		}
+	}
+
+	private *_apply(op: Held, event: EngineEvent, held: boolean): Generator<undefined, void, undefined> {
+		switch (op.type) {
+			case 'set':
+				event.rejected += yield* this._set(op.state, op.data, op.count, op.fetchable, event);
+				event.stale = true;
+				break;
+			case 'prepend':
+				yield* this._prepend(op.state, op.data, op.count, event);
+				break;
+			case 'delete':
+				yield* this._delete(op, event);
+				if (this._rebaseAfter.get(op.state) === op) {
+					this._rebaseAfter.delete(op.state);
+					if (op.state === this._main) {
+						this._rebase(event);
+					}
+					event.stale = true;
+				}
+				break;
+			case 'tick':
+				yield* this._drain();
+				this._beginChanges();
+				this._tick(op.state, op.data, 0, op.seq, op.row, event, op);
+				this._endChanges(event);
+				// A tick reports itself once it takes effect.
+				return;
+		}
+		if (held) {
+			(event.applied ??= []).push(op.seq, op.row);
+		}
+	}
+
+	/** Drops everything that waits for the rows of a series, and its requests. */
+	private _forget(state: SeriesState, event: EngineEvent): void {
+		for (const [id, request] of this._requests) {
+			if (request.state === state) {
+				this._requests.delete(id);
+				(event.cancel ??= []).push(id);
+			}
+		}
+		state.fetching.clear();
+		state.queue.length = 0;
+		removeWhere(this._corrections, op => op.state === state);
+		removeWhere(this._rebuilds, rebuild => rebuild.state === state);
+		this._wanted.delete(state);
+		this._rebaseAfter.delete(state);
+	}
+
+	private *_remove(id: number, event: EngineEvent): Generator<undefined, void, undefined> {
+		const state = this._series.get(id);
+		if (state === undefined) {
+			return;
+		}
+		this._forget(state, event);
+		this._series.delete(id);
+		this._pending.delete(state.pyramid);
+		this._build = null;
+		if (state === this._main) {
+			this._timelineChanged(event);
+			event.stale = true;
+		} else {
+			this._indicators.seriesChanged(id);
+		}
+		if (this._busyWaiting()) {
+			yield* this._progress(event);
+		}
+	}
+
+	private *_set(
+		state: SeriesState,
+		data: Float64Array,
+		count: number,
+		fetchable: boolean | undefined,
+		event: EngineEvent,
+	): Generator<undefined, number, undefined> {
 		const wasMain = state === this._main;
+		if (fetchable !== undefined) {
+			state.fetchable = fetchable;
+		}
 		state.store.clear();
 		const rejected = yield* this._append(state.store, data, count);
-		if (this._electMain()) {
-			this._rebuildAll();
-		} else if (wasMain) {
-			// Same main series, but its indexes now mean different bars.
-			this._epoch++;
-			this._rebuildAll();
-		} else if (this._main !== null) {
+		// A series created before the main one takes over the timeline once it has data.
+		if (wasMain || this._firstWithData() !== this._main) {
+			this._timelineChanged(event);
+		} else {
 			this._pending.add(state.pyramid);
 			this._build = null;
 			this._indicators.seriesChanged(state.id);
@@ -462,8 +759,46 @@ export class EngineCore {
 		return 0;
 	}
 
+	private *_prepend(
+		state: SeriesState,
+		data: Float64Array,
+		count: number,
+		event: EngineEvent,
+	): Generator<undefined, void, undefined> {
+		if (state.store.length === 0) {
+			event.rejected += yield* this._set(state, data, count, undefined, event);
+			event.stale = true;
+			return;
+		}
+		yield* this._drain();
+		const store = state.store;
+		const oldFirst = store.first;
+		const oldFirstTime = store.firstTime();
+		event.rejected += yield* this._prependRows(store, data, count);
+		if (state === this._main) {
+			// Prepending to the main series keeps every existing index, so the client's windows stay
+			// valid, except for the first bucket of each level, which can gain rows.
+			yield* this._extendLeft(oldFirst);
+			this._boundaryPatches(oldFirst, event);
+			this._indicators.prepended(oldFirst);
+		} else {
+			if (this._main !== null && store.first < oldFirst) {
+				const main = this._main.store;
+				const lo = Math.max(main.first, this._mainIndex(store.firstTime()));
+				const hi = this._mainIndex(oldFirstTime) + 1;
+				yield* this._refreshSliced(state.pyramid, state, lo, hi);
+			}
+			this._indicators.seriesChanged(state.id);
+			event.stale = true;
+		}
+	}
+
 	/** Prepends rows, walking backward from the newest. Returns the number of rows left out. */
-	private *_prepend(store: ChunkedStore, data: Float64Array, count: number): Generator<undefined, number, undefined> {
+	private *_prependRows(
+		store: ChunkedStore,
+		data: Float64Array,
+		count: number,
+	): Generator<undefined, number, undefined> {
 		let next = store.firstTime();
 		for (let to = count; to > 0; to -= CHUNK_ROWS) {
 			const from = Math.max(0, to - CHUNK_ROWS);
@@ -485,15 +820,47 @@ export class EngineCore {
 		return 0;
 	}
 
-	private _ticks(data: Float64Array, count: number, event: EngineEvent): void {
-		const series = this._series;
-		for (const state of series.values()) {
-			state.runs.length = 0;
-			state.run = 0;
+	/**
+	 * Whether a prepend can run: the buckets it rebuilds at the old first bar of a series take
+	 * members of other series there (or, for a secondary series, its own bars next to its first).
+	 */
+	private _prependReady(state: SeriesState): boolean {
+		const main = this._main;
+		const store = state.store;
+		if (main === null || store.length === 0) {
+			return true;
 		}
-		const mainBefore = this._main;
-		const endBefore = mainBefore === null ? 0 : mainBefore.store.end;
-		const bytesBefore = mainBefore === null ? 0 : mainBefore.store.byteLength;
+		this._clearNeeds();
+		if (state === main) {
+			if (this._series.size > 1) {
+				const edge = ((store.first >> BUCKET_SHIFT) + 1) << BUCKET_SHIFT;
+				const until = edge < store.end ? this._rowTime(edge) : Infinity;
+				for (const other of this._series.values()) {
+					if (other !== main && other.store.evictedCount > 0) {
+						this._needTimes(other, -Infinity, until);
+					}
+				}
+			}
+		} else if (store.evictedCount > 0) {
+			const firstTime = store.firstTime();
+			if (firstTime >= main.store.firstTime()) {
+				this._needBucket(state, this._mainIndex(firstTime));
+			}
+		}
+		return !this._missing(0);
+	}
+
+	// Ticks
+
+	private *_ticks(
+		seq: number,
+		data: Float64Array,
+		count: number,
+		event: EngineEvent,
+	): Generator<undefined, void, undefined> {
+		yield* this._drain();
+		this._beginChanges();
+		const series = this._series;
 		let id = NaN;
 		let state: SeriesState | undefined;
 		for (let i = 0, offset = 0; i < count; i++, offset += TICK_STRIDE) {
@@ -507,66 +874,190 @@ export class EngineCore {
 				event.rejected++;
 				continue;
 			}
-			const store = state.store;
-			let index: number;
-			let appended = false;
-			if (store.length === 0) {
-				store.appendRow(data, offset + 1);
-				index = store.end - 1;
-				appended = true;
-				if (this._electMain()) {
-					this._rebuildAll();
-					event.stale = true;
-				}
-			} else {
-				const last = store.lastTime();
-				if (time === last) {
-					index = store.end - 1;
-					store.writeRow(index, data, offset + 1);
-				} else if (time > last) {
-					store.appendRow(data, offset + 1);
-					index = store.end - 1;
-					appended = true;
-				} else {
-					// A correction of an older bar. Inserting a bar in the middle would shift indexes, so it is refused.
-					index = store.lowerBound(time);
-					// So is a correction of a bar whose values were let go: its bucket could not be rebuilt.
-					if (store.value(TIME, index) !== time || store.isEvicted(store.gridOf(index))) {
-						event.rejected++;
-						continue;
-					}
-					store.writeRow(index, data, offset + 1);
-				}
+			this._tick(state, data, offset + 1, seq, i, event, null);
+		}
+		this._endChanges(event);
+		if (this._busyWaiting()) {
+			yield* this._progress(event);
+		}
+	}
+
+	/**
+	 * Applies one tick read from `row[offset, offset + TICK_ROW)`: an update of the last bar, a new
+	 * bar, or a correction of an older one. `op` is the tick's waiting operation once it waited.
+	 */
+	private _tick(
+		state: SeriesState,
+		row: Float64Array,
+		offset: number,
+		seq: number,
+		index: number,
+		event: EngineEvent,
+		op: Held | null,
+	): void {
+		const time = row[offset]!;
+		if (op === null && (this._takeover || state.queue.length > 0 || !this._tickReady(state, time))) {
+			this._hold(heldTick(state, row, offset, seq, index), event);
+			return;
+		}
+		const store = state.store;
+		let at: number;
+		let appended = false;
+		if (store.length === 0) {
+			store.appendRow(row, offset);
+			at = store.end - 1;
+			appended = true;
+			if (this._firstWithData() !== this._main) {
+				this._timelineChanged(event);
+				event.stale = true;
 			}
-			const main = this._main!;
-			if (state === main) {
-				markDirty(main, index);
-				if (appended && series.size > 1) {
-					// Bars of other series at or after the new bar's time were merged into the previous
-					// main bar and now belong to the new one.
-					for (const other of series.values()) {
-						if (other !== main && other.store.length > 0 && other.store.lastTime() >= time) {
-							if (index > main.store.first) {
-								markDirty(other, index - 1);
-							}
-							markDirty(other, index);
-						}
-					}
-				}
+		} else {
+			const last = store.lastTime();
+			if (time === last) {
+				at = store.end - 1;
+				store.writeRow(at, row, offset);
+			} else if (time > last) {
+				store.appendRow(row, offset);
+				at = store.end - 1;
+				appended = true;
 			} else {
-				const mainIndex = this._mainIndex(time);
-				if (mainIndex >= main.store.first) {
-					markDirty(state, mainIndex);
+				// A correction of an older bar. Inserting a bar in the middle would shift indexes, so it is refused.
+				const verdict = this._correction(state, time);
+				if (verdict === REFUSE) {
+					event.rejected++;
+					if (op !== null) {
+						(event.refused ??= []).push(seq, index);
+					}
+					return;
 				}
+				if (verdict === WAIT) {
+					// Waits without holding anything else up: corrections of other bars, new bars and
+					// prepends do not depend on it, and deletions find the bar by its time either way.
+					if (op === null) {
+						this._corrections.push(heldTick(state, row, offset, seq, index));
+						(event.waiting ??= []).push(index);
+					} else {
+						this._corrections.push(op);
+					}
+					return;
+				}
+				at = store.lowerBound(time);
+				store.writeRow(at, row, offset);
 			}
 		}
-		if (event.stale) {
-			return;
+		if (op !== null) {
+			(event.applied ??= []).push(seq, index);
 		}
 		const main = this._main;
 		if (main === null) {
 			return;
 		}
+		if (state === main) {
+			markDirty(main, at);
+			if (appended && this._series.size > 1) {
+				// Bars of other series at or after the new bar's time were merged into the previous
+				// main bar and now belong to the new one.
+				for (const other of this._series.values()) {
+					if (other !== main && other.store.length > 0 && other.store.lastTime() >= time) {
+						if (at > main.store.first) {
+							markDirty(other, at - 1);
+						}
+						markDirty(other, at);
+					}
+				}
+			}
+		} else {
+			const mainIndex = this._mainIndex(time);
+			if (mainIndex >= main.store.first) {
+				markDirty(state, mainIndex);
+			}
+		}
+	}
+
+	/**
+	 * Whether a tick on the last bar (or a new one) can run. Rebuilding the last buckets takes the
+	 * bars of other series there; the memory limit keeps them, so this waits only in corner cases.
+	 */
+	private _tickReady(state: SeriesState, time: number): boolean {
+		const main = this._main;
+		if (main === null) {
+			return true;
+		}
+		if (state === main) {
+			if (this._series.size === 1 || !(time > main.store.lastTime())) {
+				return true;
+			}
+			this._clearNeeds();
+			const from = this._rowTime(((main.store.end - 1) >> BUCKET_SHIFT) << BUCKET_SHIFT);
+			for (const other of this._series.values()) {
+				if (other !== main && other.store.evictedCount > 0) {
+					this._needTimes(other, from, Infinity);
+				}
+			}
+			return !this._missing(0);
+		}
+		this._clearNeeds();
+		if (main.store.timelessCount > 0) {
+			this._needTimeless(main);
+			return false;
+		}
+		const store = state.store;
+		if (store.evictedCount > 0 && time >= store.lastTime()) {
+			const mainIndex = this._mainIndex(time);
+			if (mainIndex >= main.store.first) {
+				this._needBucket(state, mainIndex);
+			}
+		}
+		return !this._missing(0);
+	}
+
+	/**
+	 * Whether a correction of the bar at `time` (older than the last bar) applies now, waits for rows
+	 * let go, or is refused because no bar has that time. Its bucket is rebuilt from all members, so
+	 * the bar's chunk must be held, and for a secondary series every bar of that bucket.
+	 */
+	private _correction(state: SeriesState, time: number): number {
+		const store = state.store;
+		const grid = store.chunkOf(time);
+		if (grid !== grid) {
+			// Before the first bar, or between two chunks: no bar has this time.
+			return REFUSE;
+		}
+		if (store.hasTime(grid) && store.value(TIME, store.lowerBound(time)) !== time) {
+			return REFUSE;
+		}
+		this._clearNeeds();
+		this._need(state, grid);
+		const main = this._main!;
+		if (state !== main) {
+			const mainIndex = this._mainIndex(time);
+			if (mainIndex >= main.store.first) {
+				this._needBucket(state, mainIndex);
+			}
+		}
+		return this._missing(0) ? WAIT : APPLY;
+	}
+
+	/** Starts a batch of changes whose patches `_endChanges` emits. */
+	private _beginChanges(): void {
+		for (const state of this._series.values()) {
+			state.runs.length = 0;
+			state.run = 0;
+		}
+		const main = this._main;
+		this._changeMain = main;
+		this._changeEnd = main === null ? 0 : main.store.end;
+	}
+
+	/** Rebuilds the buckets of the rows changed since `_beginChanges` and emits their patches. */
+	private _endChanges(event: EngineEvent): void {
+		const main = this._main;
+		if (main === null || main !== this._changeMain) {
+			// A new main timeline: every pyramid is built again and the client asks for new windows.
+			return;
+		}
+		const series = this._series;
+		const endBefore = this._changeEnd;
 		const end = main.store.end;
 		this._refreshRuns(this._time, null, main.runs);
 		this._refreshRuns(main.pyramid, main, main.runs);
@@ -599,13 +1090,10 @@ export class EngineCore {
 				}
 			}
 		}
-		// Indicator values change with their inputs and travel in the same message.
+		// Indicator values change with their inputs and travel in the same message: new bars, ticks,
+		// and corrections, also those that waited for rows let go or came back changed at the source.
 		this._indicators.ticks(endBefore, specs);
 		this._emit(event);
-		// Only after the patches are copied: the chunk that was last a moment ago may go now.
-		if (main.store.byteLength !== bytesBefore) {
-			this._enforceLimit();
-		}
 	}
 
 	/** Adds one raw patch spec per run of changed rows of a series (and the time column for the main series). */
@@ -676,7 +1164,7 @@ export class EngineCore {
 		this._emit(event);
 	}
 
-	/** Turns the collected specs into patches that share one buffer. */
+	/** Turns the collected specs into patches that share one buffer, after any patches the event has. */
 	private _emit(event: EngineEvent): void {
 		const specs = this._specs;
 		if (specs.length === 0) {
@@ -687,7 +1175,7 @@ export class EngineCore {
 			total += specs[s + SPEC_COUNT]! * specs[s + SPEC_COLUMNS]!;
 		}
 		const buffer = new Float64Array(total);
-		const patches: Patch[] = [];
+		const patches: Patch[] = event.patches ?? [];
 		const main = this._main!;
 		let offset = 0;
 		for (let s = 0; s < specs.length; s += SPEC_STRIDE) {
@@ -722,6 +1210,7 @@ export class EngineCore {
 			patches.push({ series, level, start, count, data });
 			offset += count * columns;
 		}
+		specs.length = 0;
 		event.patches = patches;
 	}
 
@@ -732,7 +1221,27 @@ export class EngineCore {
 			return store.end - 1;
 		}
 		const index = store.lowerBound(time);
-		return store.value(TIME, index) === time ? index : index - 1;
+		const at = index === index ? store.timeAt(index) : NaN;
+		if (at !== at) {
+			// The main series keeps every time while other series have data (see `_evictable`).
+			throw new Error('lumen-charts: the time of a main bar that was let go was needed');
+		}
+		return at === time ? index : index - 1;
+	}
+
+	/**
+	 * Time of main row `row`, which may be the first row of a chunk let go; inside a chunk without its
+	 * times, the time of the bucket's first row from the levels, which is no later.
+	 */
+	private _rowTime(row: number): number {
+		const time = this._main!.store.timeAt(row);
+		return time === time ? time : this._time.levels[0]!.value(0, row >> BUCKET_SHIFT);
+	}
+
+	/** Time just past the finest bucket holding main row `row`: the next bucket's first time, or Infinity at the end. */
+	private _bucketEndTime(row: number): number {
+		const end = ((row >> BUCKET_SHIFT) + 1) << BUCKET_SHIFT;
+		return end < this._main!.store.end ? this._rowTime(end) : Infinity;
 	}
 
 	private *_window(
@@ -740,12 +1249,13 @@ export class EngineCore {
 		start: number,
 		count: number,
 		capacity: number,
+		seq: number,
 		event: EngineEvent,
 	): Generator<undefined, undefined, undefined> {
 		const main = this._main;
 		if (main === null || level > this._levels) {
 			// A level that does not exist (yet) is answered with an empty window, which ends the request.
-			event.window = { level, start: 0, count: 0, capacity: 0, time: new Float64Array(0), series: [] };
+			event.window = { level, request: seq, start: 0, count: 0, capacity: 0, time: EMPTY, series: [] };
 			return;
 		}
 		const shift = levelShift(level);
@@ -756,7 +1266,15 @@ export class EngineCore {
 		const rows = to - from;
 		const stride = Math.max(capacity, rows);
 		const time = new Float64Array(stride);
-		const window: WindowSnapshot = { level, start: from, count: rows, capacity: stride, time, series: [] };
+		const window: WindowSnapshot = {
+			level,
+			request: seq,
+			start: from,
+			count: rows,
+			capacity: stride,
+			time,
+			series: [],
+		};
 		event.window = window;
 		if (level > 0) {
 			this._time.levels[level - 1]!.copyColumn(0, from, to, time, 0);
@@ -807,31 +1325,40 @@ export class EngineCore {
 		if (to <= from) {
 			return;
 		}
-		if (main === null || state === undefined) {
+		if (main === null || state === undefined || (column > state.valueColumns && column !== TIME)) {
 			out.fill(NaN, offset, offset + to - from);
 			return;
 		}
-		if (column === TIME) {
-			main.store.copyColumn(TIME, from, to, out, offset);
-			return;
-		}
-		if (column > state.valueColumns || state.store.length === 0) {
+		if (column !== TIME && state.store.length === 0) {
 			out.fill(NaN, offset, offset + to - from);
 			return;
 		}
-		if (state === main) {
+		if (column === TIME || state === main) {
+			// Chunk by chunk: a chunk let go has no values, and maybe no times either.
 			const store = main.store;
 			let index = from;
 			while (index < to) {
 				const n = Math.min(CHUNK_ROWS - (index & CHUNK_MASK), to - index);
-				if (store.isEvicted(store.gridOf(index))) {
-					out.fill(NaN, offset + index - from, offset + index - from + n);
-				} else {
+				const grid = store.gridOf(index);
+				const held = column === TIME ? store.hasTime(grid) : !store.isEvicted(grid);
+				if (held) {
 					store.copyColumn(column, index, index + n, out, offset + index - from);
+				} else {
+					out.fill(NaN, offset + index - from, offset + index - from + n);
 				}
 				index += n;
 			}
 			return;
+		}
+		if (state.store.evictedCount > 0) {
+			// Recomputations ask for the rows they read first (`_ensureRows`); should any be missing
+			// anyway, they read as missing values rather than as the wrong bars.
+			this._clearNeeds();
+			this._needTimes(state, this._rowTime(from), to < main.store.end ? this._rowTime(to) : Infinity);
+			if (this._missing(0)) {
+				out.fill(NaN, offset, offset + to - from);
+				return;
+			}
 		}
 		const rows = to - from;
 		const size = rows * state.valueColumns;
@@ -842,7 +1369,12 @@ export class EngineCore {
 		out.set(this._readScratch.subarray((column - 1) * rows, column * rows), offset);
 	}
 
-	/** See `IndicatorHost.ensure`. */
+	/**
+	 * See `IndicatorHost.ensure`: whether rows `[from, to)` of the main timeline are in memory, for
+	 * every series with data (an indicator may read any of them). Between commands, rows among
+	 * `[from, ahead)` that were let go are asked for again, with a notice, and kept until the
+	 * recomputation has read them.
+	 */
 	private _ensureRows(from: number, to: number, ahead: number): boolean {
 		const main = this._main;
 		if (main === null) {
@@ -850,41 +1382,276 @@ export class EngineCore {
 		}
 		const store = main.store;
 		const lo = Math.max(from, store.first);
-		const held = Number.isNaN(store.firstEvicted(lo, Math.min(to, store.end)));
-		const hi = Math.min(Math.max(to, ahead), store.end);
-		if (!Number.isNaN(store.firstEvicted(lo, hi))) {
-			this._fetch(main, lo, hi, this._background);
+		const hi = Math.min(to, store.end);
+		this._needReading(lo, hi);
+		const held = !this._missing(0);
+		if (!this._running) {
+			this._readFrom = lo;
+			this._readTo = Math.min(Math.max(hi, ahead), store.end);
+			this._reconcile(this._background);
 		}
 		return held;
 	}
 
-	// Memory limit
-
-	/** True while the limit applies: a finite limit, a fetchable main series, and no other series with data. */
-	private _evicting(): boolean {
-		const main = this._main;
-		if (this._limit === Infinity || main === null || !main.fetchable) {
-			return false;
+	/** Collects in `_need*` the chunks of every series that rows `[from, to)` of the main timeline take. */
+	private _needReading(from: number, to: number): void {
+		this._clearNeeds();
+		if (to <= from) {
+			return;
 		}
-		// Other series are drawn aligned to the main one and are not fetchable, so for now a chart
-		// with several series keeps everything.
-		for (const state of this._series.values()) {
-			if (state !== main && state.store.length > 0) {
-				return false;
+		const main = this._main!;
+		this._needRows(main, from, to);
+		if (this._series.size > 1) {
+			const t0 = this._rowTime(from);
+			const t1 = to < main.store.end ? this._rowTime(to) : Infinity;
+			for (const state of this._series.values()) {
+				if (state !== main && state.store.evictedCount > 0) {
+					this._needTimes(state, t0, t1);
+				}
 			}
 		}
-		return true;
+	}
+
+	// Deletions
+
+	/**
+	 * Plans the deletion of the bars of `state` with times in `[from, to]`. Returns false, with the
+	 * chunks it needs in `_need*`, while rows it must read or move were let go.
+	 *
+	 * Bars at either end are cut off without moving anything, so the remaining bars keep their
+	 * indexes. Bars in the middle leave a gap that the rows on one side close by moving over: the side
+	 * with fewer rows let go, then the shorter one. For the main series that re-bases those indexes,
+	 * which starts a new epoch, as a new history does. Leaving the bars in place as empty slots
+	 * instead would keep indexes without moving rows, but a deleted bar would still take a slot on the
+	 * ordinal time scale, keep its time for secondary series to merge into, and no longer match a
+	 * datafeed that has removed it.
+	 */
+	private _planDelete(op: Held, plan: DeletePlan): boolean {
+		const { state, from, to } = op;
+		this._clearNeeds();
+		plan.mode = 'none';
+		const store = state.store;
+		if (store.length === 0 || !(from <= to)) {
+			return true;
+		}
+		let d0 = store.lowerBound(from);
+		let d1 = store.upperBound(to);
+		// An end inside a chunk without its times: its rows tell where exactly. Until they are back,
+		// the plan uses a row inside that chunk, which needs the same chunks as the exact plan will.
+		const known = d0 === d0 && d1 === d1;
+		if (known && d1 <= d0) {
+			return true;
+		}
+		// The earliest row the deletion could start at, and the latest it could end at.
+		if (d0 !== d0) {
+			d0 = (store.chunkOf(from) << CHUNK_SHIFT) + 1;
+		}
+		if (d1 !== d1) {
+			d1 = Math.max(d0 + 1, ((store.chunkOf(to) + 1) << CHUNK_SHIFT) - 1);
+		}
+		plan.d0 = d0;
+		plan.d1 = d1;
+		const first = store.first;
+		const end = store.end;
+		if (d0 === first && d1 === end) {
+			plan.mode = 'all';
+			return true;
+		}
+		if (d0 === first) {
+			plan.mode = 'head';
+			this._needRows(state, d1, d1 + 1, from, to);
+		} else if (d1 === end) {
+			plan.mode = 'tail';
+			this._needRows(state, d0 - 1, d0, from, to);
+		} else {
+			plan.mode = 'middle';
+			if (op.side !== op.side) {
+				const head = evictedRows(store, first, d1);
+				const tail = evictedRows(store, d0, end);
+				op.side = head < tail || (head === tail && d0 - first <= end - d1) ? 1 : 0;
+			}
+			plan.moveHead = op.side === 1;
+			if (plan.moveHead) {
+				this._needRows(state, first, d1, from, to);
+			} else {
+				this._needRows(state, d0, end, from, to);
+			}
+		}
+		const main = this._main!;
+		if (state === main) {
+			if (this._series.size > 1) {
+				// Bars of other series are merged into main bars again where rows moved or an end moved.
+				let t0 = -Infinity;
+				let t1 = Infinity;
+				if (plan.mode === 'head') {
+					t0 = this._rowTime(d1);
+					t1 = this._bucketEndTime(d1);
+				} else if (plan.mode === 'tail') {
+					t0 = this._rowTime(((d0 - 1) >> BUCKET_SHIFT) << BUCKET_SHIFT);
+				} else if (plan.moveHead) {
+					t1 = this._bucketEndTime(d1);
+				} else {
+					t0 = this._rowTime(Math.max(first, ((d0 - 1) >> BUCKET_SHIFT) << BUCKET_SHIFT));
+				}
+				// Held ones too: they must stay while the deletion waits, or what it needs would grow.
+				for (const other of this._series.values()) {
+					if (other !== main) {
+						this._needTimes(other, t0, t1);
+					}
+				}
+			}
+		} else {
+			// Main bars whose slots held bars removed get their buckets rebuilt from the bars that stay.
+			const m0 = Math.max(main.store.first, this._mainIndex(from));
+			const m1 = this._mainIndex(to);
+			if (m1 >= m0) {
+				const lo = Math.max(main.store.first, (m0 >> BUCKET_SHIFT) << BUCKET_SHIFT);
+				const hi = ((m1 >> BUCKET_SHIFT) + 1) << BUCKET_SHIFT;
+				this._needTimes(state, this._rowTime(lo), from);
+				this._needTimes(state, to, hi < main.store.end ? this._rowTime(hi) : Infinity);
+			}
+		}
+		return known && !this._missing(0);
+	}
+
+	private *_delete(op: Held, event: EngineEvent): Generator<undefined, void, undefined> {
+		const { state, from, to } = op;
+		yield* this._drain();
+		const plan = this._plan;
+		if (!this._planDelete(op, plan)) {
+			throw new Error('lumen-charts: a deletion ran before its rows were back');
+		}
+		if (plan.mode === 'none') {
+			return;
+		}
+		if (plan.mode === 'all') {
+			event.rejected += yield* this._set(state, EMPTY, 0, undefined, event);
+			event.stale = true;
+			return;
+		}
+		const { d0, d1, moveHead } = plan;
+		const store = state.store;
+		const first = store.first;
+		const end = store.end;
+		const n = d1 - d0;
+		const main = this._main!;
+		if (state !== main) {
+			const m0 = Math.max(main.store.first, this._mainIndex(from));
+			const m1 = this._mainIndex(to);
+			this._cut(state, plan);
+			if (m1 >= m0) {
+				this._beginChanges();
+				state.runs.push(m0, m1 + 1);
+				this._endChanges(event);
+			}
+			return;
+		}
+		// Rows whose buckets change, in the indexes after the deletion.
+		let lo: number;
+		let hi: number;
+		if (plan.mode === 'head') {
+			lo = d1;
+			hi = d1 + 1;
+		} else if (plan.mode === 'tail') {
+			lo = d0 - 1;
+			hi = d0;
+		} else if (moveHead) {
+			lo = first + n;
+			hi = d1 + 1;
+		} else {
+			// The bar before the gap takes the secondary bars of the slots removed, so it changes too.
+			lo = d0 - 1;
+			hi = end - n;
+		}
+		this._cut(state, plan);
+		this._truncateLevels(store.first, store.end);
+		yield* this._refreshSliced(this._time, null, lo, hi);
+		for (const other of this._series.values()) {
+			yield* this._refreshSliced(other.pyramid, other, lo, hi);
+		}
+		if (plan.mode === 'middle') {
+			this._rebase(event);
+		} else {
+			// Indexes stay, but the first or the last bars are gone: every indicator is computed again
+			// over what is left (one that reads only other series too, since the timeline starts or ends
+			// elsewhere), and its values stay on screen until then.
+			this._indicators.rowsRemoved();
+		}
+		event.stale = true;
+	}
+
+	/** Removes the rows of a plan from a store, and the requests for rows that are gone. */
+	private _cut(state: SeriesState, plan: DeletePlan): void {
+		const store = state.store;
+		const { d0, d1 } = plan;
+		if (plan.mode === 'head') {
+			store.truncate(d1, store.end);
+		} else if (plan.mode === 'tail') {
+			store.truncate(store.first, d0);
+		} else {
+			store.removeRows(d0, d1, plan.moveHead);
+		}
+		// Rows that moved were all held, so only requests for rows cut off are out of date.
+		for (const [id, request] of this._requests) {
+			if (request.state === state && (request.start < store.first || request.end > store.end)) {
+				this._requests.delete(id);
+				for (let grid = request.start >> CHUNK_SHIFT; grid <= (request.end - 1) >> CHUNK_SHIFT; grid++) {
+					state.fetching.delete(grid);
+				}
+			}
+		}
+	}
+
+	/** Cuts every level of every pyramid to the buckets of main rows `[first, end)`. */
+	private _truncateLevels(first: number, end: number): void {
+		truncatePyramid(this._time, first, end);
+		for (const state of this._series.values()) {
+			truncatePyramid(state.pyramid, first, end);
+		}
+	}
+
+	// Memory limit
+
+	/** True while the limit applies: a finite limit, levels built, and a series that can be fetched again. */
+	private _evicting(): boolean {
+		if (this._limit === Infinity || this._takeover || this._main === null || this._levels === 0) {
+			return false;
+		}
+		for (const state of this._series.values()) {
+			if (state.fetchable && state.store.length > 0) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
-	 * Chunks of the main series whose values could be let go, farthest from the last raw window
-	 * first. The first and last chunks stay (prepends rebuild the first bucket, ticks write the last
-	 * bar), and so do the chunks of the last raw window and those being fetched.
+	 * Whether the main series has to keep the time of every bar: other series are drawn on its
+	 * timeline, and merging their bars into main bars takes the time of each one.
 	 */
-	private _evictionCandidates(): number[] {
-		const store = this._main!.store;
-		const first = store.gridOf(store.first);
-		const last = store.gridOf(store.end - 1);
+	private _mainKeepsTime(): boolean {
+		for (const state of this._series.values()) {
+			if (state !== this._main && (state.store.length > 0 || state.queue.length > 0)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Chunks the limit could let go of now, farthest from the last raw window first.
+	 *
+	 * Of the main series: every chunk but the first and the last (prepends rebuild the first bucket,
+	 * ticks write the last bar), those of the last raw window, those being fetched and those waiting
+	 * work needs. A chunk keeps its time column while other series have data.
+	 *
+	 * Of a secondary series: every chunk but its first and last, and those with bars near the main
+	 * series' first and last chunk, near the last raw window, or in the buckets of its own first and
+	 * last bar: ticks, prepends and windows there rebuild buckets or merge bars from them.
+	 */
+	private _candidates(): Candidate[] {
+		const main = this._main!;
+		const store = main.store;
 		let pinFrom = Math.max(store.first, this._pinFrom);
 		let pinTo = Math.min(store.end, this._pinTo);
 		if (!(pinTo > pinFrom)) {
@@ -893,186 +1660,914 @@ export class EngineCore {
 		}
 		const pinFirst = store.gridOf(pinFrom);
 		const pinLast = store.gridOf(pinTo - 1);
-		const candidates: number[] = [];
-		// Rows an indicator recomputation has yet to read stay too.
+		const distance = (grid: number): number => (grid < pinFirst ? pinFirst - grid : grid - pinLast);
+		const out: Candidate[] = [];
+		const keepTime = this._mainKeepsTime();
+		// Rows an indicator recomputation has yet to read stay: let go, they would only be fetched again.
 		const reading = this._indicators.readFrom;
-		const limit = reading === Infinity ? last : Math.min(last, store.gridOf(Math.max(reading, store.first)));
-		for (let grid = first + 1; grid < limit; grid++) {
-			if ((grid < pinFirst || grid > pinLast) && !store.isEvicted(grid) && !this._fetching.has(grid)) {
-				candidates.push(grid);
+		const readRow = Math.min(Math.max(reading, store.first), store.end - 1);
+		const readGrid = reading === Infinity ? Infinity : store.gridOf(readRow);
+		const readTime = reading === Infinity ? Infinity : this._rowTime(readRow);
+		if (main.fetchable) {
+			const wanted = this._wanted.get(main);
+			const last = Math.min(store.lastGrid, readGrid);
+			for (let grid = store.firstGrid + 1; grid < last; grid++) {
+				if ((grid >= pinFirst && grid <= pinLast) || main.fetching.has(grid) || wanted?.has(grid) === true) {
+					continue;
+				}
+				if (!store.isEvicted(grid)) {
+					const bytes = keepTime ? store.chunkBytes - store.timeBytes : store.chunkBytes - SUMMARY_BYTES;
+					out.push({ state: main, grid, keepTime, anchors: false, distance: distance(grid), bytes });
+				} else if (!keepTime && store.hasTime(grid)) {
+					const bytes = store.timeBytes - SUMMARY_BYTES;
+					out.push({ state: main, grid, keepTime, anchors: false, distance: distance(grid), bytes });
+				}
 			}
 		}
-		const distance = (grid: number): number => (grid < pinFirst ? pinFirst - grid : grid - pinLast);
-		candidates.sort((a, b) => distance(b) - distance(a));
-		return candidates;
+		let kept: number[] | null = null;
+		for (const state of this._series.values()) {
+			const own = state.store;
+			if (state === main || !state.fetchable || own.length === 0 || own.lastGrid - own.firstGrid < 2) {
+				continue;
+			}
+			kept ??= this._keptTimes(pinFrom, pinTo);
+			const ranges = kept.slice();
+			// The buckets of its own first and last bar.
+			if (own.firstTime() >= store.firstTime()) {
+				const at = this._mainIndex(own.firstTime());
+				ranges.push(this._rowTime(bucketStart(at, store.first)), this._bucketEndTime(at));
+			}
+			ranges.push(this._rowTime(bucketStart(this._mainIndex(own.lastTime()), store.first)), Infinity);
+			const wanted = this._wanted.get(state);
+			const level = this._time.levels[0]!;
+			for (let grid = own.firstGrid + 1; grid < own.lastGrid; grid++) {
+				if (own.isEvicted(grid) || state.fetching.has(grid) || wanted?.has(grid) === true) {
+					continue;
+				}
+				const firstTime = own.chunkFirstTime(grid);
+				const lastTime = own.chunkLastTime(grid);
+				if (lastTime >= readTime) {
+					continue;
+				}
+				let near = false;
+				for (let r = 0; r < ranges.length && !near; r += 2) {
+					near = lastTime >= ranges[r]! && firstTime < ranges[r + 1]!;
+				}
+				if (near) {
+					continue;
+				}
+				const bucket = Math.max(level.first, level.upperBound(firstTime) - 1);
+				out.push({
+					state,
+					grid,
+					keepTime: false,
+					anchors: true,
+					distance: distance(store.gridOf(Math.max(store.first, bucket << BUCKET_SHIFT))),
+					bytes: own.chunkBytes - SUMMARY_BYTES - ((own.rows >> ANCHOR_SHIFT) << 3),
+				});
+			}
+		}
+		out.sort((a, b) => b.distance - a.distance);
+		return out;
 	}
 
 	/**
-	 * Lets go of the values of chunks far from the view until the engine holds no more than the limit,
-	 * or nothing more can go. Levels of detail and the time column always stay, so zoomed-out views
-	 * keep drawing and fetched rows can be checked against the ones let go.
+	 * Time ranges `[from, to)` (in pairs) whose bars of secondary series stay: those merged into the
+	 * main series' last chunk and the bucket before it, into its first chunk or before it, and into
+	 * the last raw window.
+	 */
+	private _keptTimes(pinFrom: number, pinTo: number): number[] {
+		const store = this._main!.store;
+		const tail = Math.max(
+			store.first,
+			Math.min(store.lastGrid << CHUNK_SHIFT, bucketStart(store.end - 2, store.first)),
+		);
+		const head = store.firstGrid < store.lastGrid ? store.chunkFirstTime(store.firstGrid + 1) : Infinity;
+		return [
+			this._rowTime(tail),
+			Infinity,
+			-Infinity,
+			head,
+			this._rowTime(bucketStart(pinFrom, store.first)),
+			this._bucketEndTime(pinTo - 1),
+		];
+	}
+
+	/**
+	 * Lets go of chunks far from the view until the engine holds no more than the limit, or nothing
+	 * more can go. Levels of detail always stay, so zoomed-out views keep drawing, and every chunk let
+	 * go keeps a summary to check the rows that come back.
+	 *
+	 * At most `EVICT_SLICE` chunks per call: a summary takes a pass over the chunk, and letting go of
+	 * a whole history at once (10M points right after their levels are built) would take over 100 ms.
+	 * The rest goes in background steps (`_overLimit`), between commands.
 	 */
 	private _enforceLimit(): void {
-		if (this._pending.size > 0 || !this._evicting()) {
+		if (this._running || this._pending.size > 0) {
+			return;
+		}
+		this._overLimit = false;
+		if (!this._evicting()) {
 			return;
 		}
 		let bytes = this.byteLength;
 		if (bytes <= this._limit) {
 			return;
 		}
-		const store = this._main!.store;
-		for (const grid of this._evictionCandidates()) {
-			bytes -= store.evict(grid);
+		const candidates = this._candidates();
+		const n = Math.min(candidates.length, EVICT_SLICE);
+		for (let i = 0; i < n; i++) {
+			const candidate = candidates[i]!;
+			bytes -= candidate.state.store.evict(candidate.grid, candidate.keepTime, candidate.anchors);
 			if (bytes <= this._limit) {
+				return;
+			}
+		}
+		this._overLimit = candidates.length > n;
+	}
+
+	/**
+	 * Runs whatever waited and can run now, answers a raw window whose rows are all back, asks for
+	 * the rows that waiting work still needs, and cancels requests nothing needs any more.
+	 */
+	private *_progress(event: EngineEvent): Generator<undefined, void, undefined> {
+		for (let changed = true; changed;) {
+			changed = false;
+			if (this._takeover && !this._takeoverWaits()) {
+				this._takeover = false;
+				this._electMain();
+				this._rebuildAll();
+				this._rebase(event);
+				event.stale = true;
+				changed = true;
+			}
+			if (this._takeover) {
 				break;
+			}
+			if (yield* this._runCorrections(event)) {
+				changed = true;
+			}
+			if (yield* this._runQueues(event)) {
+				changed = true;
+			}
+			if (yield* this._runRebuilds(event)) {
+				changed = true;
+			}
+		}
+		const deferred = this._deferred;
+		if (deferred !== null && this._main !== null && !this._takeover && this._windowReady(deferred)) {
+			this._deferred = null;
+			yield* this._window(0, deferred.start, deferred.count, deferred.capacity, deferred.seq, event);
+		}
+		this._reconcile(event);
+	}
+
+	/** True while a series with data misses rows the new timeline's levels need. */
+	private _takeoverWaits(): boolean {
+		for (const state of this._series.values()) {
+			if (state.store.length > 0 && state.store.evictedCount > 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private *_runCorrections(event: EngineEvent): Generator<undefined, boolean, undefined> {
+		let changed = false;
+		const list = this._corrections;
+		for (let i = 0; i < list.length;) {
+			const op = list[i]!;
+			const verdict = this._correction(op.state, op.data[0]!);
+			if (verdict === WAIT) {
+				i++;
+				continue;
+			}
+			list.splice(i, 1);
+			changed = true;
+			if (verdict === REFUSE) {
+				event.rejected++;
+				(event.refused ??= []).push(op.seq, op.row);
+				continue;
+			}
+			yield* this._drain();
+			this._beginChanges();
+			this._tick(op.state, op.data, 0, op.seq, op.row, event, op);
+			this._endChanges(event);
+		}
+		return changed;
+	}
+
+	private *_runQueues(event: EngineEvent): Generator<undefined, boolean, undefined> {
+		let changed = false;
+		for (const state of this._series.values()) {
+			const queue = state.queue;
+			while (queue.length > 0 && !this._takeover) {
+				const op = queue[0]!;
+				if (!this._ready(op)) {
+					break;
+				}
+				queue.shift();
+				changed = true;
+				yield* this._apply(op, event, true);
+			}
+		}
+		return changed;
+	}
+
+	private *_runRebuilds(event: EngineEvent): Generator<undefined, boolean, undefined> {
+		let changed = false;
+		const list = this._rebuilds;
+		for (let i = 0; i < list.length;) {
+			const rebuild = list[i]!;
+			const rows = this._rebuildRows(rebuild);
+			if (rows !== null && this._missing(0)) {
+				i++;
+				continue;
+			}
+			list.splice(i, 1);
+			changed = true;
+			if (rows !== null) {
+				yield* this._drain();
+				this._beginChanges();
+				rebuild.state.runs.push(rows[0]!, rows[1]!);
+				this._endChanges(event);
+			}
+		}
+		return changed;
+	}
+
+	/** Main rows whose buckets a rebuild redoes, with the bars they take in `_need*`; null if none. */
+	private _rebuildRows(rebuild: Rebuild): number[] | null {
+		this._clearNeeds();
+		const main = this._main;
+		if (main === null || rebuild.state === main) {
+			return null;
+		}
+		const m0 = Math.max(main.store.first, this._mainIndex(rebuild.from));
+		const m1 = this._mainIndex(rebuild.to);
+		if (m1 < m0) {
+			return null;
+		}
+		const lo = bucketStart(m0, main.store.first);
+		const hi = ((m1 >> BUCKET_SHIFT) + 1) << BUCKET_SHIFT;
+		this._needTimes(rebuild.state, this._rowTime(lo), hi < main.store.end ? this._rowTime(hi) : Infinity);
+		return [m0, m1 + 1];
+	}
+
+	/** True when every row a raw window shows is in memory; otherwise the chunks it needs are in `_need*`. */
+	private _windowReady(window: DeferredWindow): boolean {
+		const main = this._main!;
+		const store = main.store;
+		const from = Math.min(Math.max(window.start, store.first), store.end);
+		const to = Math.max(from, Math.min(window.start + window.count, store.end));
+		this._clearNeeds();
+		if (to > from) {
+			this._needRows(main, from, to);
+			if (this._series.size > 1) {
+				const t0 = this._rowTime(from);
+				const t1 = to < store.end ? this._rowTime(to) : Infinity;
+				for (const state of this._series.values()) {
+					if (state !== main && state.store.evictedCount > 0) {
+						this._needTimes(state, t0, t1);
+					}
+				}
+			}
+		}
+		return !this._missing(0);
+	}
+
+	/**
+	 * Works out what everything still waiting needs, keeps it in memory (`_wanted`), asks for what is
+	 * missing and not on its way yet, and cancels requests nothing needs any more.
+	 */
+	private _reconcile(event: EngineEvent): void {
+		const wanted = this._wanted;
+		wanted.clear();
+		/**
+		 * Chunks with bars a waiting deletion removes, by series, with that deletion. Nothing else asks
+		 * for them meanwhile: the source has usually removed those bars, so only an answer without them
+		 * would do, and the deletion takes it.
+		 */
+		const cuts = new Map<SeriesState, { ranges: number[]; grids: number[]; ready: boolean }>();
+		const want = (ranges: number[] | null): void => {
+			const states = this._needStates;
+			const grids = this._needGrids;
+			const cut = this._needCut;
+			// A deletion asks for the chunks it removes bars from last, once all else it needs is held:
+			// they come back in one piece, and the deletion takes effect as soon as they do. A chunk one
+			// deletion removes bars from is one of those for all of them.
+			let rest = false;
+			for (let i = 0; i < states.length && !rest; i++) {
+				if (cut[i]! || !states[i]!.store.isEvicted(grids[i]!)) {
+					continue;
+				}
+				let cutElsewhere = false;
+				for (let k = 0; k < states.length && !cutElsewhere; k++) {
+					cutElsewhere = cut[k]! && states[k] === states[i] && grids[k] === grids[i];
+				}
+				rest = !cutElsewhere;
+			}
+			for (let i = 0; i < states.length; i++) {
+				const state = states[i]!;
+				if (cut[i]! && ranges !== null) {
+					let entry = cuts.get(state);
+					if (entry === undefined) {
+						entry = { ranges, grids: [], ready: !rest };
+						cuts.set(state, entry);
+					}
+					entry.grids.push(grids[i]!);
+					if (rest && state.store.isEvicted(grids[i]!)) {
+						// Asked for once the rest is held. Kept while held: let go, it would hide where the
+						// deletion is.
+						continue;
+					}
+				}
+				let set = wanted.get(state);
+				if (set === undefined) {
+					set = new Set();
+					wanted.set(state, set);
+				}
+				set.add(grids[i]!);
+			}
+		};
+		if (this._takeover) {
+			this._clearNeeds();
+			for (const state of this._series.values()) {
+				if (state.store.length > 0 && state.store.evictedCount > 0) {
+					this._needRows(state, state.store.first, state.store.end);
+				}
+			}
+			want(null);
+		} else {
+			if (this._deferred !== null && this._main !== null) {
+				this._windowReady(this._deferred);
+				want(null);
+			}
+			for (const op of this._corrections) {
+				this._correction(op.state, op.data[0]!);
+				want(null);
+			}
+			for (const state of this._series.values()) {
+				this._wantQueue(state, want);
+			}
+			for (const rebuild of this._rebuilds) {
+				this._rebuildRows(rebuild);
+				want(null);
+			}
+			if (this._readTo > this._readFrom && this._main !== null) {
+				if (this._indicators.readFrom === Infinity) {
+					// The recomputation is done, or was given up.
+					this._readFrom = NaN;
+					this._readTo = NaN;
+				} else {
+					this._needReading(this._readFrom, this._readTo);
+					want(null);
+				}
+			}
+		}
+		for (const [id, request] of this._requests) {
+			const set = wanted.get(request.state);
+			let needed = false;
+			for (let grid = request.start >> CHUNK_SHIFT; grid <= (request.end - 1) >> CHUNK_SHIFT && !needed; grid++) {
+				needed = set?.has(grid) === true;
+			}
+			if (!needed) {
+				this._requests.delete(id);
+				for (let grid = request.start >> CHUNK_SHIFT; grid <= (request.end - 1) >> CHUNK_SHIFT; grid++) {
+					request.state.fetching.delete(grid);
+				}
+				(event.cancel ??= []).push(id);
+			}
+		}
+		for (const [state, set] of wanted) {
+			const cut = cuts.get(state);
+			const grids: number[] = [];
+			for (const grid of set) {
+				if (state.store.isEvicted(grid) && !state.fetching.has(grid) && cut?.grids.includes(grid) !== true) {
+					grids.push(grid);
+				}
+			}
+			if (grids.length > 0) {
+				grids.sort((a, b) => a - b);
+				this._request(state, grids, event);
+			}
+			if (cut?.ready === true) {
+				this._requestCut(state, cut.ranges, cut.grids, event);
 			}
 		}
 	}
 
 	/**
-	 * Holds back a raw window over rows that were let go and asks for them again. Returns true when the
-	 * window has to wait; it then comes with the event of the command that brings the rows back.
+	 * Collects what the queue of a series waits for. When a deletion leads it, every operation up to
+	 * the last deletion waiting there is taken together: the chunks they remove bars from come back in
+	 * one answer, which may lack the bars of all of them, and all of them then run at once.
 	 */
-	private _deferWindow(start: number, count: number, capacity: number, event: EngineEvent): boolean {
-		const main = this._main;
-		if (main === null) {
-			return false;
+	private _wantQueue(state: SeriesState, want: (ranges: number[] | null) => void): void {
+		const queue = state.queue;
+		if (queue.length === 0) {
+			return;
 		}
-		const store = main.store;
-		const from = Math.min(Math.max(start, store.first), store.end);
-		const to = Math.max(from, Math.min(start + count, store.end));
-		this._pinFrom = from;
-		this._pinTo = to;
-		// A newer raw window replaces one still waiting.
-		this._deferred = null;
-		if (Number.isNaN(store.firstEvicted(from, to))) {
-			return false;
+		if (queue[0]!.type !== 'delete') {
+			this._ready(queue[0]!);
+			want(null);
+			return;
 		}
-		this._deferred = { start, count, capacity };
-		this._fetch(main, from, to, event);
-		this._enforceLimit();
-		return true;
+		let last = 0;
+		for (let i = 1; i < queue.length; i++) {
+			if (queue[i]!.type === 'delete') {
+				last = i;
+			}
+		}
+		const states: SeriesState[] = [];
+		const grids: number[] = [];
+		const cut: boolean[] = [];
+		const ranges: number[] = [];
+		for (let i = 0; i <= last; i++) {
+			const op = queue[i]!;
+			this._ready(op);
+			for (let k = 0; k < this._needStates.length; k++) {
+				states.push(this._needStates[k]!);
+				grids.push(this._needGrids[k]!);
+				cut.push(op.type === 'delete' && this._needCut[k]!);
+			}
+			if (op.type === 'delete') {
+				ranges.push(op.from, op.to);
+			}
+		}
+		this._clearNeeds();
+		for (let k = 0; k < states.length; k++) {
+			this._need(states[k]!, grids[k]!, cut[k]!);
+		}
+		want(ranges);
 	}
 
-	/** Asks for the chunks among rows `[from, to)` that were let go and are not asked for yet. */
-	private _fetch(main: SeriesState, from: number, to: number, event: EngineEvent): void {
-		const store = main.store;
-		const last = store.gridOf(to - 1);
-		let grid = store.gridOf(from);
-		while (grid <= last) {
-			if (!store.isEvicted(grid) || this._fetching.has(grid)) {
-				grid++;
-				continue;
+	/**
+	 * Asks in one request for the chunks a deletion removes bars from, from the first to the last of
+	 * them, once none is on its way any more and one at least was let go.
+	 */
+	private _requestCut(state: SeriesState, ranges: number[], grids: readonly number[], event: EngineEvent): void {
+		let firstGrid = Infinity;
+		let lastGrid = -Infinity;
+		let missing = false;
+		for (const grid of grids) {
+			if (state.fetching.has(grid)) {
+				return;
 			}
-			let runEnd = grid;
-			while (
-				runEnd + 1 <= last &&
-				runEnd + 1 - grid < FETCH_CHUNKS &&
-				store.isEvicted(runEnd + 1) &&
-				!this._fetching.has(runEnd + 1)
-			) {
-				runEnd++;
+			missing ||= state.store.isEvicted(grid);
+			firstGrid = Math.min(firstGrid, grid);
+			lastGrid = Math.max(lastGrid, grid);
+		}
+		if (!missing) {
+			return;
+		}
+		const store = state.store;
+		for (let grid = firstGrid; grid <= lastGrid; grid++) {
+			if (state.fetching.has(grid)) {
+				return;
 			}
-			const startRow = Math.max(grid << CHUNK_SHIFT, store.first);
-			const endRow = Math.min((runEnd + 1) << CHUNK_SHIFT, store.end);
-			for (let g = grid; g <= runEnd; g++) {
-				this._fetching.add(g);
+		}
+		for (let grid = firstGrid; grid <= lastGrid; grid++) {
+			state.fetching.add(grid);
+		}
+		const start = Math.max(firstGrid << CHUNK_SHIFT, store.first);
+		const end = Math.min((lastGrid + 1) << CHUNK_SHIFT, store.end);
+		const id = this._nextRequest++;
+		this._requests.set(id, { id, state, start, end, cuts: ranges.slice() });
+		const request: FetchRequest = {
+			id,
+			series: state.id,
+			start,
+			end,
+			from: store.chunkFirstTime(firstGrid),
+			to: store.chunkLastTime(lastGrid),
+			removing: ranges.slice(),
+		};
+		(event.fetch ??= []).push(request);
+	}
+
+	/** Asks for chunks of a series (grid numbers in increasing order), consecutive ones in one request. */
+	private _request(state: SeriesState, grids: readonly number[], event: EngineEvent): void {
+		const store = state.store;
+		for (let i = 0; i < grids.length;) {
+			let j = i;
+			while (j + 1 < grids.length && grids[j + 1] === grids[j]! + 1 && j + 1 - i < FETCH_CHUNKS) {
+				j++;
 			}
-			this._requests.set(startRow, endRow);
+			const firstGrid = grids[i]!;
+			const lastGrid = grids[j]!;
+			for (let grid = firstGrid; grid <= lastGrid; grid++) {
+				state.fetching.add(grid);
+			}
+			const start = Math.max(firstGrid << CHUNK_SHIFT, store.first);
+			const end = Math.min((lastGrid + 1) << CHUNK_SHIFT, store.end);
+			const id = this._nextRequest++;
+			this._requests.set(id, { id, state, start, end, cuts: null });
 			const request: FetchRequest = {
-				series: main.id,
-				start: startRow,
-				end: endRow,
-				from: store.value(TIME, startRow),
-				to: store.value(TIME, endRow - 1),
+				id,
+				series: state.id,
+				start,
+				end,
+				from: store.chunkFirstTime(firstGrid),
+				to: store.chunkLastTime(lastGrid),
 			};
 			(event.fetch ??= []).push(request);
-			grid = runEnd + 1;
+			i = j + 1;
 		}
 	}
 
 	/**
 	 * Takes rows fetched again. They must be exactly the rows let go: as many, with the same times.
-	 * Anything else is refused, so global indexes can never shift.
+	 * Anything else is refused, so indexes can never shift. Values may differ: bars corrected at the
+	 * source while they were let go come back corrected, and their buckets are rebuilt.
 	 */
 	private *_restore(
-		series: number,
-		start: number,
+		id: number,
 		count: number,
 		data: Float64Array | null,
 		event: EngineEvent,
 	): Generator<undefined, void, undefined> {
-		const main = this._main;
-		const end = this._requests.get(start);
+		const request = this._requests.get(id);
 		const result: RestoreResult = {
-			series,
-			start,
-			expected: end === undefined ? 0 : end - start,
+			request: id,
+			series: request === undefined ? 0 : request.state.id,
+			start: request === undefined ? 0 : request.start,
+			expected: request === undefined ? 0 : request.end - request.start,
 			received: data === null ? 0 : count,
 			outcome: 'failed',
 		};
 		event.restored = result;
-		if (main === null || main.id !== series || end === undefined) {
-			// Nothing was asked for there (any more): an answer that arrived after a new load.
+		if (request === undefined) {
+			// Cancelled, or its rows were replaced: nothing waits for it any more.
 			return;
 		}
-		this._requests.delete(start);
-		const store = main.store;
-		const first = store.gridOf(start);
-		const last = store.gridOf(end - 1);
-		for (let grid = first; grid <= last; grid++) {
-			this._fetching.delete(grid);
+		this._requests.delete(id);
+		const { state, start, end } = request;
+		const store = state.store;
+		const firstGrid = store.gridOf(start);
+		const lastGrid = store.gridOf(end - 1);
+		for (let grid = firstGrid; grid <= lastGrid; grid++) {
+			state.fetching.delete(grid);
 		}
-		if (data !== null) {
-			if (matchesTimes(store, data, count, start, end)) {
-				for (let grid = first; grid <= last; grid++) {
-					store.restore(grid, data, count, Math.max(grid << CHUNK_SHIFT, store.first) - start);
+		if (data !== null && request.cuts !== null) {
+			yield* this._drain();
+			result.outcome = this._restoreCut(request, data, count, event) ? 'restored' : 'mismatch';
+		} else if (data !== null) {
+			if (this._matches(state, data, count, start, end)) {
+				yield* this._drain();
+				for (let grid = firstGrid; grid <= lastGrid; grid++) {
+					if (!store.isEvicted(grid)) {
+						continue;
+					}
+					const offset = Math.max(grid << CHUNK_SHIFT, store.first) - start;
+					if (store.restore(grid, data, count, offset)) {
+						this._changedAtSource(state, grid, event);
+					}
 				}
 				result.outcome = 'restored';
+			} else if (this._cutPending(state, store.chunkFirstTime(firstGrid), store.chunkLastTime(lastGrid))) {
+				// A deletion waits there: the source has removed those bars, which is why they do not
+				// match. Not a fault of the datafeed; the deletion asks for them again without them.
+				result.expected = 0;
 			} else {
 				result.outcome = 'mismatch';
 			}
 		}
 		if (result.outcome === 'restored') {
 			this._indicators.rowsRestored();
-		} else {
-			this._indicators.rowsFailed(start, end);
+		} else if (this._main !== null) {
+			// A recomputation waiting for these rows is given up; the values on screen stay.
+			const main = this._main.store;
+			const from =
+				state === this._main ? start : Math.max(main.first, this._mainIndex(store.chunkFirstTime(firstGrid)));
+			const to = state === this._main ? end : this._mainIndex(store.chunkLastTime(lastGrid)) + 1;
+			this._indicators.rowsFailed(from, to);
 		}
 		const deferred = this._deferred;
-		if (deferred !== null) {
-			const from = Math.min(Math.max(deferred.start, store.first), store.end);
-			const to = Math.max(from, Math.min(deferred.start + deferred.count, store.end));
-			if (result.outcome !== 'restored' && start < to && end > from) {
+		if (result.outcome !== 'restored' && deferred !== null && this._main !== null) {
+			this._windowReady(deferred);
+			let needed = false;
+			for (let i = 0; i < this._needStates.length && !needed; i++) {
+				needed = this._needStates[i] === state && this._needGrids[i]! >= firstGrid && this._needGrids[i]! <= lastGrid;
+			}
+			if (needed) {
 				// The window cannot be completed now: answer it empty, so the view can fall back to a
 				// coarse level and ask again later.
 				this._deferred = null;
 				event.window = {
 					level: 0,
-					start: from,
+					request: deferred.seq,
+					start: Math.min(Math.max(deferred.start, this._main.store.first), this._main.store.end),
 					count: 0,
 					capacity: 0,
-					time: new Float64Array(0),
+					time: EMPTY,
 					series: [],
 					incomplete: true,
 				};
-			} else if (Number.isNaN(store.firstEvicted(from, to))) {
-				this._deferred = null;
-				yield* this._window(0, deferred.start, deferred.count, deferred.capacity, event);
 			}
 		}
-		this._enforceLimit();
+		yield* this._progress(event);
 	}
 
-	/** Forgets every fetch request, answering a raw window that waits for one with an empty window. */
-	private _dropFetches(event: EngineEvent): void {
-		this._requests.clear();
-		this._fetching.clear();
-		if (this._deferred !== null) {
-			this._deferred = null;
-			event.window ??= { level: 0, start: 0, count: 0, capacity: 0, time: new Float64Array(0), series: [] };
+	/**
+	 * True when `data` holds exactly the bars of rows `[start, end)` of a series: as many, with the
+	 * times kept or summarized, and for the main series also the time of every bucket's first bar,
+	 * which the levels keep.
+	 */
+	private _matches(state: SeriesState, data: Float64Array, count: number, start: number, end: number): boolean {
+		if (count !== end - start) {
+			return false;
 		}
-		this._pinFrom = NaN;
-		this._pinTo = NaN;
+		const store = state.store;
+		const main = state === this._main;
+		const level = main && this._levels > 0 ? this._time.levels[0]! : null;
+		for (let grid = store.gridOf(start); grid <= store.gridOf(end - 1); grid++) {
+			const from = Math.max(grid << CHUNK_SHIFT, store.first);
+			const to = Math.min((grid + 1) << CHUNK_SHIFT, store.end);
+			const offset = from - start;
+			if (!store.matches(grid, data, count, offset, to - from)) {
+				return false;
+			}
+			if (level !== null && !store.hasTime(grid)) {
+				const size = 1 << BUCKET_SHIFT;
+				for (let row = ((from + size - 1) >> BUCKET_SHIFT) << BUCKET_SHIFT; row < to; row += size) {
+					if (data[row - start] !== level.value(0, row >> BUCKET_SHIFT)) {
+						return false;
+					}
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Takes the rows of a request for chunks deletions remove bars from. They may come with or
+	 * without the bars of any deletion waiting on the series: the source has usually removed them
+	 * already. The other bars must be the ones let go, checked by every time kept (the chunk's times,
+	 * or its first and last time and the time of every 16th bar, which the levels keep for the main
+	 * series and the summary for a secondary one). Those times also tell how many bars each gap held,
+	 * and the bars removed come back as placeholders without values, which the deletions, run next
+	 * all together, remove. When two gaps have no kept time between them the split between them is
+	 * unknown, and the rows are refused.
+	 */
+	private _restoreCut(request: Request, data: Float64Array, count: number, event: EngineEvent): boolean {
+		const { state, start, end } = request;
+		const cuts = request.cuts!;
+		const store = state.store;
+		const n = end - start;
+		const removed = (time: number): boolean => {
+			for (let i = 0; i < cuts.length; i += 2) {
+				if (time >= cuts[i]! && time <= cuts[i + 1]!) {
+					return true;
+				}
+			}
+			return false;
+		};
+		const keep: number[] = [];
+		let previous = -Infinity;
+		for (let i = 0; i < count; i++) {
+			const time = data[i]!;
+			if (!(time > previous)) {
+				return false;
+			}
+			previous = time;
+			if (!removed(time)) {
+				keep.push(i);
+			}
+		}
+		const kept = keep.length;
+		const total = n - kept;
+		if (total < 0) {
+			return false;
+		}
+		const times = new Float64Array(kept);
+		for (let k = 0; k < kept; k++) {
+			times[k] = data[keep[k]!]!;
+		}
+		// Bars removed before each kept bar, where a time kept says so.
+		const before = new Float64Array(kept + 1).fill(NaN);
+		before[kept] = total;
+		const known = (row: number, time: number): boolean => {
+			if (removed(time)) {
+				return true;
+			}
+			const k = indexOf(times, time);
+			const value = row - start - k;
+			if (k < 0 || value < 0 || value > total || (before[k] === before[k] && before[k] !== value)) {
+				return false;
+			}
+			before[k] = value;
+			return true;
+		};
+		const level = state === this._main && this._levels > 0 ? this._time.levels[0]! : null;
+		for (let grid = store.gridOf(start); grid <= store.gridOf(end - 1); grid++) {
+			const from = Math.max(grid << CHUNK_SHIFT, store.first);
+			const to = Math.min((grid + 1) << CHUNK_SHIFT, store.end);
+			if (store.hasTime(grid)) {
+				for (let row = from; row < to; row++) {
+					if (!known(row, store.value(TIME, row))) {
+						return false;
+					}
+				}
+				continue;
+			}
+			if (!known(from, store.chunkFirstTime(grid)) || !known(to - 1, store.chunkLastTime(grid))) {
+				return false;
+			}
+			const anchors = store.anchors(grid);
+			const size = 1 << ANCHOR_SHIFT;
+			for (let row = store.firstAnchor(grid), k = 0; row < to; row += size, k++) {
+				const time = anchors !== null ? anchors[k]! : level !== null ? level.value(0, row >> BUCKET_SHIFT) : NaN;
+				if (time === time && !known(row, time)) {
+					return false;
+				}
+			}
+		}
+		// The gaps: where the bars of each deletion would be among the kept bars.
+		const spanFirst = store.chunkFirstTime(store.gridOf(start));
+		const spanLast = store.chunkLastTime(store.gridOf(end - 1));
+		const gapAt: number[] = [];
+		const gapFrom: number[] = [];
+		let shared = false;
+		for (let i = 0; i < cuts.length; i += 2) {
+			if (cuts[i]! <= spanLast && cuts[i + 1]! >= spanFirst) {
+				const at = lowerBoundOf(times, cuts[i]!);
+				if (gapAt.includes(at)) {
+					shared = true;
+				} else {
+					gapAt.push(at);
+					gapFrom.push(cuts[i]!);
+				}
+			}
+		}
+		const gapCount = new Float64Array(gapAt.length);
+		let lastAt = -1;
+		let lastValue = 0;
+		for (let k = 0; k <= kept; k++) {
+			const value = before[k]!;
+			if (value !== value) {
+				continue;
+			}
+			const between: number[] = [];
+			for (let g = 0; g < gapAt.length; g++) {
+				if (gapAt[g]! > lastAt && gapAt[g]! <= k) {
+					between.push(g);
+				}
+			}
+			const delta = value - lastValue;
+			if (delta < 0 || (delta > 0 && between.length !== 1)) {
+				return false;
+			}
+			if (delta > 0) {
+				gapCount[between[0]!] = delta;
+			}
+			lastAt = k;
+			lastValue = value;
+		}
+		// The rows as they were: the kept ones around placeholders whose time is inside their deletion
+		// and not before the row in front of them, so the deletion finds them.
+		const columns = store.columnCount;
+		const block = new Float64Array(n * columns).fill(NaN);
+		let row = 0;
+		for (let k = 0; k <= kept; k++) {
+			const g = gapAt.indexOf(k);
+			if (g >= 0 && gapCount[g]! > 0) {
+				let placeholder = gapFrom[g]!;
+				if (k > 0) {
+					placeholder = Math.max(placeholder, times[k - 1]!);
+				} else if (start > store.first) {
+					const time = store.timeAt(start - 1);
+					placeholder = Math.max(placeholder, time === time ? time : placeholder);
+				}
+				block.fill(placeholder, row, row + gapCount[g]!);
+				row += gapCount[g]!;
+			}
+			if (k < kept) {
+				const source = keep[k]!;
+				for (let c = 0; c < columns; c++) {
+					block[c * n + row] = data[c * count + source]!;
+				}
+				row++;
+			}
+		}
+		if (row !== n) {
+			return false;
+		}
+		for (let grid = store.gridOf(start); grid <= store.gridOf(end - 1); grid++) {
+			if (store.isEvicted(grid)) {
+				store.restore(grid, block, n, Math.max(grid << CHUNK_SHIFT, store.first) - start);
+			}
+		}
+		if (shared) {
+			// Bars of several deletions, with no kept bar between them, came back as one gap: how many
+			// each removed is unknown, so which indexes the bars keep is too. The deletions still
+			// remove the right bars; the series is re-based after the last of them.
+			for (const op of state.queue) {
+				if (op.type === 'delete') {
+					this._rebaseAfter.set(state, op);
+				}
+			}
+		}
+		// Values may have changed at the source too; the deletions rebuild what they change.
+		if (state === this._main) {
+			this._refresh(state.pyramid, state, start, end);
+		} else if (this._main !== null) {
+			const from = store.chunkFirstTime(store.gridOf(start));
+			this._rebuilds.push({ state, from, to: store.chunkLastTime(store.gridOf(end - 1)) });
+		}
+		event.stale = true;
+		return true;
+	}
+
+	/** True when a deletion of bars with times in `[from, to]` of a series waits. */
+	private _cutPending(state: SeriesState, from: number, to: number): boolean {
+		for (const op of state.queue) {
+			if (op.type === 'delete' && op.from <= to && op.to >= from) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Rebuilds the buckets of a chunk that came back with other values than the ones let go. */
+	private _changedAtSource(state: SeriesState, grid: number, event: EngineEvent): void {
+		const main = this._main;
+		if (main === null) {
+			return;
+		}
+		const store = state.store;
+		if (state === main) {
+			this._beginChanges();
+			main.runs.push(Math.max(grid << CHUNK_SHIFT, store.first), Math.min((grid + 1) << CHUNK_SHIFT, store.end));
+			this._endChanges(event);
+			return;
+		}
+		this._rebuilds.push({ state, from: store.chunkFirstTime(grid), to: store.chunkLastTime(grid) });
+	}
+
+	// Chunks an operation needs
+
+	private _clearNeeds(): void {
+		this._needStates.length = 0;
+		this._needGrids.length = 0;
+		this._needCut.length = 0;
+	}
+
+	private _need(state: SeriesState, grid: number, cut = false): void {
+		this._needStates.push(state);
+		this._needGrids.push(grid);
+		this._needCut.push(cut);
+	}
+
+	/**
+	 * Needs the chunks of rows `[from, to)` of a series; those with bars in `[cutFrom, cutTo]`, which
+	 * a deletion removes, are marked as such.
+	 */
+	private _needRows(state: SeriesState, from: number, to: number, cutFrom = NaN, cutTo = NaN): void {
+		const store = state.store;
+		for (let grid = store.gridOf(from), last = store.gridOf(to - 1); grid <= last; grid++) {
+			this._need(state, grid, store.chunkFirstTime(grid) <= cutTo && store.chunkLastTime(grid) >= cutFrom);
+		}
+	}
+
+	/** Needs the chunks of a series with bars in `[from, to)`, found by the first and last time of each chunk. */
+	private _needTimes(state: SeriesState, from: number, to: number): void {
+		const store = state.store;
+		if (store.length === 0 || !(to > from)) {
+			return;
+		}
+		for (let grid = store.chunkAtOrAfter(from); grid <= store.lastGrid && store.chunkFirstTime(grid) < to; grid++) {
+			this._need(state, grid);
+		}
+	}
+
+	/** Needs the bars of a secondary series merged into the finest bucket holding main row `row`. */
+	private _needBucket(state: SeriesState, row: number): void {
+		const main = this._main!.store;
+		const lo = bucketStart(row, main.first);
+		const hi = ((row >> BUCKET_SHIFT) + 1) << BUCKET_SHIFT;
+		this._needTimes(state, this._rowTime(lo), hi < main.end ? this._rowTime(hi) : Infinity);
+	}
+
+	/** Needs every chunk of the main series whose time column was let go. */
+	private _needTimeless(main: SeriesState): void {
+		const store = main.store;
+		for (let grid = store.firstGrid; grid <= store.lastGrid; grid++) {
+			if (!store.hasTime(grid)) {
+				this._need(main, grid);
+			}
+		}
+	}
+
+	/** True when a chunk needed from position `from` on is not held. */
+	private _missing(from: number): boolean {
+		const states = this._needStates;
+		const grids = this._needGrids;
+		for (let i = from; i < states.length; i++) {
+			if (states[i]!.store.isEvicted(grids[i]!)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// Level of detail
@@ -1082,6 +2577,18 @@ export class EngineCore {
 		while (this._buildStep()) {
 			yield;
 		}
+	}
+
+	/** Runs one slice of the background build of levels. Returns true while more remains. */
+	private _buildStep(): boolean {
+		if (this._pending.size === 0) {
+			return false;
+		}
+		this._build ??= this._buildAll();
+		if (this._build.next().done === true) {
+			this._build = null;
+		}
+		return this._pending.size > 0;
 	}
 
 	private *_buildAll(): Generator<undefined, void, undefined> {
@@ -1139,7 +2646,7 @@ export class EngineCore {
 
 	private *_refreshSliced(
 		pyramid: Pyramid,
-		owner: SeriesState,
+		owner: SeriesState | null,
 		lo: number,
 		hi: number,
 	): Generator<undefined, void, undefined> {
@@ -1239,8 +2746,10 @@ export class EngineCore {
 				const chunk = store.chunkAt(r);
 				const row = r & CHUNK_MASK;
 				const n = Math.min(CHUNK_ROWS - row, hi - r);
-				if (owner !== null && chunk.columns.length < store.columnCount) {
-					// Values let go: they read as missing rather than as anything made up.
+				const missing = owner === null ? chunk.columns.length === 0 : chunk.columns.length < store.columnCount;
+				if (missing) {
+					// Never reached: buckets are rebuilt only where their rows are held. Should it happen,
+					// rows let go read as missing rather than as anything made up.
 					const groups = ((r + n - 1) >> shift) - (r >> shift) + 1;
 					for (let c = 0; c < columns; c++) {
 						block.fill(NaN, c * stride + at, c * stride + at + groups);
@@ -1287,10 +2796,15 @@ export class EngineCore {
 		while (this._levels < levels) {
 			this._levels++;
 			const level = this._levels;
-			this._time.addLevel(first);
+			// A pyramid may still have the level from before a deletion shortened the timeline.
+			if (this._time.levels.length < level) {
+				this._time.addLevel(first);
+			}
 			this._refreshLevel(this._time, null, level, first, end);
 			for (const state of this._series.values()) {
-				state.pyramid.addLevel(first);
+				if (state.pyramid.levels.length < level) {
+					state.pyramid.addLevel(first);
+				}
 				this._refreshLevel(state.pyramid, state, level, first, end);
 			}
 		}
@@ -1298,7 +2812,8 @@ export class EngineCore {
 
 	/**
 	 * Writes the values of a secondary series for main bars `[from, to)` into column-major `out`
-	 * (columns `stride` long). Main bars without a matching bar get NaN.
+	 * (columns `stride` long). Main bars without a matching bar get NaN. The bars merged into those
+	 * main bars must be held, and the main series' times (it keeps them while other series have data).
 	 */
 	private _aligned(state: SeriesState, from: number, to: number, out: Float64Array, stride: number): void {
 		const rows = to - from;
@@ -1320,25 +2835,27 @@ export class EngineCore {
 			times = new Float64Array(Math.max(rows + 1, times.length * 2));
 			this._scratch = times;
 		}
-		const upper = Math.min(to + 1, main.end);
-		main.copyColumn(TIME, from, upper, times, 0);
-		if (upper === to) {
-			times[rows] = Infinity;
-		}
+		main.copyColumn(TIME, from, to, times, 0);
+		times[rows] = to < main.end ? main.timeAt(to) : Infinity;
 
 		const end = store.end;
 		let j = store.lowerBound(times[0]!);
+		if (j !== j || times[rows] !== times[rows]) {
+			throw new Error('lumen-charts: bars that were let go were needed');
+		}
 		if (j >= end) {
 			return;
 		}
-		let columns = store.chunkAt(j).columns;
-		let timeColumn = columns[TIME]!;
-		// A chunk whose values were let go reads as missing values.
+		let chunk = store.chunkAt(j);
+		let columns = chunk.columns;
+		// A chunk whose values were let go reads as missing values; one without its times is only
+		// ever looked at for its first time, which bounds the bars before it.
 		let held = columns.length === store.columnCount;
 		let row = j & CHUNK_MASK;
+		let time = columns.length > 0 ? columns[TIME]![row]! : chunk.summary!.firstTime;
 		for (let k = 0; k < rows && j < end; k++) {
 			const next = times[k + 1]!;
-			if (timeColumn[row]! >= next) {
+			if (time >= next) {
 				continue;
 			}
 			let open = NaN;
@@ -1349,6 +2866,9 @@ export class EngineCore {
 			// As in every other aggregation, rows without a value are skipped, and a group made only
 			// of such rows has no value.
 			do {
+				if (columns.length === 0) {
+					throw new Error('lumen-charts: bars that were let go were needed');
+				}
 				if (!held) {
 					// Nothing to merge.
 				} else if (valueColumns === 1) {
@@ -1380,13 +2900,17 @@ export class EngineCore {
 				}
 				j++;
 				row++;
-				if (row === CHUNK_ROWS && j < end) {
-					columns = store.chunkAt(j).columns;
-					timeColumn = columns[TIME]!;
+				if (j >= end) {
+					break;
+				}
+				if (row === CHUNK_ROWS) {
+					chunk = store.chunkAt(j);
+					columns = chunk.columns;
 					held = columns.length === store.columnCount;
 					row = 0;
 				}
-			} while (j < end && timeColumn[row]! < next);
+				time = columns.length > 0 ? columns[TIME]![row]! : chunk.summary!.firstTime;
+			} while (time < next);
 			if (valueColumns === 1) {
 				out[k] = close;
 			} else {
@@ -1424,26 +2948,79 @@ function markDirty(state: SeriesState, index: number): void {
 	}
 }
 
-/** True when `data` (column-major, time first, `count` rows) holds exactly the times of rows `[start, end)`. */
-function matchesTimes(store: ChunkedStore, data: Float64Array, count: number, start: number, end: number): boolean {
-	if (count !== end - start) {
-		return false;
-	}
-	let index = start;
-	while (index < end) {
-		const chunk = store.chunkAt(index);
-		const row = index & CHUNK_MASK;
-		const n = Math.min(CHUNK_ROWS - row, end - index);
-		const time = chunk.columns[TIME]!;
-		const offset = index - start - row;
-		for (let r = row; r < row + n; r++) {
-			if (time[r] !== data[offset + r]) {
-				return false;
-			}
+/** A copy of one tick, to wait with. */
+function heldTick(state: SeriesState, row: Float64Array, offset: number, seq: number, index: number): Held {
+	return {
+		state,
+		seq,
+		row: index,
+		type: 'tick',
+		data: row.slice(offset, offset + TICK_ROW),
+		count: 1,
+		from: 0,
+		to: 0,
+		fetchable: undefined,
+		side: NaN,
+	};
+}
+
+/** First row of the finest bucket holding `row`, not before `first`. */
+function bucketStart(row: number, first: number): number {
+	return Math.max(first, (row >> BUCKET_SHIFT) << BUCKET_SHIFT);
+}
+
+/** Index of `time` in increasing `times`, or -1. */
+function indexOf(times: Float64Array, time: number): number {
+	const k = lowerBoundOf(times, time);
+	return k < times.length && times[k] === time ? k : -1;
+}
+
+/** First index of increasing `times` whose time is not less than `time`. */
+function lowerBoundOf(times: Float64Array, time: number): number {
+	let lo = 0;
+	let hi = times.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (times[mid]! < time) {
+			lo = mid + 1;
+		} else {
+			hi = mid;
 		}
-		index += n;
 	}
-	return true;
+	return lo;
+}
+
+/** Rows of chunks among `[from, to)` whose values were let go. */
+function evictedRows(store: ChunkedStore, from: number, to: number): number {
+	let rows = 0;
+	if (store.evictedCount === 0) {
+		return 0;
+	}
+	for (let grid = store.gridOf(from), last = store.gridOf(to - 1); grid <= last; grid++) {
+		if (store.isEvicted(grid)) {
+			rows += store.rows;
+		}
+	}
+	return rows;
+}
+
+/** Cuts every level of a pyramid to the buckets of main rows `[first, end)`. */
+function truncatePyramid(pyramid: Pyramid, first: number, end: number): void {
+	for (let level = 1; level <= pyramid.levels.length; level++) {
+		const shift = levelShift(level);
+		pyramid.levels[level - 1]!.truncate(first >> shift, ((end - 1) >> shift) + 1);
+	}
+}
+
+/** Removes the entries of a list that match, keeping the order of the others. */
+function removeWhere<T>(list: T[], match: (entry: T) => boolean): void {
+	let kept = 0;
+	for (const entry of list) {
+		if (!match(entry)) {
+			list[kept++] = entry;
+		}
+	}
+	list.length = kept;
 }
 
 /** Inserts `[from, to)` into a list of ranges kept sorted by start (lists hold a few entries). */

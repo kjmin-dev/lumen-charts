@@ -1,4 +1,4 @@
-import { type ChartApi, createChart, themes } from '@lumen-charts/core';
+import { type ChartApi, type DatafeedRequest, createChart, themes } from '@lumen-charts/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('createChart', () => {
@@ -176,6 +176,16 @@ function candles(count: number, start = 0) {
 
 const idOf = (series: unknown): number => (series as { id: number }).id;
 const tasks = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+
+/** Engine and datafeed tasks, a few rounds of them. */
+const someTasks = async (rounds = 6): Promise<void> => {
+	if (rounds > 0) {
+		await tasks();
+		await someTasks(rounds - 1);
+	}
+};
+const everyFifth = (_: number, i: number): boolean => i % 5 === 0;
+const outsideRemoved = (_: number, i: number): boolean => i < 90_010 || i > 90_019;
 
 describe('chart with series', () => {
 	let container: HTMLDivElement;
@@ -597,6 +607,186 @@ describe('chart with series', () => {
 			await idle;
 			release!();
 			await tasks();
+		});
+
+		/** Bars of `data` a request asks for, as a line. */
+		const barsFor = (request: DatafeedRequest, source: { time: Float64Array; close: Float64Array } = data) => {
+			const start = source.time.indexOf(request.from);
+			const end = source.time.indexOf(request.to) + 1;
+			return { time: source.time.slice(start, end), value: source.close.slice(start, end) };
+		};
+
+		it('draws bars fetched again in the first frame after the view changed', async () => {
+			chart.applyOptions({ memoryLimit: 1 });
+			let calls = 0;
+			const line = chart.addSeries('line', {
+				datafeed: {
+					getBars: request => {
+						calls++;
+						return Promise.resolve(barsFor(request));
+					},
+				},
+			});
+			line.setData({ time: data.time, value: data.close });
+			await idleEngine();
+			expect(frames.length).toBe(0);
+			chart.timeScale().setVisibleLogicalRange({ from: 80_000, to: 80_200 });
+			// The window is asked for when the view changes: the engine and the datafeed answer before
+			// the frame, which then draws the bars instead of a coarser level.
+			await someTasks();
+			expect(calls).toBeGreaterThan(0);
+			runFrames();
+			expect(internals()._drawn!.level).toBe(0);
+			expect(rawRows(80_000, 80_200)).toEqual([...data.close.subarray(80_000, 80_200)]);
+		});
+
+		it('aborts a request once the view moved away from its bars, and ignores what it still brings', async () => {
+			chart.applyOptions({ memoryLimit: 1 });
+			const out: { request: DatafeedRequest; resolve: (bars: ReturnType<typeof barsFor>) => void }[] = [];
+			let instant = false;
+			const line = chart.addSeries('line', {
+				datafeed: {
+					getBars: request =>
+						instant
+							? Promise.resolve(barsFor(request))
+							: new Promise(resolve => {
+									out.push({ request, resolve });
+								}),
+				},
+			});
+			line.setData({ time: data.time, value: data.close });
+			await idleEngine();
+			chart.timeScale().setVisibleLogicalRange({ from: 50_000, to: 50_200 });
+			runFrames();
+			await someTasks();
+			const old = out.splice(0);
+			expect(old.length).toBeGreaterThan(0);
+			expect(old.some(entry => entry.request.signal.aborted)).toBe(false);
+			// The view jumps far away before the bars come: nothing needs them any more.
+			instant = true;
+			chart.timeScale().setVisibleLogicalRange({ from: 150_000, to: 150_200 });
+			runFrames();
+			await someTasks();
+			expect(old.every(entry => entry.request.signal.aborted)).toBe(true);
+			for (const entry of old) {
+				entry.resolve(barsFor(entry.request));
+			}
+			await settle();
+			expect(internals()._drawn!.level).toBe(0);
+			expect(rawRows(150_000, 150_200)).toEqual([...data.close.subarray(150_000, 150_200)]);
+			expect((chart as unknown as { _fetches: Map<number, unknown> })._fetches.size).toBe(0);
+		});
+
+		it('aborts every request when the history is replaced, the series removed or the chart destroyed', async () => {
+			chart.applyOptions({ memoryLimit: 1 });
+			const signals: AbortSignal[] = [];
+			const datafeed = {
+				getBars: (request: DatafeedRequest) => {
+					signals.push(request.signal);
+					return new Promise<never>(() => {});
+				},
+			};
+			const outstanding = async (from: number): Promise<AbortSignal[]> => {
+				chart.timeScale().setVisibleLogicalRange({ from, to: from + 200 });
+				runFrames();
+				await someTasks();
+				const list = signals.splice(0);
+				expect(list.length).toBeGreaterThan(0);
+				expect(list.some(signal => signal.aborted)).toBe(false);
+				return list;
+			};
+			const first = chart.addSeries('line', { datafeed });
+			first.setData({ time: data.time, value: data.close });
+			await idleEngine();
+			const beforeReload = await outstanding(50_000);
+			first.setData({ time: data.time, value: data.close });
+			expect(beforeReload.every(signal => signal.aborted)).toBe(true);
+			await idleEngine();
+			const beforeRemove = await outstanding(60_000);
+			chart.removeSeries(first);
+			expect(beforeRemove.every(signal => signal.aborted)).toBe(true);
+			const second = chart.addSeries('line', { datafeed });
+			second.setData({ time: data.time, value: data.close });
+			await idleEngine();
+			const beforeDestroy = await outstanding(70_000);
+			chart.destroy();
+			expect(beforeDestroy.every(signal => signal.aborted)).toBe(true);
+		});
+
+		it('switches to another resolution with a new history and datafeed', async () => {
+			chart.applyOptions({ memoryLimit: 1 });
+			const minute: DatafeedRequest[] = [];
+			const line = chart.addSeries('line', {
+				datafeed: {
+					getBars: request => {
+						minute.push(request);
+						return new Promise(() => {});
+					},
+				},
+			});
+			line.setData({ time: data.time, value: data.close });
+			await idleEngine();
+			chart.timeScale().setVisibleLogicalRange({ from: 50_000, to: 50_200 });
+			runFrames();
+			await someTasks();
+			expect(minute.length).toBeGreaterThan(0);
+			// Five-minute bars, from a datafeed that serves them.
+			const five = { time: data.time.filter(everyFifth), close: data.close.filter(everyFifth) };
+			const asked: DatafeedRequest[] = [];
+			line.setData(
+				{ time: five.time, value: five.close },
+				{
+					datafeed: {
+						getBars: request => {
+							asked.push(request);
+							return Promise.resolve(barsFor(request, five));
+						},
+					},
+				},
+			);
+			expect(minute.every(request => request.signal.aborted)).toBe(true);
+			const before = minute.length;
+			await idleEngine();
+			chart.timeScale().setVisibleLogicalRange({ from: 10_000, to: 10_200 });
+			await settle();
+			expect(asked.length).toBeGreaterThan(0);
+			expect(minute.length).toBe(before);
+			expect(internals()._drawn!.level).toBe(0);
+			expect(rawRows(10_000, 10_200)).toEqual([...five.close.subarray(10_000, 10_200)]);
+		});
+
+		it('corrects and removes bars let go through the series', async () => {
+			chart.applyOptions({ memoryLimit: 1 });
+			// The source: it has the correction, and the bars removed are gone from it.
+			const source = { time: data.time.slice(), close: data.close.slice() };
+			const line = chart.addSeries('line', {
+				datafeed: { getBars: request => Promise.resolve(barsFor(request, source)) },
+			});
+			line.setData({ time: data.time, value: data.close });
+			await idleEngine();
+			// A correction of a bar let go waits for its chunk, which is fetched at once; so does a
+			// deletion in the middle, which moves the bars on its shorter side (here the older ones).
+			source.close[90_000] = 1234;
+			line.update({ time: data.time[90_000]!, value: 1234 });
+			source.time = source.time.filter(outsideRemoved);
+			source.close = source.close.filter(outsideRemoved);
+			line.removeBars({ from: data.time[90_010]!, to: data.time[90_019]! });
+			await settle();
+			chart.timeScale().setVisibleLogicalRange({ from: 89_990, to: 90_030 });
+			await settle();
+			const raw = (
+				chart as unknown as {
+					_cache: { raw: { start: number; count: number; time: Float64Array; blocks: Map<number, Float64Array> } };
+				}
+			)._cache.raw;
+			const times = [...raw.time.subarray(0, raw.count)];
+			const block = raw.blocks.get(idOf(line))!;
+			expect(block[times.indexOf(data.time[90_000]!)]).toBe(1234);
+			expect(times.filter(time => time >= data.time[90_010]! && time <= data.time[90_019]!)).toEqual([]);
+			// The bar before the gap and the one after it are neighbors now.
+			const before = times.indexOf(data.time[90_009]!);
+			expect(times[before + 1]).toBe(data.time[90_020]);
+			expect(raw.start + before).toBe(90_019);
 		});
 	});
 

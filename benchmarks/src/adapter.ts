@@ -70,6 +70,14 @@ export interface ChartAdapter<TPrepared = unknown> {
 	 * waiting for a frame. A library that applies updates synchronously resolves at once.
 	 */
 	applied?(): Promise<void>;
+	/** Adds another line series on the same chart, with a datafeed or (null) without one. */
+	addSeriesWithDatafeed?(data: TPrepared, datafeed: ((from: number, to: number) => SeriesColumns) | null): void;
+	/** Replaces the history of the series with a datafeed, and the datafeed, as a change of resolution does. */
+	reloadWithDatafeed?(data: TPrepared, datafeed: (from: number, to: number) => SeriesColumns): void;
+	/** Sets the value of the line point at `time`, which may be any existing one. */
+	correctBar?(time: number, value: number): void;
+	/** Removes the bars with times in `[from, to]`. */
+	removeBars?(from: number, to: number): void;
 	/** Shows the given range of bars, as a scripted pan or zoom would. */
 	setVisibleLogicalRange(range: LogicalRange): void;
 	/**

@@ -438,6 +438,16 @@ export class IndicatorEngine {
 		}
 	}
 
+	/**
+	 * Bars were removed at either end of the main timeline; the other bars keep their indexes. Every
+	 * value is recomputed, and the live values stay until then.
+	 */
+	public rowsRemoved(): void {
+		for (const instance of this._instances) {
+			this._schedule(instance, NaN);
+		}
+	}
+
 	/** A series other than the main one got new data (or was removed): its readers recompute. */
 	public seriesChanged(series: number): void {
 		for (const instance of this._instances) {

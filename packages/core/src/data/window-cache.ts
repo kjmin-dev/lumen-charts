@@ -48,6 +48,8 @@ export class LevelWindow {
 
 	private _stale = false;
 	private _requested = false;
+	/** `seq` of the last snapshot requested: only its answer ends the wait. */
+	private _requestSeq = -1;
 	/**
 	 * After a snapshot came back incomplete, none over the same items is planned before `_retryAt`
 	 * (`performance.now()`); `[_retryFrom, _retryTo)` are the items of that snapshot.
@@ -117,6 +119,11 @@ export class LevelWindow {
 		this._requested = false;
 	}
 
+	/** Records the `seq` of the snapshot just requested (see `plan`). */
+	public sent(seq: number): void {
+		this._requestSeq = seq;
+	}
+
 	/** Plans no snapshot over the items of the last one planned before `time` (`performance.now()`). */
 	public holdOff(time: number): void {
 		this._retryAt = time;
@@ -129,9 +136,16 @@ export class LevelWindow {
 		this.dirtyHi = -Infinity;
 	}
 
-	/** Takes over the buffers of a snapshot of this level. */
-	public applySnapshot(window: NonNullable<EngineEvent['window']>): void {
-		this._requested = false;
+	/**
+	 * Takes over the buffers of a snapshot of this level, from an event whose timeline is `[first,
+	 * end)` rows. Patches of later events grow it only if it reaches the end of the timeline.
+	 */
+	public applySnapshot(window: NonNullable<EngineEvent['window']>, first: number, end: number): void {
+		// The answer to a request superseded since is still current data, but the newer one is awaited.
+		// Without a recorded request (`sent` was not called) any answer ends the wait.
+		if (window.request === undefined || window.request >= this._requestSeq) {
+			this._requested = false;
+		}
 		this._stale = false;
 		this.incomplete = window.incomplete === true;
 		this.start = window.start;
@@ -149,6 +163,7 @@ export class LevelWindow {
 			this.blocks.set(block.series, data);
 		}
 		this.version = ++versions;
+		this._atTail = this.capacity > 0 && this.start + this.count === levelEnd(first, end, this.shift);
 		this.clearDirty();
 	}
 
@@ -170,7 +185,7 @@ export class LevelWindow {
 		if (this._atTail) {
 			for (const patch of patches) {
 				if (patch.level === level && patch.series === TIME_PATCH && patch.start <= cachedEnd) {
-					end = Math.max(end, Math.min(patch.start + patch.count, start + capacity));
+					end = Math.max(end, Math.min(patch.start + patch.count, start + capacity, timelineEnd));
 				}
 			}
 		}
@@ -228,9 +243,11 @@ export class LevelWindow {
 	 * Decides whether a new snapshot is needed for the visible logical range `[from, to]` of a
 	 * timeline with rows `[first, end)`. A snapshot covers two screens on each side; a new one is
 	 * requested when less than half a screen is left, so scrolling does not request one per frame.
+	 * While one is on its way, another is requested only once the view has left the range it covers
+	 * (rows that are fetched again can take a while), which supersedes it.
 	 */
 	public plan(from: number, to: number, first: number, end: number): WindowRequest | null {
-		if (this._requested || end <= first) {
+		if (end <= first) {
 			return null;
 		}
 		const size = 2 ** this.shift;
@@ -243,6 +260,9 @@ export class LevelWindow {
 		const needFrom = Math.max(lo, visibleFrom - margin);
 		const needTo = Math.min(hi, visibleTo + margin);
 		if (needTo <= needFrom) {
+			return null;
+		}
+		if (this._requested && needFrom >= this._plannedFrom && needTo <= this._plannedTo) {
 			return null;
 		}
 		if (!this._stale && needFrom >= this.start && needTo <= this.start + this.count) {
@@ -316,11 +336,16 @@ export class WindowCache {
 				window.cancelRequest();
 			}
 		}
-		if (event.window !== undefined) {
-			this.level(event.window.level).applySnapshot(event.window);
+		// The engine takes a snapshot after everything else its event carries, so the event's patches
+		// are in it already; some may even predate a deletion in the same event.
+		const fresh = event.window === undefined ? null : this.level(event.window.level);
+		if (fresh !== null) {
+			fresh.applySnapshot(event.window!, event.first, event.end);
 		}
 		for (const window of windows) {
-			window?.applyPatches(event, columnCount);
+			if (window !== fresh) {
+				window?.applyPatches(event, columnCount);
+			}
 		}
 	}
 

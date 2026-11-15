@@ -564,11 +564,13 @@ function refetch(): string {
 				continue;
 			}
 			rows.push([
-				`${datasetLabel(c.job.dataset)}, limit ${number(c.job.memoryLimit * MIB)} MiB, ${sizeLabel(c.job.visibleBars)} in view`,
+				`${datasetLabel(c.job.dataset)}, limit ${number(c.job.memoryLimit * MIB)} MiB, ${sizeLabel(c.job.visibleBars)} in view, ${c.job.variant ?? 'jumps'}`,
 				adapter,
 				cell(c, 'shownMs.p50', MS),
 				cell(c, 'shownMs.p95', MS),
 				cell(c, 'shownMs.max', MS),
+				cell(c, 'shownFrames.p50'),
+				cell(c, 'shownFrames.max'),
 				cell(c, 'coldShownMs', MS),
 				cell(c, 'fetches.p50'),
 				cell(c, 'fetchedRows.p50'),
@@ -591,6 +593,8 @@ function refetch(): string {
 			'Shown p50 (ms)',
 			'Shown p95 (ms)',
 			'Shown max (ms)',
+			'Frames p50',
+			'Frames max',
 			'Cold shown (ms)',
 			'Fetches per jump p50',
 			'Rows fetched per jump p50',
@@ -669,6 +673,46 @@ function multi(): string {
 	);
 }
 
+function refetchOperations(): string {
+	const list = cases.filter(c => c.job.scenario === 'refetch' && c.job.variant === 'ops');
+	const rows: string[][] = [];
+	for (const id of caseIds('refetch')) {
+		for (const adapter of adaptersOf(list)) {
+			const c = find(id, adapter);
+			if (c === undefined || c.job.scenario !== 'refetch' || c.job.variant !== 'ops') {
+				continue;
+			}
+			rows.push([
+				`${datasetLabel(c.job.dataset)}, limit ${number(c.job.memoryLimit * MIB)} MiB`,
+				adapter,
+				cell(c, 'operations.correctHeldMs.p50', MS),
+				cell(c, 'operations.correctLetGoMs.p50', MS),
+				cell(c, 'operations.correctLetGoMs.max', MS),
+				cell(c, 'operations.removeMs.p50', MS),
+				cell(c, 'operations.removeMs.max', MS),
+				cell(c, 'operations.resolutionMs', MS),
+				cell(c, 'operations.staleFetches'),
+				hostIdle(c),
+			]);
+		}
+	}
+	return table(
+		[
+			'Case',
+			'Adapter',
+			'Correct held p50 (ms)',
+			'Correct let go p50 (ms)',
+			'Correct let go max (ms)',
+			'Remove 10 p50 (ms)',
+			'Remove 10 max (ms)',
+			'Resolution change (ms)',
+			'Old datafeed calls after',
+			'CPU idle',
+		],
+		rows,
+	);
+}
+
 // The scenario of each section, if any: sections without results of it are left out.
 const sections: [string, () => string, string?][] = [
 	['Environment', environment],
@@ -687,6 +731,7 @@ const sections: [string, () => string, string?][] = [
 	['Indicators: prepend (shown = indicators recomputed and drawn)', () => prepend('ind-prepend'), 'ind-prepend'],
 	['Indicators: memory after the prepends', () => prependMemory('ind-prepend'), 'ind-prepend'],
 	['Several charts on one page', multi, 'multi'],
+	['Operations on history let go', refetchOperations, 'refetch'],
 	['Failed runs', failures],
 	['Skipped cases', skippedCases],
 ];

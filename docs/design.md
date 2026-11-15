@@ -100,6 +100,10 @@ Main thread                              Data engine (worker; time-sliced on mai
 - The global index is a signed integer with a fixed origin. Prepending history leaves existing indexes unchanged.
 - Memory has a cap. Past the cap, the engine drops chunks far from the visible range and requests them again from the Datafeed when needed. Ten million bars take 480 MB, more than a mobile browser can hold.
 - As built in stage 2: a dropped chunk keeps its time column (8 bytes per bar), so a refetch can be checked bar by bar against the global indexes it replaces and every time-to-index lookup keeps working; the levels of detail always stay. The cap applies to a series with a Datafeed while it is the only series with data.
+- As built in the stage 2 follow-ups: the cap applies to every series with a Datafeed; a series without one is never dropped. A dropped chunk keeps a summary instead of its time column: first and last time, a 64-bit checksum of the times, a checksum of the values and, for a secondary series, the time of every 16th bar (the time pyramid has them for the main series). The main series keeps its time column while other series have data, because merging their bars into main bars needs every main time; a secondary series that gets data meanwhile waits until the main times are back.
+  - Lookups across dropped chunks: chunk boundary times place a time before, inside or after a chunk; only a time strictly inside a chunk without its times has no exact row. A correction there waits for the chunk (a time between two chunks matches no bar and is refused at once); the bound of a secondary bar's slot at a chunk start is that chunk's first time; the rows a raw window needs from secondary series are found by the times of its first and last main bar.
+  - A refetch is checked by the row count, the first and last time, the checksum, and the time of every 16th bar. Answers for chunks a waiting deletion removes bars from may lack those bars (the source has usually removed them already); the other bars are then checked by the times kept rather than the checksum, which also tells how many bars each gap held.
+  - Anything that needs dropped rows waits for them and fetches them: a raw window until the rows of every series it shows are back, a correction until its bucket can be rebuilt from all members (holding up nothing else), and a deletion, or a new main timeline, until every row it reads or moves is back; later operations on that series wait behind it. Nothing is dropped while a command runs; the cap is enforced after each command and in background steps between commands, at most 32 chunks at a time, since a summary takes a pass over the chunk (dropping 10M points at once took over 100 ms).
 
 ### 4.2 LOD pyramid
 
@@ -113,6 +117,7 @@ Main thread                              Data engine (worker; time-sliced on mai
 - NaN values are skipped during aggregation. A bucket that holds only NaN is NaN.
 - A tail update rebuilds the last bucket from its members (at most 16 raw rows at level 16, or 4 child buckets above it). A correction can lower the high, so merging in the new value alone gives wrong results.
 - Visible-range min/max comes from pyramid lookups plus raw scans at both ends.
+- As built in the stage 2 follow-ups: a correction rebuilds its buckets from all members also when its bar was dropped (it waits until the bar is back), and so do bars that come back from the Datafeed with other values than the ones dropped. A deletion rebuilds the buckets at its edges, and those of the bars it moved.
 - As built in stage 2: the main thread holds no raw bars for a wide view, so it has nothing to scan at the ends. Instead, a coarse level draws whole buckets only, each in the pixel column of its first bar, and the price range is exact for the bars drawn; they differ from the bars inside the pane by less than one bucket (under one device pixel) at either end. The origin snaps to a whole device pixel below one pixel per bar, so raw bars and buckets give the same pixels at every level switch.
 
 ### 4.3 Time scale
@@ -240,6 +245,25 @@ toward the limit.
   and the next change tries again.
 - Windowed indicators after a prepend read only the new rows and the first chunk, which is always
   held; converging cumulative ones read the new rows and the few chunks before convergence.
+- As built in the stage 2 follow-ups: a recomputation may read any series with data, so the rows of
+  other series under the main rows it reads next are fetched and kept as well. A failed fetch of
+  rows it does not wait for yet is asked for again (after the chart's pause); a failed fetch of the
+  rows it waits for gives it up.
+
+**Changes of history** (stage 2 follow-ups, section 8).
+
+- A correction is a tick on an older bar, also when it waited for its bar to come back or the bar
+  came back changed at the source, and follows the rule above: in place when recent, a full
+  recomputation otherwise.
+- Removing bars of another series changes the values merged into the main rows those bars belonged
+  to, and is handled like a correction of those rows.
+- Removing bars at either end of the main series leaves the other indexes as they are: every
+  indicator is recomputed in the background, and the values on screen stay until then. Removing
+  bars in its middle re-bases indexes, which drops the values and recomputes them, as a new history
+  does.
+- A computation starts at the main timeline's first row, which is no longer 0 once bars were removed
+  at the head. Slices follow the chunks, so a computation from scratch that should give the same
+  bits starts at that row too.
 
 **Plugins.** A custom indicator is a definition: kernel, sizes (`stateSize`, `lookback`, `warmup`)
 and plain metadata (inputs, outputs with their style, parameters with bounds, `windowed`).
@@ -286,6 +310,11 @@ to change.
 ## 8. External contract and scope
 
 - The Datafeed matches the shape of TradingView's pull-based contract, with our own implementation. The contract covers bar corrections, deletions and resolution changes.
+- As built in the stage 2 follow-ups:
+  - Pull: `getBars({ from, to, countBack, signal })` resolves to the bars of a time range. The `signal` is aborted when the request becomes obsolete: the view moved away before the bars came (the engine cancels requests nothing needs), a new history (`setData`, also at another resolution), the series removed or the chart destroyed. Answers after an abort are ignored. Requests for the same bars are never out twice; a failed or refused request is retried after a pause that doubles from 1 s to 30 s, for those bars only.
+  - Corrections: `update` corrects any existing bar, also a dropped one; the correction waits until its bars are back and the levels are rebuilt from all members. Bars that come back with other values than the ones dropped are taken over as corrections at the source. TradingView handles history changes with `onResetCacheNeededCallback` (reload everything); here only the bars concerned are fetched.
+  - Deletions: `removeBars({ from, to })`. Bars at either end are cut off and the others keep their indexes. In the middle, the bars on one side move over to close the gap: the side with fewer dropped bars, then the shorter one. For the main series that re-bases those indexes and starts a new epoch, as a new history does. A tombstone (the bar kept with no values) would keep indexes without moving anything, but the bar would still take a slot on the ordinal time scale, keep its time for secondary bars to merge into, and no longer match a Datafeed that has removed it; re-basing costs a copy of the shorter side and new windows, once per deletion, and leaves no trace.
+  - Resolution changes: `setData(bars, { datafeed })` replaces the history and the Datafeed. It drops the series' requests (aborting them), its waiting operations, its windows (new epoch for the main series) and its levels.
 - Price axes: multiple axes; logarithmic, percentage and indexed-to-100 modes; formatting by tick size.
 - Plugins: custom series, plus pane and series primitives. As built in stage 3: custom indicators
   loaded as modules into the engine (section 5.1), whose outputs are derived series; custom

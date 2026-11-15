@@ -3,6 +3,7 @@ import { findAdapter } from '../adapters/index.ts';
 import {
 	DEFAULT_INTERVAL_MS,
 	Random,
+	type LineColumns,
 	type SeriesColumns,
 	TICK_NEW_BAR,
 	generateSeries,
@@ -30,6 +31,7 @@ import type {
 	PrependRun,
 	PrependTimings,
 	RefetchJob,
+	RefetchOperations,
 	RefetchRun,
 	RunResult,
 	TickJob,
@@ -853,6 +855,68 @@ async function runMulti(
 	}
 }
 
+/** A datafeed over a data set held by the page, like a server holds it, that can change as one does. */
+class Source {
+	public fetches = 0;
+	public fetchedRows = 0;
+	/** Values set at the source, by time. */
+	public readonly corrected = new Map<number, number>();
+	/** Times of bars removed at the source, as `[from, to]` pairs. */
+	public readonly removed: number[] = [];
+	public readonly data: LineColumns;
+
+	public constructor(data: LineColumns) {
+		this.data = data;
+	}
+
+	public readonly feed = (from: number, to: number): SeriesColumns => {
+		const lo = lowerBound(this.data.time, from);
+		const hi = lowerBound(this.data.time, to + 1);
+		this.fetches++;
+		let rows = sliceRows(this.data, lo, hi) as LineColumns;
+		if (this.removed.length > 0 || this.corrected.size > 0) {
+			const time: number[] = [];
+			const value: number[] = [];
+			for (let i = 0; i < rows.length; i++) {
+				const t = rows.time[i]!;
+				let gone = false;
+				for (let r = 0; r < this.removed.length; r += 2) {
+					gone ||= t >= this.removed[r]! && t <= this.removed[r + 1]!;
+				}
+				if (!gone) {
+					time.push(t);
+					value.push(this.corrected.get(t) ?? rows.value[i]!);
+				}
+			}
+			rows = { kind: 'line', length: time.length, time: Float64Array.from(time), value: Float64Array.from(value) };
+		}
+		this.fetchedRows += rows.length;
+		return rows;
+	};
+}
+
+/** The same times with other values, for a second series. */
+function shifted(data: LineColumns, from: number, scale: number): LineColumns {
+	const time = data.time.subarray(from);
+	const value = new Float64Array(time.length);
+	for (let i = 0; i < time.length; i++) {
+		value[i] = data.value[from + i]! * scale + 10;
+	}
+	return { kind: 'line', length: time.length, time, value };
+}
+
+/** Every `step`-th bar: a coarser resolution of the same history. */
+function coarser(data: LineColumns, step: number): LineColumns {
+	const length = Math.floor(data.length / step);
+	const time = new Float64Array(length);
+	const value = new Float64Array(length);
+	for (let i = 0; i < length; i++) {
+		time[i] = data.time[i * step]!;
+		value[i] = data.value[i * step]!;
+	}
+	return { kind: 'line', length, time, value };
+}
+
 async function runRefetch(
 	job: RefetchJob,
 	factory: AdapterFactory,
@@ -860,6 +924,13 @@ async function runRefetch(
 	probes: Probes,
 ): Promise<RefetchRun> {
 	const data = generateSeries(job.dataset.kind, { seed: job.seed, count: job.dataset.size });
+	if (data.kind !== 'line') {
+		throw new Error('The refetch scenario runs on line points');
+	}
+	const several = job.variant === 'several';
+	const main = new Source(data);
+	const second = several ? new Source(shifted(data, 0, 0.5)) : null;
+	const third = several ? shifted(data, Math.floor(data.length * 0.9), 2) : null;
 	await probes.collectGarbage();
 	const before = await probes.measureMemory();
 	const adapter = await createSettled(factory, container, job.chart);
@@ -867,40 +938,54 @@ async function runRefetch(
 		if (adapter.setDataWithDatafeed === undefined) {
 			throw new Error('This library cannot fetch history again from a datafeed');
 		}
-		let fetches = 0;
-		let fetchedRows = 0;
-		// The datafeed is the generated data set itself, held by the page like a server would hold it.
-		const datafeed = (from: number, to: number): SeriesColumns => {
-			const lo = lowerBound(data.time, from);
-			const hi = lowerBound(data.time, to + 1);
-			fetches++;
-			fetchedRows += hi - lo;
-			return sliceRows(data, lo, hi);
-		};
-		adapter.setDataWithDatafeed(prepare(adapter, data), datafeed, job.memoryLimit);
+		adapter.setDataWithDatafeed(prepare(adapter, data), main.feed, job.memoryLimit);
+		if (second !== null && third !== null) {
+			if (adapter.addSeriesWithDatafeed === undefined) {
+				throw new Error('This library cannot draw several series with datafeeds');
+			}
+			adapter.addSeriesWithDatafeed(prepare(adapter, second.data), second.feed);
+			adapter.addSeriesWithDatafeed(prepare(adapter, third), null);
+		}
 		await adapter.settle();
 		// Untimed: the library summarizes the history and lets rows go in the background.
-		await delay(1500);
+		await delay(several ? 3000 : 1500);
 		await adapter.settle();
 		await probes.collectGarbage();
 		const loaded = await probes.measureMemory();
 
 		const n = data.length;
 		const half = job.visibleBars / 2;
+		const fetched = (): { fetches: number; rows: number } => ({
+			fetches: main.fetches + (second?.fetches ?? 0),
+			rows: main.fetchedRows + (second?.fetchedRows ?? 0),
+		});
 		// Regions spread over the oldest 90% of the history, far enough apart that no jump lands in
 		// rows the previous one brought back.
 		const step = Math.floor((n * 0.9) / (job.jumps + 1));
-		const jump = async (index: number): Promise<{ shownMs: number; fetches: number; fetchedRows: number }> => {
+		interface Jump {
+			shownMs: number;
+			frames: number;
+			fetches: number;
+			fetchedRows: number;
+		}
+		const jump = async (index: number): Promise<Jump> => {
 			const center = Math.floor(n * 0.02) + index * step;
-			const f0 = fetches;
-			const r0 = fetchedRows;
+			const f0 = fetched();
+			const runs = libraryFrameRuns();
 			const t0 = performance.now();
 			adapter.setVisibleLogicalRange({ from: center - half, to: center + half - 1 });
 			await adapter.settle();
-			return { shownMs: performance.now() - t0, fetches: fetches - f0, fetchedRows: fetchedRows - r0 };
+			const shownMs = performance.now() - t0;
+			const f1 = fetched();
+			return {
+				shownMs,
+				frames: libraryFrameRuns() - runs,
+				fetches: f1.fetches - f0.fetches,
+				fetchedRows: f1.rows - f0.rows,
+			};
 		};
 		const cold = await jump(0);
-		const samples: { shownMs: number; fetches: number; fetchedRows: number }[] = [];
+		const samples: Jump[] = [];
 		const measureStart = performance.now();
 		while (samples.length < job.jumps) {
 			samples.push(await jump(samples.length + 1));
@@ -910,19 +995,87 @@ async function runRefetch(
 		}
 		await probes.collectGarbage();
 		const after = await probes.measureMemory();
+		const operations = job.variant === 'ops' ? await runOperations(adapter, main, data, samples.length) : null;
 		return {
 			coldShownMs: cold.shownMs,
 			shownMs: summarize(samples.map(sample => sample.shownMs)),
+			shownFrames: summarize(samples.map(sample => sample.frames)),
 			fetches: summarize(samples.map(sample => sample.fetches)),
 			fetchedRows: summarize(samples.map(sample => sample.fetchedRows)),
 			jumpsWithoutFetch: samples.filter(sample => sample.fetches === 0).length,
 			visibleBars: job.visibleBars,
 			memoryLimit: job.memoryLimit,
 			rows: n,
+			series: several ? 3 : 1,
 			memoryAfterLoad: memoryResult(before, loaded),
 			memory: memoryResult(before, after),
+			operations,
 		};
 	} finally {
 		adapter.destroy();
 	}
+}
+
+/**
+ * Corrections, deletions and a change of resolution on a series whose history was mostly let go,
+ * each timed from the call until the chart has settled. The source changes first, as it would.
+ */
+async function runOperations(
+	adapter: ChartAdapter,
+	source: Source,
+	data: LineColumns,
+	jumps: number,
+): Promise<RefetchOperations> {
+	if (
+		adapter.correctBar === undefined ||
+		adapter.removeBars === undefined ||
+		adapter.reloadWithDatafeed === undefined
+	) {
+		throw new Error('This library cannot correct or remove bars, or change resolution');
+	}
+	const n = data.length;
+	const timed = async (action: () => void): Promise<number> => {
+		const t0 = performance.now();
+		action();
+		await adapter.settle();
+		return performance.now() - t0;
+	};
+	// The view is at the region of the last jump.
+	const step = Math.floor((n * 0.9) / (jumps + 1));
+	const inView = Math.floor(n * 0.02) + jumps * step;
+	const held: number[] = [];
+	const letGo: number[] = [];
+	for (let k = 0; k < 5; k++) {
+		const heldAt = inView - 500 + k * 200;
+		const heldTime = data.time[heldAt]!;
+		source.corrected.set(heldTime, 1);
+		held.push(await timed(() => adapter.correctBar!(heldTime, 1)));
+		// Far from the view: history let go.
+		const far = Math.floor(n * (0.07 + k * 0.17));
+		const farTime = data.time[far]!;
+		source.corrected.set(farTime, 2);
+		letGo.push(await timed(() => adapter.correctBar!(farTime, 2)));
+	}
+	const removes: number[] = [];
+	for (const at of [0.15, 0.5, 0.8]) {
+		const index = Math.floor(n * at);
+		const from = data.time[index]!;
+		const to = data.time[index + 9]!;
+		source.removed.push(from, to);
+		removes.push(await timed(() => adapter.removeBars!(from, to)));
+	}
+	// Five-minute bars from a datafeed that serves them.
+	const five = new Source(coarser(data, 5));
+	const prepared = adapter.prepareLine(five.data);
+	const fetchesBefore = source.fetches;
+	const resolutionMs = await timed(() => adapter.reloadWithDatafeed!(prepared, five.feed));
+	await delay(500);
+	await adapter.settle();
+	return {
+		correctHeldMs: summarize(held),
+		correctLetGoMs: summarize(letGo),
+		removeMs: summarize(removes),
+		resolutionMs,
+		staleFetches: source.fetches - fetchesBefore,
+	};
 }
