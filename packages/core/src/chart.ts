@@ -361,6 +361,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 			changed = true;
 		}
 		if (changed) {
+			// Requested now rather than in the next draw, the rows usually arrive before that frame,
+			// so new data is drawn in one frame instead of an empty frame followed by the data.
+			this._requestWindow();
 			this.invalidate(INVALIDATE_LIGHT);
 		} else {
 			this._settle();
@@ -536,18 +539,24 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 		this._settle();
 	};
 
+	/** Asks the engine for the rows around the visible range unless the cache has or awaits them. */
+	private _requestWindow(): void {
+		const scale = this.scale;
+		const engine = this._engine;
+		if (engine !== null && !scale.isEmpty) {
+			const request = this._cache.plan(scale.from, scale.to, scale.first, scale.end);
+			if (request !== null) {
+				engine.requestWindow(request.start, request.count, request.capacity);
+			}
+		}
+	}
+
 	/** Brings scales, items and ticks up to date with the time scale and the window cache. */
 	private _updateModel(): void {
 		const scale = this.scale;
 		const cache = this._cache;
 		const ratio = this._pixelRatio;
-		const engine = this._engine;
-		if (engine !== null && !scale.isEmpty) {
-			const request = cache.plan(scale.from, scale.to, scale.first, scale.end);
-			if (request !== null) {
-				engine.requestWindow(request.start, request.count, request.capacity);
-			}
-		}
+		this._requestWindow();
 
 		const geometry = this._geometry;
 		geometry.spacing = scale.barSpacing * ratio;
