@@ -1,8 +1,8 @@
-import { type ChartApi, type ChartOptions, createChart } from '@lumen-charts/core';
+import { type ChartApi, type ChartOptions, type DeepPartial, createChart } from '@lumen-charts/core';
 import type { ActionReturn } from 'svelte/action';
 
 export interface LumenChartParams {
-	options?: Partial<ChartOptions>;
+	options?: DeepPartial<ChartOptions>;
 	/** Called once with the chart instance after it is created. */
 	onReady?: (chart: ChartApi) => void;
 }
@@ -26,4 +26,4 @@ export function lumenChart(node: HTMLElement, params: LumenChartParams = {}): Ac
 	};
 }
 
-export type { ChartApi, ChartOptions } from '@lumen-charts/core';
+export type { ChartApi, ChartOptions, DeepPartial } from '@lumen-charts/core';

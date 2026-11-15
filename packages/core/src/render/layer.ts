@@ -9,6 +9,7 @@ export class Layer {
 	private _top = -1;
 	private _cssWidth = -1;
 	private _cssHeight = -1;
+	private _visible = true;
 
 	public constructor(doc: Document, opaque: boolean) {
 		const canvas = doc.createElement('canvas');
@@ -44,6 +45,18 @@ export class Layer {
 		this.canvas.width = bitmapWidth;
 		this.canvas.height = bitmapHeight;
 		return true;
+	}
+
+	/** Hides the canvas without releasing it; a hidden layer is not drawn. */
+	public setVisible(visible: boolean): void {
+		if (visible !== this._visible) {
+			this._visible = visible;
+			this.canvas.style.display = visible ? 'block' : 'none';
+		}
+	}
+
+	public get visible(): boolean {
+		return this._visible;
 	}
 
 	public release(): void {

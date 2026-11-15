@@ -1,5 +1,11 @@
 import type { SeriesView } from '../views/series-view';
+import { NO_DASH } from './chrome';
 
+/**
+ * Fills one rectangle per item of the given direction from `top` to `bottom` (inclusive), `width`
+ * wide and starting `half` left of the item. `inset` shrinks every side; items too short to keep a
+ * pixel after that are skipped.
+ */
 function rects(
 	ctx: CanvasRenderingContext2D,
 	view: SeriesView,
@@ -8,8 +14,11 @@ function rects(
 	bottom: Float32Array,
 	half: number,
 	width: number,
+	inset: number,
 ): void {
 	const { x, up, count } = view;
+	const left = inset - half;
+	const shrink = 2 * inset;
 	for (let k = 0; k < count; k++) {
 		if (up[k] !== direction) {
 			continue;
@@ -19,53 +28,153 @@ function rects(
 		if (y !== y) {
 			continue;
 		}
-		ctx.fillRect(x[k]! - half, y, width, bottom[k]! - y + 1);
+		const height = bottom[k]! - y + 1 - shrink;
+		if (height > 0) {
+			ctx.fillRect(x[k]! + left, y + inset, width - shrink, height);
+		}
 	}
 }
 
-export interface CandleColors {
+export interface CandleStyle {
 	upColor: string;
 	downColor: string;
+	wickVisible: boolean;
 	wickUpColor: string;
 	wickDownColor: string;
+	borderVisible: boolean;
+	borderUpColor: string;
+	borderDownColor: string;
 }
 
 /**
- * Draws candles from projected items: one pass per color, so the fill style changes at most four
- * times however many candles there are. All coordinates are whole device pixels.
+ * Wicks of the items of one direction, without the part inside the body: `top` and `bottom` are the
+ * body rows. Drawn this way when bodies are outlined, so a transparent body shows no wick through it.
+ */
+function outerWicks(
+	ctx: CanvasRenderingContext2D,
+	view: SeriesView,
+	direction: number,
+	top: Float32Array,
+	bottom: Float32Array,
+	half: number,
+	width: number,
+): void {
+	const { x, up, yHigh, yLow, count } = view;
+	for (let k = 0; k < count; k++) {
+		if (up[k] !== direction) {
+			continue;
+		}
+		const high = yHigh[k]!;
+		if (high !== high) {
+			continue;
+		}
+		const left = x[k]! - half;
+		const bodyTop = top[k]!;
+		const bodyBottom = bottom[k]!;
+		if (bodyTop > high) {
+			ctx.fillRect(left, high, width, bodyTop - high);
+		}
+		const low = yLow[k]!;
+		if (low > bodyBottom) {
+			ctx.fillRect(left, bodyBottom + 1, width, low - bodyBottom);
+		}
+	}
+}
+
+/**
+ * Outlines of the bodies of one direction as a single path, stroked once. Each rectangle is laid
+ * half a line width inside the body, so the stroke covers exactly the outer `border` pixels.
+ */
+function outlines(
+	ctx: CanvasRenderingContext2D,
+	view: SeriesView,
+	direction: number,
+	top: Float32Array,
+	bottom: Float32Array,
+	half: number,
+	width: number,
+	border: number,
+): void {
+	const { x, up, count } = view;
+	const offset = border / 2;
+	ctx.beginPath();
+	for (let k = 0; k < count; k++) {
+		if (up[k] !== direction) {
+			continue;
+		}
+		const y = top[k]!;
+		if (y !== y) {
+			continue;
+		}
+		const height = bottom[k]! - y + 1;
+		ctx.rect(x[k]! - half + offset, y + offset, width - border, Math.max(0, height - border));
+	}
+	ctx.lineWidth = border;
+	ctx.stroke();
+}
+
+/**
+ * Draws candles from projected items: one pass per color, so the fill style changes at most six
+ * times however many candles there are. All coordinates are whole device pixels. With outlines,
+ * the body color fills only the inside, so a transparent or translucent body works as expected.
  */
 export function drawCandles(
 	ctx: CanvasRenderingContext2D,
 	view: SeriesView,
 	body: number,
 	wick: number,
-	colors: CandleColors,
+	border: number,
+	style: CandleStyle,
 ): void {
 	const wickHalf = wick >> 1;
 	const bodyHalf = body >> 1;
-	// When the body is no wider than the wick and has its color, the wick already covers it.
-	ctx.fillStyle = colors.wickUpColor;
-	rects(ctx, view, 1, view.yHigh, view.yLow, wickHalf, wick);
-	if (body > wick || colors.upColor !== colors.wickUpColor) {
-		ctx.fillStyle = colors.upColor;
-		rects(ctx, view, 1, view.yClose, view.yOpen, bodyHalf, body);
-	}
-	ctx.fillStyle = colors.wickDownColor;
-	rects(ctx, view, 0, view.yHigh, view.yLow, wickHalf, wick);
-	if (body > wick || colors.downColor !== colors.wickDownColor) {
-		ctx.fillStyle = colors.downColor;
-		rects(ctx, view, 0, view.yOpen, view.yClose, bodyHalf, body);
+	const outlined = style.borderVisible && body > 2 * border;
+	for (let direction = 1; direction >= 0; direction--) {
+		const up = direction === 1;
+		const bodyColor = up ? style.upColor : style.downColor;
+		const wickColor = up ? style.wickUpColor : style.wickDownColor;
+		const top = up ? view.yClose : view.yOpen;
+		const bottom = up ? view.yOpen : view.yClose;
+		if (outlined) {
+			if (style.wickVisible) {
+				ctx.fillStyle = wickColor;
+				outerWicks(ctx, view, direction, top, bottom, wickHalf, wick);
+			}
+			ctx.fillStyle = bodyColor;
+			rects(ctx, view, direction, top, bottom, bodyHalf, body, border);
+			ctx.strokeStyle = up ? style.borderUpColor : style.borderDownColor;
+			outlines(ctx, view, direction, top, bottom, bodyHalf, body, border);
+			continue;
+		}
+		if (style.wickVisible) {
+			ctx.fillStyle = wickColor;
+			rects(ctx, view, direction, view.yHigh, view.yLow, wickHalf, wick, 0);
+		}
+		if (!style.wickVisible || body > wick || bodyColor !== wickColor) {
+			// When the body is no wider than the wick and has its color, the wick already covers it.
+			ctx.fillStyle = bodyColor;
+			rects(ctx, view, direction, top, bottom, bodyHalf, body, 0);
+		}
 	}
 }
 
 /**
  * Draws a line from projected items as one path. For merged pixel columns the path visits the
  * first value, both extremes and the last value of each column, so spikes survive zooming out.
+ * A step line runs level to the next item and then jumps. `dash` is empty for a solid line.
  */
-export function drawLine(ctx: CanvasRenderingContext2D, view: SeriesView, color: string, width: number): void {
+export function drawLine(
+	ctx: CanvasRenderingContext2D,
+	view: SeriesView,
+	color: string,
+	width: number,
+	dash: readonly number[],
+	step: boolean,
+): void {
 	const { x, yOpen, yHigh, yLow, yClose, count, merged } = view;
 	ctx.beginPath();
 	let drawing = false;
+	let previous = 0;
 	if (merged) {
 		for (let k = 0; k < count; k++) {
 			const first = yOpen[k]!;
@@ -75,6 +184,9 @@ export function drawLine(ctx: CanvasRenderingContext2D, view: SeriesView, color:
 			}
 			const px = x[k]! + 0.5;
 			if (drawing) {
+				if (step) {
+					ctx.lineTo(px, previous);
+				}
 				ctx.lineTo(px, first);
 			} else {
 				ctx.moveTo(px, first);
@@ -86,7 +198,8 @@ export function drawLine(ctx: CanvasRenderingContext2D, view: SeriesView, color:
 				ctx.lineTo(px, top);
 				ctx.lineTo(px, bottom);
 			}
-			ctx.lineTo(px, yClose[k]!);
+			previous = yClose[k]!;
+			ctx.lineTo(px, previous);
 		}
 	} else {
 		for (let k = 0; k < count; k++) {
@@ -96,15 +209,25 @@ export function drawLine(ctx: CanvasRenderingContext2D, view: SeriesView, color:
 				continue;
 			}
 			if (drawing) {
+				if (step) {
+					ctx.lineTo(x[k]!, previous);
+				}
 				ctx.lineTo(x[k]!, y);
 			} else {
 				ctx.moveTo(x[k]!, y);
 				drawing = true;
 			}
+			previous = y;
 		}
 	}
 	ctx.lineWidth = width;
-	ctx.lineJoin = 'round';
+	ctx.lineJoin = step ? 'miter' : 'round';
 	ctx.strokeStyle = color;
-	ctx.stroke();
+	if (dash.length > 0) {
+		ctx.setLineDash(dash as number[]);
+		ctx.stroke();
+		ctx.setLineDash(NO_DASH as number[]);
+	} else {
+		ctx.stroke();
+	}
 }

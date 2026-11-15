@@ -8,7 +8,7 @@ describe('LumenChart (Vue)', () => {
 		document.body.appendChild(host);
 		const background = ref('#101010');
 		const app = createApp({
-			render: () => h(LumenChart, { options: { autoSize: false, background: background.value } }),
+			render: () => h(LumenChart, { options: { autoSize: false, layout: { background: background.value } } }),
 		});
 		app.mount(host);
 		const canvases = host.querySelectorAll('canvas').length;

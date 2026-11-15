@@ -4,6 +4,8 @@ import type { TimeScale } from '../model/time-scale';
 export interface InteractionHost {
 	/** The time scale that panning and zooming act on. */
 	readonly scale: TimeScale;
+	/** Left edge of the pane in the chart element, in CSS pixels. */
+	paneLeft(): number;
 	/** Size of the pane in CSS pixels. */
 	paneWidth(): number;
 	paneHeight(): number;
@@ -190,7 +192,7 @@ export class Interaction {
 	private _hover(event: PointerEvent): void {
 		const host = this._host;
 		const rect = this._element.getBoundingClientRect();
-		const x = event.clientX - rect.left;
+		const x = event.clientX - rect.left - host.paneLeft();
 		const y = event.clientY - rect.top;
 		const inside = x >= 0 && y >= 0 && x < host.paneWidth() && y < host.paneHeight();
 		host.setCrosshair(x, y, inside);

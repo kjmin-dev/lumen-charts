@@ -14,13 +14,13 @@ describe('LumenChart (React)', () => {
 		const ref = createRef<ChartApi | null>();
 
 		await act(async () => {
-			root.render(createElement(LumenChart, { ref, options: { autoSize: false, background: '#101010' } }));
+			root.render(createElement(LumenChart, { ref, options: { autoSize: false, layout: { background: '#101010' } } }));
 		});
 		const canvases = host.querySelectorAll('canvas').length;
 		expect(canvases).toBeGreaterThan(0);
 
 		await act(async () => {
-			root.render(createElement(LumenChart, { ref, options: { autoSize: false, background: '#202020' } }));
+			root.render(createElement(LumenChart, { ref, options: { autoSize: false, layout: { background: '#202020' } } }));
 		});
 		// An update must reuse the chart, not create a second one.
 		expect(host.querySelectorAll('canvas').length).toBe(canvases);
