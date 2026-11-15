@@ -453,11 +453,12 @@ function runOne(seed: number, steps: number): string | null {
 				}
 			}
 			// A request for bars deletions remove is checked by the times kept, every 16th bar: a bar
-			// missing or a time slightly off between two of them would pass as removed at the source
-			// (see `FetchRequest.removing`), so it gets a bar too many instead.
+			// missing, one too many or a time slightly off next to a removed range would pass as
+			// removed at the source (see `FetchRequest.removing`), so it gets a bar twice instead.
 			if (outcome === 'bad' && request.removing !== undefined && time.length > 0) {
-				time.push(time[time.length - 1]! + 0.5);
-				values.forEach(column => column.push(1));
+				const at = Math.floor(r() * time.length);
+				time.splice(at, 0, time[at]!);
+				values.forEach(column => column.splice(at, 0, column[at]!));
 			} else if (outcome === 'bad' && time.length > 1) {
 				if (r() < 0.5) time[Math.floor(r() * time.length)]! += 0.5;
 				else {
