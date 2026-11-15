@@ -450,7 +450,7 @@ function frames(): string {
 				cell(c, 'interval.p95', MS),
 				cell(c, 'interval.p99', MS),
 				cell(c, 'interval.max', MS),
-				cell(c, 'drawCalls.fillRect'),
+				`${seriesCall(c)} ${cell(c, `drawCalls.${seriesCall(c)}`)}`,
 				cell(c, 'jsTime.count'),
 				hostIdle(c),
 			]);
@@ -471,7 +471,7 @@ function frames(): string {
 				'Interval p95',
 				'Interval p99',
 				'Interval max',
-				'fillRect per redraw',
+				'Series calls per redraw',
 				'Frames measured',
 				'Host CPU idle',
 			],
