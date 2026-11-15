@@ -315,13 +315,16 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 
 	// Data flow
 
-	/** Runs `action` once the engine has applied everything requested so far, keeping call order. */
+	/**
+	 * Runs `action` once the engine has applied all data handed over so far, keeping call order.
+	 * Window requests in flight do not delay it: a view change does not depend on them.
+	 */
 	private _afterData(action: () => void): void {
 		if (this._destroyed) {
 			return;
 		}
 		const engine = this._engine;
-		if (engine === null || engine.pending === 0) {
+		if (engine === null || !engine.dataPending) {
 			action();
 			this.invalidate(INVALIDATE_LIGHT);
 			return;

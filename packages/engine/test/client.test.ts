@@ -128,6 +128,26 @@ describe('EngineClient on the calling thread', () => {
 		engine.destroy();
 	});
 
+	it('does not count window requests as pending data', async () => {
+		const engine = createEngine({ worker: false });
+		const series = engine.addSeries('line');
+		engine.setData(series, new Float64Array([1, 2, 10, 20]), 2);
+		expect(engine.dataPending).toBe(true);
+		expect(engine.barrier()).toBe(2);
+		await engine.whenIdle();
+		engine.requestWindow(0, 2, 2);
+		expect(engine.pending).toBe(1);
+		expect(engine.dataPending).toBe(false);
+		expect(engine.barrier()).toBe(2);
+		engine.tick(series, 3, 30);
+		expect(engine.dataPending).toBe(true);
+		// Flushing the buffered ticks issues them after the window request.
+		expect(engine.barrier()).toBe(4);
+		await engine.whenIdle();
+		expect(engine.dataPending).toBe(false);
+		engine.destroy();
+	});
+
 	it('time-slices a large load across tasks without reordering', async () => {
 		const engine = createEngine({ worker: false });
 		const events = collect(engine);

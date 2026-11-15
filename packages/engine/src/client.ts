@@ -38,6 +38,8 @@ export class EngineClient {
 	private _held: Held[] = [];
 	private _seq = 0;
 	private _acked = 0;
+	/** `seq` of the last command that changes data. */
+	private _dataSeq = 0;
 	private _nextSeries = 1;
 	private _ticks = new Float64Array(TICK_STRIDE * 256);
 	private _tickCount = 0;
@@ -68,12 +70,20 @@ export class EngineClient {
 	}
 
 	/**
-	 * Sends buffered ticks and returns the `seq` of the last command issued. Once an event with this
-	 * `ack` arrives, everything requested up to now has been applied.
+	 * Whether data handed over so far (series, histories, ticks) still has to be applied. Window
+	 * requests do not count: they only read.
+	 */
+	public get dataPending(): boolean {
+		return this._tickCount > 0 || this._acked < this._dataSeq;
+	}
+
+	/**
+	 * Sends buffered ticks and returns the `seq` of the last command that changes data. Once an event
+	 * with this `ack` arrives, all data handed over up to now has been applied.
 	 */
 	public barrier(): number {
 		this._flushTicks();
-		return this._seq;
+		return this._dataSeq;
 	}
 
 	public addSeries(kind: SeriesKind): number {
@@ -167,7 +177,9 @@ export class EngineClient {
 		}
 		this._tickCount = 0;
 		const data = this._ticks.slice(0, count * TICK_STRIDE);
-		this._post({ type: 'ticks', seq: ++this._seq, count, data }, [data.buffer]);
+		const seq = ++this._seq;
+		this._dataSeq = seq;
+		this._post({ type: 'ticks', seq, count, data }, [data.buffer]);
 	};
 
 	private _send(body: CommandBody, transfer: ArrayBuffer[]): void {
@@ -176,7 +188,11 @@ export class EngineClient {
 		}
 		// Buffered ticks were issued first, so they go first.
 		this._flushTicks();
-		this._post({ ...body, seq: ++this._seq } as Command, transfer);
+		const seq = ++this._seq;
+		if (body.type !== 'window') {
+			this._dataSeq = seq;
+		}
+		this._post({ ...body, seq } as Command, transfer);
 	}
 
 	private _post(command: Command, transfer: ArrayBuffer[]): void {
