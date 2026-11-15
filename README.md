@@ -65,15 +65,18 @@ All packages are released together under one version.
 ## Benchmarks
 
 `benchmarks/` is a browser harness that measures chart libraries through one adapter interface
-(`benchmarks/src/adapter.ts`). It currently measures Lightweight Charts 5.3.0 with conflation on
-and off; the stage 0 baseline and the definition of every metric are in
-[docs/benchmarks/stage-0-baseline.md](docs/benchmarks/stage-0-baseline.md).
+(`benchmarks/src/adapter.ts`). It measures Lightweight Charts 5.3.0 with conflation on and off
+(`lwc-conflation-on`, `lwc-conflation-off`) and lumen from the workspace sources with the data
+engine in a worker or on the main thread (`lumen-worker`, `lumen-main`). The stage 0 baseline and
+the definition of every metric are in [docs/benchmarks/stage-0-baseline.md](docs/benchmarks/stage-0-baseline.md);
+stage 1 results against it are in [docs/benchmarks/stage-1.md](docs/benchmarks/stage-1.md).
 
 ```sh
 pnpm bench:install                      # once: download Playwright's Chromium (CI never needs it)
 pnpm bench --quick                      # smoke test, about a minute
 pnpm bench                              # full matrix, headed Chromium, JSON in benchmarks/results/
 pnpm bench --scenario tick --size 1m --lib lwc-conflation-off --repeats 3
+pnpm bench --lib lumen-worker,lumen-main --repeats 3   # lumen only, about 8 minutes
 pnpm bench --help                       # all options (headless, Chrome channel, viewport, DPR, ...)
 pnpm bench:report <results.json>        # Markdown tables from a results file
 pnpm bench:serve                        # production build of the harness page, to run by hand
