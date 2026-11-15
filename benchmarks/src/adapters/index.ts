@@ -1,5 +1,5 @@
 import type { AdapterEntry, KnownFailure } from '../adapter.ts';
-import { type DatasetSpec, INDICATOR_SCENARIOS, type ScenarioName } from '../jobs.ts';
+import { type DatasetSpec, INDICATOR_SCENARIOS, type ScenarioName, TIME_ZONE_SCENARIOS } from '../jobs.ts';
 
 const LWC_FAILURES: readonly KnownFailure[] = [
 	{
@@ -34,6 +34,7 @@ export const adapters: readonly AdapterEntry[] = [
 		datafeed: true,
 		indicators: true,
 		priceAxes: true,
+		timeZones: true,
 		load: async () => (await import('./lumen.ts')).lumenWorker,
 	},
 	{
@@ -42,6 +43,7 @@ export const adapters: readonly AdapterEntry[] = [
 		datafeed: true,
 		indicators: true,
 		priceAxes: true,
+		timeZones: true,
 		load: async () => (await import('./lumen.ts')).lumenMain,
 	},
 ];
@@ -68,6 +70,9 @@ export function knownFailure(adapter: string, dataset: DatasetSpec, scenario?: S
 	}
 	if (scenario === 'axes-frames' && entry?.priceAxes !== true) {
 		return 'the adapter cannot lay out price axes';
+	}
+	if (scenario !== undefined && TIME_ZONE_SCENARIOS.includes(scenario) && entry?.timeZones !== true) {
+		return 'the library shows no time zones or sessions';
 	}
 	const failure = entry?.knownFailures?.find(f => f.dataset.kind === dataset.kind && f.dataset.size === dataset.size);
 	return failure === undefined ? null : `known failure: ${failure.reason}`;

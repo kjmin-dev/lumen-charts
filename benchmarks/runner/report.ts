@@ -482,7 +482,10 @@ function frames(scenario = 'frames'): string {
 			const c = find(id, adapter);
 			if (
 				c === undefined ||
-				(c.job.scenario !== 'frames' && c.job.scenario !== 'ind-frames' && c.job.scenario !== 'axes-frames')
+				(c.job.scenario !== 'frames' &&
+					c.job.scenario !== 'ind-frames' &&
+					c.job.scenario !== 'axes-frames' &&
+					c.job.scenario !== 'tz-frames')
 			) {
 				continue;
 			}
@@ -527,6 +530,39 @@ function frames(scenario = 'frames'): string {
 			],
 			rows,
 		) + `\nAll times in ms. ${runsNote(list)}\n`
+	);
+}
+
+function zoneChanges(): string {
+	const list = cases.filter(c => c.job.scenario === 'tz-change');
+	const rows: string[][] = [];
+	for (const id of caseIds('tz-change')) {
+		for (const adapter of adaptersOf(list)) {
+			const c = find(id, adapter);
+			if (c === undefined || c.job.scenario !== 'tz-change') {
+				continue;
+			}
+			const zoom = c.job.zoom === 'all' ? `all ${datasetLabel(c.job.dataset)}` : String(c.job.zoom);
+			for (const kind of ['cold', 'warm', 'baseline'] as const) {
+				rows.push([
+					zoom,
+					adapter,
+					kind === 'cold' ? 'first change to a zone' : kind === 'warm' ? 'later zone change' : 'text color change',
+					cell(c, `${kind}.callMs.p50`, MS),
+					cell(c, `${kind}.frameJsMs.p50`, MS),
+					cell(c, `${kind}.workMs.p50`, MS),
+					cell(c, `${kind}.workMs.max`, MS),
+					cell(c, `${kind}.shownMs.p50`, MS),
+					cell(c, `${kind}.workMs.count`),
+				]);
+			}
+		}
+	}
+	return (
+		table(
+			['Bars in view', 'Adapter', 'Change', 'Call p50', 'Frame JS p50', 'Work p50', 'Work max', 'Shown p50', 'Changes'],
+			rows,
+		) + `\nAll times in ms. Work is the call plus the JavaScript of the frames until drawn. ${runsNote(list)}\n`
 	);
 }
 
@@ -736,6 +772,8 @@ const sections: [string, () => string, string?][] = [
 	['Price axes: pan and zoom frames (three averages on the candles)', () => frames('axes-frames'), 'axes-frames'],
 	['Several charts on one page', multi, 'multi'],
 	['Operations on history let go', refetchOperations, 'refetch'],
+	['Time zone and sessions: pan and zoom frames', () => frames('tz-frames'), 'tz-frames'],
+	['Time zone changes', zoneChanges, 'tz-change'],
 	['Failed runs', failures],
 	['Skipped cases', skippedCases],
 ];

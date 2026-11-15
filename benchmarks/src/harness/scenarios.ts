@@ -37,6 +37,10 @@ import type {
 	RunResult,
 	TickJob,
 	TickRun,
+	TimeZoneFramesJob,
+	ZoneChangeJob,
+	ZoneChangeRun,
+	ZoneChangeTimings,
 } from '../jobs.ts';
 import { memoryResult } from '../memory.ts';
 import { motionRanges } from '../motion.ts';
@@ -116,6 +120,10 @@ function runScenario(job: Job, factory: AdapterFactory, container: HTMLElement, 
 			return runFrames(job, factory, container);
 		case 'multi':
 			return runMulti(job, factory, container, probes);
+		case 'tz-frames':
+			return runFrames(job, factory, container);
+		case 'tz-change':
+			return runZoneChange(job, factory, container);
 	}
 }
 
@@ -292,8 +300,16 @@ async function runTick(job: TickJob, factory: AdapterFactory, container: HTMLEle
 	}
 }
 
+/** Puts a chart of a stage 4 job into its time zone, with its sessions. */
+function withTimeZone(adapter: ChartAdapter, timeZone: string, sessions: boolean): void {
+	if (adapter.setTimeZone === undefined) {
+		throw new Error('This adapter cannot show time zones');
+	}
+	adapter.setTimeZone(timeZone, sessions);
+}
+
 async function runFrames(
-	job: FramesJob | IndicatorFramesJob | AxesFramesJob,
+	job: FramesJob | IndicatorFramesJob | AxesFramesJob | TimeZoneFramesJob,
 	factory: AdapterFactory,
 	container: HTMLElement,
 ): Promise<FramesRun> {
@@ -306,6 +322,9 @@ async function runFrames(
 				throw new Error('This adapter cannot lay out price axes');
 			}
 			adapter.withPriceAxes(job.axes);
+		}
+		if (job.scenario === 'tz-frames') {
+			withTimeZone(adapter, job.timeZone, job.sessions);
 		}
 		adapter.setData(prepare(adapter, data));
 		await adapter.settle();
@@ -395,6 +414,75 @@ async function runFrames(
 			warmupFrames: first - 1,
 			drawCalls,
 		};
+	} finally {
+		adapter.destroy();
+	}
+}
+
+/** Times one change of options from the call until it is drawn. */
+async function timeChange(adapter: ChartAdapter, change: () => void): Promise<[number, number, number]> {
+	const js = frameJsTotal();
+	const t0 = performance.now();
+	change();
+	const t1 = performance.now();
+	await adapter.settle();
+	const t2 = performance.now();
+	return [t1 - t0, frameJsTotal() - js, t2 - t0];
+}
+
+function changeTimings(samples: readonly [number, number, number][]): ZoneChangeTimings {
+	return {
+		callMs: summarize(samples.map(sample => sample[0])),
+		frameJsMs: summarize(samples.map(sample => sample[1])),
+		workMs: summarize(samples.map(sample => sample[0] + sample[1])),
+		shownMs: summarize(samples.map(sample => sample[2])),
+	};
+}
+
+async function runZoneChange(
+	job: ZoneChangeJob,
+	factory: AdapterFactory,
+	container: HTMLElement,
+): Promise<ZoneChangeRun> {
+	const data = generateSeries(job.dataset.kind, { seed: job.seed, count: job.dataset.size });
+	const adapter = await createSettled(factory, container, job.chart);
+	try {
+		if (adapter.setTimeZone === undefined || adapter.repaint === undefined) {
+			throw new Error('This adapter cannot show time zones');
+		}
+		adapter.setData(prepare(adapter, data));
+		await adapter.settle();
+		const n = data.length;
+		const visibleBars = job.zoom === 'all' ? n : Math.min(job.zoom, n);
+		// The middle of the history: both ends of the view have bars, and the window around it too.
+		const from = Math.floor((n - visibleBars) / 2);
+		adapter.setVisibleLogicalRange({ from, to: from + visibleBars - 1 });
+		await adapter.settle();
+
+		const setZone = (zone: string) => () => adapter.setTimeZone!(zone, false);
+		const cold: [number, number, number][] = [];
+		for (const zone of job.zones) {
+			// UTC needs no table: it is not a first change.
+			if (zone !== 'UTC') {
+				cold.push(await timeChange(adapter, setZone(zone)));
+			}
+		}
+		const warm: [number, number, number][] = [];
+		let current = job.zones[job.zones.length - 1];
+		for (let i = 0; i < job.changes; i++) {
+			const zone = job.zones[i % job.zones.length]!;
+			// A change to the zone already shown would change nothing.
+			if (zone === current) {
+				continue;
+			}
+			warm.push(await timeChange(adapter, setZone(zone)));
+			current = zone;
+		}
+		const baseline: [number, number, number][] = [];
+		for (let i = 0; i < job.changes; i++) {
+			baseline.push(await timeChange(adapter, () => adapter.repaint!()));
+		}
+		return { cold: changeTimings(cold), warm: changeTimings(warm), baseline: changeTimings(baseline), visibleBars };
 	} finally {
 		adapter.destroy();
 	}

@@ -85,6 +85,14 @@ export interface ChartAdapter<TPrepared = unknown> {
 	correctBar?(time: number, value: number): void;
 	/** Removes the bars with times in `[from, to]`. */
 	removeBars?(from: number, to: number): void;
+	/**
+	 * Shows times in `timeZone` (an IANA name), and with `sessions` gives the chart the extended hours
+	 * of a New York equity exchange, with breaks and shaded extended hours. Only libraries with
+	 * `timeZones` set in their registry entry implement it.
+	 */
+	setTimeZone?(timeZone: string, sessions: boolean): void;
+	/** Changes an option unrelated to time (the text color), which redraws like any change of options. */
+	repaint?(): void;
 	/** Shows the given range of bars, as a scripted pan or zoom would. */
 	setVisibleLogicalRange(range: LogicalRange): void;
 	/**
@@ -142,5 +150,7 @@ export interface AdapterEntry {
 	readonly indicators?: boolean;
 	/** The adapter can lay out price axes (`withPriceAxes`), for the stage 4 price axes scenario. */
 	readonly priceAxes?: boolean;
+	/** The library shows time zones and sessions (`setTimeZone`, `repaint`), for the stage 4 scenarios. */
+	readonly timeZones?: boolean;
 	load(): Promise<AdapterFactory>;
 }
