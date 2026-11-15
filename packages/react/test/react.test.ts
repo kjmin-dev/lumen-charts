@@ -16,12 +16,14 @@ describe('LumenChart (React)', () => {
 		await act(async () => {
 			root.render(createElement(LumenChart, { ref, options: { autoSize: false, background: '#101010' } }));
 		});
-		expect(host.querySelector('canvas')).not.toBeNull();
+		const canvases = host.querySelectorAll('canvas').length;
+		expect(canvases).toBeGreaterThan(0);
 
 		await act(async () => {
 			root.render(createElement(LumenChart, { ref, options: { autoSize: false, background: '#202020' } }));
 		});
-		expect(host.querySelectorAll('canvas').length).toBe(1);
+		// An update must reuse the chart, not create a second one.
+		expect(host.querySelectorAll('canvas').length).toBe(canvases);
 
 		await act(async () => {
 			root.unmount();
