@@ -384,19 +384,29 @@ measurements themselves are numbers from the JSON.
 ```sh
 pnpm install
 pnpm bench:install                 # Playwright's Chromium, once
-pnpm bench --budget 0 --out benchmarks/results/stage-0-baseline.json
+pnpm bench --headed --budget 0 --include-known-crashes --case load,tick,frames/candles-1m \
+  --lib lwc-conflation-on,lwc-conflation-off --out benchmarks/results/stage-0-baseline.json
 pnpm bench:report benchmarks/results/stage-0-baseline.json
 ```
 
-Since stage 2 the default matrix also has frames on 10M line points and the prepend scenario, and
-it skips Lightweight Charts on 10M line points (the crashes below). The stage 0 matrix is
-`pnpm bench --budget 0 --include-known-crashes --case load,tick,frames/candles-1m --lib
-lwc-conflation-on,lwc-conflation-off`.
+The baseline ran `pnpm bench --budget 0 --out benchmarks/results/stage-0-baseline.json`: the
+default options of its time except the time budget, which did not exist yet. That is headed
+Playwright Chromium, viewport 1280 × 720, DPR 2, chart 1200 × 600, 5 repeats. Since stage 2 the
+runner's defaults differ, hence the extra flags above:
 
-The baseline used the default options except the time budget, which did not exist yet: headed
-Playwright Chromium, viewport 1280 × 720, DPR 2, chart 1200 × 600, 5 repeats. `pnpm bench --headless` uses Chromium's new headless mode, which still
-rasterizes on the GPU; Playwright's default headless shell renders with SwiftShader on the CPU and is
-not used. `--channel chrome` runs the installed Google Chrome instead.
+- Runs are headless by default, in Chromium's new headless mode, which still rasterizes on the GPU
+  (Playwright's default headless shell renders with SwiftShader on the CPU and is not used). A
+  headed window takes the focus on every new page. This baseline and stage 1 were measured headed;
+  `--headed` runs that way again. A check on `lumen-main` with 1M candles (12 frames and tick cases,
+  2 runs headed and 2 headless, same code) found frame JavaScript time and tick cost equal within
+  the spread between runs, but the headless frame interval at p95 16.67 ms in every frames case
+  (headed: 16.7–17.6 ms). Headless intervals do not show rasterization or presentation stalls, so
+  intervals are compared only between headed runs.
+- The default matrix also has frames on 10M line points and the prepend scenario, and it skips
+  Lightweight Charts on 10M line points (see Failed runs); `--include-known-crashes` runs them.
+- lumen's adapters exist; `--lib` keeps the two Lightweight Charts variants.
+
+`--channel chrome` runs the installed Google Chrome instead.
 
 To measure a phone by hand: run `pnpm bench:serve` (production build on port 4173) and forward the port
 with `adb reverse tcp:4173 tcp:4173`, so the phone opens the page as `http://localhost:4173/`

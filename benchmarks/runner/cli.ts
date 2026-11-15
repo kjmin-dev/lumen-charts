@@ -56,8 +56,12 @@ Selection
   --list               print the jobs and exit
 
 Browser
-  --headless           run without a window (Chromium's new headless mode, which keeps GPU
-                       rasterization; Playwright's default headless shell renders in software)
+  --headed             open a browser window (stage 0 and 1 were measured headed). By default
+                       runs are headless, in Chromium's new headless mode, which keeps GPU
+                       rasterization (Playwright's default headless shell renders in software)
+                       and opens no window that takes the focus. Frame JavaScript time and tick
+                       cost match headed runs, but headless frame intervals stay at the refresh
+                       interval and miss raster and presentation stalls: measure those headed
   --channel <name>     Playwright channel, e.g. chrome for the installed Google Chrome
                        (default: Playwright's bundled Chromium)
   --viewport <WxH>     page viewport in CSS pixels (default: 1280x720)
@@ -110,7 +114,7 @@ const { values: args } = parseArgs({
 		budget: { type: 'string' },
 		quick: { type: 'boolean', default: false },
 		list: { type: 'boolean', default: false },
-		headless: { type: 'boolean', default: false },
+		headed: { type: 'boolean', default: false },
 		channel: { type: 'string' },
 		viewport: { type: 'string', default: '1280x720' },
 		dpr: { type: 'string', default: '2' },
@@ -233,13 +237,16 @@ interface Session {
 }
 
 /**
- * Playwright's own headless browser is a separate "headless shell" build that rasterizes with
- * SwiftShader on the CPU. The `chromium` channel runs the full browser in new headless mode instead.
+ * Headless by default: a headed window takes the focus on every new page, which makes the machine
+ * unusable while a run lasts. Playwright's own headless browser is a separate "headless shell"
+ * build that rasterizes with SwiftShader on the CPU; the `chromium` channel runs the full browser
+ * in new headless mode instead, which rasterizes on the GPU like a window does.
  */
-const channel = args.channel ?? (args.headless ? 'chromium' : undefined);
+const headless = !args.headed;
+const channel = args.channel ?? (headless ? 'chromium' : undefined);
 
 function launch(): Promise<Browser> {
-	return chromium.launch({ headless: args.headless, ...(channel !== undefined ? { channel } : {}) });
+	return chromium.launch({ headless, ...(channel !== undefined ? { channel } : {}) });
 }
 
 /** Longest wait for a worker's reply; a worker that is shutting down may never answer. */
@@ -501,7 +508,7 @@ async function main(): Promise<void> {
 					engine: 'chromium',
 					version: session.browser.version(),
 					channel: channel ?? 'playwright-bundled',
-					headless: args.headless,
+					headless,
 					commandLine,
 					gpuStatus,
 				},

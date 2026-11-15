@@ -96,15 +96,22 @@ All packages are released together under one version.
 (`lwc-conflation-on`, `lwc-conflation-off`) and lumen from the workspace sources with the data
 engine in a worker or on the main thread (`lumen-worker`, `lumen-main`). The stage 0 baseline and
 the definition of every metric are in [docs/benchmarks/stage-0-baseline.md](docs/benchmarks/stage-0-baseline.md);
-stage 1 results against it are in [docs/benchmarks/stage-1.md](docs/benchmarks/stage-1.md).
+stage 1 results against it are in [docs/benchmarks/stage-1.md](docs/benchmarks/stage-1.md), and the
+stage 2 scenarios with the stage 1 numbers on them in [docs/benchmarks/stage-2-before.md](docs/benchmarks/stage-2-before.md).
+
+Runs are headless by default (Chromium's new headless mode, rasterizing on the GPU), so no window
+takes the focus; `--headed` opens a window. Stage 0 and stage 1 were measured headed. Frame
+JavaScript time and tick cost, the metrics of the gates, match between the two modes, but headless
+frame intervals stay at the refresh interval (p95 16.67 ms) and do not show rasterization or
+presentation stalls: compare intervals only between headed runs.
 
 ```sh
 pnpm bench:install                      # once: download Playwright's Chromium (CI never needs it)
 pnpm bench --quick                      # smoke test, about a minute
-pnpm bench                              # full matrix, headed Chromium, JSON in benchmarks/results/
+pnpm bench                              # full matrix, headless Chromium, JSON in benchmarks/results/
 pnpm bench --scenario tick --size 1m --lib lwc-conflation-off --repeats 3
-pnpm bench --lib lumen-worker,lumen-main --repeats 3   # lumen only, about 8 minutes
-pnpm bench --help                       # all options (headless, Chrome channel, viewport, DPR, ...)
+pnpm bench --case frames/line-10m,prepend --lib lumen-worker,lumen-main --repeats 3
+pnpm bench --help                       # all options (headed, Chrome channel, viewport, DPR, ...)
 pnpm bench:report <results.json>        # Markdown tables from a results file
 pnpm bench:serve                        # production build of the harness page, to run by hand
 ```
