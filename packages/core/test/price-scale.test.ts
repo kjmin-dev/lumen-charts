@@ -12,6 +12,25 @@ describe('PriceScale', () => {
 		expect(ps.offset - 137.5 * ps.scale).toBeCloseTo(ps.priceToY(137.5), 9);
 	});
 
+	it('takes its margins as fractions of the height, keeping room for the prices', () => {
+		const ps = new PriceScale();
+		ps.setHeight(100);
+		ps.setRange(0, 10);
+		ps.setMargins(0.2, 0.3);
+		expect(ps.priceToY(10)).toBeCloseTo(20, 9);
+		expect(ps.priceToY(0)).toBeCloseTo(70, 9);
+		const version = ps.version;
+		ps.setMargins(0.2, 0.3);
+		expect(ps.version).toBe(version);
+		// Margins that would cover the pane are scaled down to 95% together.
+		ps.setMargins(0.8, 0.8);
+		expect(ps.priceToY(10)).toBeCloseTo(47.5, 9);
+		expect(ps.priceToY(0)).toBeCloseTo(52.5, 9);
+		ps.setMargins(-1, Number.NaN);
+		expect(ps.priceToY(10)).toBeCloseTo(0, 9);
+		expect(ps.priceToY(0)).toBeCloseTo(100, 9);
+	});
+
 	it('widens a flat range', () => {
 		const ps = new PriceScale();
 		ps.setHeight(500);

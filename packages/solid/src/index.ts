@@ -1,8 +1,8 @@
-import { type ChartApi, type ChartOptions, createChart } from '@lumen-charts/core';
+import { type ChartApi, type ChartOptions, type DeepPartial, createChart } from '@lumen-charts/core';
 import { createEffect, type JSX, onCleanup, onMount } from 'solid-js';
 
 export interface LumenChartProps {
-	options?: Partial<ChartOptions>;
+	options?: DeepPartial<ChartOptions>;
 	class?: string;
 	/** Called once with the chart instance after it is created. */
 	onReady?: (chart: ChartApi) => void;
@@ -41,4 +41,4 @@ export function LumenChart(props: LumenChartProps): JSX.Element {
 	return container;
 }
 
-export type { ChartApi, ChartOptions } from '@lumen-charts/core';
+export type { ChartApi, ChartOptions, DeepPartial } from '@lumen-charts/core';

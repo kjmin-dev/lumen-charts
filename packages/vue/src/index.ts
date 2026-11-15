@@ -1,4 +1,4 @@
-import { type ChartApi, type ChartOptions, createChart } from '@lumen-charts/core';
+import { type ChartApi, type ChartOptions, type DeepPartial, createChart } from '@lumen-charts/core';
 import { defineComponent, h, onBeforeUnmount, onMounted, type PropType, shallowRef, watch } from 'vue';
 
 /**
@@ -8,7 +8,7 @@ import { defineComponent, h, onBeforeUnmount, onMounted, type PropType, shallowR
 export const LumenChart = defineComponent({
 	name: 'LumenChart',
 	props: {
-		options: { type: Object as PropType<Partial<ChartOptions>>, default: undefined },
+		options: { type: Object as PropType<DeepPartial<ChartOptions>>, default: undefined },
 	},
 	setup(props, { expose }) {
 		const container = shallowRef<HTMLDivElement | null>(null);
@@ -40,4 +40,4 @@ export const LumenChart = defineComponent({
 	},
 });
 
-export type { ChartApi, ChartOptions } from '@lumen-charts/core';
+export type { ChartApi, ChartOptions, DeepPartial } from '@lumen-charts/core';

@@ -31,11 +31,11 @@ for (let i = 0; i < count; i++) {
 	price = next;
 }
 
+const theme = params.get('theme');
 const chart = createChart(container, {
-	background: '#0e1116',
-	textColor: '#aab2c0',
-	gridColor: '#1c2230',
-	crosshairColor: '#5c6578',
+	// `?theme=light` or `?theme=dark` pins a theme; by default the chart follows the system setting.
+	theme: theme === 'light' || theme === 'dark' ? theme : 'auto',
+	watermark: { visible: true, text: 'DEMO · 1m' },
 	worker: params.get('worker') !== '0',
 });
 const candles = chart.addSeries('candlestick');

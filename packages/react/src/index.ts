@@ -1,8 +1,8 @@
-import { type ChartApi, type ChartOptions, createChart } from '@lumen-charts/core';
+import { type ChartApi, type ChartOptions, type DeepPartial, createChart } from '@lumen-charts/core';
 import { type CSSProperties, createElement, forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 
 export interface LumenChartProps {
-	options?: Partial<ChartOptions>;
+	options?: DeepPartial<ChartOptions>;
 	className?: string;
 	style?: CSSProperties;
 }
@@ -41,4 +41,4 @@ export const LumenChart = forwardRef<ChartApi | null, LumenChartProps>(function 
 	return createElement('div', { ref: container, className, style });
 });
 
-export type { ChartApi, ChartOptions } from '@lumen-charts/core';
+export type { ChartApi, ChartOptions, DeepPartial } from '@lumen-charts/core';

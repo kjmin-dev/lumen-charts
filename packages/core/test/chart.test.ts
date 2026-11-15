@@ -1,4 +1,4 @@
-import { type ChartApi, createChart } from '@lumen-charts/core';
+import { type ChartApi, createChart, themes } from '@lumen-charts/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('createChart', () => {
@@ -31,8 +31,8 @@ describe('createChart', () => {
 	it('coalesces several changes into one frame', () => {
 		const chart = createChart(container, { autoSize: false, width: 400, height: 200 });
 		const scheduled = frames.length;
-		chart.applyOptions({ background: '#000000' });
-		chart.applyOptions({ background: '#111111' });
+		chart.applyOptions({ layout: { background: '#000000' } });
+		chart.applyOptions({ layout: { background: '#111111' } });
 		chart.resize(500, 250);
 		expect(frames.length).toBe(scheduled);
 		chart.destroy();
@@ -43,9 +43,9 @@ describe('createChart', () => {
 		for (const frame of frames.splice(0)) {
 			frame();
 		}
-		chart.applyOptions({ width: 400, height: 200, background: '#ffffff' });
+		chart.applyOptions({ width: 400, height: 200, layout: { background: '#ffffff' } });
 		expect(frames.length).toBe(0);
-		chart.applyOptions({ background: '#222222' });
+		chart.applyOptions({ layout: { background: '#222222' } });
 		expect(frames.length).toBe(1);
 		chart.destroy();
 	});
@@ -57,13 +57,69 @@ describe('createChart', () => {
 		chart.destroy();
 	});
 
+	it('merges nested options and ignores a nested value equal to the current one', () => {
+		const chart = createChart(container, { autoSize: false, width: 400, height: 200 });
+		for (const frame of frames.splice(0)) {
+			frame();
+		}
+		chart.applyOptions({ grid: { vertLines: { visible: false } } });
+		expect(chart.options().grid.vertLines.visible).toBe(false);
+		expect(chart.options().grid.vertLines.color).toBe(themes.light.grid.vertLines.color);
+		expect(chart.options().grid.horzLines.visible).toBe(true);
+		frames.splice(0);
+		chart.applyOptions({ grid: { vertLines: { visible: false } }, layout: {} });
+		expect(frames.length).toBe(0);
+		chart.destroy();
+	});
+
+	it('follows the system color scheme while the theme is auto', () => {
+		const view = container.ownerDocument.defaultView!;
+		const listeners = new Set<() => void>();
+		const scheme = { dark: false };
+		vi.spyOn(view, 'matchMedia').mockImplementation((query: string) => {
+			const watched = query.includes('prefers-color-scheme');
+			return {
+				media: query,
+				get matches() {
+					return watched && scheme.dark;
+				},
+				addEventListener: (_type: string, listener: () => void) => {
+					if (watched) {
+						listeners.add(listener);
+					}
+				},
+				removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+			} as unknown as MediaQueryList;
+		});
+		const chart = createChart(container, { autoSize: false, width: 400, height: 200, theme: 'auto' });
+		expect(chart.theme()).toBe('light');
+		expect(chart.options().layout.background).toBe(themes.light.layout.background);
+		for (const frame of frames.splice(0)) {
+			frame();
+		}
+
+		scheme.dark = true;
+		for (const listener of listeners) {
+			listener();
+		}
+		expect(chart.theme()).toBe('dark');
+		expect(chart.options().layout.background).toBe(themes.dark.layout.background);
+		expect(frames.length).toBe(1);
+
+		chart.applyOptions({ theme: 'light' });
+		expect(chart.theme()).toBe('light');
+		expect(listeners.size).toBe(0);
+		chart.destroy();
+		vi.restoreAllMocks();
+	});
+
 	it('removes its element on destroy and tolerates repeated calls', () => {
 		const chart = createChart(container);
 		chart.destroy();
 		chart.destroy();
 		expect(container.childElementCount).toBe(0);
-		chart.applyOptions({ background: '#333333' });
-		expect(chart.options().background).toBe('#ffffff');
+		chart.applyOptions({ layout: { background: '#333333' } });
+		expect(chart.options().layout.background).toBe('#ffffff');
 	});
 });
 
@@ -457,5 +513,236 @@ describe('chart with series', () => {
 		await idle;
 		series.update({ time: 1, value: 1 });
 		expect(chart.engineMode()).toBe('none');
+	});
+	it('switches theme colors and keeps the colors set explicitly', async () => {
+		chart.addSeries('candlestick').setData(candles(1000));
+		chart.applyOptions({ grid: { horzLines: { color: '#ff00ff' } } });
+		await settle();
+		chart.applyOptions({ theme: 'dark' });
+		expect(chart.theme()).toBe('dark');
+		const dark = chart.options();
+		expect(dark.layout.background).toBe(themes.dark.layout.background);
+		expect(dark.grid.vertLines.color).toBe(themes.dark.grid.vertLines.color);
+		expect(dark.grid.horzLines.color).toBe('#ff00ff');
+		clearCalls();
+		await settle();
+		expect(pane().calls[0]).toMatchObject({ name: 'fillRect', fillStyle: themes.dark.layout.background });
+		expect(priceAxis().calls[0]).toMatchObject({ name: 'fillRect', fillStyle: themes.dark.layout.background });
+		expect(pane().calls.some(call => call.fillStyle === '#ff00ff')).toBe(true);
+
+		chart.applyOptions({ theme: 'light' });
+		expect(chart.options().layout.background).toBe(themes.light.layout.background);
+		expect(chart.options().grid.horzLines.color).toBe('#ff00ff');
+	});
+
+	it('puts the price axis on the left and maps the pointer into the pane', async () => {
+		chart.addSeries('candlestick').setData(candles(5000));
+		await settle();
+		clearCalls();
+		chart.applyOptions({ priceScale: { position: 'left' } });
+		await settle();
+		const canvases = chart.element().querySelectorAll('canvas');
+		const axisWidth = Number.parseFloat(canvases[1]!.style.width);
+		expect(axisWidth).toBeGreaterThan(0);
+		expect(canvases[1]!.style.left).toBe('0px');
+		expect(canvases[0]!.style.left).toBe(`${axisWidth}px`);
+		// Labels end next to the border that faces the pane.
+		const labels = priceAxis().calls.filter(call => call.name === 'fillText');
+		expect(labels.length).toBeGreaterThan(2);
+		for (const label of labels) {
+			expect(label.args[1]).toBe(canvases[1]!.width - 8);
+		}
+
+		clearCalls();
+		pointer('pointermove', axisWidth + 100, 150);
+		await settle();
+		// The vertical crosshair line is drawn as 1-pixel-wide dashes near the pointer.
+		const column = overlay().calls.filter(call => call.name === 'fillRect' && call.args[2] === 1 && call.args[1] === 0);
+		expect(column.length).toBe(1);
+		expect(Math.abs((column[0]!.args[0] as number) - (axisWidth + 100))).toBeLessThanOrEqual(3);
+		// The price label sits on the axis at the left edge.
+		const tags = overlay().calls.filter(
+			call => call.name === 'fillRect' && call.args[0] === 0 && call.args[2] === axisWidth,
+		);
+		expect(tags.length).toBeGreaterThanOrEqual(1);
+	});
+
+	it('gives the pane the whole chart when both axes are hidden', async () => {
+		chart.addSeries('candlestick').setData(candles(1000));
+		chart.applyOptions({ priceScale: { visible: false }, timeScale: { visible: false } });
+		await settle();
+		const canvases = chart.element().querySelectorAll('canvas');
+		expect(canvases[0]!.style.width).toBe('640px');
+		expect(canvases[0]!.style.height).toBe('400px');
+		expect(canvases[1]!.style.display).toBe('none');
+		expect(canvases[2]!.style.display).toBe('none');
+		clearCalls();
+		pointer('pointermove', 200, 150);
+		await settle();
+		// Neither the last value nor the crosshair has an axis to put a label on.
+		expect(overlay().calls.filter(call => call.name === 'fillText')).toHaveLength(0);
+		expect(priceAxis().calls).toHaveLength(0);
+
+		chart.applyOptions({ priceScale: { visible: true }, timeScale: { visible: true } });
+		await settle();
+		expect(canvases[1]!.style.display).toBe('block');
+		expect(Number.parseFloat(canvases[0]!.style.width)).toBeLessThan(640);
+	});
+
+	it('draws dashed grid lines as one stroke and leaves out hidden ones', async () => {
+		chart.addSeries('candlestick').setData(candles(1000));
+		await settle();
+		clearCalls();
+		chart.applyOptions({ grid: { vertLines: { visible: false }, horzLines: { style: 'dashed', color: '#abcdef' } } });
+		await settle();
+		const calls = pane().calls;
+		expect(calls.filter(call => call.name === 'stroke')).toHaveLength(1);
+		expect(calls.find(call => call.name === 'setLineDash')?.args[0]).toEqual([3, 3]);
+		expect(calls.filter(call => call.name === 'moveTo').length).toBeGreaterThan(2);
+		expect(calls.filter(call => call.fillStyle === themes.light.grid.vertLines.color)).toHaveLength(0);
+	});
+
+	it('snaps the crosshair to the close in magnet mode, and hides it', async () => {
+		const data = candles(5000);
+		chart.addSeries('candlestick').setData(data);
+		chart.applyOptions({ crosshair: { mode: 'magnet' } });
+		await settle();
+		clearCalls();
+		pointer('pointermove', 200, 37);
+		await settle();
+		const range = chart.timeScale().getVisibleLogicalRange()!;
+		const paneWidth = Number.parseFloat(chart.element().querySelectorAll('canvas')[0]!.style.width);
+		const index = Math.round(range.from + (200 / paneWidth) * (range.to - range.from));
+		const labels = overlay()
+			.calls.filter(call => call.name === 'fillText')
+			.map(call => call.args[0]);
+		expect(labels).toContain(data.close[index]!.toFixed(2));
+
+		chart.applyOptions({ crosshair: { mode: 'hidden' } });
+		expect(chart.element().style.cursor).toBe('default');
+		clearCalls();
+		pointer('pointermove', 210, 40);
+		await settle();
+		// Only the last value label is left.
+		expect(overlay().calls.filter(call => call.name === 'fillText')).toHaveLength(1);
+	});
+
+	it('hides a series, and shows its value label without the price line', async () => {
+		const series = chart.addSeries('candlestick', {
+			upColor: UP,
+			downColor: DOWN,
+			wickUpColor: UP,
+			wickDownColor: DOWN,
+		});
+		series.setData(candles(1000));
+		await settle();
+		const colored = (): Call[] =>
+			overlay().calls.filter(call => call.name === 'fillRect' && (call.fillStyle === UP || call.fillStyle === DOWN));
+		// The dashed price line is many rectangles; the label is one.
+		expect(colored().length).toBeGreaterThan(10);
+		series.applyOptions({ priceLineVisible: false });
+		clearCalls();
+		await settle();
+		expect(colored()).toHaveLength(1);
+
+		series.applyOptions({ visible: false });
+		clearCalls();
+		await settle();
+		expect(candleRects()).toHaveLength(0);
+		expect(overlay().calls.filter(call => call.name === 'fillText')).toHaveLength(0);
+
+		series.applyOptions({ visible: true });
+		clearCalls();
+		await settle();
+		expect(candleRects().length).toBeGreaterThan(50);
+	});
+
+	it('outlines candle bodies with one stroke per color and can leave out wicks', async () => {
+		const BORDER = '#0000ff';
+		const series = chart.addSeries('candlestick', {
+			upColor: UP,
+			downColor: DOWN,
+			wickUpColor: UP,
+			wickDownColor: DOWN,
+			borderVisible: true,
+			borderUpColor: BORDER,
+			borderDownColor: BORDER,
+		});
+		series.setData(candles(1000));
+		await settle();
+		clearCalls();
+		chart.timeScale().setVisibleLogicalRange({ from: 900, to: 999 });
+		await settle();
+		const calls = pane().calls;
+		const outlines = calls.filter(call => call.name === 'rect');
+		expect(outlines.length).toBeGreaterThan(50);
+		expect(calls.filter(call => call.name === 'stroke')).toHaveLength(2);
+		// Each outline is laid half a pixel inside its body, and the fill one pixel inside.
+		const fills = calls.filter(call => call.name === 'fillRect' && (call.fillStyle === UP || call.fillStyle === DOWN));
+		for (const outline of outlines.slice(0, 10)) {
+			const [x, y, width] = outline.args as number[];
+			const fill = fills.find(call => call.args[0] === x! + 0.5 && call.args[1] === y! + 0.5);
+			expect(fill?.args[2]).toBe(width! - 1);
+		}
+		// Wicks stop at the body, so a transparent body shows no wick through it.
+		const bodyWidth = (outlines[0]!.args[2] as number) + 1;
+		const wicks = fills.filter(call => call.args[2] !== bodyWidth - 2);
+		for (const wick of wicks) {
+			const inside = outlines.some(outline => {
+				const [x, y, , height] = outline.args as number[];
+				const wickTop = wick.args[1] as number;
+				const wickBottom = wickTop + (wick.args[3] as number);
+				return (wick.args[0] as number) > x! && wickTop >= y! + 0.5 && wickBottom <= y! + 0.5 + height!;
+			});
+			expect(inside).toBe(false);
+		}
+
+		series.applyOptions({ wickVisible: false, borderVisible: false });
+		clearCalls();
+		await settle();
+		const bodies = candleRects();
+		expect(bodies.length).toBeGreaterThan(50);
+		expect(bodies.every(call => call.args[2] === bodyWidth)).toBe(true);
+	});
+
+	it('draws step and dashed lines, and a marker under the crosshair', async () => {
+		const data = candles(500);
+		const line = chart.addSeries('line', { lineType: 'step', lineStyle: 'dashed' });
+		line.setData({ time: data.time, value: data.close });
+		await settle();
+		const lineTos = (): number => pane().calls.filter(call => call.name === 'lineTo').length;
+		const dashes = pane().calls.filter(call => call.name === 'setLineDash');
+		expect(dashes[0]!.args[0]).toEqual([6, 6]);
+		expect(dashes.at(-1)!.args[0]).toEqual([]);
+		const step = lineTos();
+
+		line.applyOptions({ lineType: 'simple', lineStyle: 'solid' });
+		clearCalls();
+		await settle();
+		expect(step).toBe(2 * lineTos());
+		expect(pane().calls.filter(call => call.name === 'setLineDash')).toHaveLength(0);
+
+		clearCalls();
+		pointer('pointermove', 200, 150);
+		await settle();
+		expect(overlay().calls.filter(call => call.name === 'arc')).toHaveLength(2);
+		line.applyOptions({ crosshairMarkerVisible: false });
+		clearCalls();
+		await settle();
+		expect(overlay().calls.filter(call => call.name === 'arc')).toHaveLength(0);
+	});
+
+	it('draws a watermark behind the series', async () => {
+		chart.addSeries('candlestick').setData(candles(500));
+		await settle();
+		clearCalls();
+		chart.applyOptions({ watermark: { visible: true, text: 'LUMEN\n1D' } });
+		await settle();
+		const calls = pane().calls;
+		const texts = calls.filter(call => call.name === 'fillText').map(call => call.args[0]);
+		expect(texts).toEqual(['LUMEN', '1D']);
+		const lastText = calls.map(call => call.name).lastIndexOf('fillText');
+		const firstCandle = calls.findIndex(call => call.name === 'fillRect' && call.fillStyle === '#26a69a');
+		expect(lastText).toBeLessThan(firstCandle);
 	});
 });
