@@ -16,6 +16,8 @@ declare global {
 		__benchMeasureMemory?: () => Promise<MemorySample>;
 		/** Installed by the runner (CDP `Performance.getMetrics`): main-thread time since the page started. */
 		__benchMainThread?: () => Promise<MainThreadTimes>;
+		/** Installed by the runner (`ps` on the renderer processes): their resident memory in bytes. */
+		__benchRendererMemory?: () => Promise<number | null>;
 		/** Present when Chromium runs with `--js-flags=--expose-gc`. */
 		gc?: () => void;
 	}

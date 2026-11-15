@@ -93,9 +93,65 @@ export function aggregate(completed: readonly CompletedJob[]): CaseResult[] {
 		group.runs.push(outcome);
 	}
 	for (const group of groups.values()) {
-		const ok = group.runs.flatMap(run => (run.status === 'ok' ? [run.result] : []));
-		group.status = ok.length === group.runs.length ? 'ok' : ok.length > 0 ? 'partial' : 'failed';
-		group.summary = summarizeRuns(ok);
+		summarizeCase(group);
 	}
 	return [...groups.values()];
+}
+
+/** Sets the status and the summary of a case from its runs. */
+function summarizeCase(group: CaseResult): void {
+	const ok = group.runs.flatMap(run => (run.status === 'ok' ? [run.result] : []));
+	group.status = ok.length === group.runs.length ? 'ok' : ok.length > 0 ? 'partial' : 'failed';
+	group.summary = summarizeRuns(ok);
+}
+
+/**
+ * Joins results files that measured the same cases, as if their runs had been repeats of one
+ * invocation: the runs of a case and adapter are appended in file order and summarized again.
+ * Used for runs that have to be separate invocations, such as two checkouts measured alternately.
+ *
+ * The environment is the first file's. Its `merged` entry lists, for every file, when it was made
+ * and what differs from run to run: the runner's part of the environment, the machine's load and
+ * the commit.
+ */
+export function mergeResults(files: readonly ResultsFile[]): ResultsFile {
+	const first = files[0];
+	if (first === undefined) {
+		throw new Error('Nothing to merge');
+	}
+	const groups = new Map<string, CaseResult>();
+	for (const file of files) {
+		if (file.schema !== first.schema) {
+			throw new Error(`Cannot merge results of schema ${file.schema} with schema ${first.schema}`);
+		}
+		for (const c of file.cases) {
+			const key = `${c.caseId}|${c.adapter}`;
+			const group = groups.get(key);
+			if (group === undefined) {
+				groups.set(key, { ...c, runs: [...c.runs] });
+			} else {
+				group.library ??= c.library;
+				group.runs.push(...c.runs);
+			}
+		}
+	}
+	for (const group of groups.values()) {
+		summarizeCase(group);
+	}
+	const merged = files.map(file => {
+		const machine = (file.environment['machine'] ?? {}) as Record<string, unknown>;
+		return {
+			createdAt: file.createdAt,
+			runner: file.environment['runner'],
+			loadAverageStart: machine['loadAverageStart'],
+			loadAverageEnd: machine['loadAverageEnd'],
+			git: file.environment['git'],
+		};
+	});
+	return {
+		schema: first.schema,
+		createdAt: first.createdAt,
+		environment: { ...first.environment, merged },
+		cases: [...groups.values()],
+	};
 }

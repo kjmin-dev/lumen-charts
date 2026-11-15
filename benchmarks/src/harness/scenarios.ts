@@ -46,6 +46,8 @@ export interface Probes {
 	measureMemory(): Promise<MemorySample | null>;
 	/** Time the main thread has spent since the page started, or null if unavailable. */
 	mainThread(): Promise<MainThreadTimes | null>;
+	/** Resident memory of the browser's renderer processes in bytes, or null if unavailable. */
+	rendererMemory(): Promise<number | null>;
 }
 
 /** Bars in view in the `latest` tick view. */
@@ -577,6 +579,7 @@ async function runMulti(
 	await afterNextFrame();
 	await probes.collectGarbage();
 	const before = await probes.measureMemory();
+	const residentBefore = await probes.rendererMemory();
 
 	const adapters: ChartAdapter[] = [];
 	try {
@@ -604,6 +607,7 @@ async function runMulti(
 		await settleAll(adapters);
 		await probes.collectGarbage();
 		const after = await probes.measureMemory();
+		const residentAfter = await probes.rendererMemory();
 
 		const n = adapters.length;
 		const warmupStart = performance.now();
@@ -671,6 +675,14 @@ async function runMulti(
 			shownMainThread,
 			memory: memoryResult(before, after),
 			workers: after?.workers?.count ?? null,
+			rendererResident:
+				residentBefore === null || residentAfter === null
+					? null
+					: {
+							beforeBytes: residentBefore,
+							afterBytes: residentAfter,
+							retainedBytes: residentAfter - residentBefore,
+						},
 			sync: summarize(sync.subarray(0, rounds)),
 			settle: summarize(settle.subarray(0, rounds)),
 			frameJs: summarize(frameJs.subarray(0, rounds)),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FramesRun, PlannedJob, RunOutcome } from '../src/jobs.ts';
-import { type CompletedJob, aggregate, numericLeaves } from '../src/results.ts';
+import { type CompletedJob, type ResultsFile, aggregate, mergeResults, numericLeaves } from '../src/results.ts';
 import { summarize } from '../src/stats.ts';
 
 const job: PlannedJob['job'] = {
@@ -63,5 +63,44 @@ describe('aggregate', () => {
 		const [result] = aggregate([completed(failed, 0)]);
 		expect(result?.status).toBe('failed');
 		expect(result?.summary).toEqual({});
+	});
+});
+
+function file(createdAt: string, js: number[], load: number): ResultsFile {
+	return {
+		schema: 2,
+		createdAt,
+		environment: { runner: { arguments: ['--repeats', '1'] }, machine: { loadAverageStart: [load, 0, 0] } },
+		cases: aggregate([completed(run(js), 0)]),
+	};
+}
+
+describe('mergeResults', () => {
+	it('appends the runs of each case and summarizes them again', () => {
+		const merged = mergeResults([file('t1', [1, 2, 3], 2), file('t2', [3, 4, 5], 5), file('t3', [5, 6, 7], 9)]);
+		expect(merged.cases).toHaveLength(1);
+		expect(merged.cases[0]?.runs).toHaveLength(3);
+		expect(merged.cases[0]?.status).toBe('ok');
+		expect(merged.cases[0]?.summary['jsTime.p50']).toEqual({ median: 4, min: 2, max: 6, relativeRange: 1, runs: 3 });
+		// The first file's environment, and what differed from file to file.
+		expect(merged.createdAt).toBe('t1');
+		const environment = merged.environment as { merged: { createdAt: string; loadAverageStart: number[] }[] };
+		expect(environment.merged.map(entry => [entry.createdAt, entry.loadAverageStart[0]])).toEqual([
+			['t1', 2],
+			['t2', 5],
+			['t3', 9],
+		]);
+	});
+
+	it('keeps cases that only some files have, and refuses files of another schema', () => {
+		const other = file('t2', [1, 2, 3], 1);
+		other.cases[0]!.adapter = 'b';
+		const merged = mergeResults([file('t1', [1, 2, 3], 1), other]);
+		expect(merged.cases.map(c => [c.adapter, c.runs.length])).toEqual([
+			['a', 1],
+			['b', 1],
+		]);
+		expect(() => mergeResults([file('t1', [1], 1), { ...other, schema: 1 }])).toThrow(/schema/);
+		expect(() => mergeResults([])).toThrow(/Nothing/);
 	});
 });

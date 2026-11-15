@@ -64,4 +64,7 @@ export const probes: Probes = {
 	async mainThread() {
 		return window.__benchMainThread === undefined ? null : window.__benchMainThread();
 	},
+	async rendererMemory() {
+		return window.__benchRendererMemory === undefined ? null : window.__benchRendererMemory();
+	},
 };

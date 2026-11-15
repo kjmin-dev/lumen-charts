@@ -399,6 +399,14 @@ export interface MultiRun {
 	memory: MemoryResult | null;
 	/** Dedicated workers of the page once the charts are loaded, or null when they cannot be counted. */
 	workers: number | null;
+	/**
+	 * Resident memory of the browser's renderer processes at the two points `memory` is measured, and
+	 * the growth between them, or null without the runner. Unlike the heaps it includes what a thread
+	 * costs outside any heap (its stack, the engine's own structures, compiled code) and the
+	 * canvases' bitmaps that live in the renderer; it is coarser, since memory a collection frees is
+	 * not always given back to the system at once.
+	 */
+	rendererResident: { beforeBytes: number; afterBytes: number; retainedBytes: number } | null;
 	/** Sum of the `applyTick` calls of a round divided by the number of charts. */
 	sync: Distribution;
 	/** Wall time from the last `applyTick` of a round until every chart has settled. */

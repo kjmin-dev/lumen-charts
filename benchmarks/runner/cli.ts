@@ -365,6 +365,37 @@ async function measureWorkers(cdp: CDPSession): Promise<WorkerHeapUsage | null> 
 	}
 }
 
+/**
+ * Resident memory of the browser's renderer processes, summed, in bytes: what `ps` reports for
+ * them. Null where the processes cannot be listed or `ps` is missing (Windows).
+ */
+async function rendererResidentBytes(browser: Browser): Promise<number | null> {
+	try {
+		const cdp = await browser.newBrowserCDPSession();
+		let pids: string[];
+		try {
+			const { processInfo } = await cdp.send('SystemInfo.getProcessInfo');
+			pids = processInfo.filter(process => process.type === 'renderer').map(process => String(process.id));
+		} finally {
+			await cdp.detach().catch(() => undefined);
+		}
+		const output = pids.length === 0 ? null : command('ps', ['-o', 'rss=', '-p', pids.join(',')]);
+		if (output === null) {
+			return null;
+		}
+		let kibibytes = 0;
+		for (const line of output.split('\n')) {
+			const value = Number(line.trim());
+			if (line.trim() !== '' && Number.isFinite(value)) {
+				kibibytes += value;
+			}
+		}
+		return kibibytes * 1024;
+	} catch {
+		return null;
+	}
+}
+
 async function newPage(session: Session): Promise<{ context: BrowserContext; page: Page }> {
 	const context = await session.browser.newContext({ viewport, deviceScaleFactor: dpr });
 	const page = await context.newPage();
@@ -401,6 +432,7 @@ async function newPage(session: Session): Promise<{ context: BrowserContext; pag
 			styleMs: ms('RecalcStyleDuration'),
 		};
 	});
+	await page.exposeFunction('__benchRendererMemory', () => rendererResidentBytes(session.browser));
 	const query = new URLSearchParams({ auto: '', width: String(chart.width), height: String(chart.height) });
 	await page.goto(`${session.baseUrl}?${query.toString()}`);
 	await page.waitForFunction(() => window.bench !== undefined);
