@@ -616,6 +616,30 @@ describe('chart with series', () => {
 			return { time: source.time.slice(start, end), value: source.close.slice(start, end) };
 		};
 
+		it('draws bars fetched again in the first frame after the view changed', async () => {
+			chart.applyOptions({ memoryLimit: 1 });
+			let calls = 0;
+			const line = chart.addSeries('line', {
+				datafeed: {
+					getBars: request => {
+						calls++;
+						return Promise.resolve(barsFor(request));
+					},
+				},
+			});
+			line.setData({ time: data.time, value: data.close });
+			await idleEngine();
+			expect(frames.length).toBe(0);
+			chart.timeScale().setVisibleLogicalRange({ from: 80_000, to: 80_200 });
+			// The window is asked for when the view changes: the engine and the datafeed answer before
+			// the frame, which then draws the bars instead of a coarser level.
+			await someTasks();
+			expect(calls).toBeGreaterThan(0);
+			runFrames();
+			expect(internals()._drawn!.level).toBe(0);
+			expect(rawRows(80_000, 80_200)).toEqual([...data.close.subarray(80_000, 80_200)]);
+		});
+
 		it('aborts a request once the view moved away from its bars, and ignores what it still brings', async () => {
 			chart.applyOptions({ memoryLimit: 1 });
 			const out: { request: DatafeedRequest; resolve: (bars: ReturnType<typeof barsFor>) => void }[] = [];

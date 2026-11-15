@@ -218,6 +218,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 	/** Indicators, their definitions and the modules being loaded. */
 	private readonly _indicators: ChartIndicators;
 	private _applied: (() => void)[] = [];
+	/** Scale version the last window request was planned for. */
+	private _plannedScale = -1;
 
 	private _crosshairVisible = false;
 	private _crosshairX = 0;
@@ -467,6 +469,11 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 	public invalidate(level: Invalidation): void {
 		if (this._destroyed) {
 			return;
+		}
+		if (level >= INVALIDATE_LIGHT && this.scale.version !== this._plannedScale) {
+			// The view changed: rows it needs are asked for now rather than in the next frame, so rows
+			// that must be fetched again are usually back by the frame that draws the view.
+			this._requestWindow(this._container.ownerDocument.defaultView?.devicePixelRatio ?? 1);
 		}
 		if (level > this._level) {
 			this._level = level;
@@ -1053,6 +1060,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 	private _requestWindow(ratio: number): void {
 		const scale = this.scale;
 		const engine = this._engine;
+		this._plannedScale = scale.version;
 		if (engine !== null && !scale.isEmpty) {
 			const level = this._levelFor(scale.barSpacing * ratio);
 			const cache = this._cache;
