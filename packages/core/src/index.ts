@@ -1,5 +1,19 @@
 export { type ChartApi, type LogicalRange, type TimeScaleApi, createChart } from './chart';
 export type { LineColumns, LinePoint, OhlcBar, OhlcColumns } from './data/input';
+export {
+	DRAWING_STATE_VERSION,
+	DRAWING_TYPES,
+	type DrawingApi,
+	type DrawingEvent,
+	type DrawingInput,
+	type DrawingOptions,
+	type DrawingPoint,
+	type DrawingState,
+	type DrawingStateEvent,
+	type DrawingType,
+	type DrawingsApi,
+	POINT_COUNTS,
+} from './drawings/types';
 export type {
 	IndicatorApi,
 	IndicatorInput,
@@ -41,6 +55,19 @@ export type {
 	SetDataOptions,
 	TimeRange,
 } from './series';
+export {
+	type DrawTarget,
+	HIT_BODY,
+	HIT_NONE,
+	type PanePrimitive,
+	type PaneView,
+	type PrimitiveBounds,
+	type PrimitiveHost,
+	type PrimitiveZOrder,
+	type SeriesItems,
+	type SeriesRenderer,
+} from './primitives';
+export { getCanvasBudget, setCanvasBudget } from './shared/canvas-budget';
 export type { BarIndex, Coordinate, Logical, Nominal } from './types';
 export {
 	type IndicatorDefinition,

@@ -1,6 +1,23 @@
 import { INVALIDATE_CURSOR, INVALIDATE_LIGHT, type Invalidation } from '../model/invalidation';
 import type { TimeScale } from '../model/time-scale';
 
+/**
+ * Takes presses that land on something it edits (a drawing) instead of panning. Positions are CSS
+ * pixels in the pane. Its calls come from `Interaction.resolve`, in the read phase of a frame.
+ */
+export interface PointerDelegate {
+	/** Whether a press should wait for the next frame to learn whether it pans or is taken. */
+	readonly active: boolean;
+	/** A press; returns true to take the gesture, false to let it pan. */
+	press(x: number, y: number, pointerType: string): boolean;
+	/** The pointer of a taken gesture moved. */
+	drag(x: number, y: number): void;
+	/** The pointer of a taken gesture was released. */
+	release(x: number, y: number): void;
+	/** A taken gesture was cancelled by the browser. */
+	cancelGesture(): void;
+}
+
 export interface InteractionHost {
 	/** The time scale that panning and zooming act on. */
 	readonly scale: TimeScale;
@@ -16,6 +33,8 @@ export interface InteractionHost {
 	priceAxisAt(target: EventTarget | null): AxisTarget | null;
 	/** Moves the price scales that do not autoscale with a drag of `dy` CSS pixels. */
 	scrollPrices(dy: number): void;
+	/** What takes presses before they pan, if anything. */
+	pointerDelegate(): PointerDelegate | null;
 }
 
 /** A price axis the pointer can act on. */
@@ -43,6 +62,13 @@ const OP_PAN = 0;
 const OP_WHEEL_ZOOM = 1;
 const OP_PINCH_ZOOM = 2;
 const OP_STRIDE = 3;
+
+/** Kinds of gesture input waiting for the frame, see `Interaction._gestures`. */
+const GESTURE_PRESS = 0;
+const GESTURE_MOVE = 1;
+const GESTURE_RELEASE = 2;
+const GESTURE_CANCEL = 3;
+const GESTURE_STRIDE = 4;
 
 /**
  * Pointer and wheel input: dragging pans, the wheel and two-finger pinch zoom around the pointer,
@@ -80,6 +106,22 @@ export class Interaction {
 	private _hoverY = 0;
 	/** The price axis being dragged, from the press of the first pointer. */
 	private _axis: AxisTarget | null = null;
+	/**
+	 * Presses, moves and releases of the pointer pressed first, while a delegate is active: whether
+	 * the delegate takes a gesture depends on where the press is in the pane, a layout read that
+	 * waits for the frame. Until then they queue, in arrival order, as quadruples of a kind, the
+	 * client position and whether the pointer is a mouse (0) or not (1); consecutive moves merge.
+	 */
+	private _gestures = new Float64Array(8 * GESTURE_STRIDE);
+	private _gestureCount = 0;
+	/** Pointer whose gesture queues, or -1; where its queued input starts, or -1 once answered. */
+	private _gesturePointer = -1;
+	private _gestureStart = -1;
+	/** Whether the delegate took the gesture of `_gesturePointer` (known once its press is answered). */
+	private _gestureTaken = false;
+	/** Client position of the last queued input of a gesture answered not taken, which pans from there. */
+	private _gestureX = 0;
+	private _gestureY = 0;
 
 	public constructor(element: HTMLElement, host: InteractionHost) {
 		this._element = element;
@@ -110,6 +152,8 @@ export class Interaction {
 		this._velocity = 0;
 		this._opCount = 0;
 		this._hoverPending = false;
+		this._gestureCount = 0;
+		this._gesturePointer = -1;
 	}
 
 	/**
@@ -117,7 +161,7 @@ export class Interaction {
 	 * Runs in the read phase of a frame, and before anything that depends on the view being current.
 	 */
 	public resolve(): void {
-		if (this._opCount === 0 && !this._hoverPending) {
+		if (this._opCount === 0 && !this._hoverPending && this._gestureCount === 0) {
 			return;
 		}
 		const host = this._host;
@@ -135,6 +179,9 @@ export class Interaction {
 				host.scale.zoomAt(kind === OP_WHEEL_ZOOM ? Math.min(host.paneWidth(), Math.max(0, x)) : x, value);
 			}
 		}
+		if (this._gestureCount > 0) {
+			this._resolveGestures(rect.left + host.paneLeft(), rect.top);
+		}
 		if (this._hoverPending) {
 			this._hoverPending = false;
 			const x = this._hoverX - rect.left - host.paneLeft();
@@ -142,6 +189,83 @@ export class Interaction {
 			const inside = x >= 0 && y >= 0 && x < host.paneWidth() && y < host.paneHeight();
 			host.setCrosshair(x, y, inside);
 		}
+	}
+
+	/**
+	 * Hands the queued gesture input to the delegate in order: a press it takes sends it the moves
+	 * and the release that follow; any other press pans by the moves that follow instead.
+	 */
+	private _resolveGestures(left: number, top: number): void {
+		const host = this._host;
+		const delegate = host.pointerDelegate();
+		const gestures = this._gestures;
+		const end = this._gestureCount * GESTURE_STRIDE;
+		this._gestureCount = 0;
+		let taken = this._gestureTaken;
+		let lastX = this._gestureX;
+		let lastY = this._gestureY;
+		for (let i = 0; i < end; i += GESTURE_STRIDE) {
+			const kind = gestures[i]!;
+			const clientX = gestures[i + 1]!;
+			const clientY = gestures[i + 2]!;
+			const x = clientX - left;
+			const y = clientY - top;
+			if (kind === GESTURE_PRESS) {
+				taken = delegate !== null && delegate.press(x, y, gestures[i + 3] === 0 ? 'mouse' : 'touch');
+			} else if (taken && delegate !== null) {
+				if (kind === GESTURE_MOVE) {
+					delegate.drag(x, y);
+				} else if (kind === GESTURE_RELEASE) {
+					delegate.release(x, y);
+				} else {
+					delegate.cancelGesture();
+				}
+			} else {
+				if (clientX !== lastX) {
+					host.scale.scrollBy(clientX - lastX);
+					host.invalidate(INVALIDATE_LIGHT);
+				}
+				if (clientY !== lastY) {
+					host.scrollPrices(clientY - lastY);
+				}
+			}
+			lastX = clientX;
+			lastY = clientY;
+			if (kind === GESTURE_RELEASE || kind === GESTURE_CANCEL) {
+				taken = false;
+			}
+		}
+		this._gestureTaken = taken;
+		this._gestureX = lastX;
+		this._gestureY = lastY;
+		if (this._gesturePointer >= 0) {
+			// The gesture goes on: a taken one keeps queueing, any other pans as it moves from now on.
+			this._gestureStart = -1;
+			if (!taken) {
+				this._gesturePointer = -1;
+			}
+		}
+	}
+
+	private _pushGesture(kind: number, event: PointerEvent): void {
+		let gestures = this._gestures;
+		let at = this._gestureCount * GESTURE_STRIDE;
+		if (kind === GESTURE_MOVE && at > 0 && gestures[at - GESTURE_STRIDE] === GESTURE_MOVE) {
+			// Only where the pointer went matters, not the way there.
+			at -= GESTURE_STRIDE;
+			this._gestureCount--;
+		}
+		if (at === gestures.length) {
+			gestures = new Float64Array(gestures.length * 2);
+			gestures.set(this._gestures);
+			this._gestures = gestures;
+		}
+		gestures[at] = kind;
+		gestures[at + 1] = event.clientX;
+		gestures[at + 2] = event.clientY;
+		gestures[at + 3] = event.pointerType === 'mouse' ? 0 : 1;
+		this._gestureCount++;
+		this._host.invalidate(INVALIDATE_CURSOR);
 	}
 
 	/** Advances kinetic scrolling to `now`. Returns true while it is still moving. */
@@ -167,6 +291,36 @@ export class Interaction {
 			return;
 		}
 		this._velocity = 0;
+		if (this._gesturePointer >= 0) {
+			if (this._gestureStart < 0) {
+				// The gesture in progress is taken: one pointer edits, others wait until it is released.
+				return;
+			}
+			// A second finger before the press was answered: a pinch, which is never a drawing's. The
+			// first finger's queued input goes, and it pans by what it moved.
+			const first = this._pointers.get(this._gesturePointer);
+			const at = this._gestureStart * GESTURE_STRIDE;
+			const pressX = this._gestures[at + 1]!;
+			const pressY = this._gestures[at + 2]!;
+			this._gestureCount = this._gestureStart;
+			this._gesturePointer = -1;
+			this._gestureStart = -1;
+			if (first !== undefined && first.x !== pressX) {
+				this._pan(first.x - pressX);
+				this._host.invalidate(INVALIDATE_LIGHT);
+			}
+			if (first !== undefined && first.y !== pressY) {
+				this._host.scrollPrices(first.y - pressY);
+			}
+		} else if (this._pointers.size === 0 && this._host.priceAxisAt(event.target) === null) {
+			// Not on a price axis, which the pointer scales whatever drawings there are.
+			const delegate = this._host.pointerDelegate();
+			if (delegate !== null && delegate.active) {
+				this._gesturePointer = event.pointerId;
+				this._gestureStart = this._gestureCount;
+				this._pushGesture(GESTURE_PRESS, event);
+			}
+		}
 		this._pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 		this._axis = this._pointers.size === 1 ? this._host.priceAxisAt(event.target) : null;
 		this._element.setPointerCapture?.(event.pointerId);
@@ -190,6 +344,13 @@ export class Interaction {
 		const dy = event.clientY - pointer.y;
 		pointer.x = event.clientX;
 		pointer.y = event.clientY;
+		if (event.pointerId === this._gesturePointer) {
+			this._pushGesture(GESTURE_MOVE, event);
+			if (event.pointerType !== 'touch') {
+				this._hover(event);
+			}
+			return;
+		}
 		if (this._pointers.size >= 2) {
 			const distance = this._distance();
 			if (this._pinchDistance > 0 && distance > 0) {
@@ -232,6 +393,12 @@ export class Interaction {
 		}
 		this._element.releasePointerCapture?.(event.pointerId);
 		this._pinchDistance = this._distance();
+		if (event.pointerId === this._gesturePointer) {
+			this._pushGesture(event.type === 'pointerup' ? GESTURE_RELEASE : GESTURE_CANCEL, event);
+			this._gesturePointer = -1;
+			this._gestureStart = -1;
+			return;
+		}
 		const scaledAxis = this._axis !== null;
 		if (this._pointers.size === 0) {
 			this._axis = null;

@@ -11,6 +11,7 @@ import {
 import type { IndicatorApi, IndicatorOptions } from './indicators';
 import { INVALIDATE_LIGHT, type Invalidation } from './model/invalidation';
 import type { PriceScale } from './model/price-scale';
+import type { PanePrimitive, SeriesRenderer } from './primitives';
 import {
 	type CandlestickOptions,
 	DEFAULT_CANDLESTICK_OPTIONS,
@@ -145,6 +146,14 @@ export interface SeriesApi<T extends SeriesType = SeriesType> {
 	priceToCoordinate(price: number): number | null;
 	/** The price drawn at a coordinate: the inverse of `priceToCoordinate`. */
 	coordinateToPrice(y: number): number | null;
+	/**
+	 * Attaches a primitive drawn on this series' price scale (see `PanePrimitive`). It is detached
+	 * with the series.
+	 */
+	attachPrimitive(primitive: PanePrimitive): void;
+	detachPrimitive(primitive: PanePrimitive): void;
+	/** Draws the series with `renderer` instead of its built-in style; null goes back to it. */
+	setRenderer(renderer: SeriesRenderer | null): void;
 }
 
 export interface SeriesHost {
@@ -153,6 +162,8 @@ export interface SeriesHost {
 	addIndicator(source: Series, name: string, options?: DeepPartial<IndicatorOptions>): IndicatorApi;
 	/** The series got a new history with the command `seq`: requests for the old one are obsolete. */
 	reloaded(series: Series, seq: number): void;
+	attachSeriesPrimitive(series: Series, primitive: PanePrimitive): void;
+	detachSeriesPrimitive(series: Series, primitive: PanePrimitive): void;
 	/** The price scale the series is on, following its `priceScaleId`. */
 	priceAxisOf(series: Series): PriceAxis;
 }
@@ -201,6 +212,10 @@ export class Series implements SeriesApi {
 	/** Latest known value, for the last-value line. */
 	public lastValue = NaN;
 	public lastUp = true;
+	/** Draws the series in place of its built-in style, when set. */
+	public renderer: SeriesRenderer | null = null;
+	/** Primitives attached to the series, detached with it. */
+	public readonly primitives = new Set<PanePrimitive>();
 
 	/** The price scale the series was last drawn on; the chart follows `priceScaleId` changes. */
 	public axis: PriceAxis | null = null;
@@ -367,6 +382,21 @@ export class Series implements SeriesApi {
 			this._labelText = scale.format(value, this.base, options.minMove, options.precision);
 		}
 		return this._labelText;
+	}
+
+	public attachPrimitive(primitive: PanePrimitive): void {
+		this._host.attachSeriesPrimitive(this, primitive);
+	}
+
+	public detachPrimitive(primitive: PanePrimitive): void {
+		this._host.detachSeriesPrimitive(this, primitive);
+	}
+
+	public setRenderer(renderer: SeriesRenderer | null): void {
+		if (renderer !== this.renderer) {
+			this.renderer = renderer;
+			this._host.invalidate(INVALIDATE_LIGHT);
+		}
 	}
 
 	/**
