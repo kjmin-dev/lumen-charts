@@ -1199,7 +1199,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 			this._tickYs = new Float32Array(priceTicks * 2);
 		}
 		for (let i = 0; i < priceTicks; i++) {
-			this._tickYs[i] = Math.round(priceScale.priceToY(priceScale.tickPrices[i]!) * ratio);
+			this._tickYs[i] = Math.round(priceScale.valueToY(priceScale.tickValues[i]!) * ratio);
 		}
 
 		// Time ticks depend only on which bars are visible and how far apart they are.

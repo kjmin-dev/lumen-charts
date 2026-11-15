@@ -181,6 +181,42 @@ describe('SeriesView', () => {
 		expect(view.yHigh[0]).toBeCloseTo(69.4, 4);
 	});
 
+	it('projects logarithms of prices, leaves out prices at or below zero, and swaps rows when inverted', () => {
+		const view = new SeriesView();
+		const open = Float64Array.of(10, 100, 0.5);
+		const high = Float64Array.of(1000, 100, 2);
+		const low = Float64Array.of(1, 100, -1);
+		const close = Float64Array.of(100, 10, 0);
+		view.update(
+			{ origin: 0, spacing: 5, from: 0, to: 3, shift: 0, firstRow: 0 },
+			open,
+			high,
+			low,
+			close,
+			0,
+			1,
+			Infinity,
+			-Infinity,
+		);
+		view.project(400, 100, false, true);
+		expect([...view.yOpen.subarray(0, 2)]).toEqual([300, 200]);
+		expect([...view.yHigh.subarray(0, 2)]).toEqual([100, 200]);
+		expect([...view.yLow.subarray(0, 2)]).toEqual([400, 200]);
+		expect(view.yLow[2]).toBeNaN();
+		expect(view.yClose[2]).toBeNaN();
+		view.project(400, 100, true, true);
+		expect([...view.up.subarray(0, 3)]).toEqual([1, 0, 0]);
+		expect(view.yHigh[2]).toBe(Math.round(400 - Math.log10(2) * 100));
+		// Inverted: the low is the upper row, so yHigh keeps the upper one.
+		view.project(0, -2, true);
+		expect(view.yHigh[0]).toBe(2);
+		expect(view.yLow[0]).toBe(2000);
+		expect(view.yOpen[0]).toBe(20);
+		expect(view.yClose[0]).toBe(200);
+		expect(view.up[0]).toBe(1);
+		expect(view.lowestPositive()).toBe(0.5);
+	});
+
 	it('is empty for an empty range', () => {
 		const view = new SeriesView();
 		const empty = new Float64Array(0);

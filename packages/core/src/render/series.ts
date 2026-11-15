@@ -117,6 +117,7 @@ function outlines(
  * Draws candles from projected items: one pass per color, so the fill style changes at most six
  * times however many candles there are. All coordinates are whole device pixels. With outlines,
  * the body color fills only the inside, so a transparent or translucent body works as expected.
+ * On an `inverted` scale the open of a rising candle is its upper row.
  */
 export function drawCandles(
 	ctx: CanvasRenderingContext2D,
@@ -125,6 +126,7 @@ export function drawCandles(
 	wick: number,
 	border: number,
 	style: CandleStyle,
+	inverted = false,
 ): void {
 	const wickHalf = wick >> 1;
 	const bodyHalf = body >> 1;
@@ -133,8 +135,8 @@ export function drawCandles(
 		const up = direction === 1;
 		const bodyColor = up ? style.upColor : style.downColor;
 		const wickColor = up ? style.wickUpColor : style.wickDownColor;
-		const top = up ? view.yClose : view.yOpen;
-		const bottom = up ? view.yOpen : view.yClose;
+		const top = up !== inverted ? view.yClose : view.yOpen;
+		const bottom = up !== inverted ? view.yOpen : view.yClose;
 		if (outlined) {
 			if (style.wickVisible) {
 				ctx.fillStyle = wickColor;
@@ -162,7 +164,8 @@ export function drawCandles(
  * Draws histogram bars from projected items, `width` device pixels wide, from the `base` row to the
  * value: the part above the base in `color`, the part below in `negativeColor`, one pass per color.
  * An item that merges several bars (a pixel column, or a bucket of a coarse level) spans its
- * highest and lowest value, so spikes survive zooming out. Items are on whole pixels.
+ * highest and lowest value, so spikes survive zooming out. Items are on whole pixels. On an
+ * `inverted` scale values above the base are below its row.
  */
 export function drawHistogram(
 	ctx: CanvasRenderingContext2D,
@@ -171,10 +174,11 @@ export function drawHistogram(
 	width: number,
 	color: string,
 	negativeColor: string,
+	inverted = false,
 ): void {
 	const { x, yHigh, yLow, count } = view;
 	const half = width >> 1;
-	ctx.fillStyle = color;
+	ctx.fillStyle = inverted ? negativeColor : color;
 	for (let k = 0; k < count; k++) {
 		const top = yHigh[k]!;
 		// Rows grow downward: values above the base are above its row. NaN fails the test.
@@ -182,7 +186,7 @@ export function drawHistogram(
 			ctx.fillRect(x[k]! - half, top, width, base - top);
 		}
 	}
-	ctx.fillStyle = negativeColor;
+	ctx.fillStyle = inverted ? color : negativeColor;
 	for (let k = 0; k < count; k++) {
 		const bottom = yLow[k]!;
 		if (bottom > base) {

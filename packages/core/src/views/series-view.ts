@@ -264,13 +264,43 @@ export class SeriesView {
 	}
 
 	/**
-	 * Converts item prices to device-pixel rows: `y = offset - price * scale`.
+	 * Converts item prices to device-pixel rows: `y = offset - value * scale`, where the value is the
+	 * price, or its decimal logarithm with `log` (NaN, so not drawn, for prices at or below zero).
 	 * Candles snap to whole pixels so their edges stay sharp; lines keep fractions.
+	 *
+	 * `yHigh` and `yLow` always get the upper and the lower row of an item: on an inverted scale
+	 * (`scale` below zero) the high is the lower one, and they swap. `up` keeps telling the direction
+	 * of the prices.
 	 */
-	public project(offset: number, scale: number, snap: boolean): void {
+	public project(offset: number, scale: number, snap: boolean, log = false): void {
 		const count = this.count;
-		const { open, high, low, close, yOpen, yHigh, yLow, yClose, up } = this;
-		if (snap) {
+		const { open, high, low, close, yOpen, yClose, up } = this;
+		const yHigh = scale < 0 ? this.yLow : this.yHigh;
+		const yLow = scale < 0 ? this.yHigh : this.yLow;
+		if (log) {
+			for (let k = 0; k < count; k++) {
+				const o = open[k]!;
+				const h = high[k]!;
+				const l = low[k]!;
+				const c = close[k]!;
+				const yo = offset - (o > 0 ? Math.log10(o) : Number.NaN) * scale;
+				const yh = offset - (h > 0 ? Math.log10(h) : Number.NaN) * scale;
+				const yl = offset - (l > 0 ? Math.log10(l) : Number.NaN) * scale;
+				const yc = offset - (c > 0 ? Math.log10(c) : Number.NaN) * scale;
+				if (snap) {
+					yOpen[k] = Math.round(yo);
+					yHigh[k] = Math.round(yh);
+					yLow[k] = Math.round(yl);
+					yClose[k] = Math.round(yc);
+					up[k] = c >= o ? 1 : 0;
+				} else {
+					yOpen[k] = yo;
+					yHigh[k] = yh;
+					yLow[k] = yl;
+					yClose[k] = yc;
+				}
+			}
+		} else if (snap) {
 			for (let k = 0; k < count; k++) {
 				const o = open[k]!;
 				const c = close[k]!;
@@ -288,6 +318,38 @@ export class SeriesView {
 				yClose[k] = offset - close[k]! * scale;
 			}
 		}
+	}
+
+	/**
+	 * Lowest price above zero among the items, Infinity if there is none. Autoscale on a logarithmic
+	 * scale needs it when the items reach zero or below.
+	 */
+	public lowestPositive(): number {
+		const { open, high, low, close, count } = this;
+		let lowest = Infinity;
+		for (let k = 0; k < count; k++) {
+			const l = low[k]!;
+			if (l > 0) {
+				if (l < lowest) {
+					lowest = l;
+				}
+				continue;
+			}
+			// The low is not above zero, but the other prices may be.
+			const o = open[k]!;
+			const h = high[k]!;
+			const c = close[k]!;
+			if (o > 0 && o < lowest) {
+				lowest = o;
+			}
+			if (c > 0 && c < lowest) {
+				lowest = c;
+			}
+			if (h > 0 && h < lowest) {
+				lowest = h;
+			}
+		}
+		return lowest;
 	}
 
 	/** Forgets the kept items, for example after the source columns were swapped. */

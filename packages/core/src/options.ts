@@ -57,6 +57,19 @@ export interface CrosshairOptions {
 	horzLine: CrosshairLineOptions;
 }
 
+/**
+ * How a price scale places prices:
+ *
+ * - `normal`: evenly, by price.
+ * - `logarithmic`: by ratio, so 10 to 20 takes as much room as 100 to 200. Prices at or below zero
+ *   cannot be shown there and are left out; a histogram whose base is not above zero grows from the
+ *   edge of the pane.
+ * - `percentage`: by the change in percent from the price of each series at the first visible bar,
+ *   which lets series of different prices be compared.
+ * - `indexed`: the same change, as an index that is 100 at the first visible bar.
+ */
+export type PriceScaleMode = 'normal' | 'logarithmic' | 'percentage' | 'indexed';
+
 export interface PriceScaleOptions {
 	/** When hidden, the pane takes the full width and value labels are not shown. */
 	visible: boolean;
