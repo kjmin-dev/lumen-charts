@@ -16,6 +16,7 @@ import type {
 	FramesJob,
 	FramesRun,
 	IndicatorFramesJob,
+	AxesFramesJob,
 	IndicatorLoadJob,
 	IndicatorPrependJob,
 	Job,
@@ -111,6 +112,8 @@ function runScenario(job: Job, factory: AdapterFactory, container: HTMLElement, 
 			return runFrames(job, factory, container);
 		case 'ind-prepend':
 			return runPrepend(job, factory, container, probes);
+		case 'axes-frames':
+			return runFrames(job, factory, container);
 		case 'multi':
 			return runMulti(job, factory, container, probes);
 	}
@@ -290,7 +293,7 @@ async function runTick(job: TickJob, factory: AdapterFactory, container: HTMLEle
 }
 
 async function runFrames(
-	job: FramesJob | IndicatorFramesJob,
+	job: FramesJob | IndicatorFramesJob | AxesFramesJob,
 	factory: AdapterFactory,
 	container: HTMLElement,
 ): Promise<FramesRun> {
@@ -298,6 +301,12 @@ async function runFrames(
 	const adapter = await createSettled(factory, container, job.chart);
 	try {
 		withIndicators(adapter, indicatorsOf(job));
+		if (job.scenario === 'axes-frames') {
+			if (adapter.withPriceAxes === undefined) {
+				throw new Error('This adapter cannot lay out price axes');
+			}
+			adapter.withPriceAxes(job.axes);
+		}
 		adapter.setData(prepare(adapter, data));
 		await adapter.settle();
 		const n = data.length;

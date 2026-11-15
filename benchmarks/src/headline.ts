@@ -39,6 +39,7 @@ export function headline(result: CaseResult): string {
 			);
 		case 'frames':
 		case 'ind-frames':
+		case 'axes-frames':
 			return (
 				`JS p50 ${ms(m('jsTime.p50'))} p95 ${ms(m('jsTime.p95'))}; ` +
 				`interval p50 ${ms(m('interval.p50'))} p95 ${ms(m('interval.p95'))}`

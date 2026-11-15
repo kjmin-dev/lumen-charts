@@ -33,6 +33,7 @@ export const adapters: readonly AdapterEntry[] = [
 		description: 'Lumen Charts (workspace sources) with the data engine in a worker (default)',
 		datafeed: true,
 		indicators: true,
+		priceAxes: true,
 		load: async () => (await import('./lumen.ts')).lumenWorker,
 	},
 	{
@@ -40,6 +41,7 @@ export const adapters: readonly AdapterEntry[] = [
 		description: 'Lumen Charts (workspace sources) with the data engine on the main thread',
 		datafeed: true,
 		indicators: true,
+		priceAxes: true,
 		load: async () => (await import('./lumen.ts')).lumenMain,
 	},
 ];
@@ -63,6 +65,9 @@ export function knownFailure(adapter: string, dataset: DatasetSpec, scenario?: S
 	}
 	if (scenario !== undefined && INDICATOR_SCENARIOS.includes(scenario) && entry?.indicators !== true) {
 		return 'the adapter cannot put indicators on a series';
+	}
+	if (scenario === 'axes-frames' && entry?.priceAxes !== true) {
+		return 'the adapter cannot lay out price axes';
 	}
 	const failure = entry?.knownFailures?.find(f => f.dataset.kind === dataset.kind && f.dataset.size === dataset.size);
 	return failure === undefined ? null : `known failure: ${failure.reason}`;

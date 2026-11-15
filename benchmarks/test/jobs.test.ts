@@ -152,6 +152,30 @@ describe('planJobs', () => {
 		expect(knownFailure('nope', { kind: 'candles', size: 1_000_000 }, 'ind-apply')).toMatch(/indicators/);
 	});
 
+	it('plans the price axes cases, one per layout, for adapters that can lay out axes', () => {
+		const { jobs } = planJobs({ ...base, scenarios: ['axes-frames'], adapters: ['a'], repeats: 1 });
+		const ids = jobs.map(p => p.caseId);
+		expect(ids).toHaveLength(16);
+		expect(ids).toContain('axes-frames/candles-1m/pan-200/one');
+		expect(ids).toContain('axes-frames/candles-1m/zoom-all/four');
+		expect(jobs.every(p => p.job.scenario === 'axes-frames' && p.job.indicators === 3)).toBe(true);
+		const selected = planJobs({
+			...base,
+			scenarios: ['axes-frames'],
+			cases: ['axes-frames/candles-1m/pan-200'],
+			adapters: ['a'],
+			repeats: 1,
+		});
+		expect(selected.jobs.map(p => p.caseId)).toEqual([
+			'axes-frames/candles-1m/pan-200/one',
+			'axes-frames/candles-1m/pan-200/log',
+			'axes-frames/candles-1m/pan-200/percent',
+			'axes-frames/candles-1m/pan-200/four',
+		]);
+		expect(knownFailure('lumen-main', { kind: 'candles', size: 1_000_000 }, 'axes-frames')).toBeNull();
+		expect(knownFailure('lwc-conflation-on', { kind: 'candles', size: 1_000_000 }, 'axes-frames')).toMatch(/axes/);
+	});
+
 	it('plans the multi-chart scenario once per worker limit', () => {
 		const all: PlanOptions = { ...base, scenarios: ['multi'], adapters: ['a'], repeats: 1 };
 		expect(planJobs(all).jobs.map(p => p.caseId)).toEqual([

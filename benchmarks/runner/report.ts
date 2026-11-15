@@ -480,12 +480,15 @@ function frames(scenario = 'frames'): string {
 	for (const id of caseIds(scenario)) {
 		for (const adapter of adaptersOf(list)) {
 			const c = find(id, adapter);
-			if (c === undefined || (c.job.scenario !== 'frames' && c.job.scenario !== 'ind-frames')) {
+			if (
+				c === undefined ||
+				(c.job.scenario !== 'frames' && c.job.scenario !== 'ind-frames' && c.job.scenario !== 'axes-frames')
+			) {
 				continue;
 			}
 			const zoom = c.job.zoom === 'all' ? `all ${datasetLabel(c.job.dataset)}` : String(c.job.zoom);
 			rows.push([
-				`${c.job.motion} ${zoom}`,
+				`${c.job.motion} ${zoom}${c.job.scenario === 'axes-frames' ? `, ${c.job.axes}` : ''}`,
 				adapter,
 				cell(c, 'jsTime.mean', MS),
 				cell(c, 'jsTime.p50', MS),
@@ -730,6 +733,7 @@ const sections: [string, () => string, string?][] = [
 	['Indicators: pan and zoom frames', () => frames('ind-frames'), 'ind-frames'],
 	['Indicators: prepend (shown = indicators recomputed and drawn)', () => prepend('ind-prepend'), 'ind-prepend'],
 	['Indicators: memory after the prepends', () => prependMemory('ind-prepend'), 'ind-prepend'],
+	['Price axes: pan and zoom frames (three averages on the candles)', () => frames('axes-frames'), 'axes-frames'],
 	['Several charts on one page', multi, 'multi'],
 	['Operations on history let go', refetchOperations, 'refetch'],
 	['Failed runs', failures],

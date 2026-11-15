@@ -1,4 +1,5 @@
 import type { CandleColumns, LineColumns, SeriesColumns, SeriesKind, TickColumns } from './data.ts';
+import type { PriceAxesLayout } from './jobs.ts';
 
 /** Size of the chart in CSS pixels. */
 export interface ChartSize {
@@ -65,6 +66,12 @@ export interface ChartAdapter<TPrepared = unknown> {
 	 * before `setData`. Only libraries with `indicators` set in their registry entry implement it.
 	 */
 	withIndicators?(count: number): void;
+	/**
+	 * Lays out the price axes of the series and indicators the next `setData` creates, as `layout`
+	 * says (see `PriceAxesLayout`). Called before `setData`. Only libraries with `priceAxes` set in
+	 * their registry entry implement it.
+	 */
+	withPriceAxes?(layout: PriceAxesLayout): void;
 	/**
 	 * Resolves once everything submitted so far has been applied, indicator values included, without
 	 * waiting for a frame. A library that applies updates synchronously resolves at once.
@@ -133,5 +140,7 @@ export interface AdapterEntry {
 	readonly datafeed?: boolean;
 	/** The adapter can put indicators on a series (`withIndicators`, `applied`), for the stage 3 scenarios. */
 	readonly indicators?: boolean;
+	/** The adapter can lay out price axes (`withPriceAxes`), for the stage 4 price axes scenario. */
+	readonly priceAxes?: boolean;
 	load(): Promise<AdapterFactory>;
 }

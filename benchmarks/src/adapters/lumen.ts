@@ -4,6 +4,7 @@ import type { AdapterFactory, ChartAdapter, ChartSize, LogicalRange } from '../a
 import type { CandleColumns, LineColumns, SeriesColumns, TickColumns } from '../data.ts';
 import { afterNextFrame, nextTask, pendingFrameCallbacks } from '../harness/frames.ts';
 import { INDICATOR_SET } from '../indicators.ts';
+import type { PriceAxesLayout } from '../jobs.ts';
 
 /** Columns are lumen's own input format, so preparing passes them through unchanged. */
 type Prepared = { kind: 'candles'; columns: CandleColumns } | { kind: 'line'; columns: LineColumns };
@@ -24,6 +25,7 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 	/** Indicators of the stage 3 set to put on the next series, and those on the current one. */
 	private _indicatorCount = 0;
 	private _indicators: IndicatorApi[] = [];
+	private _axes: PriceAxesLayout = 'one';
 
 	public constructor(container: HTMLElement, size: ChartSize | 'auto', worker: boolean) {
 		this._chart = createChart(
@@ -44,6 +46,10 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 		this._indicatorCount = count;
 	}
 
+	public withPriceAxes(layout: PriceAxesLayout): void {
+		this._axes = layout;
+	}
+
 	public applied(): Promise<void> {
 		return this._chart.whenApplied();
 	}
@@ -57,6 +63,7 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 				this._indicatorCount > 0 ? { time, open, high, low, close, volume } : { time, open, high, low, close },
 			);
 			this._addIndicators(series);
+			this._layOutAxes();
 		} else {
 			const { time, value } = data.columns;
 			this._line().setData({ time, value });
@@ -203,6 +210,26 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 			this._chart.removeSeries(this._series);
 			this._series = null;
 			this._indicators = [];
+		}
+	}
+
+	/** Puts the scales of the series and its indicators where the price axes layout says. */
+	private _layOutAxes(): void {
+		const chart = this._chart;
+		if (this._axes === 'log' || this._axes === 'percent') {
+			chart.applyOptions({ priceScale: { mode: this._axes === 'log' ? 'logarithmic' : 'percentage' } });
+		} else if (this._axes === 'four') {
+			chart.applyOptions({
+				priceScales: {
+					inner: { visible: true, position: 'left' },
+					outer: { visible: true, position: 'left' },
+					right: { visible: true },
+				},
+			});
+			const ids = ['inner', 'outer', 'right'];
+			this._indicators.forEach((indicator, i) => {
+				indicator.applyOptions({ priceScaleId: ids[i % ids.length]! });
+			});
 		}
 	}
 
