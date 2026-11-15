@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type PlanOptions, caseId, parseSize, planJobs, sizeLabel } from '../src/jobs.ts';
+import { DEFAULT_BUDGET_MS, type PlanOptions, caseId, parseSize, planJobs, sizeLabel } from '../src/jobs.ts';
 
 const base: PlanOptions = {
 	scenarios: ['load', 'tick', 'frames'],
@@ -54,6 +54,20 @@ describe('planJobs', () => {
 		const tick = plan[0]?.job;
 		expect(tick?.scenario === 'tick' && tick.ticks).toBe(10_000);
 		expect(planJobs({ ...base, kinds: ['line'], scenarios: ['tick'] })).toHaveLength(0);
+	});
+
+	it('gives tick and frames runs a time budget unless it is 0', () => {
+		const plan = planJobs({ ...base, scenarios: ['tick', 'frames'], adapters: ['a'], repeats: 1 });
+		for (const { job } of plan) {
+			expect(job.scenario !== 'load' && job.budgetMs).toBe(DEFAULT_BUDGET_MS);
+			expect(job.scenario !== 'load' && job.warmupBudgetMs).toBe(2_000);
+		}
+		const tick = plan.find(p => p.job.scenario === 'tick')?.job;
+		expect(tick?.scenario === 'tick' && tick.minTicks).toBe(500);
+		const unlimited = planJobs({ ...base, scenarios: ['tick', 'frames'], adapters: ['a'], repeats: 1, budgetMs: 0 });
+		for (const { job } of unlimited) {
+			expect(job.scenario !== 'load' && job.budgetMs + job.warmupBudgetMs).toBe(0);
+		}
 	});
 
 	it('has a small quick mode', () => {

@@ -261,6 +261,7 @@ function tick(): string {
 				cell(c, 'mainThreadPerTick.mean', US),
 				cell(c, 'mainThreadPerTick.p99', US),
 				cell(c, 'settle.p99', MS),
+				cell(c, 'sync.count'),
 				hostIdle(c),
 			]);
 		}
@@ -281,6 +282,7 @@ function tick(): string {
 				'Main thread avg (µs)',
 				'Main thread p99 (µs)',
 				'Settle p99 (ms)',
+				'Ticks measured',
 				'Host CPU idle',
 			],
 			rows,
@@ -356,6 +358,7 @@ function frames(): string {
 				cell(c, 'interval.p99', MS),
 				cell(c, 'interval.max', MS),
 				cell(c, 'drawCalls.fillRect'),
+				cell(c, 'jsTime.count'),
 				hostIdle(c),
 			]);
 		}
@@ -376,6 +379,7 @@ function frames(): string {
 				'Interval p99',
 				'Interval max',
 				'fillRect per redraw',
+				'Frames measured',
 				'Host CPU idle',
 			],
 			rows,

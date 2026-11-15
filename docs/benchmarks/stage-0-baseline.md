@@ -164,6 +164,17 @@ allocator overhead. Canvas memory depends on chart size and DPR, which are fixed
 Each case runs 5 times per adapter (see the run arguments in the environment table). Tables give the
 median over runs, with the minimum and maximum in parentheses.
 
+### Run length
+
+This baseline measured every tick and frame of every run, which took 141 minutes: one run of the
+slowest cases (all 1M bars in view without conflation) took over 4 minutes, because 10,000 ticks or
+300 frames at several hundred milliseconds each were measured where 500 or 30 already show the same
+distribution. The runner now stops a tick or frames run once it has measured for 10 s and has at least
+500 ticks or 30 frames, and stops warm-up after 2 s (`--budget`). Here that would have shortened the
+Lightweight Charts tick runs from 100k bars up and its frames runs without conflation at 200k bars and
+more; every other run measures for less than 10 s and is unaffected. `pnpm bench:report` lists how
+many ticks and frames each case measured. `--budget 0` restores the fixed lengths used here.
+
 ## Results
 
 Values are the median over 5 runs per adapter, with the minimum and maximum run in parentheses.
@@ -373,12 +384,12 @@ measurements themselves are numbers from the JSON.
 ```sh
 pnpm install
 pnpm bench:install                 # Playwright's Chromium, once
-pnpm bench --out benchmarks/results/stage-0-baseline.json
+pnpm bench --budget 0 --out benchmarks/results/stage-0-baseline.json
 pnpm bench:report benchmarks/results/stage-0-baseline.json
 ```
 
-The baseline used the default options: headed Playwright Chromium, viewport 1280 × 720, DPR 2, chart
-1200 × 600, 5 repeats. `pnpm bench --headless` uses Chromium's new headless mode, which still
+The baseline used the default options except the time budget, which did not exist yet: headed
+Playwright Chromium, viewport 1280 × 720, DPR 2, chart 1200 × 600, 5 repeats. `pnpm bench --headless` uses Chromium's new headless mode, which still
 rasterizes on the GPU; Playwright's default headless shell renders with SwiftShader on the CPU and is
 not used. `--channel chrome` runs the installed Google Chrome instead.
 

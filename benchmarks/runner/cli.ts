@@ -17,6 +17,7 @@ import type { PageEnvironment } from '../src/harness/environment.ts';
 import { headline } from '../src/headline.ts';
 import {
 	type AdapterInfo,
+	DEFAULT_BUDGET_MS,
 	type HostLoad,
 	type MemorySample,
 	type PageRunResult,
@@ -40,6 +41,9 @@ Selection
   --size <list>        data set sizes to keep, e.g. 100k,1m (default: all)
   --kind <list>        candles, line (default: both)
   --repeats <n>        runs per case and adapter (default: 5, quick: 1)
+  --budget <s>         measuring time after which a tick or frames run stops early, once it has
+                       500 ticks or 30 frames; warm-up stops after 2 s (default: ${DEFAULT_BUDGET_MS / 1000};
+                       0 measures all 10,000 ticks and 300 frames, as the stage 0 baseline did)
   --quick              smoke test: small data sets, short runs, one repeat
   --list               print the jobs and exit
 
@@ -93,6 +97,7 @@ const { values: args } = parseArgs({
 		size: { type: 'string' },
 		kind: { type: 'string' },
 		repeats: { type: 'string' },
+		budget: { type: 'string' },
 		quick: { type: 'boolean', default: false },
 		list: { type: 'boolean', default: false },
 		headless: { type: 'boolean', default: false },
@@ -116,6 +121,10 @@ const viewport = parseDimensions(args.viewport, '--viewport');
 const chart = parseDimensions(args.chart, '--chart');
 const dpr = Number(args.dpr);
 const timeoutMs = Number(args.timeout) * 1000;
+const budgetMs = args.budget !== undefined ? Number(args.budget) * 1000 : DEFAULT_BUDGET_MS;
+if (!(budgetMs >= 0)) {
+	throw new Error(`--budget expects a number of seconds, got "${args.budget}"`);
+}
 const scenarios = list(args.scenario).map(s => oneOf(SCENARIOS, s, '--scenario'));
 const adapterIds = list(args.lib);
 for (const id of adapterIds) {
@@ -134,6 +143,7 @@ const plan = planJobs({
 	quick: args.quick,
 	chart,
 	seed: 1,
+	budgetMs,
 });
 
 if (args.list || plan.length === 0) {

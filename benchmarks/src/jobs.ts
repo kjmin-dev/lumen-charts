@@ -34,10 +34,18 @@ export interface TickJob extends JobBase {
 	readonly scenario: 'tick';
 	/** `latest`: the last 200 bars; `all`: every bar. */
 	readonly view: TickView;
-	/** Measured ticks. */
+	/** Measured ticks: the most a run measures. */
 	readonly ticks: number;
-	/** Ticks applied before measuring, taken from the same stream. */
+	/**
+	 * Measuring stops after the first round that ends `budgetMs` or later after measuring started,
+	 * once at least `minTicks` ticks are measured. A budget of 0 always measures `ticks`.
+	 */
+	readonly minTicks: number;
+	readonly budgetMs: number;
+	/** Ticks applied before measuring, taken from the same stream: the most a run applies. */
 	readonly warmupTicks: number;
+	/** Warm-up stops after the first round that ends this long after it started. 0: no limit. */
+	readonly warmupBudgetMs: number;
 	/** Ticks applied back to back between two `settle()` calls. */
 	readonly roundSize: number;
 	/** Every Nth tick starts a new bar. */
@@ -52,9 +60,18 @@ export interface FramesJob extends JobBase {
 	readonly scenario: 'frames';
 	readonly zoom: ZoomLevel;
 	readonly motion: Motion;
-	/** Measured frames. */
+	/** Measured frames: the most a run measures. */
 	readonly frames: number;
+	/**
+	 * Measuring stops after the first frame that starts `budgetMs` or later after measuring started,
+	 * once at least `minFrames` frames are measured. A budget of 0 always measures `frames`.
+	 */
+	readonly minFrames: number;
+	readonly budgetMs: number;
+	/** Frames dropped before measuring: the most a run drops. */
 	readonly warmupFrames: number;
+	/** Warm-up stops after the first frame that starts this long after it started (at least 3 frames). 0: no limit. */
+	readonly warmupBudgetMs: number;
 }
 
 export type Job = LoadJob | TickJob | FramesJob;
@@ -139,6 +156,8 @@ export interface TickRun {
 	mainThreadPerTick: Distribution;
 	/** Visible bars when measuring started. */
 	visibleBars: number;
+	/** Warm-up ticks applied (fewer than the job's when its warm-up budget ran out). */
+	warmupTicks: number;
 }
 
 export interface FramesRun {
@@ -150,6 +169,8 @@ export interface FramesRun {
 	framesWithLibraryWork: number;
 	/** Visible bars at the start of the motion. */
 	visibleBars: number;
+	/** Warm-up frames dropped (fewer than the job's when its warm-up budget ran out). */
+	warmupFrames: number;
 	/**
 	 * Canvas 2D calls in one redraw at the starting range, counted in a separate untimed pass after
 	 * the measurement (the counting wrappers would slow the measured frames down). Shows how much the
@@ -246,7 +267,17 @@ export interface PlanOptions {
 	quick: boolean;
 	chart: ChartSize;
 	seed: number;
+	/**
+	 * Measuring time after which a tick or frames run stops early, once it has its minimum number of
+	 * samples (default `DEFAULT_BUDGET_MS`). 0 measures every tick and frame. Fast libraries finish
+	 * before the budget; it only shortens runs of slow ones, whose distribution is clear long before.
+	 */
+	budgetMs?: number;
 }
+
+export const DEFAULT_BUDGET_MS = 10_000;
+/** Warm-up time limit of a run with a budget. */
+const WARMUP_BUDGET_MS = 2_000;
 
 /** `Omit` applied to each member of a union. */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -292,6 +323,8 @@ const QUICK_FRAME_ZOOMS: readonly ZoomLevel[] = [200, 'all'];
  */
 export function planJobs(options: PlanOptions): PlannedJob[] {
 	const { quick, chart, seed } = options;
+	const budgetMs = options.budgetMs ?? DEFAULT_BUDGET_MS;
+	const warmupBudgetMs = budgetMs > 0 ? Math.min(WARMUP_BUDGET_MS, budgetMs) : 0;
 	const keep = (dataset: DatasetSpec): boolean =>
 		(options.sizes.length === 0 || options.sizes.includes(dataset.size)) &&
 		(options.kinds.length === 0 || options.kinds.includes(dataset.kind));
@@ -312,7 +345,10 @@ export function planJobs(options: PlanOptions): PlannedJob[] {
 					chart,
 					view,
 					ticks: quick ? 1_000 : 10_000,
+					minTicks: quick ? 200 : 500,
+					budgetMs,
 					warmupTicks: quick ? 100 : 500,
+					warmupBudgetMs,
 					roundSize: 100,
 					newBarEvery: 10,
 				});
@@ -334,7 +370,10 @@ export function planJobs(options: PlanOptions): PlannedJob[] {
 						zoom,
 						motion,
 						frames: quick ? 60 : 300,
+						minFrames: quick ? 20 : 30,
+						budgetMs,
 						warmupFrames: quick ? 10 : 30,
+						warmupBudgetMs,
 					});
 				}
 			}

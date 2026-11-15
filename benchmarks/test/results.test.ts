@@ -12,7 +12,10 @@ const job: PlannedJob['job'] = {
 	zoom: 'all',
 	motion: 'pan',
 	frames: 10,
+	minFrames: 5,
+	budgetMs: 0,
 	warmupFrames: 1,
+	warmupBudgetMs: 0,
 };
 
 function run(js: number[]): RunOutcome {
@@ -21,6 +24,7 @@ function run(js: number[]): RunOutcome {
 		interval: summarize([16, 17]),
 		framesWithLibraryWork: js.length,
 		visibleBars: 1000,
+		warmupFrames: 1,
 		drawCalls: { fillRect: 3 },
 	};
 	return { status: 'ok', result, durationMs: 1 };

@@ -39,6 +39,13 @@ export interface Probes {
 
 /** Bars in view in the `latest` tick view. */
 const LATEST_VIEW_BARS = 200;
+/** Warm-up frames a frames run drops even when its warm-up budget is spent. */
+const MIN_WARMUP_FRAMES = 3;
+
+/** Whether `budgetMs` (0: unlimited) has passed since `start`. */
+function overBudget(start: number, budgetMs: number, now = performance.now()): boolean {
+	return budgetMs > 0 && now - start >= budgetMs;
+}
 
 export async function runJob(job: Job, container: HTMLElement, probes: Probes): Promise<PageRunResult> {
 	let info: AdapterInfo | null = null;
@@ -168,25 +175,34 @@ async function runTick(job: TickJob, factory: AdapterFactory, container: HTMLEle
 		await adapter.settle();
 
 		const { roundSize } = job;
-		for (let start = 0; start < job.warmupTicks; start += roundSize) {
-			const end = Math.min(start + roundSize, job.warmupTicks);
-			for (let i = start; i < end; i++) {
+		const warmupStart = performance.now();
+		let offset = 0;
+		while (offset < job.warmupTicks) {
+			const end = Math.min(offset + roundSize, job.warmupTicks);
+			for (let i = offset; i < end; i++) {
 				adapter.applyTick(ticks, i);
 			}
+			offset = end;
 			await adapter.settle();
+			if (overBudget(warmupStart, job.warmupBudgetMs)) {
+				break;
+			}
 		}
 
-		const count = job.ticks;
-		const rounds = Math.ceil(count / roundSize);
-		const durations = new Float64Array(count);
-		const syncPerRound = new Float64Array(rounds);
-		const settle = new Float64Array(rounds);
-		const settleJs = new Float64Array(rounds);
-		const mainThreadPerTick = new Float64Array(rounds);
-		const offset = job.warmupTicks;
-		for (let r = 0; r < rounds; r++) {
-			const start = r * roundSize;
-			const end = Math.min(start + roundSize, count);
+		const maxRounds = Math.ceil(job.ticks / roundSize);
+		const durations = new Float64Array(job.ticks);
+		const syncPerRound = new Float64Array(maxRounds);
+		const settle = new Float64Array(maxRounds);
+		const settleJs = new Float64Array(maxRounds);
+		const mainThreadPerTick = new Float64Array(maxRounds);
+		const measureStart = performance.now();
+		let count = 0;
+		let rounds = 0;
+		while (count < job.ticks) {
+			const r = rounds++;
+			const start = count;
+			const end = Math.min(start + roundSize, job.ticks);
+			count = end;
 			const roundStart = performance.now();
 			let last = roundStart;
 			for (let i = start; i < end; i++) {
@@ -203,6 +219,9 @@ async function runTick(job: TickJob, factory: AdapterFactory, container: HTMLEle
 			settle[r] = settled - last;
 			settleJs[r] = paintJs;
 			mainThreadPerTick[r] = (last - roundStart + paintJs) / (end - start);
+			if (count >= job.minTicks && overBudget(measureStart, job.budgetMs)) {
+				break;
+			}
 		}
 
 		const update: number[] = [];
@@ -211,14 +230,15 @@ async function runTick(job: TickJob, factory: AdapterFactory, container: HTMLEle
 			(ticks.tickKind[offset + i] === TICK_NEW_BAR ? newBar : update).push(durations[i] ?? 0);
 		}
 		return {
-			sync: summarize(durations),
+			sync: summarize(durations.subarray(0, count)),
 			syncUpdate: summarize(update),
 			syncNewBar: summarize(newBar),
-			syncPerRound: summarize(syncPerRound),
-			settle: summarize(settle),
-			settleJs: summarize(settleJs),
-			mainThreadPerTick: summarize(mainThreadPerTick),
+			syncPerRound: summarize(syncPerRound.subarray(0, rounds)),
+			settle: summarize(settle.subarray(0, rounds)),
+			settleJs: summarize(settleJs.subarray(0, rounds)),
+			mainThreadPerTick: summarize(mainThreadPerTick.subarray(0, rounds)),
 			visibleBars,
+			warmupTicks: offset,
 		};
 	} finally {
 		adapter.destroy();
@@ -239,15 +259,41 @@ async function runFrames(job: FramesJob, factory: AdapterFactory, container: HTM
 		adapter.setVisibleLogicalRange(ranges[0] ?? { from: 0, to: n - 1 });
 		await adapter.settle();
 
+		// Recorded frame k holds the library's draw for step k and the harness call for step k + 1.
+		// Frame 0 has no draw yet and the final frame no harness call; both are dropped together with
+		// the warm-up frames. Measured frames are [first, last); both are decided while running.
+		let first = 0;
+		let last = 0;
 		startFrameRecording();
 		let recording;
 		try {
 			await new Promise<void>((resolve, reject) => {
-				let step = 1;
+				const warmupStart = performance.now();
+				let measureStart = 0;
+				let frame = 0;
 				const onFrame = (): void => {
-					const range = ranges[step];
-					if (range === undefined) {
+					const now = performance.now();
+					if (first === 0) {
+						const warmedUp =
+							frame >= job.warmupFrames ||
+							(frame >= MIN_WARMUP_FRAMES && overBudget(warmupStart, job.warmupBudgetMs, now));
+						if (warmedUp) {
+							first = frame + 1;
+							measureStart = now;
+						}
+					} else if (last === 0) {
+						// The library has drawn in this frame already: its callbacks were requested first.
+						const measured = frame + 1 - first;
+						if (measured >= job.frames || (measured >= job.minFrames && overBudget(measureStart, job.budgetMs, now))) {
+							last = frame + 1;
+						}
+					} else if (frame === last) {
 						resolve();
+						return;
+					}
+					const range = ranges[frame + 1];
+					if (range === undefined) {
+						reject(new Error(`No motion step for frame ${frame + 1}`));
 						return;
 					}
 					try {
@@ -256,7 +302,7 @@ async function runFrames(job: FramesJob, factory: AdapterFactory, container: HTM
 						reject(error);
 						return;
 					}
-					step++;
+					frame++;
 					requestTimedFrame(onFrame);
 				};
 				requestTimedFrame(onFrame);
@@ -266,11 +312,6 @@ async function runFrames(job: FramesJob, factory: AdapterFactory, container: HTM
 		}
 		await adapter.settle();
 
-		// Recorded frame k holds the library's draw for step k and the harness call for step k + 1.
-		// Frame 0 has no draw yet and the final frame no harness call; both are dropped together with
-		// the warm-up frames.
-		const first = job.warmupFrames + 1;
-		const last = first + job.frames;
 		if (recording.timestamps.length < last) {
 			throw new Error(`Recorded ${recording.timestamps.length} frames, expected at least ${last}`);
 		}
@@ -300,6 +341,7 @@ async function runFrames(job: FramesJob, factory: AdapterFactory, container: HTM
 			interval: summarize(interval),
 			framesWithLibraryWork,
 			visibleBars,
+			warmupFrames: first - 1,
 			drawCalls,
 		};
 	} finally {
