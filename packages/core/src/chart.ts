@@ -650,9 +650,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		const version = scale.version;
 		this._cache.apply(event, this._columnCount);
 		const window = event.window;
-		if (window !== undefined && window.count > 0) {
+		if (window !== undefined) {
 			// Offsets of the bars that can come into view are looked up before a frame needs them.
-			this._time.cover(window.time[0]!, window.time[window.count - 1]!);
+			this._time.cover(window.time, window.count, 2 ** this._cache.level(window.level).shift);
 		}
 		scale.setExtent(event.first, event.end);
 		if (wasEmpty && !scale.isEmpty) {
@@ -943,8 +943,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	 */
 	private _applyTime(options: ChartOptions): void {
 		const drawn = this._drawn;
-		if (this._time.apply(options) && drawn !== null && drawn.count > 0) {
-			this._time.cover(drawn.time[0]!, drawn.time[drawn.count - 1]!);
+		if (this._time.apply(options) && drawn !== null) {
+			this._time.cover(drawn.time, drawn.count, 2 ** drawn.shift);
 		}
 	}
 

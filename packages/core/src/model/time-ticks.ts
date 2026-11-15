@@ -135,7 +135,7 @@ const BUILT_IN = new TimeFormat('', null, null);
  * the time zone: TradingView's datafeed convention stamps them at 00:00 UTC, which a zone west of
  * UTC would show on the day before.
  */
-const DATE_BARS = 20 * HOUR;
+export const DATE_BARS = 20 * HOUR;
 
 /**
  * Time-axis ticks for the visible bars.

@@ -1281,19 +1281,23 @@ describe('chart with series', () => {
 			expect(scale.sessionAt(Date.parse('2024-03-10T13:30:00Z'))).toBeNull();
 		});
 
-		it('shows daily bars as their UTC dates in any time zone', async () => {
-			const data = candles(400, Date.UTC(2023, 0, 2));
-			for (let i = 0; i < 400; i++) {
-				data.time[i] = Date.UTC(2023, 0, 2) + i * 86_400_000;
+		it('shows daily bars as their UTC dates in any time zone, without a table of offsets', async () => {
+			// A century of daily bars.
+			const data = candles(36_500);
+			for (let i = 0; i < data.time.length; i++) {
+				data.time[i] = Date.UTC(1924, 0, 2) + i * 86_400_000;
 			}
 			chart.addSeries('candlestick').setData(data);
 			chart.applyOptions({ localization: { timeZone: 'America/Los_Angeles' } });
-			chart.timeScale().fitContent();
+			chart.timeScale().setVisibleLogicalRange({ from: 36_000, to: 36_499 });
 			await settle();
-			expect(axisLabels()).toContain('2024');
+			expect(axisLabels()).toContain('2023');
 			pointer('pointermove', 300, 100);
 			await settle();
 			expect(crosshairLabels().some(label => label.endsWith(' 00:00'))).toBe(true);
+			chart.timeScale().fitContent();
+			await settle();
+			expect(timeZone('America/Los_Angeles').samples).toBe(0);
 		});
 	});
 });

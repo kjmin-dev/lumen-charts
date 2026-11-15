@@ -2,6 +2,7 @@ import { type ChartOptions, type LocalizationOptions, optionsEqual } from '../op
 import { SessionMarks } from './session-marks';
 import { type SessionCalendar, type SessionInfo, type SessionSchedule, formatDay, sessionCalendar } from './sessions';
 import { TimeFormat } from './time-format';
+import { DATE_BARS } from './time-ticks';
 import { type TimeZone, timeZone } from './time-zone';
 
 /**
@@ -44,8 +45,20 @@ export class TimeDisplay {
 		return true;
 	}
 
-	/** Builds the offset tables for times `[from, to]` ahead of the frames that need them. */
-	public cover(from: number, to: number): void {
+	/**
+	 * Builds the offset tables for the first `count` times of a window, each a row of `rowBars` bars,
+	 * ahead of the frames that need them. Daily and longer bars are dates shown in UTC (see
+	 * `DATE_BARS`): a century of them needs no table.
+	 */
+	public cover(time: Float64Array, count: number, rowBars: number): void {
+		if (count <= 0) {
+			return;
+		}
+		const from = time[0]!;
+		const to = time[count - 1]!;
+		if (count > 1 && (to - from) / ((count - 1) * rowBars) >= DATE_BARS) {
+			return;
+		}
 		this.zone.cover(from, to);
 		const sessions = this.sessions;
 		if (sessions !== null && sessions.zone !== this.zone) {
