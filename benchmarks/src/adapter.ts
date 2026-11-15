@@ -66,6 +66,14 @@ export interface ChartAdapter<TPrepared = unknown> {
 	 * rendering the frame that shows it. GPU rasterization and display are not awaited.
 	 */
 	settle(): Promise<void>;
+	/**
+	 * The library's own part of `settle`: resolves once everything submitted so far has been applied
+	 * and drawn, possibly from inside the animation frame that draws it, without waiting for that
+	 * frame's rendering. With several charts on a page the harness waits for all of them like this
+	 * and then for the rendering once, so the waiting costs the same whatever a library does per
+	 * chart. Libraries without such a signal leave it out, and the harness uses `settle`.
+	 */
+	idle?(): Promise<void>;
 	/** Removes the chart and releases its resources. */
 	destroy(): void;
 }

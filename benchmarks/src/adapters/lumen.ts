@@ -2,32 +2,12 @@ import * as lumen from '@lumen-charts/core';
 import { type ChartApi, type SeriesApi, createChart } from '@lumen-charts/core';
 import type { AdapterFactory, ChartAdapter, ChartSize, LogicalRange } from '../adapter.ts';
 import type { CandleColumns, LineColumns, SeriesColumns, TickColumns } from '../data.ts';
-import { afterNextFrame, pendingFrameCallbacks } from '../harness/frames.ts';
+import { afterNextFrame, nextTask, pendingFrameCallbacks } from '../harness/frames.ts';
 
 /** Columns are lumen's own input format, so preparing passes them through unchanged. */
 type Prepared = { kind: 'candles'; columns: CandleColumns } | { kind: 'line'; columns: LineColumns };
 
 type AnySeries = SeriesApi<'candlestick'> | SeriesApi<'line'>;
-
-/**
- * Resolves in a task after the current one. Called from an animation-frame callback, that task runs
- * after the frame's style, layout, paint and commit steps.
- */
-function nextTask(): Promise<void> {
-	return new Promise(resolve => {
-		const channel = new MessageChannel();
-		channel.port1.addEventListener(
-			'message',
-			() => {
-				channel.port1.close();
-				resolve();
-			},
-			{ once: true },
-		);
-		channel.port1.start();
-		channel.port2.postMessage(null);
-	});
-}
 
 class LumenAdapter implements ChartAdapter<Prepared> {
 	private readonly _chart: ChartApi;
@@ -137,6 +117,10 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 			// would spin through tasks until that frame; waiting for the frame costs nothing instead.
 			await afterNextFrame();
 		}
+	}
+
+	public idle(): Promise<void> {
+		return this._chart.whenIdle();
 	}
 
 	public destroy(): void {

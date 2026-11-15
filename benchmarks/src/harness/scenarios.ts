@@ -32,6 +32,8 @@ import {
 	afterNextFrame,
 	frameJsTotal,
 	libraryFrameRuns,
+	nextTask,
+	pendingFrameCallbacks,
 	recordFrameTimes,
 	requestTimedFrame,
 	startFrameRecording,
@@ -519,8 +521,26 @@ const MULTI_BACKGROUND_MS = 1000;
 /** Frames after scrolling for visibility to be reported and the draws it causes to be requested. */
 const REVEAL_FRAMES = 4;
 
+/**
+ * `settle()` for several charts at once. Where the library says when a chart is idle, the charts
+ * are awaited together and the frame's rendering once, as `settle()` of one chart does: awaiting
+ * `settle()` of every chart would add a task or a frame wait per chart, and more of them for a
+ * library that leaves some charts undrawn than for one that draws them all.
+ */
 async function settleAll(adapters: readonly ChartAdapter[]): Promise<void> {
-	await Promise.all(adapters.map(adapter => adapter.settle()));
+	if (adapters.some(adapter => adapter.idle === undefined)) {
+		await Promise.all(adapters.map(adapter => adapter.settle()));
+		return;
+	}
+	for (;;) {
+		await Promise.all(adapters.map(adapter => adapter.idle?.()));
+		await nextTask();
+		if (pendingFrameCallbacks() === 0) {
+			return;
+		}
+		// A chart asked for another frame meanwhile.
+		await afterNextFrame();
+	}
 }
 
 /** Main-thread time between two readings, divided by `parts`. */
