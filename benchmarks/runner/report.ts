@@ -507,6 +507,60 @@ function skippedCases(): string {
 	return lines.length === 0 ? 'None.\n' : `${lines.join('\n')}\n`;
 }
 
+function refetch(): string {
+	const list = cases.filter(c => c.job.scenario === 'refetch');
+	const rows: string[][] = [];
+	for (const id of caseIds('refetch')) {
+		for (const adapter of adaptersOf(list)) {
+			const c = find(id, adapter);
+			if (c === undefined || c.job.scenario !== 'refetch') {
+				continue;
+			}
+			rows.push([
+				`${datasetLabel(c.job.dataset)}, limit ${number(c.job.memoryLimit * MIB)} MiB, ${sizeLabel(c.job.visibleBars)} in view`,
+				adapter,
+				cell(c, 'shownMs.p50', MS),
+				cell(c, 'shownMs.p95', MS),
+				cell(c, 'shownMs.max', MS),
+				cell(c, 'coldShownMs', MS),
+				cell(c, 'fetches.p50'),
+				cell(c, 'fetchedRows.p50'),
+				cell(c, 'jumpsWithoutFetch'),
+				cell(c, 'shownMs.count'),
+				cell(c, 'memoryAfterLoad.retainedBytes', MIB),
+				cell(c, 'memoryAfterLoad.retainedPageBytes', MIB),
+				cell(c, 'memoryAfterLoad.retainedWorkerBytes', MIB),
+				cell(c, 'memory.retainedBytes', MIB),
+				cell(c, 'memory.retainedPageBytes', MIB),
+				cell(c, 'memory.retainedWorkerBytes', MIB),
+				hostIdle(c),
+			]);
+		}
+	}
+	return table(
+		[
+			'Case',
+			'Adapter',
+			'Shown p50 (ms)',
+			'Shown p95 (ms)',
+			'Shown max (ms)',
+			'Cold shown (ms)',
+			'Fetches per jump p50',
+			'Rows fetched per jump p50',
+			'Jumps without fetch',
+			'Jumps',
+			'Retained after load (MiB)',
+			'Page (MiB)',
+			'Workers (MiB)',
+			'Retained after jumps (MiB)',
+			'Page (MiB)',
+			'Workers (MiB)',
+			'CPU idle',
+		],
+		rows,
+	);
+}
+
 // The scenario of each section, if any: sections without results of it are left out.
 const sections: [string, () => string, string?][] = [
 	['Environment', environment],
@@ -517,6 +571,7 @@ const sections: [string, () => string, string?][] = [
 	['Pan and zoom frames', frames, 'frames'],
 	['Prepend', prepend, 'prepend'],
 	['Memory after the prepends', prependMemory, 'prepend'],
+	['Refetch under a memory limit', refetch, 'refetch'],
 	['Failed runs', failures],
 	['Skipped cases', skippedCases],
 ];

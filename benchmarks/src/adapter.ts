@@ -1,4 +1,4 @@
-import type { CandleColumns, LineColumns, SeriesKind, TickColumns } from './data.ts';
+import type { CandleColumns, LineColumns, SeriesColumns, SeriesKind, TickColumns } from './data.ts';
 
 /** Size of the chart in CSS pixels. */
 export interface ChartSize {
@@ -49,6 +49,16 @@ export interface ChartAdapter<TPrepared = unknown> {
 	 * tick has its time, otherwise a bar is appended. Any per-tick conversion is part of the call.
 	 */
 	applyTick(ticks: TickColumns, index: number): void;
+	/**
+	 * Like `setData`, with a datafeed the library may fetch bars from again and a memory limit in
+	 * bytes it may let bars go past. `datafeed` returns the rows with times in `[from, to]`. Only
+	 * libraries with `datafeed` set in their registry entry implement it.
+	 */
+	setDataWithDatafeed?(
+		data: TPrepared,
+		datafeed: (from: number, to: number) => SeriesColumns,
+		memoryLimit: number,
+	): void;
 	/** Shows the given range of bars, as a scripted pan or zoom would. */
 	setVisibleLogicalRange(range: LogicalRange): void;
 	/**
@@ -84,5 +94,7 @@ export interface AdapterEntry {
 	readonly id: string;
 	readonly description: string;
 	readonly knownFailures?: readonly KnownFailure[];
+	/** The library can fetch history again from a datafeed (`setDataWithDatafeed`), for the refetch scenario. */
+	readonly datafeed?: boolean;
 	load(): Promise<AdapterFactory>;
 }

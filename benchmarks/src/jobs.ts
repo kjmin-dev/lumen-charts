@@ -5,8 +5,8 @@ import type { ChartSize } from './adapter.ts';
 import type { SeriesKind } from './data.ts';
 import type { Distribution } from './stats.ts';
 
-export type ScenarioName = 'load' | 'tick' | 'frames' | 'prepend';
-export const SCENARIOS: readonly ScenarioName[] = ['load', 'tick', 'frames', 'prepend'];
+export type ScenarioName = 'load' | 'tick' | 'frames' | 'prepend' | 'refetch';
+export const SCENARIOS: readonly ScenarioName[] = ['load', 'tick', 'frames', 'prepend', 'refetch'];
 
 export interface DatasetSpec {
 	readonly kind: SeriesKind;
@@ -99,7 +99,30 @@ export interface PrependJob extends JobBase {
 	readonly budgetMs: number;
 }
 
-export type Job = LoadJob | TickJob | FramesJob | PrependJob;
+/**
+ * A series with a datafeed under a memory limit, for libraries that can fetch history again. Once
+ * the library has let rows go, the view jumps from one region of old history to the next at a
+ * zoom that shows single bars, so a jump that lands on rows let go makes the library fetch them
+ * from the datafeed. The datafeed is in the page and answers at once, so the latency is the
+ * library's own.
+ */
+export interface RefetchJob extends JobBase {
+	readonly scenario: 'refetch';
+	/** Memory limit handed to the library, in bytes. */
+	readonly memoryLimit: number;
+	/** Bars in view at every jump. */
+	readonly visibleBars: number;
+	/** Measured jumps: the most a run measures. One more, unmeasured, comes first (`coldShownMs`). */
+	readonly jumps: number;
+	/**
+	 * Measuring stops after the first jump that ends `budgetMs` or later after measuring started,
+	 * once at least `minJumps` jumps are measured. A budget of 0 always measures `jumps`.
+	 */
+	readonly minJumps: number;
+	readonly budgetMs: number;
+}
+
+export type Job = LoadJob | TickJob | FramesJob | PrependJob | RefetchJob;
 
 /** All times start when `setData` is called, except `convertMs` and the `*WithConversionMs` sums. */
 export interface LoadTimings {
@@ -279,7 +302,27 @@ export interface PrependRun {
 	memory: MemoryResult | null;
 }
 
-export type RunResult = LoadRun | TickRun | FramesRun | PrependRun;
+export interface RefetchRun {
+	/** The first jump, with code paths not yet compiled. Not part of the distributions. */
+	coldShownMs: number;
+	/** From `setVisibleLogicalRange` until `settle()` resolves with the region drawn. */
+	shownMs: Distribution;
+	/** Datafeed calls during one jump. */
+	fetches: Distribution;
+	/** Rows the datafeed returned during one jump. */
+	fetchedRows: Distribution;
+	/** Measured jumps that needed no fetch: their rows were still in memory. */
+	jumpsWithoutFetch: number;
+	visibleBars: number;
+	memoryLimit: number;
+	rows: number;
+	/** Before the chart is created and once the library has let rows go, before the first jump. */
+	memoryAfterLoad: MemoryResult | null;
+	/** Before the chart is created and after the last jump. */
+	memory: MemoryResult | null;
+}
+
+export type RunResult = LoadRun | TickRun | FramesRun | PrependRun | RefetchRun;
 
 export type FailureReason = 'error' | 'timeout' | 'crash';
 
@@ -353,6 +396,8 @@ export function caseId(job: Job): string {
 			return `${base}/${job.motion}-${job.zoom === 'all' ? 'all' : sizeLabel(job.zoom)}`;
 		case 'prepend':
 			return `${base}/${sizeLabel(job.batch)}`;
+		case 'refetch':
+			return `${base}/${job.memoryLimit / 2 ** 20}mib`;
 	}
 }
 
@@ -367,8 +412,8 @@ export function matchesCase(id: string, pattern: string): boolean {
 	return parts.length > 0 && parts.length <= idParts.length && parts.every((part, i) => part === idParts[i]);
 }
 
-/** Why an adapter is left out of a data set, or null to run it. */
-export type SkipRule = (adapter: string, dataset: DatasetSpec) => string | null;
+/** Why an adapter is left out of a data set in a scenario, or null to run it. */
+export type SkipRule = (adapter: string, dataset: DatasetSpec, scenario: ScenarioName) => string | null;
 
 export interface PlanOptions {
 	scenarios: readonly ScenarioName[];
@@ -459,6 +504,15 @@ interface PrependBatch {
 const PREPEND_BATCHES: readonly PrependBatch[] = [
 	{ batch: 10 * K, prepends: 20, minPrepends: 5 },
 	{ batch: M, prepends: 5, minPrepends: 3 },
+];
+
+// The stage 2 gate's data set. 128 MiB is below what 10M points take with their levels (about
+// 185 MiB), so most of the old history is let go before the first jump.
+const REFETCH_CASES: readonly { dataset: DatasetSpec; memoryLimit: number }[] = [
+	{ dataset: { kind: 'line', size: 10 * M }, memoryLimit: 128 * 2 ** 20 },
+];
+const QUICK_REFETCH_CASES: readonly { dataset: DatasetSpec; memoryLimit: number }[] = [
+	{ dataset: { kind: 'line', size: 100 * K }, memoryLimit: 1.5 * 2 ** 20 },
 ];
 
 const QUICK_LOAD_DATASETS: readonly DatasetSpec[] = [
@@ -556,6 +610,24 @@ export function planJobs(options: PlanOptions): Plan {
 		}
 	}
 
+	if (options.scenarios.includes('refetch')) {
+		for (const { dataset, memoryLimit } of quick ? QUICK_REFETCH_CASES : REFETCH_CASES) {
+			if (keep(dataset)) {
+				cases.push({
+					scenario: 'refetch',
+					dataset,
+					seed,
+					chart,
+					memoryLimit,
+					visibleBars: 2_000,
+					jumps: quick ? 3 : 20,
+					minJumps: quick ? 2 : 5,
+					budgetMs,
+				});
+			}
+		}
+	}
+
 	const patterns = options.cases ?? [];
 	const jobs: PlannedJob[] = [];
 	const skipped: SkippedCase[] = [];
@@ -566,7 +638,7 @@ export function planJobs(options: PlanOptions): Plan {
 		}
 		const adapters: string[] = [];
 		for (const adapter of options.adapters) {
-			const reason = options.skip?.(adapter, c.dataset) ?? null;
+			const reason = options.skip?.(adapter, c.dataset, c.scenario) ?? null;
 			if (reason === null) {
 				adapters.push(adapter);
 			} else {
