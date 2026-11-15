@@ -138,9 +138,12 @@ export class EngineClient {
 		}
 	}
 
-	/** Asks for a snapshot of main-timeline rows `[start, start + count)` in buffers of `capacity` rows. */
-	public requestWindow(start: number, count: number, capacity: number): void {
-		this._send({ type: 'window', start, count, capacity }, NO_TRANSFER);
+	/**
+	 * Asks for a snapshot of main-timeline rows `[start, start + count)` in buffers of `capacity`
+	 * rows. At a coarse `level`, the range and the capacity count buckets of that level instead.
+	 */
+	public requestWindow(start: number, count: number, capacity: number, level = 0): void {
+		this._send({ type: 'window', level, start, count, capacity }, NO_TRANSFER);
 	}
 
 	/** Resolves once every command issued so far has been answered. */

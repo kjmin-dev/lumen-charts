@@ -53,7 +53,7 @@ export class Series implements SeriesApi {
 	public readonly view = new SeriesView();
 	public seriesOptions: CandlestickOptions | LineOptions;
 
-	/** Columns of this series in the window cache; a line uses one column for all four. */
+	/** Columns of this series in the window drawn from; a raw line uses one column for all four. */
 	public open = EMPTY;
 	public high = EMPTY;
 	public low = EMPTY;
@@ -122,8 +122,11 @@ export class Series implements SeriesApi {
 		return this.seriesOptions;
 	}
 
-	/** Points the column views at this series' block of the window cache. */
-	public bind(block: Float64Array | undefined, capacity: number, version: number): void {
+	/**
+	 * Points the column views at this series' block of a window. At a coarse level a line has four
+	 * columns (first, highest, lowest and last value), laid out like open, high, low and close.
+	 */
+	public bind(block: Float64Array | undefined, capacity: number, version: number, level: number): void {
 		if (version === this.columnsVersion) {
 			return;
 		}
@@ -133,7 +136,7 @@ export class Series implements SeriesApi {
 			this.high = EMPTY;
 			this.low = EMPTY;
 			this.close = EMPTY;
-		} else if (this.kind === 'ohlcv') {
+		} else if (this.kind === 'ohlcv' || level > 0) {
 			this.open = block.subarray(0, capacity);
 			this.high = block.subarray(capacity, 2 * capacity);
 			this.low = block.subarray(2 * capacity, 3 * capacity);

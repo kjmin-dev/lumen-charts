@@ -36,7 +36,7 @@ describe('EngineCore', () => {
 		run(core, { type: 'add', series: 1, kind: 'ohlcv' });
 		const data = ohlcv(100);
 		run(core, { type: 'set', series: 1, count: 100, data });
-		const event = run(core, { type: 'window', start: 90, count: 50, capacity: 64 });
+		const event = run(core, { type: 'window', level: 0, start: 90, count: 50, capacity: 64 });
 		const window = event.window!;
 		expect(window.start).toBe(90);
 		expect(window.count).toBe(10);
@@ -45,7 +45,7 @@ describe('EngineCore', () => {
 		expect([...window.time.subarray(0, 10)]).toEqual([...data.subarray(90, 100)]);
 		expect(column(event, 1, 3)).toEqual([...data.subarray(400 + 90, 500)]);
 
-		const before = run(core, { type: 'window', start: -20, count: 10, capacity: 0 }).window!;
+		const before = run(core, { type: 'window', level: 0, start: -20, count: 10, capacity: 0 }).window!;
 		expect(before.start).toBe(0);
 		expect(before.count).toBe(0);
 	});
@@ -109,7 +109,7 @@ describe('EngineCore', () => {
 		expect(event.end).toBe(10);
 		expect(event.stale).toBe(false);
 		expect(event.epoch).toBe(first.epoch);
-		const window = run(core, { type: 'window', start: -2, count: 4, capacity: 0 }).window!;
+		const window = run(core, { type: 'window', level: 0, start: -2, count: 4, capacity: 0 }).window!;
 		expect([...window.time.subarray(0, 4)]).toEqual([98 * MIN, 99 * MIN, 100 * MIN, 101 * MIN]);
 	});
 
@@ -158,7 +158,7 @@ describe('EngineCore', () => {
 		secondary.set([100, 50, 1], 15); // volume
 		run(core, { type: 'set', series: 3, count: 3, data: secondary });
 
-		const event = run(core, { type: 'window', start: 0, count: 4, capacity: 8 });
+		const event = run(core, { type: 'window', level: 0, start: 0, count: 4, capacity: 8 });
 		expect(column(event, 2, 0)).toEqual([3, NaN, 4, 5]);
 		expect(column(event, 3, 0)).toEqual([NaN, 7, NaN, 9]);
 		expect(column(event, 3, 1)).toEqual([NaN, 12, NaN, 9]);
@@ -175,9 +175,9 @@ describe('EngineCore', () => {
 		run(core, { type: 'set', series: 2, count: 1, data: line([10], [1]) });
 
 		const inside = run(core, ticks([2, 25, 42]));
-		expect(inside.patches).toEqual([{ series: 2, start: 1, count: 1, data: new Float64Array([42]) }]);
+		expect(inside.patches).toEqual([{ series: 2, level: 0, start: 1, count: 1, data: new Float64Array([42]) }]);
 		const beyond = run(core, ticks([2, 47, 43]));
-		expect(beyond.patches).toEqual([{ series: 2, start: 3, count: 1, data: new Float64Array([43]) }]);
+		expect(beyond.patches).toEqual([{ series: 2, level: 0, start: 3, count: 1, data: new Float64Array([43]) }]);
 
 		// A new main bar at 45 takes over the secondary bar at 47 from the previous main bar.
 		const moved = run(core, ticks([1, 45, 1, 1, 1, 1, 1]));
@@ -202,13 +202,13 @@ describe('EngineCore', () => {
 				[1, 11 * MIN, 4, 4, 4, 4, 1],
 			),
 		);
-		const values = event.patches!.filter(patch => patch.series === 1);
+		const values = event.patches!.filter(patch => patch.series === 1 && patch.level === 0);
 		expect(values.map(patch => [patch.start, patch.count])).toEqual([
 			[10, 2],
 			[count - 1, 2],
 		]);
 		expect(values[0]!.data[3 * 2]).toBe(1.5);
-		const times = event.patches!.filter(patch => patch.series === TIME_PATCH);
+		const times = event.patches!.filter(patch => patch.series === TIME_PATCH && patch.level === 0);
 		expect(times.map(patch => [patch.start, patch.count])).toEqual([
 			[10, 2],
 			[count - 1, 2],
@@ -232,7 +232,7 @@ describe('EngineCore', () => {
 		candles.set([3, NaN], 6); // low
 		candles.set([5, NaN], 8); // close; volume stays missing on both
 		run(core, { type: 'set', series: 3, count: 2, data: candles });
-		const event = run(core, { type: 'window', start: 0, count: 3, capacity: 3 });
+		const event = run(core, { type: 'window', level: 0, start: 0, count: 3, capacity: 3 });
 		expect(column(event, 2, 0)).toEqual([7, NaN, NaN]);
 		expect(column(event, 3, 0)).toEqual([4, NaN, NaN]);
 		expect(column(event, 3, 3)).toEqual([5, NaN, NaN]);
@@ -243,7 +243,7 @@ describe('EngineCore', () => {
 		const core = new EngineCore();
 		run(core, { type: 'add', series: 1, kind: 'line' });
 		run(core, { type: 'set', series: 1, count: 2, data: line([1, 2], [1, 2]) });
-		const event = core.failure({ type: 'window', seq: 99, start: 0, count: 2, capacity: 2 });
+		const event = core.failure({ type: 'window', seq: 99, level: 0, start: 0, count: 2, capacity: 2 });
 		expect(event).toMatchObject({ ack: 99, end: 2, failed: true, stale: true });
 	});
 
@@ -304,10 +304,10 @@ describe('EngineCore', () => {
 				expected[index] = secondaryValues[j]!;
 			}
 		}
-		const whole = run(core, { type: 'window', start: 0, count: mainCount, capacity: 0 });
+		const whole = run(core, { type: 'window', level: 0, start: 0, count: mainCount, capacity: 0 });
 		expect(column(whole, 2, 0)).toEqual(expected);
 		const from = CHUNK_ROWS - 3;
-		const part = run(core, { type: 'window', start: from, count: 100, capacity: 0 });
+		const part = run(core, { type: 'window', level: 0, start: from, count: 100, capacity: 0 });
 		expect(column(part, 2, 0)).toEqual(expected.slice(from, from + 100));
 	});
 });

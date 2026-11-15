@@ -425,7 +425,61 @@ describe('chart with series', () => {
 	});
 
 	const cacheOf = () =>
-		(chart as unknown as { _cache: { start: number; count: number; blocks: Map<number, Float64Array> } })._cache;
+		(chart as unknown as { _cache: { raw: { start: number; count: number; blocks: Map<number, Float64Array> } } })
+			._cache.raw;
+
+	const internals = () =>
+		chart as unknown as {
+			_cache: { held(level: number): { count: number } | null };
+			_drawn: { level: number } | null;
+			_geometry: { to: number; shift: number; firstRow: number };
+			_priceScale: { min: number; max: number };
+		};
+
+	it('draws a wide view from a coarse level, exactly scaled, without holding raw rows', async () => {
+		const count = 300_000;
+		const data = candles(count);
+		const main = chart.addSeries('candlestick', { upColor: UP, downColor: DOWN, wickUpColor: UP, wickDownColor: DOWN });
+		main.setData(data);
+		// A secondary line with a spike far above the candles, in a single bar.
+		const spiked = data.close.slice();
+		spiked[123_457] = 500;
+		const line = chart.addSeries('line', { color: '#123456' });
+		line.setData({ time: data.time, value: spiked });
+		chart.timeScale().fitContent();
+		await settle();
+		const { _cache, _drawn, _geometry, _priceScale } = internals();
+		expect(_drawn!.level).toBeGreaterThanOrEqual(1);
+		expect(_cache.held(0)).toBeNull();
+		// The price range is exactly that of the rows drawn, spike included.
+		const drawnTo = Math.min(count, _geometry.to * 2 ** _geometry.shift);
+		let low = Infinity;
+		let high = -Infinity;
+		for (let i = _geometry.firstRow; i < drawnTo; i++) {
+			low = Math.min(low, data.low[i]!, spiked[i]!);
+			high = Math.max(high, data.high[i]!, spiked[i]!);
+		}
+		expect([_priceScale.min, _priceScale.max]).toEqual([low, high]);
+		expect(high).toBe(500);
+		const paneWidth = chart.element().querySelectorAll('canvas')[0]!.width;
+		expect(candleRects().length).toBeLessThanOrEqual(paneWidth + 1);
+		const lineTos = pane().calls.filter(call => call.name === 'lineTo').length;
+		expect(lineTos).toBeLessThanOrEqual(4 * paneWidth);
+
+		// A tick on the last bar reaches the bucket on screen.
+		const last = count - 1;
+		main.update({ time: data.time[last]!, open: data.open[last]!, high: 900, low: data.low[last]!, close: 120 });
+		await settle();
+		expect(_priceScale.max).toBe(900);
+
+		// Zoomed in, the chart draws raw rows again and lets go of the coarse level.
+		const level = _drawn!.level;
+		chart.timeScale().setVisibleLogicalRange({ from: 1000, to: 1100 });
+		await settle();
+		expect(internals()._drawn!.level).toBe(0);
+		expect(_cache.held(level)).toBeNull();
+		expect(_cache.held(0)!.count).toBeGreaterThan(100);
+	});
 
 	it('keeps a secondary value sent with the second of two new main bars', async () => {
 		const data = candles(1000);

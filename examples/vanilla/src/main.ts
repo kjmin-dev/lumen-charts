@@ -7,6 +7,8 @@ if (container === null) {
 
 const params = new URLSearchParams(location.search);
 const count = Number(params.get('bars') ?? 1_000_000);
+// `?series=line` shows one line instead of candles with an average, for very large data sets.
+const lineOnly = params.get('series') === 'line';
 const MINUTE = 60_000;
 
 // Random-walk candles, built as columns so a million bars cost no objects.
@@ -38,10 +40,10 @@ const chart = createChart(container, {
 	watermark: { visible: true, text: 'DEMO · 1m' },
 	worker: params.get('worker') !== '0',
 });
-const candles = chart.addSeries('candlestick');
-const line = chart.addSeries('line', { color: '#f5b83d', lineWidth: 1.5 });
-candles.setData({ time, open, high, low, close });
-line.setData({ time, value: average });
+const candles = lineOnly ? null : chart.addSeries('candlestick');
+const line = chart.addSeries('line', { color: '#f5b83d', lineWidth: lineOnly ? 1 : 1.5 });
+candles?.setData({ time, open, high, low, close });
+line.setData({ time, value: lineOnly ? close : average });
 
 // Live ticks: several updates to the last bar, then a new one.
 let lastTime = time[count - 1]!;
@@ -61,8 +63,8 @@ if (params.get('live') !== '0')
 		barHigh = Math.max(barHigh, price);
 		barLow = Math.min(barLow, price);
 		smooth += (price - smooth) * 0.001;
-		candles.update({ time: lastTime, open: barOpen, high: barHigh, low: barLow, close: price });
-		line.update({ time: lastTime, value: smooth });
+		candles?.update({ time: lastTime, open: barOpen, high: barHigh, low: barLow, close: price });
+		line.update({ time: lastTime, value: lineOnly ? price : smooth });
 	}, 50);
 
 Object.assign(globalThis, { chart, candles, line });
