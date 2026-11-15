@@ -7,7 +7,7 @@ import { resolve } from 'node:path';
 import type { DatasetSpec } from '../src/jobs.ts';
 import { datasetLabel } from '../src/jobs.ts';
 import type { CaseResult, ResultsFile } from '../src/results.ts';
-import type { RunSpread } from '../src/stats.ts';
+import { type RunSpread, spread } from '../src/stats.ts';
 
 const files = process.argv.slice(2);
 if (files.length === 0) {
@@ -44,6 +44,18 @@ function cell(c: CaseResult | undefined, path: string, scale = 1): string {
 		return number(s.median * scale);
 	}
 	return `${number(s.median * scale)} (${number(s.min * scale)}–${number(s.max * scale)})`;
+}
+
+/** Share of CPU time the whole machine had idle during the case's runs: "median% (min–max%)". */
+function hostIdle(c: CaseResult | undefined): string {
+	const values = (c?.runs ?? []).flatMap(run => (run.host === undefined ? [] : [run.host.cpuIdle * 100]));
+	if (values.length === 0) {
+		return '–';
+	}
+	const s = spread(values);
+	return s.runs === 1
+		? `${s.median.toFixed(0)}%`
+		: `${s.median.toFixed(0)}% (${s.min.toFixed(0)}–${s.max.toFixed(0)}%)`;
 }
 
 function median(c: CaseResult | undefined, path: string): number | undefined {
@@ -164,6 +176,7 @@ function load(): string {
 				cell(c, 'warm.frameJsMs', MS),
 				cell(c, 'cold.firstFrameMs', MS),
 				cell(c, 'generateMs', MS),
+				hostIdle(c),
 			]);
 		}
 	}
@@ -180,6 +193,7 @@ function load(): string {
 				'Frame JS (ms)',
 				'Cold first frame (ms)',
 				'Generate (ms)',
+				'Host CPU idle',
 			],
 			rows,
 		) + `\n${runsNote(list)}\n`
@@ -247,6 +261,7 @@ function tick(): string {
 				cell(c, 'mainThreadPerTick.mean', US),
 				cell(c, 'mainThreadPerTick.p99', US),
 				cell(c, 'settle.p99', MS),
+				hostIdle(c),
 			]);
 		}
 	}
@@ -266,6 +281,7 @@ function tick(): string {
 				'Main thread avg (µs)',
 				'Main thread p99 (µs)',
 				'Settle p99 (ms)',
+				'Host CPU idle',
 			],
 			rows,
 		) + `\n${runsNote(list)}\n`
@@ -340,6 +356,7 @@ function frames(): string {
 				cell(c, 'interval.p99', MS),
 				cell(c, 'interval.max', MS),
 				cell(c, 'drawCalls.fillRect'),
+				hostIdle(c),
 			]);
 		}
 	}
@@ -359,6 +376,7 @@ function frames(): string {
 				'Interval p99',
 				'Interval max',
 				'fillRect per redraw',
+				'Host CPU idle',
 			],
 			rows,
 		) + `\nAll times in ms. ${runsNote(list)}\n`

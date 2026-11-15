@@ -17,6 +17,7 @@ import type { PageEnvironment } from '../src/harness/environment.ts';
 import { headline } from '../src/headline.ts';
 import {
 	type AdapterInfo,
+	type HostLoad,
 	type MemorySample,
 	type PageRunResult,
 	type PlannedJob,
@@ -252,8 +253,27 @@ async function closeContext(session: Session, context: BrowserContext): Promise<
 	}
 }
 
+/** Idle and total CPU time summed over all cores, in milliseconds since boot. */
+function cpuTimes(): { idle: number; total: number } {
+	let idle = 0;
+	let total = 0;
+	for (const cpu of os.cpus()) {
+		const { user, nice, sys, idle: cpuIdle, irq } = cpu.times;
+		idle += cpuIdle;
+		total += user + nice + sys + cpuIdle + irq;
+	}
+	return { idle, total };
+}
+
+function hostLoad(since: { idle: number; total: number }): HostLoad {
+	const now = cpuTimes();
+	const total = now.total - since.total;
+	return { cpuIdle: total > 0 ? (now.idle - since.idle) / total : 0, loadAverage: os.loadavg()[0] ?? 0 };
+}
+
 async function runOne(session: Session, planned: PlannedJob): Promise<CompletedJob> {
 	const started = performance.now();
+	const cpuStart = cpuTimes();
 	const { context, page } = await newPage(session);
 	let library: AdapterInfo | null = null;
 	let outcome: RunOutcome;
@@ -292,7 +312,7 @@ async function runOne(session: Session, planned: PlannedJob): Promise<CompletedJ
 	} finally {
 		await closeContext(session, context);
 	}
-	return { planned, outcome, library };
+	return { planned, outcome: { ...outcome, host: hostLoad(cpuStart) }, library };
 }
 
 // Main ---------------------------------------------------------------------------------------------
@@ -347,9 +367,11 @@ async function main(): Promise<void> {
 			const eta = (elapsed / (index + 1)) * (plan.length - index - 1);
 			const one = aggregate([result])[0];
 			const summary = one === undefined ? '' : headline(one);
+			const host = result.outcome.host;
+			const idle = host === undefined ? '' : `cpu idle ${Math.round(host.cpuIdle * 100)}%, `;
 			process.stdout.write(
 				`[${index + 1}/${plan.length}] ${planned.id} ${result.outcome.status} ` +
-					`${format(result.outcome.durationMs / 1000)}  ${summary}  (eta ${format(eta)})\n`,
+					`${format(result.outcome.durationMs / 1000)}  ${summary}  (${idle}eta ${format(eta)})\n`,
 			);
 		}
 

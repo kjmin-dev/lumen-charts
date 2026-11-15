@@ -163,13 +163,22 @@ export type RunResult = LoadRun | TickRun | FramesRun;
 
 export type FailureReason = 'error' | 'timeout' | 'crash';
 
+/** How busy the machine was during a run, measured by the runner. */
+export interface HostLoad {
+	/** Share of all cores' time that was idle during the run (0 to 1), including the browser's own use. */
+	cpuIdle: number;
+	/** One-minute load average at the end of the run. */
+	loadAverage: number;
+}
+
 export type RunOutcome =
-	| { readonly status: 'ok'; readonly result: RunResult; readonly durationMs: number }
+	| { readonly status: 'ok'; readonly result: RunResult; readonly durationMs: number; readonly host?: HostLoad }
 	| {
 			readonly status: 'failed';
 			readonly reason: FailureReason;
 			readonly message: string;
 			readonly durationMs: number;
+			readonly host?: HostLoad;
 	  };
 
 /** Library and options reported by an adapter. */
