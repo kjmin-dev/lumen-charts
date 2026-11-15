@@ -942,11 +942,13 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	/** The price scale a series is on, following its `priceScaleId`. */
 	private _axisOf(series: Series): PriceAxis {
-		const id = series.seriesOptions.priceScaleId || DEFAULT_PRICE_SCALE_ID;
+		// Options are replaced as a whole on every change: while they are the same, so is the scale.
+		const options = series.seriesOptions;
 		let axis = series.axis;
-		if (axis === null || axis.id !== id) {
-			axis = this._axisFor(id);
+		if (axis === null || series.axisOptions !== options) {
+			axis = this._axisFor(options.priceScaleId || DEFAULT_PRICE_SCALE_ID);
 			series.axis = axis;
+			series.axisOptions = options;
 		}
 		return axis;
 	}
@@ -1288,6 +1290,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 					axis.first = series;
 				}
 			}
+			series.scaled = visible;
 			series.base = Number.NaN;
 			if (source === null) {
 				series.bind(undefined, 0, -1, 0);
@@ -1328,7 +1331,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 		for (const series of this._series) {
 			const axis = series.axis;
-			if (axis === null || !series.seriesOptions.visible) {
+			if (axis === null || !series.scaled) {
 				continue;
 			}
 			series.setProjection(axis.scale, ratio);

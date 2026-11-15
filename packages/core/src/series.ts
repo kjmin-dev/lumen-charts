@@ -204,6 +204,10 @@ export class Series implements SeriesApi {
 
 	/** The price scale the series was last drawn on; the chart follows `priceScaleId` changes. */
 	public axis: PriceAxis | null = null;
+	/** The options `axis` was looked up for: a change of options looks it up again. */
+	public axisOptions: AnySeriesOptions | null = null;
+	/** Whether the last model update put the series on its scale (it was visible). */
+	public scaled = false;
 	/** Price at the first visible bar, on a percentage or indexed scale; NaN otherwise. */
 	public base = Number.NaN;
 	/** Device-pixel rows of prices on the scale, as last drawn: see `deviceY`. */
