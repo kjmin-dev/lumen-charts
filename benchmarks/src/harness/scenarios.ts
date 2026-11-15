@@ -1,6 +1,13 @@
 import type { AdapterFactory, ChartAdapter, ChartSize, LogicalRange } from '../adapter.ts';
 import { findAdapter } from '../adapters/index.ts';
-import { DEFAULT_INTERVAL_MS, type SeriesColumns, TICK_NEW_BAR, generateSeries, generateTicks } from '../data.ts';
+import {
+	DEFAULT_INTERVAL_MS,
+	Random,
+	type SeriesColumns,
+	TICK_NEW_BAR,
+	generateSeries,
+	generateTicks,
+} from '../data.ts';
 import type {
 	AdapterInfo,
 	ApplyJob,
@@ -512,9 +519,23 @@ async function runPrepend(
 	}
 }
 
+/** Longest pause between two ticks of the tick-to-applied scenario, in milliseconds. */
+const MAX_TICK_GAP_MS = 2;
+
+/** Waits `ms` milliseconds a task at a time, so frames run whenever they are due meanwhile. */
+async function pause(ms: number): Promise<void> {
+	const until = performance.now() + ms;
+	while (performance.now() < until) {
+		await nextTask();
+	}
+}
+
 /**
  * Ticks one at a time, each from the update call until the library has applied it (indicator
- * values included), with the series' indicators computed beforehand.
+ * values included), with the series' indicators computed beforehand. A random pause of up to
+ * `MAX_TICK_GAP_MS` separates ticks, so they arrive at random points of the frame cycle as ticks from
+ * a socket would: a tick that arrives during a frame waits for it, and with ticks back to back the
+ * share of ticks that do would depend on how fast the library is.
  */
 async function runApply(job: ApplyJob, factory: AdapterFactory, container: HTMLElement): Promise<ApplyRun> {
 	const data = generateSeries(job.dataset.kind, { seed: job.seed, count: job.dataset.size });
@@ -549,9 +570,11 @@ async function runApply(job: ApplyJob, factory: AdapterFactory, container: HTMLE
 
 		const applied = new Float64Array(job.ticks);
 		const sync = new Float64Array(job.ticks);
+		const gaps = new Random(job.seed + 2);
 		const measureStart = performance.now();
 		let count = 0;
 		while (count < job.ticks) {
+			await pause(gaps.next() * MAX_TICK_GAP_MS);
 			const t0 = performance.now();
 			adapter.applyTick(ticks, offset + count);
 			const t1 = performance.now();

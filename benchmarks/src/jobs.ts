@@ -201,8 +201,9 @@ export interface IndicatorPrependJob extends Omit<PrependJob, 'scenario'> {
 /**
  * Tick to applied patch: ticks one at a time, each timed from the update call until the library
  * has applied it, indicator values included (for lumen: the engine's answer has been applied on
- * the main thread; for a library that applies updates synchronously: the call itself). Frames run
- * whenever they are due in between, as they would with ticks from a socket.
+ * the main thread; for a library that applies updates synchronously: the call itself). Ticks are
+ * separated by random pauses of up to 2 ms, so they arrive at random points of the frame cycle, as
+ * ticks from a socket would, and frames run whenever they are due.
  */
 export interface ApplyJob extends JobBase {
 	readonly scenario: 'ind-apply';
