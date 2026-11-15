@@ -47,5 +47,11 @@ export function headline(result: CaseResult): string {
 				`first frame p50 ${ms(m('firstFrameMs.p50'))}; call p50 ${ms(m('callMs.p50'))}; ` +
 				`longest frame ${ms(m('longestFrameMs.max'))}; retained ${mb(m('memory.retainedBytes'))}`
 			);
+		case 'refetch':
+			return (
+				`shown p50 ${ms(m('shownMs.p50'))} p95 ${ms(m('shownMs.p95'))} max ${ms(m('shownMs.max'))}; ` +
+				`fetches per jump p50 ${m('fetches.p50') ?? '–'}; retained after load ${mb(m('memoryAfterLoad.retainedBytes'))}, ` +
+				`after the jumps ${mb(m('memory.retainedBytes'))}`
+			);
 	}
 }

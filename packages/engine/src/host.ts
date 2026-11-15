@@ -7,23 +7,64 @@ export interface EngineScope {
 	postMessage(message: EngineEvent | ReadyMessage, transfer: Transferable[]): void;
 }
 
+/** Longest stretch of background work a worker host runs before looking at its messages again. */
+const BACKGROUND_SLICE_MS = 4;
+/**
+ * Delay before a worker host starts background work after a command. The answer to a load is usually
+ * followed at once by a window request, which should not wait behind a slice of background work.
+ */
+const BACKGROUND_DELAY_MS = 20;
+
 /** Runs an engine inside a worker: one event per command, buffers transferred back. */
 export function attachEngineHost(scope: EngineScope): void {
 	const core = new EngineCore();
+	let timer: ReturnType<typeof setTimeout> | null = null;
+	let channel: MessageChannel | null = null;
+	const step = (): void => {
+		const deadline = performance.now() + BACKGROUND_SLICE_MS;
+		while (core.backgroundStep()) {
+			if (performance.now() >= deadline) {
+				// A message task lets queued commands run first and is not clamped like nested timers.
+				if (channel === null && typeof MessageChannel !== 'undefined') {
+					channel = new MessageChannel();
+					channel.port1.addEventListener('message', step);
+					channel.port1.start();
+				}
+				if (channel === null) {
+					setTimeout(step, 0);
+				} else {
+					channel.port2.postMessage(null);
+				}
+				return;
+			}
+		}
+		// Nothing left: an idle port is closed so it keeps nothing alive.
+		if (channel !== null) {
+			channel.port1.removeEventListener('message', step);
+			channel.port1.close();
+			channel = null;
+		}
+	};
 	scope.addEventListener('message', message => {
 		let event: EngineEvent;
 		try {
 			const run = core.run(message.data);
-			let step = run.next();
-			while (step.done !== true) {
-				step = run.next();
+			let next = run.next();
+			while (next.done !== true) {
+				next = run.next();
 			}
-			event = step.value;
+			event = next.value;
 		} catch {
 			// Every command is answered, or the client would wait for this one forever.
 			event = core.failure(message.data);
 		}
 		scope.postMessage(event, transferables(event));
+		if (core.busy && timer === null && channel === null) {
+			timer = setTimeout(() => {
+				timer = null;
+				step();
+			}, BACKGROUND_DELAY_MS);
+		}
 	});
 	scope.postMessage({ ready: true }, []);
 }
@@ -60,6 +101,8 @@ export class WorkerTransport implements EngineTransport {
 
 /** Longest stretch the main-thread engine runs before giving the thread back. */
 const SLICE_MS = 4;
+/** Background work waits at most this long for idle time on a busy main thread. */
+const IDLE_TIMEOUT_MS = 500;
 
 /**
  * Runs the engine on the calling thread, for pages where workers are blocked.
@@ -74,6 +117,7 @@ export class LocalTransport implements EngineTransport {
 	private _current: Generator<undefined, EngineEvent, undefined> | null = null;
 	private _command: Command | null = null;
 	private _scheduled = false;
+	private _idleScheduled = false;
 	private _closed = false;
 	private _channel: MessageChannel | null = null;
 
@@ -115,6 +159,38 @@ export class LocalTransport implements EngineTransport {
 		this._channel.port2.postMessage(null);
 	}
 
+	/**
+	 * Background work (building levels of detail) waits for idle time, so it never runs between an
+	 * answer and the frame that draws it, as message tasks posted back to back would.
+	 */
+	private _scheduleIdle(): void {
+		if (this._idleScheduled || this._closed) {
+			return;
+		}
+		this._idleScheduled = true;
+		if (typeof requestIdleCallback === 'function') {
+			requestIdleCallback(this._idle, { timeout: IDLE_TIMEOUT_MS });
+		} else {
+			setTimeout(this._idle, 0);
+		}
+	}
+
+	private readonly _idle = (deadline?: IdleDeadline): void => {
+		this._idleScheduled = false;
+		if (this._closed || this._current !== null || this._head < this._queue.length) {
+			// Commands come first; the pump schedules this again once they are answered.
+			return;
+		}
+		const remaining = deadline === undefined || deadline.didTimeout ? SLICE_MS : deadline.timeRemaining();
+		const end = performance.now() + Math.min(SLICE_MS, Math.max(1, remaining));
+		while (this._core.backgroundStep()) {
+			if (performance.now() >= end) {
+				this._scheduleIdle();
+				return;
+			}
+		}
+	};
+
 	private readonly _pump = (): void => {
 		this._scheduled = false;
 		const deadline = performance.now() + SLICE_MS;
@@ -123,6 +199,9 @@ export class LocalTransport implements EngineTransport {
 				if (this._head >= this._queue.length) {
 					this._queue.length = 0;
 					this._head = 0;
+					if (this._core.busy) {
+						this._scheduleIdle();
+					}
 					return;
 				}
 				this._command = this._queue[this._head++]!;

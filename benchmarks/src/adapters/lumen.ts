@@ -1,6 +1,6 @@
 import { type ChartApi, type SeriesApi, createChart } from '@lumen-charts/core';
 import type { AdapterFactory, ChartAdapter, ChartSize, LogicalRange } from '../adapter.ts';
-import type { CandleColumns, LineColumns, TickColumns } from '../data.ts';
+import type { CandleColumns, LineColumns, SeriesColumns, TickColumns } from '../data.ts';
 import { pendingFrameCallbacks } from '../harness/frames.ts';
 
 /** Columns are lumen's own input format, so preparing passes them through unchanged. */
@@ -52,6 +52,29 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 		} else {
 			const { time, value } = data.columns;
 			this._line().setData({ time, value });
+		}
+	}
+
+	public setDataWithDatafeed(
+		data: Prepared,
+		datafeed: (from: number, to: number) => SeriesColumns,
+		memoryLimit: number,
+	): void {
+		this._chart.applyOptions({ memoryLimit });
+		this._replaceSeries();
+		const getBars = ({ from, to }: { from: number; to: number }) => Promise.resolve(datafeed(from, to));
+		if (data.kind === 'candles') {
+			const series = this._chart.addSeries('candlestick', { datafeed: { getBars } as never });
+			this._series = series;
+			this._kind = 'candles';
+			const { time, open, high, low, close } = data.columns;
+			series.setData({ time, open, high, low, close });
+		} else {
+			const series = this._chart.addSeries('line', { datafeed: { getBars } as never });
+			this._series = series;
+			this._kind = 'line';
+			const { time, value } = data.columns;
+			series.setData({ time, value });
 		}
 	}
 

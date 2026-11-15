@@ -95,6 +95,7 @@ Main thread                              Data engine (worker; time-sliced on mai
 - Chunks form a deque, so linking a chunk at either end is O(1).
 - The global index is a signed integer with a fixed origin. Prepending history leaves existing indexes unchanged.
 - Memory has a cap. Past the cap, the engine drops chunks far from the visible range and requests them again from the Datafeed when needed. Ten million bars take 480 MB, more than a mobile browser can hold.
+- As built in stage 2: a dropped chunk keeps its time column (8 bytes per bar), so a refetch can be checked bar by bar against the global indexes it replaces and every time-to-index lookup keeps working; the levels of detail always stay. The cap applies to a series with a Datafeed while it is the only series with data.
 
 ### 4.2 LOD pyramid
 
@@ -108,6 +109,7 @@ Main thread                              Data engine (worker; time-sliced on mai
 - NaN values are skipped during aggregation. A bucket that holds only NaN is NaN.
 - A tail update rebuilds the last bucket from its members (at most 16 raw rows at level 16, or 4 child buckets above it). A correction can lower the high, so merging in the new value alone gives wrong results.
 - Visible-range min/max comes from pyramid lookups plus raw scans at both ends.
+- As built in stage 2: the main thread holds no raw bars for a wide view, so it has nothing to scan at the ends. Instead, a coarse level draws whole buckets only, each in the pixel column of its first bar, and the price range is exact for the bars drawn; they differ from the bars inside the pane by less than one bucket (under one device pixel) at either end. The origin snaps to a whole device pixel below one pixel per bar, so raw bars and buckets give the same pixels at every level switch.
 
 ### 4.3 Time scale
 
@@ -165,6 +167,6 @@ Conditions: two reference devices (one desktop, one mid-range Android) with a fi
 ## 10. Open questions
 
 - Settled by stage 0: the cost per tick in Lightweight Charts is O(N). One `update()` takes 76.7–82.7 µs at 10,000 candles and 9,061–11,103 µs at 1 million [measured: [stage 0 baseline](benchmarks/stage-0-baseline.md)].
-- Visual quality during fast scrolling with the window cache is unverified. Stage 2 checks whether the swap from a coarse level to raw bars is visible.
+- Settled by stage 2: the swap between raw bars and a coarse level is not visible. With the origin on a whole device pixel and exactly 16, 64, 256, ... bars per pixel, both draw the same items and price range (tested at the switches to levels 1 to 4, with gaps in the data and a partial first bucket); headless screenshots on both sides of the switches to levels 1 to 4 look the same. During a fast scroll the chart draws the finest level until the raw bars arrive.
 - Benchmarks ran on one Apple M1. x86, Firefox and Android are unmeasured.
 - The review's experiments ran on a heavily loaded machine. Their direction holds; their absolute numbers need re-measuring.

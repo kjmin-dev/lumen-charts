@@ -86,10 +86,30 @@ export class EngineClient {
 		return this._dataSeq;
 	}
 
-	public addSeries(kind: SeriesKind): number {
+	/**
+	 * Adds a series. A `fetchable` series can have its rows fetched again (it has a datafeed), so
+	 * under a memory limit the engine may let rows of it go and ask for them with `fetch` requests.
+	 */
+	public addSeries(kind: SeriesKind, fetchable = false): number {
 		const series = this._nextSeries++;
-		this._send({ type: 'add', series, kind }, NO_TRANSFER);
+		this._send({ type: 'add', series, kind, fetchable }, NO_TRANSFER);
 		return series;
+	}
+
+	/** Sets the memory the engine aims to stay under, in bytes (`Infinity` for no limit). */
+	public setMemoryLimit(bytes: number): void {
+		this._send({ type: 'limit', bytes }, NO_TRANSFER);
+	}
+
+	/**
+	 * Hands back rows asked for by a `FetchRequest` that starts at `start` (column-major, time
+	 * first, taken over like `setData`), or null when fetching them failed.
+	 */
+	public restoreRows(series: number, start: number, data: Float64Array | null, count: number): void {
+		this._send(
+			{ type: 'rows', series, start, count, data },
+			data === null ? NO_TRANSFER : [data.buffer as ArrayBuffer],
+		);
 	}
 
 	public removeSeries(series: number): void {
@@ -138,9 +158,12 @@ export class EngineClient {
 		}
 	}
 
-	/** Asks for a snapshot of main-timeline rows `[start, start + count)` in buffers of `capacity` rows. */
-	public requestWindow(start: number, count: number, capacity: number): void {
-		this._send({ type: 'window', start, count, capacity }, NO_TRANSFER);
+	/**
+	 * Asks for a snapshot of main-timeline rows `[start, start + count)` in buffers of `capacity`
+	 * rows. At a coarse `level`, the range and the capacity count buckets of that level instead.
+	 */
+	public requestWindow(start: number, count: number, capacity: number, level = 0): void {
+		this._send({ type: 'window', level, start, count, capacity }, NO_TRANSFER);
 	}
 
 	/** Resolves once every command issued so far has been answered. */
@@ -189,7 +212,8 @@ export class EngineClient {
 		// Buffered ticks were issued first, so they go first.
 		this._flushTicks();
 		const seq = ++this._seq;
-		if (body.type !== 'window') {
+		// Windows, limits and fetched rows change nothing a later call could depend on.
+		if (body.type !== 'window' && body.type !== 'limit' && body.type !== 'rows') {
 			this._dataSeq = seq;
 		}
 		this._post({ ...body, seq } as Command, transfer);

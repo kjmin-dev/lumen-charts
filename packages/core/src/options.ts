@@ -117,6 +117,14 @@ export interface ChartOptions {
 	 * Read once, when the first series is added.
 	 */
 	worker: boolean | (() => Worker);
+	/**
+	 * Memory the data engine aims to stay under, in bytes. It applies only to a series with a
+	 * `datafeed` (and, for now, only while it is the only series with data): bars far from the view
+	 * are let go and fetched back from the datafeed when they are needed again. The levels of detail
+	 * and the time of every bar always stay, so zoomed-out views keep drawing meanwhile. Without a
+	 * datafeed nothing is ever let go. Default: no limit.
+	 */
+	memoryLimit: number;
 }
 
 /** The colors a theme sets. Everything else is the same in every theme. */
@@ -191,6 +199,7 @@ const BASE_OPTIONS: ChartOptions = {
 	timeScale: { visible: true, borderVisible: true, borderColor: '', barSpacing: 6, rightOffset: 0 },
 	watermark: { visible: false, text: '', color: '', fontSize: 48, horzAlign: 'center', vertAlign: 'center' },
 	worker: true,
+	memoryLimit: Infinity,
 };
 
 /**

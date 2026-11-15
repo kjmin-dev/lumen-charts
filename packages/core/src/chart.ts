@@ -1,5 +1,5 @@
-import { type EngineClient, type EngineEvent, createEngine, valueColumnCount } from '@lumen-charts/engine';
-import { WindowCache } from './data/window-cache';
+import { type EngineClient, type EngineEvent, columnCount, createEngine, levelFor } from '@lumen-charts/engine';
+import { type LevelWindow, WindowCache } from './data/window-cache';
 import { Interaction, type InteractionHost } from './input/interaction';
 import { INVALIDATE_FULL, INVALIDATE_LIGHT, INVALIDATE_NONE, type Invalidation } from './model/invalidation';
 import { PriceScale } from './model/price-scale';
@@ -28,8 +28,8 @@ import {
 } from './render/chrome';
 import { Layer } from './render/layer';
 import { drawCandles, drawLine } from './render/series';
-import { Series, type SeriesApi, type SeriesType, type SeriesTypes } from './series';
-import { type Geometry, candleWidths } from './views/series-view';
+import { Series, type SeriesApi, type SeriesCreateOptions, type SeriesType } from './series';
+import { type Geometry, candleWidths, placeElements } from './views/series-view';
 
 /** A range of logical positions: bar `i` covers `[i - 0.5, i + 0.5)`. */
 export interface LogicalRange {
@@ -65,7 +65,11 @@ export interface ChartApi {
 	resize(width: number, height: number): void;
 	/** Root element created by the chart inside the container. */
 	element(): HTMLElement;
-	addSeries<T extends SeriesType>(type: T, options?: Partial<SeriesTypes[T]['options']>): SeriesApi<T>;
+	/**
+	 * Adds a series. Pass a `datafeed` to let the chart fetch its history again, which lets the
+	 * `memoryLimit` option apply to it.
+	 */
+	addSeries<T extends SeriesType>(type: T, options?: SeriesCreateOptions<T>): SeriesApi<T>;
 	removeSeries(series: SeriesApi): void;
 	timeScale(): TimeScaleApi;
 	/** Resolves once all data handed over so far has been applied and painted. */
@@ -99,7 +103,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	private readonly _timeTicks = new TimeTicks();
 	private readonly _cache = new WindowCache();
 	private readonly _series: Series[] = [];
-	private readonly _geometry: Geometry = { origin: 0, spacing: 1, from: 0, to: 0 };
+	private readonly _geometry: Geometry = { origin: 0, spacing: 1, from: 0, to: 0, shift: 0, firstRow: 0 };
+	/** Window the series were drawn from in the last model update. */
+	private _drawn: LevelWindow | null = null;
 	private readonly _widths = { body: 1, wick: 1 };
 
 	/** Everything applied so far, merged; the theme is laid under it whenever it changes. */
@@ -127,6 +133,12 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	private _destroyed = false;
 	private _deferred: Deferred[] = [];
 	private _idle: (() => void)[] = [];
+	/** Limit last sent to the engine. */
+	private _memoryLimit = Infinity;
+	/** Datafeed requests in flight, by series and first row. */
+	private readonly _fetches = new Set<string>();
+	/** Pause before asking again for rows whose fetch failed; grows with every failure. */
+	private _fetchBackoff = 0;
 
 	private _crosshairVisible = false;
 	private _crosshairX = 0;
@@ -206,14 +218,20 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 		return this._root;
 	}
 
-	public addSeries<T extends SeriesType>(type: T, options: Partial<SeriesTypes[T]['options']> = {}): SeriesApi<T> {
+	public addSeries<T extends SeriesType>(type: T, options: SeriesCreateOptions<T> = {}): SeriesApi<T> {
 		if (this._engine === null && !this._destroyed) {
 			this._engine = createEngine({ worker: this._options.worker });
 			this._engine.onevent = this._onEvent;
+			this._memoryLimit = this._options.memoryLimit;
+			if (this._memoryLimit !== Infinity) {
+				this._engine.setMemoryLimit(this._memoryLimit);
+			}
 		}
+		const { datafeed, ...style } = options;
 		const kind = type === 'candlestick' ? 'ohlcv' : 'line';
-		const id = this._engine?.addSeries(kind) ?? -1;
-		const series = new Series(this, id, type, options as Partial<CandlestickOptions> | Partial<LineOptions>);
+		const id = this._engine?.addSeries(kind, datafeed !== undefined) ?? -1;
+		const series = new Series(this, id, type, style as Partial<CandlestickOptions> | Partial<LineOptions>);
+		series.datafeed = (datafeed as Series['datafeed'] | undefined) ?? null;
 		this._series.push(series);
 		return series as unknown as SeriesApi<T>;
 	}
@@ -224,7 +242,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 			return;
 		}
 		const removed = this._series.splice(index, 1)[0]!;
-		this._cache.blocks.delete(removed.id);
+		this._cache.removeSeries(removed.id);
 		this._engine?.removeSeries(removed.id);
 		this.invalidate(INVALIDATE_LIGHT);
 	}
@@ -355,10 +373,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 		this._deferred.push({ seq: engine.barrier(), action });
 	}
 
-	private readonly _valueColumns = (id: number): number => {
+	private readonly _columnCount = (id: number, level: number): number => {
 		for (const series of this._series) {
 			if (series.id === id) {
-				return valueColumnCount(series.kind);
+				return columnCount(series.kind, level);
 			}
 		}
 		return 1;
@@ -368,12 +386,15 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 		const scale = this.scale;
 		const wasEmpty = scale.isEmpty;
 		const version = scale.version;
-		this._cache.apply(event, this._valueColumns);
+		this._cache.apply(event, this._columnCount);
 		scale.setExtent(event.first, event.end);
 		if (wasEmpty && !scale.isEmpty) {
 			scale.reset(this._options.timeScale.barSpacing, this._options.timeScale.rightOffset);
 		}
 		this._trackLastValues(event);
+		if (event.fetch !== undefined || event.restored !== undefined || event.window?.incomplete === true) {
+			this._handleFetches(event);
+		}
 		// A failed command changes nothing on screen, and redrawing for it would only repeat the request.
 		let changed =
 			event.failed !== true &&
@@ -386,7 +407,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 		if (changed) {
 			// Requested now rather than in the next draw, the rows usually arrive before that frame,
 			// so new data is drawn in one frame instead of an empty frame followed by the data.
-			this._requestWindow();
+			this._requestWindow(this._container.ownerDocument.defaultView?.devicePixelRatio ?? 1);
 			this.invalidate(INVALIDATE_LIGHT);
 		} else {
 			this._settle();
@@ -403,7 +424,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 			return;
 		}
 		for (const patch of patches) {
-			if (patch.start + patch.count !== event.end) {
+			if (patch.level !== 0 || patch.start + patch.count !== event.end) {
 				continue;
 			}
 			for (const series of this._series) {
@@ -423,7 +444,75 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	}
 
 	private _isIdle(): boolean {
-		return this._destroyed || (this._frame === null && (this._engine === null || this._engine.pending === 0));
+		return (
+			this._destroyed ||
+			(this._frame === null && this._fetches.size === 0 && (this._engine === null || this._engine.pending === 0))
+		);
+	}
+
+	/**
+	 * Fetches rows the engine let go and needs again from the series' datafeed, and hands them back.
+	 * The engine checks them against the rows it let go; a raw window waits for them meanwhile, and the
+	 * chart draws a coarse level where it has nothing else.
+	 */
+	private _handleFetches(event: EngineEvent): void {
+		const restored = event.restored;
+		if (restored !== undefined) {
+			if (restored.outcome === 'restored') {
+				this._fetchBackoff = 0;
+			} else if (restored.outcome === 'mismatch') {
+				console.warn(
+					`lumen-charts: the datafeed returned ${restored.received} bars where ${restored.expected} were expected; ` +
+						'they do not match the bars they replace and were ignored.',
+				);
+			}
+		}
+		if (event.window?.incomplete === true) {
+			// The rows could not be fetched: draw what the levels show and ask again after a pause.
+			this._fetchBackoff = Math.min(30_000, Math.max(1000, this._fetchBackoff * 2));
+			this._cache.raw.holdOff(performance.now() + this._fetchBackoff);
+		}
+		for (const request of event.fetch ?? []) {
+			const engine = this._engine;
+			const series = this._series.find(entry => entry.id === request.series);
+			const key = `${request.series}:${request.start}`;
+			if (engine === null || this._fetches.has(key)) {
+				continue;
+			}
+			if (series?.datafeed === null || series === undefined) {
+				engine.restoreRows(request.series, request.start, null, 0);
+				continue;
+			}
+			this._fetches.add(key);
+			const { from, to, start, end } = request;
+			const done = (data: Float64Array | null, count: number): void => {
+				this._fetches.delete(key);
+				// After destroy the engine is gone, and nothing waits for the rows.
+				this._engine?.restoreRows(series.id, start, data, count);
+				this._settle();
+			};
+			let pending: Promise<unknown>;
+			try {
+				pending = series.datafeed.getBars({ from, to, countBack: end - start });
+			} catch (error) {
+				pending = Promise.reject(error);
+			}
+			pending.then(
+				bars => {
+					let packed: { data: Float64Array; count: number };
+					try {
+						packed = series.packFetched(bars as never, from, to);
+					} catch {
+						done(null, 0);
+						return;
+					}
+					done(packed.data, packed.count);
+				},
+				() => {
+					done(null, 0);
+				},
+			);
+		}
 	}
 
 	private _settle(): void {
@@ -451,6 +540,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 		}
 		this._options = next;
 		this._applyResolved(next);
+		if (this._engine !== null && next.memoryLimit !== this._memoryLimit) {
+			this._memoryLimit = next.memoryLimit;
+			this._engine.setMemoryLimit(next.memoryLimit);
+		}
 		this.invalidate(INVALIDATE_FULL);
 	}
 
@@ -631,14 +724,43 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 		this._settle();
 	};
 
-	/** Asks the engine for the rows around the visible range unless the cache has or awaits them. */
-	private _requestWindow(): void {
+	/**
+	 * Level of detail for a bar spacing in device pixels: raw rows up to 16 bars per pixel, then the
+	 * coarsest level whose buckets are not wider than a pixel.
+	 */
+	private _levelFor(spacing: number): number {
+		const scale = this.scale;
+		return spacing < 1 ? levelFor(1 / spacing, scale.end - scale.first) : 0;
+	}
+
+	/**
+	 * Asks the engine for the rows or buckets around the visible range at the level the view needs,
+	 * unless the cache has or awaits them.
+	 */
+	private _requestWindow(ratio: number): void {
 		const scale = this.scale;
 		const engine = this._engine;
 		if (engine !== null && !scale.isEmpty) {
-			const request = this._cache.plan(scale.from, scale.to, scale.first, scale.end);
+			const level = this._levelFor(scale.barSpacing * ratio);
+			const cache = this._cache;
+			const request = cache.plan(level, scale.from, scale.to, scale.first, scale.end);
 			if (request !== null) {
-				engine.requestWindow(request.start, request.count, request.capacity);
+				engine.requestWindow(request.start, request.count, request.capacity, request.level);
+			}
+			// While the raw rows for the view are on their way (a fast scroll left the window, or they
+			// are fetched again) or could not be fetched, the finest level is drawn instead of nothing.
+			// Not before the first raw window, though: right after a load the levels are still being
+			// built in the background, and the raw rows come first.
+			const raw = cache.level(0);
+			const visibleFrom = Math.max(scale.first, Math.ceil(scale.from - 0.5));
+			const visibleTo = Math.min(scale.end, Math.floor(scale.to + 0.5) + 1);
+			const covered =
+				raw.capacity > 0 && raw.rowsFrom(scale.first) <= visibleFrom && raw.rowsTo(scale.end) >= visibleTo;
+			if (level === 0 && !covered && (raw.capacity > 0 || raw.incomplete) && scale.end - scale.first >= 16) {
+				const fallback = cache.plan(1, scale.from, scale.to, scale.first, scale.end);
+				if (fallback !== null) {
+					engine.requestWindow(fallback.start, fallback.count, fallback.capacity, fallback.level);
+				}
 			}
 		}
 	}
@@ -648,23 +770,57 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 		const scale = this.scale;
 		const cache = this._cache;
 		const ratio = this._pixelRatio;
-		this._requestWindow();
+		this._requestWindow(ratio);
 
 		const geometry = this._geometry;
-		geometry.spacing = scale.barSpacing * ratio;
-		geometry.origin = (scale.width - (scale.end - 1 + scale.rightOffset + 0.5) * scale.barSpacing) * ratio;
-		const cacheEnd = cache.start + cache.count;
-		geometry.from = Math.max(cache.start, Math.ceil(scale.from - 0.5));
-		geometry.to = Math.min(cacheEnd, Math.floor(scale.to + 0.5) + 1);
-		if (scale.isEmpty || geometry.to < geometry.from) {
-			geometry.to = geometry.from;
+		const spacing = scale.barSpacing * ratio;
+		let origin = (scale.width - (scale.end - 1 + scale.rightOffset + 0.5) * scale.barSpacing) * ratio;
+		const level = this._levelFor(spacing);
+		// Visible rows. Below a pixel per bar, rows are binned into pixel columns: the origin sits on
+		// a whole pixel, so the bins (and the level the rows come from) never change the picture, and
+		// a row is visible when its column is inside the pane.
+		let rowFrom: number;
+		let rowTo: number;
+		if (spacing < 1) {
+			origin = Math.round(origin);
+			rowFrom = Math.ceil(-origin / spacing);
+			rowTo = Math.ceil((Math.max(1, Math.round(scale.width * ratio)) - origin) / spacing);
+		} else {
+			rowFrom = Math.ceil(scale.from - 0.5);
+			rowTo = Math.floor(scale.to + 0.5) + 1;
+		}
+		rowFrom = Math.max(rowFrom, scale.first);
+		rowTo = Math.min(rowTo, scale.end);
+		if (scale.isEmpty || rowTo < rowFrom) {
+			rowTo = rowFrom;
+		}
+		const source = cache.source(level, rowFrom, rowTo, scale.first, scale.end);
+		cache.retain(level, source === null ? level : source.level);
+		this._drawn = source;
+		geometry.origin = origin;
+		geometry.spacing = spacing;
+		geometry.shift = source === null ? 0 : source.shift;
+		if (source === null) {
+			placeElements(geometry, 0, 0, 0);
+		} else {
+			placeElements(
+				geometry,
+				Math.max(rowFrom, source.rowsFrom(scale.first)),
+				Math.min(rowTo, source.rowsTo(scale.end)),
+				scale.first,
+			);
 		}
 
 		let min = Infinity;
 		let max = -Infinity;
-		const lastRow = scale.end - 1 - cache.start;
+		const size = 2 ** geometry.shift;
 		for (const series of this._series) {
-			series.bind(cache.blocks.get(series.id), cache.capacity, cache.version);
+			if (source === null) {
+				series.bind(undefined, 0, -1, 0);
+				series.view.reset();
+				continue;
+			}
+			series.bind(source.blocks.get(series.id), source.capacity, source.version, source.level);
 			const view = series.view;
 			// A hidden series keeps no items, so it is rebuilt in full once it is shown again.
 			if (series.open.length === 0 || !series.seriesOptions.visible) {
@@ -677,10 +833,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 				series.high,
 				series.low,
 				series.close,
-				cache.start,
-				cache.version,
-				cache.dirtyLo,
-				cache.dirtyHi,
+				source.start,
+				source.version,
+				source.dirtyLo,
+				source.dirtyHi,
 			);
 			if (view.min < min) {
 				min = view.min;
@@ -688,7 +844,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 			if (view.max > max) {
 				max = view.max;
 			}
-			if (lastRow >= 0 && lastRow < cache.count) {
+			const lastRow = Math.floor((scale.end - 1) / size) - source.start;
+			if (lastRow >= 0 && lastRow < source.count) {
 				const close = series.close[lastRow]!;
 				if (close === close) {
 					series.lastValue = close;
@@ -719,29 +876,36 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 
 		// Time ticks depend only on which bars are visible and how far apart they are.
 		const timeTicks = this._timeTicks;
+		const version = source === null ? -1 : source.version;
 		if (
 			scale.version !== this._ticksScale ||
-			cache.version !== this._ticksCache ||
+			version !== this._ticksCache ||
 			geometry.from !== this._ticksFrom ||
 			geometry.to !== this._ticksTo
 		) {
 			this._ticksScale = scale.version;
-			this._ticksCache = cache.version;
+			this._ticksCache = version;
 			this._ticksFrom = geometry.from;
 			this._ticksTo = geometry.to;
 			this._ticksGeneration++;
-			timeTicks.update(
-				cache.time,
-				geometry.from - cache.start,
-				geometry.to - cache.start,
-				Math.max(1, (fontSize * 7) / scale.barSpacing),
-			);
+			if (source === null) {
+				timeTicks.count = 0;
+			} else {
+				// At a coarse level the labels sit on buckets, which hold `size` bars each.
+				timeTicks.update(
+					source.time,
+					geometry.from - source.start,
+					geometry.to - source.start,
+					Math.max(1, (fontSize * 7) / (scale.barSpacing * size)),
+				);
+			}
 		}
 		if (this._tickXs.length < timeTicks.count) {
 			this._tickXs = new Float32Array(timeTicks.count * 2);
 		}
+		const tickStart = source === null ? 0 : source.start;
 		for (let i = 0; i < timeTicks.count; i++) {
-			const index = cache.start + timeTicks.position[i]!;
+			const index = Math.max((tickStart + timeTicks.position[i]!) * size, scale.first);
 			this._tickXs[i] = Math.round(geometry.origin + index * geometry.spacing);
 		}
 	}
@@ -802,7 +966,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 			this._renderWatermark(ctx, layer.width, layer.height);
 		}
 		const widths = this._widths;
-		candleWidths(this._geometry.spacing, ratio, widths);
+		// A bucket drawn as one candle (a coarse level shown wider than a pixel) is as wide as its bars.
+		candleWidths(this._geometry.spacing * 2 ** this._geometry.shift, ratio, widths);
 		const border = Math.max(1, Math.floor(ratio));
 		for (const series of this._series) {
 			const view = series.view;
@@ -956,9 +1121,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 		const geometry = this._geometry;
 		const index = Math.min(scale.end - 1, Math.max(scale.first, Math.round(scale.xToLogical(this._crosshairX))));
 		const x = paneLeft + Math.round(geometry.origin + index * geometry.spacing);
-		const cache = this._cache;
-		const row = index - cache.start;
-		const inCache = row >= 0 && row < cache.count;
+		const drawn = this._drawn;
+		const row = drawn === null ? -1 : Math.floor(index / 2 ** drawn.shift) - drawn.start;
+		const inCache = drawn !== null && row >= 0 && row < drawn.count;
 		let y = Math.round(this._crosshairY * ratio);
 		let price = priceScale.yToPrice(this._crosshairY);
 		if (crosshair.mode === 'magnet' && inCache) {
@@ -998,7 +1163,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 			);
 		}
 		if (vertLine.labelVisible && options.timeScale.visible && inCache) {
-			const label = formatDateTime(cache.time[row]!);
+			const label = formatDateTime(drawn!.time[row]!);
 			const width = Math.ceil((label.length * this._digitWidth + 2 * AXIS_PADDING) * ratio);
 			const left = Math.min(Math.max(paneLeft, x - (width >> 1)), Math.max(paneLeft, paneLeft + paneWidth - width));
 			const background = vertLine.labelBackgroundColor;

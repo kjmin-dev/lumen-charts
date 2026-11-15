@@ -425,7 +425,180 @@ describe('chart with series', () => {
 	});
 
 	const cacheOf = () =>
-		(chart as unknown as { _cache: { start: number; count: number; blocks: Map<number, Float64Array> } })._cache;
+		(chart as unknown as { _cache: { raw: { start: number; count: number; blocks: Map<number, Float64Array> } } })
+			._cache.raw;
+
+	const internals = () =>
+		chart as unknown as {
+			_cache: { held(level: number): { count: number } | null };
+			_drawn: { level: number } | null;
+			_geometry: { to: number; shift: number; firstRow: number };
+			_priceScale: { min: number; max: number };
+		};
+
+	it('draws a wide view from a coarse level, exactly scaled, without holding raw rows', async () => {
+		const count = 300_000;
+		const data = candles(count);
+		const main = chart.addSeries('candlestick', { upColor: UP, downColor: DOWN, wickUpColor: UP, wickDownColor: DOWN });
+		main.setData(data);
+		// A secondary line with a spike far above the candles, in a single bar.
+		const spiked = data.close.slice();
+		spiked[123_457] = 500;
+		const line = chart.addSeries('line', { color: '#123456' });
+		line.setData({ time: data.time, value: spiked });
+		chart.timeScale().fitContent();
+		await settle();
+		const { _cache, _drawn, _geometry, _priceScale } = internals();
+		expect(_drawn!.level).toBeGreaterThanOrEqual(1);
+		expect(_cache.held(0)).toBeNull();
+		// The price range is exactly that of the rows drawn, spike included.
+		const drawnTo = Math.min(count, _geometry.to * 2 ** _geometry.shift);
+		let low = Infinity;
+		let high = -Infinity;
+		for (let i = _geometry.firstRow; i < drawnTo; i++) {
+			low = Math.min(low, data.low[i]!, spiked[i]!);
+			high = Math.max(high, data.high[i]!, spiked[i]!);
+		}
+		expect([_priceScale.min, _priceScale.max]).toEqual([low, high]);
+		expect(high).toBe(500);
+		const paneWidth = chart.element().querySelectorAll('canvas')[0]!.width;
+		expect(candleRects().length).toBeLessThanOrEqual(paneWidth + 1);
+		const lineTos = pane().calls.filter(call => call.name === 'lineTo').length;
+		expect(lineTos).toBeLessThanOrEqual(4 * paneWidth);
+
+		// A tick on the last bar reaches the bucket on screen.
+		const last = count - 1;
+		main.update({ time: data.time[last]!, open: data.open[last]!, high: 900, low: data.low[last]!, close: 120 });
+		await settle();
+		expect(_priceScale.max).toBe(900);
+
+		// Zoomed in, the chart draws raw rows again and lets go of the coarse level.
+		const level = _drawn!.level;
+		chart.timeScale().setVisibleLogicalRange({ from: 1000, to: 1100 });
+		await settle();
+		expect(internals()._drawn!.level).toBe(0);
+		expect(_cache.held(level)).toBeNull();
+		expect(_cache.held(0)!.count).toBeGreaterThan(100);
+	});
+
+	const datafeedBars = 200_000;
+	const datafeedData = candles(datafeedBars);
+	const coreOf = () =>
+		(chart as unknown as { _engine: { _transport: { _core: { memory: { evictable: number; bytes: number } } } } })
+			._engine._transport._core;
+	/** Lets the engine finish building levels and letting rows go, between frames. */
+	const idleEngine = async (rounds = 50): Promise<void> => {
+		if (rounds > 0) {
+			await tasks();
+			return idleEngine(rounds - 1);
+		}
+		return settle();
+	};
+	const rawRows = (from: number, to: number): number[] => {
+		const raw = cacheOf();
+		const block = raw.blocks.get(1)!;
+		return [...block.subarray(from - raw.start, to - raw.start)];
+	};
+
+	describe('with a datafeed and a memory limit', () => {
+		const count = datafeedBars;
+		const data = datafeedData;
+
+		it('fetches bars it let go when the view comes back to them', async () => {
+			chart.applyOptions({ memoryLimit: 1 });
+			const requests: { from: number; to: number; countBack: number }[] = [];
+			const line = chart.addSeries('line', {
+				datafeed: {
+					getBars: request => {
+						requests.push(request);
+						const start = data.time.indexOf(request.from);
+						const end = data.time.indexOf(request.to) + 1;
+						// A feed may send more than asked for; the extra bars are ignored.
+						return new Promise(resolve =>
+							setTimeout(
+								() =>
+									resolve({ time: data.time.slice(start - 3, end + 3), value: data.close.slice(start - 3, end + 3) }),
+								0,
+							),
+						);
+					},
+				},
+			});
+			line.setData({ time: data.time, value: data.close });
+			await idleEngine();
+			expect(coreOf().memory.evictable).toBe(0);
+			expect(coreOf().memory.bytes).toBeLessThan(count * 16);
+
+			chart.timeScale().setVisibleLogicalRange({ from: 50_000, to: 50_200 });
+			await settle();
+			expect(requests.length).toBeGreaterThan(0);
+			const first = requests[0]!;
+			expect(first.countBack).toBe(data.time.indexOf(first.to) - data.time.indexOf(first.from) + 1);
+			expect(internals()._drawn!.level).toBe(0);
+			expect(rawRows(50_000, 50_200)).toEqual([...data.close.subarray(50_000, 50_200)]);
+		});
+
+		it('refuses bars that do not match the ones let go, warns, and keeps drawing a level', async () => {
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			chart.applyOptions({ memoryLimit: 1 });
+			const line = chart.addSeries('line', {
+				datafeed: {
+					getBars: request => {
+						const start = data.time.indexOf(request.from);
+						const end = data.time.indexOf(request.to) + 1;
+						// One bar missing.
+						return Promise.resolve({ time: data.time.slice(start, end - 1), value: data.close.slice(start, end - 1) });
+					},
+				},
+			});
+			line.setData({ time: data.time, value: data.close });
+			await idleEngine();
+			chart.timeScale().setVisibleLogicalRange({ from: 50_000, to: 50_200 });
+			await settle();
+			expect(warn).toHaveBeenCalled();
+			expect(String(warn.mock.calls[0]![0])).toMatch(/do not match/);
+			// What is on screen comes from the finest level, which still holds that history.
+			expect(internals()._drawn!.level).toBe(1);
+			expect(pane().calls.filter(call => call.name === 'lineTo').length).toBeGreaterThan(5);
+		});
+
+		it('survives a datafeed that fails, and a destroy while bars are on their way', async () => {
+			chart.applyOptions({ memoryLimit: 1 });
+			let calls = 0;
+			let release: (() => void) | null = null;
+			const line = chart.addSeries('line', {
+				datafeed: {
+					getBars: () => {
+						calls++;
+						if (calls === 1) {
+							return Promise.reject(new Error('offline'));
+						}
+						return new Promise(resolve => {
+							release = () => resolve({ time: [], value: [] });
+						});
+					},
+				},
+			});
+			line.setData({ time: data.time, value: data.close });
+			await idleEngine();
+			chart.timeScale().setVisibleLogicalRange({ from: 50_000, to: 50_200 });
+			await settle();
+			expect(calls).toBe(1);
+			expect(internals()._drawn!.level).toBe(1);
+
+			// Elsewhere in history, a request that never comes back before the chart is destroyed.
+			chart.timeScale().setVisibleLogicalRange({ from: 120_000, to: 120_200 });
+			runFrames();
+			await tasks();
+			await tasks();
+			expect(calls).toBe(2);
+			const idle = chart.whenIdle();
+			chart.destroy();
+			await idle;
+			release!();
+			await tasks();
+		});
+	});
 
 	it('keeps a secondary value sent with the second of two new main bars', async () => {
 		const data = candles(1000);

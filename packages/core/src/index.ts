@@ -20,5 +20,5 @@ export {
 	type WatermarkOptions,
 	themes,
 } from './options';
-export type { SeriesApi, SeriesType, SeriesTypes } from './series';
+export type { Datafeed, DatafeedRequest, SeriesApi, SeriesCreateOptions, SeriesType, SeriesTypes } from './series';
 export type { BarIndex, Coordinate, Logical, Nominal } from './types';

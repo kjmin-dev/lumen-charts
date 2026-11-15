@@ -37,7 +37,7 @@ describe('SeriesView', () => {
 	it('makes one item per bar while bars are at least a pixel wide', () => {
 		const data = randomWalk(1000);
 		const view = new SeriesView();
-		const geometry: Geometry = { origin: 3.5 - 100 * 4, spacing: 4, from: 100, to: 200 };
+		const geometry: Geometry = { origin: 3.5 - 100 * 4, spacing: 4, from: 100, to: 200, shift: 0, firstRow: 100 };
 		view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
 		expect(view.merged).toBe(false);
 		expect(view.count).toBe(100);
@@ -50,7 +50,7 @@ describe('SeriesView', () => {
 	it('reads rows relative to the start of the cache', () => {
 		const data = randomWalk(1000);
 		const view = new SeriesView();
-		const geometry: Geometry = { origin: 0, spacing: 2, from: 5100, to: 5200 };
+		const geometry: Geometry = { origin: 0, spacing: 2, from: 5100, to: 5200, shift: 0, firstRow: 5100 };
 		view.update(geometry, data.open, data.high, data.low, data.close, 5000, 1, Infinity, -Infinity);
 		expect(view.open[0]).toBe(data.open[100]);
 		expect(view.low[99]).toBe(data.low[199]);
@@ -61,7 +61,7 @@ describe('SeriesView', () => {
 		const data = randomWalk(count);
 		const view = new SeriesView();
 		const spacing = 800 / count;
-		const geometry: Geometry = { origin: 0.37, spacing, from: 0, to: count };
+		const geometry: Geometry = { origin: 0.37, spacing, from: 0, to: count, shift: 0, firstRow: 0 };
 		view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
 		expect(view.merged).toBe(true);
 		expect(view.count).toBeLessThanOrEqual(801);
@@ -104,7 +104,7 @@ describe('SeriesView', () => {
 		value[503] = 9;
 		value[506] = 7;
 		const view = new SeriesView();
-		const geometry: Geometry = { origin: 0, spacing: 0.1, from: 0, to: count };
+		const geometry: Geometry = { origin: 0, spacing: 0.1, from: 0, to: count, shift: 0, firstRow: 0 };
 		view.update(geometry, value, value, value, value, 0, 1, Infinity, -Infinity);
 		expect(view.count).toBe(100);
 		expect(view.open[50]).toBe(5);
@@ -121,7 +121,7 @@ describe('SeriesView', () => {
 			const count = 50_000;
 			const data = randomWalk(count, 3);
 			const from = spacing >= 1 ? count - 300 : 0;
-			const geometry: Geometry = { origin: 0.2 - from * spacing, spacing, from, to: count };
+			const geometry: Geometry = { origin: 0.2 - from * spacing, spacing, from, to: count, shift: 0, firstRow: from };
 			const view = new SeriesView();
 			view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
 			const before = items(view);
@@ -146,7 +146,7 @@ describe('SeriesView', () => {
 	it('rebuilds everything when the columns are replaced or the geometry moves', () => {
 		const data = randomWalk(1000);
 		const view = new SeriesView();
-		const geometry: Geometry = { origin: 0, spacing: 0.5, from: 0, to: 1000 };
+		const geometry: Geometry = { origin: 0, spacing: 0.5, from: 0, to: 1000, shift: 0, firstRow: 0 };
 		view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
 		data.high[10] = 1e6;
 		view.update(geometry, data.open, data.high, data.low, data.close, 0, 2, Infinity, -Infinity);
@@ -162,7 +162,17 @@ describe('SeriesView', () => {
 		const high = Float64Array.of(15.3, 21);
 		const low = Float64Array.of(9, 14);
 		const close = Float64Array.of(12, 15);
-		view.update({ origin: 0, spacing: 5, from: 0, to: 2 }, open, high, low, close, 0, 1, Infinity, -Infinity);
+		view.update(
+			{ origin: 0, spacing: 5, from: 0, to: 2, shift: 0, firstRow: 0 },
+			open,
+			high,
+			low,
+			close,
+			0,
+			1,
+			Infinity,
+			-Infinity,
+		);
 		view.project(100, 2, true);
 		expect([...view.yHigh.subarray(0, 2)]).toEqual([69, 58]);
 		expect([...view.yLow.subarray(0, 2)]).toEqual([82, 72]);
@@ -174,7 +184,17 @@ describe('SeriesView', () => {
 	it('is empty for an empty range', () => {
 		const view = new SeriesView();
 		const empty = new Float64Array(0);
-		view.update({ origin: 0, spacing: 5, from: 10, to: 10 }, empty, empty, empty, empty, 0, 1, Infinity, -Infinity);
+		view.update(
+			{ origin: 0, spacing: 5, from: 10, to: 10, shift: 0, firstRow: 10 },
+			empty,
+			empty,
+			empty,
+			empty,
+			0,
+			1,
+			Infinity,
+			-Infinity,
+		);
 		expect(view.count).toBe(0);
 		expect(view.min).toBeGreaterThan(view.max);
 	});

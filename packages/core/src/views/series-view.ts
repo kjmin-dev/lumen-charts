@@ -1,28 +1,64 @@
 /**
  * Where bars land on the canvas, in device pixels: bar `i` is centered at `origin + i * spacing`.
- * `from` and `to` bound the visible bars as main-timeline indexes (`to` exclusive).
+ *
+ * The source of the items is either raw rows (`shift` 0) or the buckets of a coarse level, each
+ * holding `2^shift` rows. `from` and `to` bound the visible source elements (rows or buckets, `to`
+ * exclusive), and `firstRow` is the main-timeline index of the first row of element `from` (later
+ * than `from << shift` when the data starts inside that bucket).
  */
 export interface Geometry {
 	origin: number;
 	spacing: number;
 	from: number;
 	to: number;
+	shift: number;
+	firstRow: number;
+}
+
+/**
+ * Sets the visible elements of `geometry` (`from`, `to`, `firstRow`) for rows `[from, to)` of a
+ * timeline that starts at row `first`, given its `spacing` and `shift`. Below a pixel per element
+ * only whole elements are shown: those whose first row is visible, so a merged pixel column never
+ * holds part of a bucket. Otherwise every element that overlaps the rows is shown.
+ */
+export function placeElements(geometry: Geometry, from: number, to: number, first: number): void {
+	const size = 2 ** geometry.shift;
+	if (to <= from) {
+		geometry.from = 0;
+		geometry.to = 0;
+		geometry.firstRow = 0;
+		return;
+	}
+	if (geometry.spacing * size < 1) {
+		// The first bucket of the data starts at its first row, wherever that is in the bucket.
+		geometry.from = from === first ? Math.floor(from / size) : Math.ceil(from / size);
+		geometry.to = Math.ceil(to / size);
+	} else {
+		geometry.from = Math.floor(from / size);
+		geometry.to = Math.floor((to - 1) / size) + 1;
+	}
+	geometry.firstRow = Math.max(geometry.from * size, first);
 }
 
 /**
  * Turns the visible bars of one series into drawable items.
  *
- * While a bar is at least one device pixel wide, every bar is an item. Below that, all bars that
- * fall into the same pixel column are merged into one item (first open, highest high, lowest low,
- * last close), so the number of items never exceeds the width of the canvas in device pixels.
- * A line series is the same thing with one value standing in for all four prices, which keeps the
- * extremes of a merged column instead of only its last value.
+ * While an element (a bar, or a bucket of bars) is at least one device pixel wide, every element is
+ * an item. Below that, all elements that fall into the same pixel column are merged into one item
+ * (first open, highest high, lowest low, last close), so the number of items never exceeds the
+ * width of the canvas in device pixels. A line series is the same thing with one value standing in
+ * for all four prices, which keeps the extremes of a merged column instead of only its last value.
+ *
+ * An element belongs to the pixel column of its first row. Raw rows and buckets therefore merge
+ * the same way: with the origin on a whole pixel and `2^shift` bars per pixel, the column
+ * boundaries fall on bucket boundaries and both sources give exactly the same items. A merged
+ * column always holds whole elements, so the price range of the items is exact for the rows drawn.
  *
  * Items are kept between frames. A tick only re-merges the columns it touched.
  */
 export class SeriesView {
 	public count = 0;
-	/** True when items are merged pixel columns rather than single bars. */
+	/** True when items are merged pixel columns rather than single elements. */
 	public merged = false;
 
 	/** Prices per item. */
@@ -49,15 +85,17 @@ export class SeriesView {
 	private _spacing = NaN;
 	private _from = 0;
 	private _to = 0;
+	private _shift = 0;
+	private _firstRow = 0;
 	private _firstColumn = 0;
 
 	/**
 	 * Rebuilds the items for the given geometry.
 	 *
-	 * @param open,high,low,close columns of the window cache (the same array four times for a line)
-	 * @param cacheStart main-timeline index of row 0 of those columns
+	 * @param open,high,low,close columns of a window (the same array four times for a raw line)
+	 * @param cacheStart index of element 0 of those columns
 	 * @param version changes when the columns are replaced
-	 * @param dirtyLo,dirtyHi rows changed in place since the last call, as indexes
+	 * @param dirtyLo,dirtyHi elements changed in place since the last call
 	 */
 	public update(
 		geometry: Geometry,
@@ -70,7 +108,7 @@ export class SeriesView {
 		dirtyLo: number,
 		dirtyHi: number,
 	): void {
-		const { origin, spacing, from, to } = geometry;
+		const { origin, spacing, from, to, shift, firstRow } = geometry;
 		if (to <= from) {
 			this.count = 0;
 			this._version = -1;
@@ -78,15 +116,19 @@ export class SeriesView {
 			this.max = -Infinity;
 			return;
 		}
-		const merged = spacing < 1;
-		const firstColumn = merged ? Math.floor(origin + from * spacing) : 0;
-		const count = merged ? Math.floor(origin + (to - 1) * spacing) - firstColumn + 1 : to - from;
+		const size = 2 ** shift;
+		const merged = spacing * size < 1;
+		const firstColumn = merged ? Math.floor(origin + firstRow * spacing) : 0;
+		const lastRow = to - 1 === from ? firstRow : (to - 1) * size;
+		const count = merged ? Math.floor(origin + lastRow * spacing) - firstColumn + 1 : to - from;
 		const same =
 			version === this._version &&
 			origin === this._origin &&
 			spacing === this._spacing &&
 			from === this._from &&
-			to === this._to;
+			to === this._to &&
+			shift === this._shift &&
+			firstRow === this._firstRow;
 
 		let itemFrom = 0;
 		let itemTo = count;
@@ -94,15 +136,15 @@ export class SeriesView {
 			if (dirtyHi <= dirtyLo) {
 				return;
 			}
-			// Only the items that contain changed rows are rebuilt.
+			// Only the items that contain changed elements are rebuilt.
 			const lo = Math.max(dirtyLo, from);
 			const hi = Math.min(dirtyHi, to);
 			if (hi <= lo) {
 				return;
 			}
 			if (merged) {
-				itemFrom = Math.max(0, Math.floor(origin + lo * spacing) - firstColumn - 1);
-				itemTo = Math.min(count, Math.floor(origin + (hi - 1) * spacing) - firstColumn + 2);
+				itemFrom = Math.max(0, Math.floor(origin + lo * size * spacing) - firstColumn - 1);
+				itemTo = Math.min(count, Math.floor(origin + (hi - 1) * size * spacing) - firstColumn + 2);
 			} else {
 				itemFrom = lo - from;
 				itemTo = hi - from;
@@ -114,6 +156,8 @@ export class SeriesView {
 			this._spacing = spacing;
 			this._from = from;
 			this._to = to;
+			this._shift = shift;
+			this._firstRow = firstRow;
 			this._firstColumn = firstColumn;
 			this.count = count;
 			this.merged = merged;
@@ -125,14 +169,23 @@ export class SeriesView {
 		const itemClose = this.close;
 		const itemX = this.x;
 		if (merged) {
-			// Column `p` holds the rows whose center falls in [p, p + 1). Both ends of a column use
-			// the same expression, so neighboring columns can never overlap or leave a row out.
+			// Column `p` holds the rows whose center falls in [p, p + 1), and the elements whose first
+			// row is one of them. Both ends of a column use the same expression, so neighboring columns
+			// can never overlap or leave an element out; the first and last column take everything up
+			// to the ends of the visible elements.
 			const base = firstColumn - origin;
-			// A line passes one column for all four prices and needs only one read per row.
+			const last = count - 1;
+			// A raw line passes one column for all four prices and needs only one read per row.
 			const single = high === low;
-			let rowFrom = Math.min(to, Math.max(from, Math.ceil((base + itemFrom) / spacing))) - cacheStart;
+			let rowFrom =
+				itemFrom === 0
+					? from - cacheStart
+					: Math.min(to, Math.max(from, Math.ceil(Math.ceil((base + itemFrom) / spacing) / size))) - cacheStart;
 			for (let k = itemFrom; k < itemTo; k++) {
-				const rowTo = Math.min(to, Math.max(from, Math.ceil((base + k + 1) / spacing))) - cacheStart;
+				const rowTo =
+					k === last
+						? to - cacheStart
+						: Math.min(to, Math.max(from, Math.ceil(Math.ceil((base + k + 1) / spacing) / size))) - cacheStart;
 				let max = -Infinity;
 				let min = Infinity;
 				if (single) {
@@ -168,27 +221,29 @@ export class SeriesView {
 					while (first < rowTo - 1 && open[first]! !== open[first]!) {
 						first++;
 					}
-					let last = rowTo - 1;
-					while (last > rowFrom && close[last]! !== close[last]!) {
-						last--;
+					let latest = rowTo - 1;
+					while (latest > rowFrom && close[latest]! !== close[latest]!) {
+						latest--;
 					}
 					itemOpen[k] = open[first]!;
 					itemHigh[k] = max;
 					itemLow[k] = min;
-					itemClose[k] = close[last]!;
+					itemClose[k] = close[latest]!;
 				}
 				itemX[k] = firstColumn + k;
 				rowFrom = rowTo;
 			}
 		} else {
 			const offset = from - cacheStart;
+			// An element is drawn at the center of its rows.
+			const center = (size - 1) / 2;
 			for (let k = itemFrom; k < itemTo; k++) {
 				const row = offset + k;
 				itemOpen[k] = open[row]!;
 				itemHigh[k] = high[row]!;
 				itemLow[k] = low[row]!;
 				itemClose[k] = close[row]!;
-				itemX[k] = Math.round(origin + (from + k) * spacing);
+				itemX[k] = Math.round(origin + ((from + k) * size + center) * spacing);
 			}
 		}
 

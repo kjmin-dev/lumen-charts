@@ -14,6 +14,8 @@ import type {
 	PrependJob,
 	PrependRun,
 	PrependTimings,
+	RefetchJob,
+	RefetchRun,
 	RunResult,
 	TickJob,
 	TickRun,
@@ -76,6 +78,8 @@ function runScenario(job: Job, factory: AdapterFactory, container: HTMLElement, 
 			return runFrames(job, factory, container);
 		case 'prepend':
 			return runPrepend(job, factory, container, probes);
+		case 'refetch':
+			return runRefetch(job, factory, container, probes);
 	}
 }
 
@@ -452,6 +456,117 @@ async function runPrepend(
 			visibleBars: job.visibleBars,
 			finalRows: data.length - first,
 			drawCalls: { shown, leftEmpty },
+			memory: memoryResult(before, after),
+		};
+	} finally {
+		adapter.destroy();
+	}
+}
+
+/** First position in sorted `time` whose value is not below `target`. */
+function lowerBound(time: Float64Array, target: number): number {
+	let lo = 0;
+	let hi = time.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >>> 1;
+		if (time[mid]! < target) {
+			lo = mid + 1;
+		} else {
+			hi = mid;
+		}
+	}
+	return lo;
+}
+
+/** Rows `[from, to)` of a data set, as views on its columns. */
+function sliceRows(data: SeriesColumns, from: number, to: number): SeriesColumns {
+	const length = to - from;
+	if (data.kind === 'line') {
+		return { kind: 'line', length, time: data.time.subarray(from, to), value: data.value.subarray(from, to) };
+	}
+	return {
+		kind: 'candles',
+		length,
+		time: data.time.subarray(from, to),
+		open: data.open.subarray(from, to),
+		high: data.high.subarray(from, to),
+		low: data.low.subarray(from, to),
+		close: data.close.subarray(from, to),
+		volume: data.volume.subarray(from, to),
+	};
+}
+
+function delay(ms: number): Promise<void> {
+	return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function runRefetch(
+	job: RefetchJob,
+	factory: AdapterFactory,
+	container: HTMLElement,
+	probes: Probes,
+): Promise<RefetchRun> {
+	const data = generateSeries(job.dataset.kind, { seed: job.seed, count: job.dataset.size });
+	await probes.collectGarbage();
+	const before = await probes.measureMemory();
+	const adapter = await createSettled(factory, container, job.chart);
+	try {
+		if (adapter.setDataWithDatafeed === undefined) {
+			throw new Error('This library cannot fetch history again from a datafeed');
+		}
+		let fetches = 0;
+		let fetchedRows = 0;
+		// The datafeed is the generated data set itself, held by the page like a server would hold it.
+		const datafeed = (from: number, to: number): SeriesColumns => {
+			const lo = lowerBound(data.time, from);
+			const hi = lowerBound(data.time, to + 1);
+			fetches++;
+			fetchedRows += hi - lo;
+			return sliceRows(data, lo, hi);
+		};
+		adapter.setDataWithDatafeed(prepare(adapter, data), datafeed, job.memoryLimit);
+		await adapter.settle();
+		// Untimed: the library summarizes the history and lets rows go in the background.
+		await delay(1500);
+		await adapter.settle();
+		await probes.collectGarbage();
+		const loaded = await probes.measureMemory();
+
+		const n = data.length;
+		const half = job.visibleBars / 2;
+		// Regions spread over the oldest 90% of the history, far enough apart that no jump lands in
+		// rows the previous one brought back.
+		const step = Math.floor((n * 0.9) / (job.jumps + 1));
+		const jump = async (index: number): Promise<{ shownMs: number; fetches: number; fetchedRows: number }> => {
+			const center = Math.floor(n * 0.02) + index * step;
+			const f0 = fetches;
+			const r0 = fetchedRows;
+			const t0 = performance.now();
+			adapter.setVisibleLogicalRange({ from: center - half, to: center + half - 1 });
+			await adapter.settle();
+			return { shownMs: performance.now() - t0, fetches: fetches - f0, fetchedRows: fetchedRows - r0 };
+		};
+		const cold = await jump(0);
+		const samples: { shownMs: number; fetches: number; fetchedRows: number }[] = [];
+		const measureStart = performance.now();
+		while (samples.length < job.jumps) {
+			samples.push(await jump(samples.length + 1));
+			if (samples.length >= job.minJumps && overBudget(measureStart, job.budgetMs)) {
+				break;
+			}
+		}
+		await probes.collectGarbage();
+		const after = await probes.measureMemory();
+		return {
+			coldShownMs: cold.shownMs,
+			shownMs: summarize(samples.map(sample => sample.shownMs)),
+			fetches: summarize(samples.map(sample => sample.fetches)),
+			fetchedRows: summarize(samples.map(sample => sample.fetchedRows)),
+			jumpsWithoutFetch: samples.filter(sample => sample.fetches === 0).length,
+			visibleBars: job.visibleBars,
+			memoryLimit: job.memoryLimit,
+			rows: n,
+			memoryAfterLoad: memoryResult(before, loaded),
 			memory: memoryResult(before, after),
 		};
 	} finally {
