@@ -1,3 +1,5 @@
+import type { IndicatorInfo } from './indicators/definition';
+
 /** Kind of a series store: OHLCV keeps six columns, a line keeps time and one value. */
 export type SeriesKind = 'ohlcv' | 'line';
 
@@ -65,7 +67,9 @@ export const TICK_STRIDE = 7;
 
 /**
  * Commands sent to the engine. `seq` increases by one per command; every command is answered by
- * exactly one event carrying the same number in `ack`.
+ * exactly one event carrying the same number in `ack`. Work the engine finishes between commands
+ * (indicator values recomputed, a plugin module loaded) comes with a notice: an extra event whose
+ * `ack` repeats the last command answered.
  *
  * Bulk data is column-major with time first: column `c` occupies `data[c * count, (c + 1) * count)`.
  */
@@ -84,7 +88,41 @@ export type Command =
 	 * Rows fetched again for a `FetchRequest` starting at `start`, column-major with time first, or
 	 * null when fetching failed.
 	 */
-	| { type: 'rows'; seq: number; series: number; start: number; count: number; data: Float64Array | null };
+	| { type: 'rows'; seq: number; series: number; start: number; count: number; data: Float64Array | null }
+	/**
+	 * Adds an indicator instance, or changes one (same `id`): its outputs become derived series with
+	 * the ids in `outputs`. `params` follow the definition's order.
+	 */
+	| {
+			type: 'indicator';
+			seq: number;
+			id: number;
+			name: string;
+			params: number[];
+			inputs: IndicatorInputRef[];
+			outputs: number[];
+	  }
+	| { type: 'removeIndicator'; seq: number; id: number }
+	/** Loads a plugin module of indicators; the outcome comes with a later event's `plugins`. */
+	| { type: 'plugin'; seq: number; url: string };
+
+/**
+ * Where an indicator input reads from: column `column` of series `series` (column 0 is the main
+ * timeline's time, then open, high, low, close, volume; a line's value is column 1), or, when
+ * `series` is an indicator output, that output's values.
+ */
+export interface IndicatorInputRef {
+	series: number;
+	column: number;
+}
+
+/** Outcome of loading a plugin module. */
+export interface PluginResult {
+	url: string;
+	/** The indicators the module registered; absent when loading failed. */
+	indicators?: IndicatorInfo[];
+	error?: string;
+}
 
 /**
  * What a worker host receives. One worker can serve several engines:
@@ -186,6 +224,13 @@ export interface EngineEvent {
 	fetch?: FetchRequest[];
 	/** Outcome of the rows handed back by the command this event answers. */
 	restored?: RestoreResult;
+	/**
+	 * Indicators whose values are being recomputed in the background; absent when none. Their old
+	 * values stay until the new ones are swapped in, which an event with `stale` reports.
+	 */
+	computing?: number;
+	/** Plugin modules that finished loading, or failed to, since the last event. */
+	plugins?: PluginResult[];
 }
 
 /** First message a worker host sends, before any event. */

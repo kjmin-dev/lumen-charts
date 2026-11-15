@@ -1,10 +1,22 @@
 import type { AdapterFactory, ChartAdapter, ChartSize, LogicalRange } from '../adapter.ts';
 import { findAdapter } from '../adapters/index.ts';
-import { DEFAULT_INTERVAL_MS, type SeriesColumns, TICK_NEW_BAR, generateSeries, generateTicks } from '../data.ts';
+import {
+	DEFAULT_INTERVAL_MS,
+	Random,
+	type SeriesColumns,
+	TICK_NEW_BAR,
+	generateSeries,
+	generateTicks,
+} from '../data.ts';
 import type {
 	AdapterInfo,
+	ApplyJob,
+	ApplyRun,
 	FramesJob,
 	FramesRun,
+	IndicatorFramesJob,
+	IndicatorLoadJob,
+	IndicatorPrependJob,
 	Job,
 	LoadJob,
 	LoadRun,
@@ -89,6 +101,14 @@ function runScenario(job: Job, factory: AdapterFactory, container: HTMLElement, 
 			return runPrepend(job, factory, container, probes);
 		case 'refetch':
 			return runRefetch(job, factory, container, probes);
+		case 'ind-load':
+			return runLoad(job, factory, container, probes);
+		case 'ind-apply':
+			return runApply(job, factory, container);
+		case 'ind-frames':
+			return runFrames(job, factory, container);
+		case 'ind-prepend':
+			return runPrepend(job, factory, container, probes);
 		case 'multi':
 			return runMulti(job, factory, container, probes);
 	}
@@ -96,6 +116,22 @@ function runScenario(job: Job, factory: AdapterFactory, container: HTMLElement, 
 
 function prepare(adapter: ChartAdapter, data: SeriesColumns): unknown {
 	return data.kind === 'candles' ? adapter.prepareCandles(data) : adapter.prepareLine(data);
+}
+
+/** Indicators a job puts on its series (the stage 3 scenarios), or 0. */
+function indicatorsOf(job: Job): number {
+	return 'indicators' in job ? job.indicators : 0;
+}
+
+/** Puts the indicator set on the series the next `setData` creates, if the job has any. */
+function withIndicators(adapter: ChartAdapter, count: number): void {
+	if (count === 0) {
+		return;
+	}
+	if (adapter.withIndicators === undefined) {
+		throw new Error('This adapter cannot put indicators on a series');
+	}
+	adapter.withIndicators(count);
 }
 
 /** Creates a chart and waits until its empty state is painted, so creation is not part of a load. */
@@ -110,8 +146,10 @@ async function loadOnce(
 	container: HTMLElement,
 	size: ChartSize,
 	data: SeriesColumns,
+	indicators: number,
 ): Promise<{ adapter: ChartAdapter; timings: LoadTimings }> {
 	const adapter = await createSettled(factory, container, size);
+	withIndicators(adapter, indicators);
 	const t0 = performance.now();
 	const prepared = prepare(adapter, data);
 	const t1 = performance.now();
@@ -137,7 +175,7 @@ async function loadOnce(
 }
 
 async function runLoad(
-	job: LoadJob,
+	job: LoadJob | IndicatorLoadJob,
 	factory: AdapterFactory,
 	container: HTMLElement,
 	probes: Probes,
@@ -147,13 +185,14 @@ async function runLoad(
 	const generateMs = performance.now() - generateStart;
 	await probes.collectGarbage();
 
-	const cold = await loadOnce(factory, container, job.chart, data);
+	const indicators = indicatorsOf(job);
+	const cold = await loadOnce(factory, container, job.chart, data, indicators);
 	cold.adapter.destroy();
 	await afterNextFrame();
 	await probes.collectGarbage();
 
 	const before = await probes.measureMemory();
-	const warm = await loadOnce(factory, container, job.chart, data);
+	const warm = await loadOnce(factory, container, job.chart, data, indicators);
 	await probes.collectGarbage();
 	const after = await probes.measureMemory();
 	warm.adapter.destroy();
@@ -248,10 +287,15 @@ async function runTick(job: TickJob, factory: AdapterFactory, container: HTMLEle
 	}
 }
 
-async function runFrames(job: FramesJob, factory: AdapterFactory, container: HTMLElement): Promise<FramesRun> {
+async function runFrames(
+	job: FramesJob | IndicatorFramesJob,
+	factory: AdapterFactory,
+	container: HTMLElement,
+): Promise<FramesRun> {
 	const data = generateSeries(job.dataset.kind, { seed: job.seed, count: job.dataset.size });
 	const adapter = await createSettled(factory, container, job.chart);
 	try {
+		withIndicators(adapter, indicatorsOf(job));
 		adapter.setData(prepare(adapter, data));
 		await adapter.settle();
 		const n = data.length;
@@ -403,7 +447,7 @@ async function measurePrepend(adapter: ChartAdapter, batch: SeriesColumns): Prom
 }
 
 async function runPrepend(
-	job: PrependJob,
+	job: PrependJob | IndicatorPrependJob,
 	factory: AdapterFactory,
 	container: HTMLElement,
 	probes: Probes,
@@ -414,6 +458,7 @@ async function runPrepend(
 	const before = await probes.measureMemory();
 	const adapter = await createSettled(factory, container, job.chart);
 	try {
+		withIndicators(adapter, indicatorsOf(job));
 		adapter.setData(prepare(adapter, data));
 		await adapter.settle();
 
@@ -468,6 +513,94 @@ async function runPrepend(
 			finalRows: data.length - first,
 			drawCalls: { shown, leftEmpty },
 			memory: memoryResult(before, after),
+		};
+	} finally {
+		adapter.destroy();
+	}
+}
+
+/** Longest pause between two ticks of the tick-to-applied scenario, in milliseconds. */
+const MAX_TICK_GAP_MS = 2;
+
+/** Waits `ms` milliseconds a task at a time, so frames run whenever they are due meanwhile. */
+async function pause(ms: number): Promise<void> {
+	const until = performance.now() + ms;
+	while (performance.now() < until) {
+		await nextTask();
+	}
+}
+
+/**
+ * Ticks one at a time, each from the update call until the library has applied it (indicator
+ * values included), with the series' indicators computed beforehand. A random pause of up to
+ * `MAX_TICK_GAP_MS` separates ticks, so they arrive at random points of the frame cycle as ticks from
+ * a socket would: a tick that arrives during a frame waits for it, and with ticks back to back the
+ * share of ticks that do would depend on how fast the library is.
+ */
+async function runApply(job: ApplyJob, factory: AdapterFactory, container: HTMLElement): Promise<ApplyRun> {
+	const data = generateSeries(job.dataset.kind, { seed: job.seed, count: job.dataset.size });
+	const ticks = generateTicks(data, {
+		seed: job.seed + 1,
+		count: job.warmupTicks + job.ticks,
+		newBarEvery: job.newBarEvery,
+	});
+	const adapter = await createSettled(factory, container, job.chart);
+	if (adapter.applied === undefined) {
+		throw new Error('This adapter cannot tell when an update is applied');
+	}
+	try {
+		withIndicators(adapter, job.indicators);
+		adapter.setData(prepare(adapter, data));
+		await adapter.settle();
+		const n = data.length;
+		const visibleBars = job.view === 'all' ? n : Math.min(LATEST_VIEW_BARS, n);
+		adapter.setVisibleLogicalRange({ from: n - visibleBars, to: n - 1 });
+		await adapter.settle();
+
+		const warmupStart = performance.now();
+		let offset = 0;
+		while (offset < job.warmupTicks) {
+			adapter.applyTick(ticks, offset++);
+			await adapter.applied();
+			if (overBudget(warmupStart, job.warmupBudgetMs)) {
+				break;
+			}
+		}
+		await adapter.settle();
+
+		const applied = new Float64Array(job.ticks);
+		const sync = new Float64Array(job.ticks);
+		const gaps = new Random(job.seed + 2);
+		const measureStart = performance.now();
+		let count = 0;
+		while (count < job.ticks) {
+			await pause(gaps.next() * MAX_TICK_GAP_MS);
+			const t0 = performance.now();
+			adapter.applyTick(ticks, offset + count);
+			const t1 = performance.now();
+			await adapter.applied();
+			const t2 = performance.now();
+			sync[count] = t1 - t0;
+			applied[count] = t2 - t0;
+			count++;
+			if (count >= job.minTicks && overBudget(measureStart, job.budgetMs, t2)) {
+				break;
+			}
+		}
+		await adapter.settle();
+
+		const update: number[] = [];
+		const newBar: number[] = [];
+		for (let i = 0; i < count; i++) {
+			(ticks.tickKind[offset + i] === TICK_NEW_BAR ? newBar : update).push(applied[i] ?? 0);
+		}
+		return {
+			applied: summarize(applied.subarray(0, count)),
+			appliedUpdate: summarize(update),
+			appliedNewBar: summarize(newBar),
+			sync: summarize(sync.subarray(0, count)),
+			visibleBars,
+			warmupTicks: offset,
 		};
 	} finally {
 		adapter.destroy();

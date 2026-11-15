@@ -1,5 +1,5 @@
 import type { AdapterEntry, KnownFailure } from '../adapter.ts';
-import type { DatasetSpec, ScenarioName } from '../jobs.ts';
+import { type DatasetSpec, INDICATOR_SCENARIOS, type ScenarioName } from '../jobs.ts';
 
 const LWC_FAILURES: readonly KnownFailure[] = [
 	{
@@ -18,24 +18,28 @@ export const adapters: readonly AdapterEntry[] = [
 		id: 'lwc-conflation-on',
 		description: 'Lightweight Charts with timeScale.enableConflation = true',
 		knownFailures: LWC_FAILURES,
+		indicators: true,
 		load: async () => (await import('./lightweight-charts.ts')).conflationOn,
 	},
 	{
 		id: 'lwc-conflation-off',
 		description: 'Lightweight Charts with timeScale.enableConflation = false (library default)',
 		knownFailures: LWC_FAILURES,
+		indicators: true,
 		load: async () => (await import('./lightweight-charts.ts')).conflationOff,
 	},
 	{
 		id: 'lumen-worker',
 		description: 'Lumen Charts (workspace sources) with the data engine in a worker (default)',
 		datafeed: true,
+		indicators: true,
 		load: async () => (await import('./lumen.ts')).lumenWorker,
 	},
 	{
 		id: 'lumen-main',
 		description: 'Lumen Charts (workspace sources) with the data engine on the main thread',
 		datafeed: true,
+		indicators: true,
 		load: async () => (await import('./lumen.ts')).lumenMain,
 	},
 ];
@@ -56,6 +60,9 @@ export function knownFailure(adapter: string, dataset: DatasetSpec, scenario?: S
 	const entry = adapters.find(a => a.id === adapter);
 	if (scenario === 'refetch' && entry?.datafeed !== true) {
 		return 'the library cannot fetch history again from a datafeed';
+	}
+	if (scenario !== undefined && INDICATOR_SCENARIOS.includes(scenario) && entry?.indicators !== true) {
+		return 'the adapter cannot put indicators on a series';
 	}
 	const failure = entry?.knownFailures?.find(f => f.dataset.kind === dataset.kind && f.dataset.size === dataset.size);
 	return failure === undefined ? null : `known failure: ${failure.reason}`;

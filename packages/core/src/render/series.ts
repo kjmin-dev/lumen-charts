@@ -159,8 +159,44 @@ export function drawCandles(
 }
 
 /**
- * Draws a line from projected items as one path. For merged pixel columns the path visits the
- * first value, both extremes and the last value of each column, so spikes survive zooming out.
+ * Draws histogram bars from projected items, `width` device pixels wide, from the `base` row to the
+ * value: the part above the base in `color`, the part below in `negativeColor`, one pass per color.
+ * An item that merges several bars (a pixel column, or a bucket of a coarse level) spans its
+ * highest and lowest value, so spikes survive zooming out. Items are on whole pixels.
+ */
+export function drawHistogram(
+	ctx: CanvasRenderingContext2D,
+	view: SeriesView,
+	base: number,
+	width: number,
+	color: string,
+	negativeColor: string,
+): void {
+	const { x, yHigh, yLow, count } = view;
+	const half = width >> 1;
+	ctx.fillStyle = color;
+	for (let k = 0; k < count; k++) {
+		const top = yHigh[k]!;
+		// Rows grow downward: values above the base are above its row. NaN fails the test.
+		if (top < base) {
+			ctx.fillRect(x[k]! - half, top, width, base - top);
+		}
+	}
+	ctx.fillStyle = negativeColor;
+	for (let k = 0; k < count; k++) {
+		const bottom = yLow[k]!;
+		if (bottom > base) {
+			ctx.fillRect(x[k]! - half, base, width, bottom - base);
+		}
+	}
+}
+
+/**
+ * Draws a line from projected items as one path. For merged pixel columns the path covers the
+ * first value, both extremes and the last value of each column, so spikes survive zooming out: it
+ * enters at the first value, sweeps to the extreme nearer to it and then to the other one, and ends
+ * at the last value, leaving out every point within half a pixel of where the pen already is. The
+ * column covers the same pixels with two calls instead of four in the common case of a smooth line.
  * A step line runs level to the next item and then jumps. `dash` is empty for a solid line.
  */
 export function drawLine(
@@ -194,12 +230,21 @@ export function drawLine(
 			}
 			const top = yHigh[k]!;
 			const bottom = yLow[k]!;
+			let pen = first;
 			if (bottom - top >= 1) {
-				ctx.lineTo(px, top);
-				ctx.lineTo(px, bottom);
+				// Rows grow downward: `top` is the highest value.
+				const near = first - top <= bottom - first ? top : bottom;
+				const far = near === top ? bottom : top;
+				if (Math.abs(near - pen) >= 0.5) {
+					ctx.lineTo(px, near);
+				}
+				ctx.lineTo(px, far);
+				pen = far;
 			}
 			previous = yClose[k]!;
-			ctx.lineTo(px, previous);
+			if (Math.abs(previous - pen) >= 0.5) {
+				ctx.lineTo(px, previous);
+			}
 		}
 	} else {
 		for (let k = 0; k < count; k++) {

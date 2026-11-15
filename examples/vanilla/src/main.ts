@@ -44,6 +44,14 @@ const candles = lineOnly ? null : chart.addSeries('candlestick');
 const line = chart.addSeries('line', { color: '#f5b83d', lineWidth: lineOnly ? 1 : 1.5 });
 candles?.setData({ time, open, high, low, close });
 line.setData({ time, value: lineOnly ? close : average });
+// Indicators computed in the data engine and updated with every tick; `?indicators=0` leaves them out.
+const indicators =
+	candles === null || params.get('indicators') === '0'
+		? []
+		: [
+				candles.addIndicator('bollinger', { params: { period: 20, multiplier: 2 } }),
+				candles.addIndicator('ema', { params: { period: 50 } }),
+			];
 
 // Live ticks: several updates to the last bar, then a new one.
 let lastTime = time[count - 1]!;
@@ -67,4 +75,4 @@ if (params.get('live') !== '0')
 		line.update({ time: lastTime, value: lineOnly ? price : smooth });
 	}, 50);
 
-Object.assign(globalThis, { chart, candles, line });
+Object.assign(globalThis, { chart, candles, line, indicators });

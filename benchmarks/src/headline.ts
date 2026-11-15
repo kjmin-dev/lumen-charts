@@ -24,6 +24,7 @@ export function headline(result: CaseResult): string {
 	}
 	switch (result.job.scenario) {
 		case 'load':
+		case 'ind-load':
 			return (
 				`first frame ${ms(m('warm.firstFrameMs'))} (with conversion ${ms(m('warm.firstFrameWithConversionMs'))}, ` +
 				`settled ${ms(m('warm.settledMs'))}, cold ${ms(m('cold.firstFrameMs'))}), ` +
@@ -37,15 +38,22 @@ export function headline(result: CaseResult): string {
 				`settle p99 ${ms(m('settle.p99'))}`
 			);
 		case 'frames':
+		case 'ind-frames':
 			return (
 				`JS p50 ${ms(m('jsTime.p50'))} p95 ${ms(m('jsTime.p95'))}; ` +
 				`interval p50 ${ms(m('interval.p50'))} p95 ${ms(m('interval.p95'))}`
 			);
 		case 'prepend':
+		case 'ind-prepend':
 			return (
 				`shown p50 ${ms(m('shownMs.p50'))} p95 ${ms(m('shownMs.p95'))} max ${ms(m('shownMs.max'))}; ` +
 				`first frame p50 ${ms(m('firstFrameMs.p50'))}; call p50 ${ms(m('callMs.p50'))}; ` +
 				`longest frame ${ms(m('longestFrameMs.max'))}; retained ${mb(m('memory.retainedBytes'))}`
+			);
+		case 'ind-apply':
+			return (
+				`tick to applied avg ${ms(m('applied.mean'))} p99 ${ms(m('applied.p99'))} max ${ms(m('applied.max'))}; ` +
+				`sync avg ${ms(m('sync.mean'))} p99 ${ms(m('sync.p99'))}; ticks ${m('applied.count') ?? '–'}`
 			);
 		case 'refetch':
 			return (

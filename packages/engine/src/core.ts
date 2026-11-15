@@ -1,4 +1,5 @@
 import { CHUNK_MASK, CHUNK_ROWS, CHUNK_SHIFT, TIME } from './chunk';
+import { IndicatorEngine } from './indicators/engine';
 import {
 	type Command,
 	type EngineEvent,
@@ -21,6 +22,8 @@ import { ChunkedStore } from './store';
 const BUILD_SLICE = 65_536;
 /** Most chunks one fetch request asks for. */
 const FETCH_CHUNKS = 16;
+
+const NO_RUNS: readonly number[] = [];
 
 /** Value column (counted from the first value column) each level column of a kind is built from. */
 const LINE_SOURCES: readonly number[] = [0, 0, 0, 0];
@@ -106,6 +109,31 @@ export class EngineCore {
 	/** Epoch the fetch requests belong to. */
 	private _fetchEpoch = 0;
 
+	/** Indicators and their derived series. */
+	private readonly _indicators: IndicatorEngine;
+	/** `seq` of the last command answered, which a notice repeats. */
+	private _lastAck = 0;
+	/** Collects fetch requests made between commands, which the next notice carries. */
+	private readonly _background: EngineEvent = { ack: 0, epoch: 0, first: 0, end: 0, stale: false, rejected: 0 };
+	private _readScratch = new Float64Array(0);
+
+	/**
+	 * Called when work finished outside a command (a plugin module loaded) and a notice is waiting;
+	 * the host then calls `takeNotice`. Background steps can leave notices too, without this call.
+	 */
+	public onwake: (() => void) | null = null;
+
+	public constructor() {
+		this._indicators = new IndicatorEngine({
+			first: () => (this._main === null ? 0 : this._main.store.first),
+			end: () => (this._main === null ? 0 : this._main.store.end),
+			read: (series, column, from, to, out, offset) => this._readColumn(series, column, from, to, out, offset),
+			runs: series => this._series.get(series)?.runs ?? NO_RUNS,
+			ensure: (from, to, ahead) => this._ensureRows(from, to, ahead),
+		});
+		this._indicators.onwake = () => this.onwake?.();
+	}
+
 	public *run(command: Command): Generator<undefined, EngineEvent, undefined> {
 		const event: EngineEvent = { ack: command.seq, epoch: 0, first: 0, end: 0, stale: false, rejected: 0 };
 		switch (command.type) {
@@ -143,6 +171,8 @@ export class EngineCore {
 							this._rebuildAll();
 						}
 						event.stale = true;
+					} else {
+						this._indicators.seriesChanged(command.series);
 					}
 				}
 				break;
@@ -178,6 +208,7 @@ export class EngineCore {
 					// valid, except for the first bucket of each level, which can gain rows.
 					yield* this._extendLeft(oldFirst);
 					this._boundaryPatches(oldFirst, event);
+					this._indicators.prepended(oldFirst);
 					this._enforceLimit();
 				} else {
 					if (this._main !== null && store.first < oldFirst) {
@@ -186,6 +217,7 @@ export class EngineCore {
 						const hi = this._mainIndex(oldFirstTime) + 1;
 						yield* this._refreshSliced(state.pyramid, state, lo, hi);
 					}
+					this._indicators.seriesChanged(state.id);
 					event.stale = true;
 				}
 				break;
@@ -213,29 +245,42 @@ export class EngineCore {
 			case 'rows':
 				yield* this._restore(command.series, command.start, command.count, command.data, event);
 				break;
+			case 'indicator':
+				this._indicators.set(command.id, command.name, command.params, command.inputs, command.outputs);
+				break;
+			case 'removeIndicator':
+				this._indicators.remove(command.id);
+				break;
+			case 'plugin':
+				this._indicators.load(command.url);
+				break;
 		}
 		if (this._epoch !== this._fetchEpoch) {
 			// Indexes were re-based: rows asked for under the old ones are not wanted any more.
 			this._fetchEpoch = this._epoch;
 			this._dropFetches(event);
 		}
-		const main = this._main;
-		event.epoch = this._epoch;
-		if (main !== null) {
-			event.first = main.store.first;
-			event.end = main.store.end;
-		}
+		this._lastAck = command.seq;
+		this._finish(event);
 		return event;
 	}
 
-	/** True while level-of-detail buckets are waiting to be built. */
+	/** True while level-of-detail buckets are waiting to be built or indicators to be recomputed. */
 	public get busy(): boolean {
-		return this._pending.size > 0;
+		return this._pending.size > 0 || this._indicators.busy;
 	}
 
-	/** Bytes held by every store and pyramid. */
+	/**
+	 * True while indicators are being recomputed: background work whose result the chart waits to
+	 * show, which a host on the main thread should not leave to idle time.
+	 */
+	public get urgent(): boolean {
+		return this._indicators.busy;
+	}
+
+	/** Bytes held by every store and pyramid, indicators included. */
 	public get byteLength(): number {
-		let bytes = this._time.byteLength;
+		let bytes = this._time.byteLength + this._indicators.byteLength;
 		for (const state of this._series.values()) {
 			bytes += state.store.byteLength + state.pyramid.byteLength;
 		}
@@ -258,11 +303,51 @@ export class EngineCore {
 	}
 
 	/**
-	 * Runs one slice of the background build of level-of-detail buckets. Returns true while more
-	 * remains. A host calls this when no command is waiting; commands that need the buckets finish
-	 * the build themselves.
+	 * Runs one slice of background work: indicator recomputations first, then the build of
+	 * level-of-detail buckets. Returns true while more remains. A host calls this when no command is
+	 * waiting, and afterwards `takeNotice`; commands that need the buckets finish the build themselves.
 	 */
 	public backgroundStep(): boolean {
+		const computing = this._indicators.busy;
+		if (this._indicators.step()) {
+			return true;
+		}
+		if (computing) {
+			// Rows the recomputation read may go now.
+			this._enforceLimit();
+		}
+		return this._buildStep();
+	}
+
+	/**
+	 * An event that is not the answer to a command, or null: indicator values swapped in (the windows
+	 * held are stale; the latest values come as patches) or plugin modules loaded. Its `ack` repeats
+	 * the last command answered.
+	 */
+	public takeNotice(): EngineEvent | null {
+		this._specs.length = 0;
+		const swapped = this._indicators.takeNotice(this._specs);
+		const plugins = this._indicators.takePlugins();
+		const fetch = this._background.fetch;
+		if (!swapped && plugins === null && fetch === undefined) {
+			return null;
+		}
+		const event: EngineEvent = { ack: this._lastAck, epoch: 0, first: 0, end: 0, stale: swapped, rejected: 0 };
+		if (plugins !== null) {
+			event.plugins = plugins;
+		}
+		if (fetch !== undefined) {
+			event.fetch = fetch;
+			delete this._background.fetch;
+		}
+		if (swapped) {
+			this._emit(event);
+		}
+		this._finish(event);
+		return event;
+	}
+
+	private _buildStep(): boolean {
 		if (this._pending.size === 0) {
 			return false;
 		}
@@ -281,6 +366,7 @@ export class EngineCore {
 	/** Event for a command that threw: it tells the client the command is over and what still holds. */
 	public failure(command: Command): EngineEvent {
 		const main = this._main;
+		this._lastAck = command.seq;
 		return {
 			ack: command.seq,
 			epoch: this._epoch,
@@ -309,8 +395,23 @@ export class EngineCore {
 		return true;
 	}
 
-	/** The main timeline changed: every pyramid is built again. */
+	/** Fills in the extent of the main timeline and the indicators still computing. */
+	private _finish(event: EngineEvent): void {
+		const main = this._main;
+		event.epoch = this._epoch;
+		if (main !== null) {
+			event.first = main.store.first;
+			event.end = main.store.end;
+		}
+		const computing = this._indicators.pending;
+		if (computing > 0) {
+			event.computing = computing;
+		}
+	}
+
+	/** The main timeline changed: every pyramid is built again, and every indicator recomputed. */
 	private _rebuildAll(): void {
+		this._indicators.timelineChanged();
 		this._pending.clear();
 		this._pending.add(this._time);
 		for (const state of this._series.values()) {
@@ -332,6 +433,7 @@ export class EngineCore {
 		} else if (this._main !== null) {
 			this._pending.add(state.pyramid);
 			this._build = null;
+			this._indicators.seriesChanged(state.id);
 		}
 		return rejected;
 	}
@@ -497,6 +599,8 @@ export class EngineCore {
 				}
 			}
 		}
+		// Indicator values change with their inputs and travel in the same message.
+		this._indicators.ticks(endBefore, specs);
 		this._emit(event);
 		// Only after the patches are copied: the chunk that was last a moment ago may go now.
 		if (main.store.byteLength !== bytesBefore) {
@@ -593,7 +697,9 @@ export class EngineCore {
 			const count = specs[s + SPEC_COUNT]!;
 			const columns = specs[s + SPEC_COLUMNS]!;
 			const data = buffer.subarray(offset, offset + count * columns);
-			if (level === 0) {
+			if (this._indicators.owns(series)) {
+				this._indicators.copy(series, level, start, count, data);
+			} else if (level === 0) {
 				if (series === TIME_PATCH) {
 					main.store.copyColumn(TIME, start, start + count, data, 0);
 				} else {
@@ -663,6 +769,7 @@ export class EngineCore {
 				window.series.push({ series: state.id, data });
 				yield;
 			}
+			this._indicators.window(level, from, to, stride, window.series);
 			return;
 		}
 		main.store.copyColumn(TIME, from, to, time, 0);
@@ -679,6 +786,76 @@ export class EngineCore {
 			}
 			window.series.push({ series: state.id, data });
 		}
+		this._indicators.window(0, from, to, stride, window.series);
+	}
+
+	/**
+	 * Copies rows `[from, to)` of a column of a series, aligned to the main timeline, into `out` from
+	 * `offset` on: what indicators read. Column 0 is the main timeline's time; values a series does
+	 * not have (an unknown series, a column it lacks, rows let go) are NaN.
+	 */
+	private _readColumn(
+		series: number,
+		column: number,
+		from: number,
+		to: number,
+		out: Float64Array,
+		offset: number,
+	): void {
+		const main = this._main;
+		const state = this._series.get(series);
+		if (to <= from) {
+			return;
+		}
+		if (main === null || state === undefined) {
+			out.fill(NaN, offset, offset + to - from);
+			return;
+		}
+		if (column === TIME) {
+			main.store.copyColumn(TIME, from, to, out, offset);
+			return;
+		}
+		if (column > state.valueColumns || state.store.length === 0) {
+			out.fill(NaN, offset, offset + to - from);
+			return;
+		}
+		if (state === main) {
+			const store = main.store;
+			let index = from;
+			while (index < to) {
+				const n = Math.min(CHUNK_ROWS - (index & CHUNK_MASK), to - index);
+				if (store.isEvicted(store.gridOf(index))) {
+					out.fill(NaN, offset + index - from, offset + index - from + n);
+				} else {
+					store.copyColumn(column, index, index + n, out, offset + index - from);
+				}
+				index += n;
+			}
+			return;
+		}
+		const rows = to - from;
+		const size = rows * state.valueColumns;
+		if (this._readScratch.length < size) {
+			this._readScratch = new Float64Array(Math.max(size, this._readScratch.length * 2, 256));
+		}
+		this._aligned(state, from, to, this._readScratch, rows);
+		out.set(this._readScratch.subarray((column - 1) * rows, column * rows), offset);
+	}
+
+	/** See `IndicatorHost.ensure`. */
+	private _ensureRows(from: number, to: number, ahead: number): boolean {
+		const main = this._main;
+		if (main === null) {
+			return true;
+		}
+		const store = main.store;
+		const lo = Math.max(from, store.first);
+		const held = Number.isNaN(store.firstEvicted(lo, Math.min(to, store.end)));
+		const hi = Math.min(Math.max(to, ahead), store.end);
+		if (!Number.isNaN(store.firstEvicted(lo, hi))) {
+			this._fetch(main, lo, hi, this._background);
+		}
+		return held;
 	}
 
 	// Memory limit
@@ -717,7 +894,10 @@ export class EngineCore {
 		const pinFirst = store.gridOf(pinFrom);
 		const pinLast = store.gridOf(pinTo - 1);
 		const candidates: number[] = [];
-		for (let grid = first + 1; grid < last; grid++) {
+		// Rows an indicator recomputation has yet to read stay too.
+		const reading = this._indicators.readFrom;
+		const limit = reading === Infinity ? last : Math.min(last, store.gridOf(Math.max(reading, store.first)));
+		for (let grid = first + 1; grid < limit; grid++) {
 			if ((grid < pinFirst || grid > pinLast) && !store.isEvicted(grid) && !this._fetching.has(grid)) {
 				candidates.push(grid);
 			}
@@ -853,6 +1033,11 @@ export class EngineCore {
 				result.outcome = 'mismatch';
 			}
 		}
+		if (result.outcome === 'restored') {
+			this._indicators.rowsRestored();
+		} else {
+			this._indicators.rowsFailed(start, end);
+		}
 		const deferred = this._deferred;
 		if (deferred !== null) {
 			const from = Math.min(Math.max(deferred.start, store.first), store.end);
@@ -892,9 +1077,9 @@ export class EngineCore {
 
 	// Level of detail
 
-	/** Finishes the background build, yielding between slices. */
+	/** Finishes the background build of levels (not indicator work), yielding between slices. */
 	private *_drain(): Generator<undefined, void, undefined> {
-		while (this.backgroundStep()) {
+		while (this._buildStep()) {
 			yield;
 		}
 	}

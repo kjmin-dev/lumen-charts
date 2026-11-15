@@ -8,11 +8,15 @@ import {
 	packCandles,
 	packLine,
 } from './data/input';
+import type { IndicatorApi, IndicatorOptions } from './indicators';
 import { INVALIDATE_LIGHT, type Invalidation } from './model/invalidation';
 import {
 	type CandlestickOptions,
 	DEFAULT_CANDLESTICK_OPTIONS,
+	DEFAULT_HISTOGRAM_OPTIONS,
 	DEFAULT_LINE_OPTIONS,
+	type DeepPartial,
+	type HistogramOptions,
 	type LineOptions,
 	definedOnly,
 	shallowEqual,
@@ -54,9 +58,13 @@ export type SeriesCreateOptions<T extends SeriesType> = Partial<SeriesTypes[T]['
 export interface SeriesTypes {
 	candlestick: { options: CandlestickOptions; bar: OhlcBar; data: readonly OhlcBar[] | OhlcColumns };
 	line: { options: LineOptions; bar: LinePoint; data: readonly LinePoint[] | LineColumns };
+	histogram: { options: HistogramOptions; bar: LinePoint; data: readonly LinePoint[] | LineColumns };
 }
 
 export type SeriesType = keyof SeriesTypes;
+
+/** Options of any series type. */
+export type AnySeriesOptions = CandlestickOptions | LineOptions | HistogramOptions;
 
 export interface SeriesApi<T extends SeriesType = SeriesType> {
 	readonly type: T;
@@ -68,11 +76,25 @@ export interface SeriesApi<T extends SeriesType = SeriesType> {
 	prepend(data: SeriesTypes[T]['data']): void;
 	applyOptions(options: Partial<SeriesTypes[T]['options']>): void;
 	options(): Readonly<SeriesTypes[T]['options']>;
+	/**
+	 * Adds an indicator computed from this series in the data engine, drawn on the price pane. See
+	 * `ChartApi.addIndicator`.
+	 */
+	addIndicator(name: string, options?: DeepPartial<IndicatorOptions>): IndicatorApi;
 }
 
 export interface SeriesHost {
 	engine(): EngineClient | null;
 	invalidate(level: Invalidation): void;
+	addIndicator(source: Series, name: string, options?: DeepPartial<IndicatorOptions>): IndicatorApi;
+}
+
+function defaultOptions(type: SeriesType): AnySeriesOptions {
+	return type === 'candlestick'
+		? DEFAULT_CANDLESTICK_OPTIONS
+		: type === 'histogram'
+			? DEFAULT_HISTOGRAM_OPTIONS
+			: DEFAULT_LINE_OPTIONS;
 }
 
 const EMPTY: Float64Array = new Float64Array(0);
@@ -82,7 +104,9 @@ export class Series implements SeriesApi {
 	public readonly kind: SeriesKind;
 	public readonly id: number;
 	public readonly view = new SeriesView();
-	public seriesOptions: CandlestickOptions | LineOptions;
+	public seriesOptions: AnySeriesOptions;
+	/** True for an indicator output: its values come from the engine, not from the application. */
+	public readonly derived: boolean;
 
 	/** Columns of this series in the window drawn from; a raw line uses one column for all four. */
 	public open = EMPTY;
@@ -105,16 +129,15 @@ export class Series implements SeriesApi {
 		host: SeriesHost,
 		id: number,
 		type: SeriesType,
-		options: Partial<CandlestickOptions> | Partial<LineOptions>,
+		options: Partial<AnySeriesOptions>,
+		derived = false,
 	) {
 		this._host = host;
 		this.id = id;
 		this.type = type;
 		this.kind = type === 'candlestick' ? 'ohlcv' : 'line';
-		this.seriesOptions =
-			type === 'candlestick'
-				? { ...DEFAULT_CANDLESTICK_OPTIONS, ...definedOnly(options as Partial<CandlestickOptions>) }
-				: { ...DEFAULT_LINE_OPTIONS, ...definedOnly(options as Partial<LineOptions>) };
+		this.derived = derived;
+		this.seriesOptions = { ...defaultOptions(type), ...definedOnly(options) } as AnySeriesOptions;
 	}
 
 	public setData(data: SeriesTypes[SeriesType]['data']): void {
@@ -143,8 +166,8 @@ export class Series implements SeriesApi {
 		}
 	}
 
-	public applyOptions(options: Partial<CandlestickOptions> | Partial<LineOptions>): void {
-		const next = { ...this.seriesOptions, ...definedOnly(options) } as CandlestickOptions | LineOptions;
+	public applyOptions(options: Partial<AnySeriesOptions>): void {
+		const next = { ...this.seriesOptions, ...definedOnly(options) } as AnySeriesOptions;
 		if (shallowEqual(this.seriesOptions, next)) {
 			return;
 		}
@@ -152,8 +175,12 @@ export class Series implements SeriesApi {
 		this._host.invalidate(INVALIDATE_LIGHT);
 	}
 
-	public options(): Readonly<CandlestickOptions | LineOptions> {
+	public options(): Readonly<AnySeriesOptions> {
 		return this.seriesOptions;
+	}
+
+	public addIndicator(name: string, options?: DeepPartial<IndicatorOptions>): IndicatorApi {
+		return this._host.addIndicator(this, name, options);
 	}
 
 	/**

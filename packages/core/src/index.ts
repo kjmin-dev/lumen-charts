@@ -1,5 +1,13 @@
 export { type ChartApi, type LogicalRange, type TimeScaleApi, createChart } from './chart';
 export type { LineColumns, LinePoint, OhlcBar, OhlcColumns } from './data/input';
+export type {
+	IndicatorApi,
+	IndicatorInput,
+	IndicatorOptions,
+	IndicatorOutputApi,
+	IndicatorOutputOptions,
+	SourceColumn,
+} from './indicators';
 export {
 	type CandlestickOptions,
 	type ChartOptions,
@@ -9,6 +17,7 @@ export {
 	type DeepPartial,
 	type GridLineOptions,
 	type GridOptions,
+	type HistogramOptions,
 	type LayoutOptions,
 	type LineOptions,
 	type LineStyle,
@@ -22,4 +31,12 @@ export {
 } from './options';
 export type { Datafeed, DatafeedRequest, SeriesApi, SeriesCreateOptions, SeriesType, SeriesTypes } from './series';
 export type { BarIndex, Coordinate, Logical, Nominal } from './types';
+export {
+	type IndicatorDefinition,
+	type IndicatorInfo,
+	type IndicatorKernel,
+	type IndicatorOutputInfo,
+	type IndicatorParam,
+	defineIndicator,
+} from '@lumen-charts/engine';
 export { getMaxWorkers, setMaxWorkers } from '@lumen-charts/engine';

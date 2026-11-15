@@ -59,6 +59,17 @@ export interface ChartAdapter<TPrepared = unknown> {
 		datafeed: (from: number, to: number) => SeriesColumns,
 		memoryLimit: number,
 	): void;
+	/**
+	 * Puts the first `count` indicators of the stage 3 set (`INDICATOR_SET`) on the series the next
+	 * `setData` creates, which then keeps the candles' volume; ticks and prepends update them. Called
+	 * before `setData`. Only libraries with `indicators` set in their registry entry implement it.
+	 */
+	withIndicators?(count: number): void;
+	/**
+	 * Resolves once everything submitted so far has been applied, indicator values included, without
+	 * waiting for a frame. A library that applies updates synchronously resolves at once.
+	 */
+	applied?(): Promise<void>;
 	/** Shows the given range of bars, as a scripted pan or zoom would. */
 	setVisibleLogicalRange(range: LogicalRange): void;
 	/**
@@ -112,5 +123,7 @@ export interface AdapterEntry {
 	readonly knownFailures?: readonly KnownFailure[];
 	/** The library can fetch history again from a datafeed (`setDataWithDatafeed`), for the refetch scenario. */
 	readonly datafeed?: boolean;
+	/** The adapter can put indicators on a series (`withIndicators`, `applied`), for the stage 3 scenarios. */
+	readonly indicators?: boolean;
 	load(): Promise<AdapterFactory>;
 }
