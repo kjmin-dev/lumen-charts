@@ -192,8 +192,11 @@ export function drawHistogram(
 }
 
 /**
- * Draws a line from projected items as one path. For merged pixel columns the path visits the
- * first value, both extremes and the last value of each column, so spikes survive zooming out.
+ * Draws a line from projected items as one path. For merged pixel columns the path covers the
+ * first value, both extremes and the last value of each column, so spikes survive zooming out: it
+ * enters at the first value, sweeps to the extreme nearer to it and then to the other one, and ends
+ * at the last value, leaving out every point within half a pixel of where the pen already is. The
+ * column covers the same pixels with two calls instead of four in the common case of a smooth line.
  * A step line runs level to the next item and then jumps. `dash` is empty for a solid line.
  */
 export function drawLine(
@@ -227,12 +230,21 @@ export function drawLine(
 			}
 			const top = yHigh[k]!;
 			const bottom = yLow[k]!;
+			let pen = first;
 			if (bottom - top >= 1) {
-				ctx.lineTo(px, top);
-				ctx.lineTo(px, bottom);
+				// Rows grow downward: `top` is the highest value.
+				const near = first - top <= bottom - first ? top : bottom;
+				const far = near === top ? bottom : top;
+				if (Math.abs(near - pen) >= 0.5) {
+					ctx.lineTo(px, near);
+				}
+				ctx.lineTo(px, far);
+				pen = far;
 			}
 			previous = yClose[k]!;
-			ctx.lineTo(px, previous);
+			if (Math.abs(previous - pen) >= 0.5) {
+				ctx.lineTo(px, previous);
+			}
 		}
 	} else {
 		for (let k = 0; k < count; k++) {
