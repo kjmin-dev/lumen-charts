@@ -4,8 +4,8 @@ High-performance financial charting engine for the web.
 
 > Status: stage 3 of the [design](docs/design.md). Candlestick, line and histogram series on an
 > ordinal time scale, with the data engine in a worker, panning, zooming, live updates, level of
-> detail, a memory limit backed by a datafeed, and indicators (built-in and custom) computed in the
-> engine. Drawings are the next stage.
+> detail, a memory limit backed by a datafeed that also takes corrections, deletions and resolution
+> changes, and indicators (built-in and custom) computed in the engine. Drawings are the next stage.
 
 ## Usage
 
@@ -74,8 +74,8 @@ const chart = createChart(element, { memoryLimit: 64 * 1024 * 1024 });
 const candles = chart.addSeries('candlestick', {
 	datafeed: {
 		// Bars with times in [from, to] (UTC ms, inclusive): `countBack` of them, oldest first, in
-		// any format setData accepts.
-		getBars: ({ from, to, countBack }) => fetchBars(symbol, from, to),
+		// any format setData accepts. `signal` is aborted once the bars are no longer needed.
+		getBars: ({ from, to, signal }) => fetchBars(symbol, '1m', from, to, { signal }),
 	},
 });
 candles.setData(history);
@@ -83,18 +83,37 @@ candles.setData(history);
 
 With a datafeed, the engine may let go of bars far from the view once it holds more than
 `memoryLimit` bytes, and asks the datafeed for them when the view comes back. The levels of detail
-and the time of every bar stay in memory, so zoomed-out views keep drawing, the finest level is
-shown while bars are on their way, and the bars that come back are checked against the ones let go:
-bars that differ in number or time are refused with a console warning. A failed request is tried
-again the next time the bars are needed, after a pause that grows from 1 s to 30 s. The same bars are
-never requested twice at once. Without a datafeed nothing is ever let go.
+stay in memory, so zoomed-out views keep drawing and the finest level is shown while bars are on
+their way; bars fetched again are usually drawn in the frame after the view changed. A chunk of
+8,192 bars let go keeps only a summary (its first and last time and checksums), against which the
+bars that come back are checked: bars that differ in number or time are refused with a console
+warning. Values may differ: a bar corrected at the source while it was let go comes back corrected.
+A request whose bars the view no longer needs is aborted through `signal`; one that failed is tried
+again after a pause that grows from 1 s to 30 s. The same bars are never requested twice at once.
 
-The limit is a target: the bars around the view, the first and last chunk of 8,192 bars, the levels
-and the time column always stay. For now it applies only while the series with the datafeed is the
-only series with data; other series, corrections and deletions through the datafeed, resolution
-changes and cancelling requests are follow-ups (design section 8). Indicator outputs are never let
-go and count toward the limit; an indicator recomputed over bars that were let go (after a prepend,
-or a parameter change) fetches them again from the datafeed, a window at a time.
+The datafeed contract covers changes of history too:
+
+```ts
+// A correction of any existing bar, also one let go: it applies once that bar is back.
+candles.update({ time: someOldTime, open, high, low, close });
+// Bars removed at the source. At either end the other bars keep their indexes; in the middle the
+// bars on the shorter side move over.
+candles.removeBars({ from: firstRemovedTime, to: lastRemovedTime });
+// Another resolution (or symbol), with a datafeed for it: requests for the old bars are aborted.
+candles.setData(fiveMinuteHistory, { datafeed: fiveMinuteFeed });
+```
+
+The limit applies to every series with a datafeed; a series without one is never let go. While
+other series are drawn on the main series' timeline it keeps the time of every bar, which merging
+them takes. The limit is a target: the bars around the view, the first and last chunk of each series
+and the levels always stay. The design (section 8) explains the choices.
+
+Indicator outputs are never let go and count toward the limit. An indicator recomputed over bars
+that were let go (after a prepend, a parameter change, a correction or a deletion) fetches them
+again from the datafeed, a window at a time. A correction recomputes the indicators that read the
+series: in place with the tick when the bar is recent, in the background otherwise. A deletion
+recomputes them in the background. Their old values stay on screen meanwhile, except after a
+deletion in the middle of the main series, whose bars then have other indexes.
 
 ### Indicators
 
@@ -248,8 +267,10 @@ the definition of every metric are in [docs/benchmarks/stage-0-baseline.md](docs
 stage 1 results against it are in [docs/benchmarks/stage-1.md](docs/benchmarks/stage-1.md), the
 stage 2 scenarios with the stage 1 numbers on them in [docs/benchmarks/stage-2-before.md](docs/benchmarks/stage-2-before.md),
 and stage 2 (level of detail, memory limit) against them in [docs/benchmarks/stage-2.md](docs/benchmarks/stage-2.md).
-The `refetch` scenario runs a series with a datafeed under a memory limit and times how long the
-chart takes to show history it let go. The `multi` scenario puts several auto-sized charts on one
+The `refetch` scenario runs series with a datafeed under a memory limit, times how long the chart
+takes to show history it let go and what corrections, deletions and a change of resolution cost, and
+measures the memory floor; [docs/benchmarks/stage-2-follow-ups.md](docs/benchmarks/stage-2-follow-ups.md)
+has the results. The `multi` scenario puts several auto-sized charts on one
 page, some of them below the fold, and measures workers, memory, the time until all are shown and
 the cost of a round of ticks; its results are in
 [docs/benchmarks/shared-resources.md](docs/benchmarks/shared-resources.md). The stage 3 scenarios

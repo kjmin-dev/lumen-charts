@@ -123,11 +123,11 @@ export interface ChartOptions {
 	 */
 	worker: boolean | (() => Worker);
 	/**
-	 * Memory the data engine aims to stay under, in bytes. It applies only to a series with a
-	 * `datafeed` (and, for now, only while it is the only series with data): bars far from the view
-	 * are let go and fetched back from the datafeed when they are needed again. The levels of detail
-	 * and the time of every bar always stay, so zoomed-out views keep drawing meanwhile. Without a
-	 * datafeed nothing is ever let go. Default: no limit.
+	 * Memory the data engine aims to stay under, in bytes. It applies to every series with a
+	 * `datafeed`: bars far from the view are let go and fetched back from the datafeed when they are
+	 * needed again, each chunk let go keeping a summary of its times to check them. The levels of
+	 * detail always stay, so zoomed-out views keep drawing meanwhile. A series without a datafeed is
+	 * never let go. Default: no limit.
 	 */
 	memoryLimit: number;
 }
