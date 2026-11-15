@@ -155,9 +155,9 @@ function environment(): string {
 	return out.join('\n');
 }
 
-function load(): string {
-	const ids = caseIds('load');
-	const list = cases.filter(c => c.job.scenario === 'load');
+function load(scenario = 'load'): string {
+	const ids = caseIds(scenario);
+	const list = cases.filter(c => c.job.scenario === scenario);
 	const rows: string[][] = [];
 	for (const id of ids) {
 		for (const adapter of adaptersOf(list)) {
@@ -249,16 +249,16 @@ function memoryTable(scenario: string, label: (c: CaseResult) => string, points:
 	);
 }
 
-function memory(): string {
+function memory(scenario = 'load'): string {
 	return memoryTable(
-		'load',
+		scenario,
 		c => datasetLabel(c.job.dataset),
 		c => c.job.dataset.size,
 	);
 }
 
 function prependLabel(c: CaseResult): string {
-	return c.job.scenario === 'prepend'
+	return c.job.scenario === 'prepend' || c.job.scenario === 'ind-prepend'
 		? `${datasetLabel(c.job.dataset)} + ${sizeLabel(c.job.batch)}, ${sizeLabel(c.job.visibleBars)} in view`
 		: c.caseId;
 }
@@ -268,13 +268,13 @@ function seriesCall(c: CaseResult): string {
 	return c.job.dataset.kind === 'candles' ? 'fillRect' : 'lineTo';
 }
 
-function prepend(): string {
-	const list = cases.filter(c => c.job.scenario === 'prepend');
+function prepend(scenario = 'prepend'): string {
+	const list = cases.filter(c => c.job.scenario === scenario);
 	const rows: string[][] = [];
-	for (const id of caseIds('prepend')) {
+	for (const id of caseIds(scenario)) {
 		for (const adapter of adaptersOf(list)) {
 			const c = find(id, adapter);
-			if (c === undefined || c.job.scenario !== 'prepend') {
+			if (c === undefined || (c.job.scenario !== 'prepend' && c.job.scenario !== 'ind-prepend')) {
 				continue;
 			}
 			const call = seriesCall(c);
@@ -327,8 +327,55 @@ function prepend(): string {
 	);
 }
 
-function prependMemory(): string {
-	return memoryTable('prepend', prependLabel, c => median(c, 'finalRows') ?? Number.NaN);
+function prependMemory(scenario = 'prepend'): string {
+	return memoryTable(scenario, prependLabel, c => median(c, 'finalRows') ?? Number.NaN);
+}
+
+/** Stage 3: tick to applied patch, ticks one at a time with indicators on the series. */
+function apply(): string {
+	const list = cases.filter(c => c.job.scenario === 'ind-apply');
+	const rows: string[][] = [];
+	for (const id of caseIds('ind-apply')) {
+		for (const adapter of adaptersOf(list)) {
+			const c = find(id, adapter);
+			if (c === undefined || c.job.scenario !== 'ind-apply') {
+				continue;
+			}
+			rows.push([
+				`${datasetLabel(c.job.dataset)} ${c.job.view}, ${c.job.indicators} indicators`,
+				adapter,
+				cell(c, 'applied.mean', MS),
+				cell(c, 'applied.p50', MS),
+				cell(c, 'applied.p99', MS),
+				cell(c, 'applied.max', MS),
+				cell(c, 'appliedUpdate.p99', MS),
+				cell(c, 'appliedNewBar.p99', MS),
+				cell(c, 'sync.mean', US),
+				cell(c, 'sync.p99', US),
+				cell(c, 'applied.count'),
+				hostIdle(c),
+			]);
+		}
+	}
+	return (
+		table(
+			[
+				'Data set, view',
+				'Adapter',
+				'Applied avg (ms)',
+				'Applied p50 (ms)',
+				'Applied p99 (ms)',
+				'Applied max (ms)',
+				'Update p99 (ms)',
+				'New bar p99 (ms)',
+				'Sync avg (µs)',
+				'Sync p99 (µs)',
+				'Ticks measured',
+				'Host CPU idle',
+			],
+			rows,
+		) + `\n${runsNote(list)}\n`
+	);
 }
 
 function tick(): string {
@@ -427,13 +474,13 @@ function scaling(): string {
 	return table(['Data set', ...columns.map(k => `${k.adapter} ${k.view}`)], rows);
 }
 
-function frames(): string {
-	const list = cases.filter(c => c.job.scenario === 'frames');
+function frames(scenario = 'frames'): string {
+	const list = cases.filter(c => c.job.scenario === scenario);
 	const rows: string[][] = [];
-	for (const id of caseIds('frames')) {
+	for (const id of caseIds(scenario)) {
 		for (const adapter of adaptersOf(list)) {
 			const c = find(id, adapter);
-			if (c === undefined || c.job.scenario !== 'frames') {
+			if (c === undefined || (c.job.scenario !== 'frames' && c.job.scenario !== 'ind-frames')) {
 				continue;
 			}
 			const zoom = c.job.zoom === 'all' ? `all ${datasetLabel(c.job.dataset)}` : String(c.job.zoom);
@@ -633,6 +680,12 @@ const sections: [string, () => string, string?][] = [
 	['Prepend', prepend, 'prepend'],
 	['Memory after the prepends', prependMemory, 'prepend'],
 	['Refetch under a memory limit', refetch, 'refetch'],
+	['Indicators: load (settled = every indicator computed and drawn)', () => load('ind-load'), 'ind-load'],
+	['Indicators: memory after load', () => memory('ind-load'), 'ind-load'],
+	['Indicators: tick to applied patch', apply, 'ind-apply'],
+	['Indicators: pan and zoom frames', () => frames('ind-frames'), 'ind-frames'],
+	['Indicators: prepend (shown = indicators recomputed and drawn)', () => prepend('ind-prepend'), 'ind-prepend'],
+	['Indicators: memory after the prepends', () => prependMemory('ind-prepend'), 'ind-prepend'],
 	['Several charts on one page', multi, 'multi'],
 	['Failed runs', failures],
 	['Skipped cases', skippedCases],

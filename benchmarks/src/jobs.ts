@@ -5,8 +5,31 @@ import type { ChartSize } from './adapter.ts';
 import type { SeriesKind } from './data.ts';
 import type { Distribution } from './stats.ts';
 
-export type ScenarioName = 'load' | 'tick' | 'frames' | 'prepend' | 'refetch' | 'multi';
-export const SCENARIOS: readonly ScenarioName[] = ['load', 'tick', 'frames', 'prepend', 'refetch', 'multi'];
+export type ScenarioName =
+	| 'load'
+	| 'tick'
+	| 'frames'
+	| 'prepend'
+	| 'refetch'
+	| 'multi'
+	| 'ind-load'
+	| 'ind-apply'
+	| 'ind-frames'
+	| 'ind-prepend';
+export const SCENARIOS: readonly ScenarioName[] = [
+	'load',
+	'tick',
+	'frames',
+	'prepend',
+	'refetch',
+	'multi',
+	'ind-load',
+	'ind-apply',
+	'ind-frames',
+	'ind-prepend',
+];
+/** The stage 3 scenarios: the ones above with indicators on the series. */
+export const INDICATOR_SCENARIOS: readonly ScenarioName[] = ['ind-load', 'ind-apply', 'ind-frames', 'ind-prepend'];
 
 export interface DatasetSpec {
 	readonly kind: SeriesKind;
@@ -155,7 +178,58 @@ export interface MultiJob extends JobBase {
 	readonly maxWorkers: number | null;
 }
 
-export type Job = LoadJob | TickJob | FramesJob | PrependJob | RefetchJob | MultiJob;
+/**
+ * The stage 3 scenarios run the load, frames and prepend scenarios with the first `indicators` of
+ * the indicator set (`INDICATOR_SET`) on the candles. Their times include the indicators: a load or
+ * prepend is settled once every indicator is computed and drawn.
+ */
+export interface IndicatorLoadJob extends Omit<LoadJob, 'scenario'> {
+	readonly scenario: 'ind-load';
+	readonly indicators: number;
+}
+
+export interface IndicatorFramesJob extends Omit<FramesJob, 'scenario'> {
+	readonly scenario: 'ind-frames';
+	readonly indicators: number;
+}
+
+export interface IndicatorPrependJob extends Omit<PrependJob, 'scenario'> {
+	readonly scenario: 'ind-prepend';
+	readonly indicators: number;
+}
+
+/**
+ * Tick to applied patch: ticks one at a time, each timed from the update call until the library
+ * has applied it, indicator values included (for lumen: the engine's answer has been applied on
+ * the main thread; for a library that applies updates synchronously: the call itself). Frames run
+ * whenever they are due in between, as they would with ticks from a socket.
+ */
+export interface ApplyJob extends JobBase {
+	readonly scenario: 'ind-apply';
+	readonly indicators: number;
+	readonly view: TickView;
+	/** Measured ticks: the most a run measures. */
+	readonly ticks: number;
+	/** Measuring stops after `budgetMs` once at least `minTicks` ticks are measured; 0 measures all. */
+	readonly minTicks: number;
+	readonly budgetMs: number;
+	readonly warmupTicks: number;
+	readonly warmupBudgetMs: number;
+	/** Every Nth tick starts a new bar. */
+	readonly newBarEvery: number;
+}
+
+export type Job =
+	| LoadJob
+	| TickJob
+	| FramesJob
+	| PrependJob
+	| RefetchJob
+	| IndicatorLoadJob
+	| ApplyJob
+	| IndicatorFramesJob
+	| IndicatorPrependJob
+	| MultiJob;
 
 /** All times start when `setData` is called, except `convertMs` and the `*WithConversionMs` sums. */
 export interface LoadTimings {
@@ -437,7 +511,20 @@ export interface MultiRun {
 	revealFrameJsMs: number;
 }
 
-export type RunResult = LoadRun | TickRun | FramesRun | PrependRun | RefetchRun | MultiRun;
+export interface ApplyRun {
+	/** From the update call until the tick is applied, indicator values included, all measured ticks. */
+	applied: Distribution;
+	/** Same, ticks that modify the last bar only. */
+	appliedUpdate: Distribution;
+	/** Same, ticks that start a new bar only. */
+	appliedNewBar: Distribution;
+	/** The synchronous update call alone. */
+	sync: Distribution;
+	visibleBars: number;
+	warmupTicks: number;
+}
+
+export type RunResult = LoadRun | TickRun | FramesRun | PrependRun | RefetchRun | ApplyRun | MultiRun;
 
 export type FailureReason = 'error' | 'timeout' | 'crash';
 
@@ -513,6 +600,14 @@ export function caseId(job: Job): string {
 			return `${base}/${sizeLabel(job.batch)}`;
 		case 'refetch':
 			return `${base}/${job.memoryLimit / 2 ** 20}mib`;
+		case 'ind-load':
+			return `${base}/${job.indicators}`;
+		case 'ind-apply':
+			return `${base}/${job.view}/${job.indicators}`;
+		case 'ind-frames':
+			return `${base}/${job.motion}-${job.zoom === 'all' ? 'all' : sizeLabel(job.zoom)}/${job.indicators}`;
+		case 'ind-prepend':
+			return `${base}/${sizeLabel(job.batch)}/${job.indicators}`;
 		case 'multi':
 			return `${base}/${job.charts}-charts${job.maxWorkers === null ? '' : `/max-workers-${job.maxWorkers}`}`;
 	}
@@ -637,6 +732,19 @@ const QUICK_REFETCH_CASES: readonly { dataset: DatasetSpec; memoryLimit: number 
 	{ dataset: { kind: 'line', size: 100 * K }, memoryLimit: 1.5 * 2 ** 20 },
 ];
 
+// Stage 3: 20 indicators on candles. 100k is where Lightweight Charts, which takes one line series
+// per output in user code, is compared; 1M is the gate's data set.
+const INDICATOR_COUNT = 20;
+const INDICATOR_DATASETS: readonly DatasetSpec[] = [
+	{ kind: 'candles', size: 100 * K },
+	{ kind: 'candles', size: M },
+];
+const INDICATOR_FRAME_ZOOMS: readonly ZoomLevel[] = [200, 2_000, 20_000, 200_000, 'all'];
+const INDICATOR_PREPEND_BATCHES: readonly PrependBatch[] = [
+	{ batch: 10 * K, prepends: 10, minPrepends: 3 },
+	{ batch: M, prepends: 3, minPrepends: 2 },
+];
+const QUICK_INDICATOR_DATASETS: readonly DatasetSpec[] = [{ kind: 'candles', size: 10 * K }];
 interface MultiCase {
 	readonly dataset: DatasetSpec;
 	readonly charts: number;
@@ -768,6 +876,79 @@ export function planJobs(options: PlanOptions): Plan {
 		}
 	}
 
+	const indicatorDatasets = (quick ? QUICK_INDICATOR_DATASETS : INDICATOR_DATASETS).filter(keep);
+	const indicators = quick ? 5 : INDICATOR_COUNT;
+	if (options.scenarios.includes('ind-load')) {
+		for (const dataset of indicatorDatasets) {
+			cases.push({ scenario: 'ind-load', dataset, seed, chart, indicators });
+		}
+	}
+	if (options.scenarios.includes('ind-apply')) {
+		for (const dataset of indicatorDatasets) {
+			for (const view of TICK_VIEWS) {
+				cases.push({
+					scenario: 'ind-apply',
+					dataset,
+					seed,
+					chart,
+					indicators,
+					view,
+					ticks: quick ? 500 : 10_000,
+					minTicks: quick ? 100 : 1_000,
+					budgetMs,
+					warmupTicks: quick ? 50 : 200,
+					warmupBudgetMs,
+					newBarEvery: 10,
+				});
+			}
+		}
+	}
+	if (options.scenarios.includes('ind-frames')) {
+		for (const dataset of indicatorDatasets) {
+			for (const zoom of quick ? QUICK_FRAME_ZOOMS : INDICATOR_FRAME_ZOOMS) {
+				if (zoom !== 'all' && zoom >= dataset.size) {
+					continue;
+				}
+				for (const motion of MOTIONS) {
+					cases.push({
+						scenario: 'ind-frames',
+						dataset,
+						seed,
+						chart,
+						indicators,
+						zoom,
+						motion,
+						frames: quick ? 60 : 300,
+						minFrames: quick ? 20 : 30,
+						budgetMs,
+						warmupFrames: quick ? 10 : 30,
+						warmupBudgetMs,
+					});
+				}
+			}
+		}
+	}
+	if (options.scenarios.includes('ind-prepend')) {
+		for (const dataset of indicatorDatasets) {
+			for (const { batch, prepends, minPrepends } of quick ? QUICK_PREPEND_BATCHES : INDICATOR_PREPEND_BATCHES) {
+				if (batch > dataset.size) {
+					continue;
+				}
+				cases.push({
+					scenario: 'ind-prepend',
+					dataset,
+					seed,
+					chart,
+					indicators,
+					batch,
+					visibleBars: Math.min(2 * batch, dataset.size),
+					prepends,
+					minPrepends,
+					budgetMs,
+				});
+			}
+		}
+	}
 	if (options.scenarios.includes('multi')) {
 		for (const { dataset, charts, visibleCharts, columns } of quick ? QUICK_MULTI_CASES : MULTI_CASES) {
 			if (!keep(dataset)) {

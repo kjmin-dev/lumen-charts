@@ -1,8 +1,9 @@
 import * as lumen from '@lumen-charts/core';
-import { type ChartApi, type SeriesApi, createChart } from '@lumen-charts/core';
+import { type ChartApi, type IndicatorApi, type IndicatorInput, type SeriesApi, createChart } from '@lumen-charts/core';
 import type { AdapterFactory, ChartAdapter, ChartSize, LogicalRange } from '../adapter.ts';
 import type { CandleColumns, LineColumns, SeriesColumns, TickColumns } from '../data.ts';
 import { afterNextFrame, nextTask, pendingFrameCallbacks } from '../harness/frames.ts';
+import { INDICATOR_SET } from '../indicators.ts';
 
 /** Columns are lumen's own input format, so preparing passes them through unchanged. */
 type Prepared = { kind: 'candles'; columns: CandleColumns } | { kind: 'line'; columns: LineColumns };
@@ -13,6 +14,9 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 	private readonly _chart: ChartApi;
 	private _series: AnySeries | null = null;
 	private _kind: Prepared['kind'] | null = null;
+	/** Indicators of the stage 3 set to put on the next series, and those on the current one. */
+	private _indicatorCount = 0;
+	private _indicators: IndicatorApi[] = [];
 
 	public constructor(container: HTMLElement, size: ChartSize | 'auto', worker: boolean) {
 		this._chart = createChart(
@@ -29,10 +33,23 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 		return { kind: 'line', columns: data };
 	}
 
+	public withIndicators(count: number): void {
+		this._indicatorCount = count;
+	}
+
+	public applied(): Promise<void> {
+		return this._chart.whenApplied();
+	}
+
 	public setData(data: Prepared): void {
 		if (data.kind === 'candles') {
-			const { time, open, high, low, close } = data.columns;
-			this._candles().setData({ time, open, high, low, close });
+			const { time, open, high, low, close, volume } = data.columns;
+			const series = this._candles();
+			// With indicators, VWAP reads the volume; without, the stage 1 and 2 scenarios stay as they were.
+			series.setData(
+				this._indicatorCount > 0 ? { time, open, high, low, close, volume } : { time, open, high, low, close },
+			);
+			this._addIndicators(series);
 		} else {
 			const { time, value } = data.columns;
 			this._line().setData({ time, value });
@@ -72,8 +89,10 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 		}
 		// lumen keeps a fixed index origin, as the harness's logical ranges do, so nothing is remapped.
 		if (data.kind === 'candles') {
-			const { time, open, high, low, close } = data.columns;
-			(this._series as SeriesApi<'candlestick'>).prepend({ time, open, high, low, close });
+			const { time, open, high, low, close, volume } = data.columns;
+			(this._series as SeriesApi<'candlestick'>).prepend(
+				this._indicatorCount > 0 ? { time, open, high, low, close, volume } : { time, open, high, low, close },
+			);
 		} else {
 			const { time, value } = data.columns;
 			(this._series as SeriesApi<'line'>).prepend({ time, value });
@@ -92,6 +111,7 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 				high: ticks.high[index] ?? 0,
 				low: ticks.low[index] ?? 0,
 				close: ticks.close[index] ?? 0,
+				volume: this._indicatorCount > 0 ? (ticks.volume[index] ?? 0) : undefined,
 			});
 		} else {
 			(this._series as SeriesApi<'line'>).update({ time, value: ticks.value[index] ?? 0 });
@@ -150,6 +170,20 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 		if (this._series !== null) {
 			this._chart.removeSeries(this._series);
 			this._series = null;
+			this._indicators = [];
+		}
+	}
+
+	/** Puts the indicator set on a new series; its indicators compute in the data engine. */
+	private _addIndicators(series: SeriesApi<'candlestick'>): void {
+		if (this._indicators.length > 0 || this._indicatorCount === 0) {
+			return;
+		}
+		for (const entry of INDICATOR_SET.slice(0, this._indicatorCount)) {
+			const inputs: IndicatorInput[] | undefined = entry.inputs?.map(input =>
+				typeof input === 'string' ? input : this._indicators[input.from]!.output(),
+			);
+			this._indicators.push(series.addIndicator(entry.name, { params: entry.params, inputs }));
 		}
 	}
 }

@@ -2,6 +2,7 @@ import {
 	type CandlestickData,
 	CandlestickSeries,
 	type DeepPartial,
+	HistogramSeries,
 	type IChartApi,
 	type ISeriesApi,
 	type LineData,
@@ -9,16 +10,22 @@ import {
 	type SeriesType,
 	type TimeChartOptions,
 	type UTCTimestamp,
+	type WhitespaceData,
 	createChart,
 	version,
 } from 'lightweight-charts';
 import type { AdapterFactory, ChartAdapter, ChartSize, LogicalRange } from '../adapter.ts';
 import type { CandleColumns, LineColumns, TickColumns } from '../data.ts';
 import { settleFrames } from '../harness/frames.ts';
+import { UserIndicators } from './user-indicators.ts';
 
-/** `prepended` is set by `preparePrepend`: how many of the items are new, older bars. */
+/**
+ * `prepended` is set by `preparePrepend`: how many of the items are new, older bars. `columns` keeps
+ * the candles as columns for indicators computed in application code.
+ */
 type Prepared = ({ kind: 'candles'; items: CandlestickData[] } | { kind: 'line'; items: LineData[] }) & {
 	prepended?: number;
+	columns?: CandleColumns;
 };
 
 /**
@@ -64,6 +71,12 @@ class LightweightChartsAdapter implements ChartAdapter<Prepared> {
 	 * indexes are the harness's (fixed origin) plus this.
 	 */
 	private _offset = 0;
+	/** Indicators to put on the next series, computed in application code, and their series. */
+	private _indicatorCount = 0;
+	private _user: UserIndicators | null = null;
+	private _outputs: ISeriesApi<SeriesType>[] = [];
+	private readonly _values: number[] = [];
+	private readonly _row: number[] = [0, 0, 0, 0, 0, 0];
 
 	public constructor(container: HTMLElement, size: ChartSize | 'auto', conflation: boolean) {
 		const options: DeepPartial<TimeChartOptions> = {
@@ -78,7 +91,20 @@ class LightweightChartsAdapter implements ChartAdapter<Prepared> {
 	}
 
 	public prepareCandles(data: CandleColumns): Prepared {
-		return { kind: 'candles', items: candleItems(data) };
+		return { kind: 'candles', items: candleItems(data), columns: data };
+	}
+
+	/**
+	 * Lightweight Charts has no indicators: application code computes them (here with the same
+	 * kernels as lumen, incrementally) and hands each output to a line or histogram series of its own.
+	 */
+	public withIndicators(count: number): void {
+		this._indicatorCount = count;
+	}
+
+	public applied(): Promise<void> {
+		// Updates, indicator values included, are applied synchronously by the calls themselves.
+		return Promise.resolve();
 	}
 
 	public prepareLine(data: LineColumns): Prepared {
@@ -89,6 +115,11 @@ class LightweightChartsAdapter implements ChartAdapter<Prepared> {
 		const series = this._ensureSeries(data.kind);
 		series.setData(data.items);
 		this._offset = 0;
+		if (this._indicatorCount > 0 && data.columns !== undefined) {
+			this._user ??= new UserIndicators(this._indicatorCount);
+			this._user.load(data.columns);
+			this._setOutputs();
+		}
 	}
 
 	/**
@@ -106,7 +137,7 @@ class LightweightChartsAdapter implements ChartAdapter<Prepared> {
 		if (data.kind === 'candles') {
 			const items = candleItems(data);
 			const current = series.data() as readonly CandlestickData[];
-			return { kind: 'candles', items: items.concat(current), prepended: items.length };
+			return { kind: 'candles', items: items.concat(current), prepended: items.length, columns: data };
 		}
 		const items = lineItems(data);
 		const current = series.data() as readonly LineData[];
@@ -124,6 +155,11 @@ class LightweightChartsAdapter implements ChartAdapter<Prepared> {
 		}
 		series.setData(data.items);
 		this._offset += data.prepended;
+		if (this._user !== null && data.columns !== undefined) {
+			// The indicators are recomputed over the whole history and handed over again.
+			this._user.prepend(data.columns);
+			this._setOutputs();
+		}
 	}
 
 	public applyTick(ticks: TickColumns, index: number): void {
@@ -140,6 +176,22 @@ class LightweightChartsAdapter implements ChartAdapter<Prepared> {
 				low: ticks.low[index] ?? 0,
 				close: ticks.close[index] ?? 0,
 			});
+			const user = this._user;
+			if (user !== null) {
+				const row = this._row;
+				row[0] = ticks.time[index] ?? 0;
+				row[1] = ticks.open[index] ?? 0;
+				row[2] = ticks.high[index] ?? 0;
+				row[3] = ticks.low[index] ?? 0;
+				row[4] = ticks.close[index] ?? 0;
+				row[5] = ticks.volume[index] ?? 0;
+				user.tick(row);
+				user.lastValues(this._values);
+				for (let i = 0; i < this._outputs.length; i++) {
+					const value = this._values[i]!;
+					this._outputs[i]!.update(value === value ? { time, value } : { time });
+				}
+			}
 		} else {
 			series.update({ time, value: ticks.value[index] ?? 0 });
 		}
@@ -158,6 +210,42 @@ class LightweightChartsAdapter implements ChartAdapter<Prepared> {
 	public destroy(): void {
 		this._chart.remove();
 		this._series = null;
+		this._outputs = [];
+		this._user = null;
+	}
+
+	/** Hands every indicator output to its series, creating them the first time. */
+	private _setOutputs(): void {
+		const user = this._user!;
+		const styles = user.outputs;
+		if (this._outputs.length === 0) {
+			for (const { style, color } of styles) {
+				this._outputs.push(
+					style === 'histogram'
+						? this._chart.addSeries(HistogramSeries, { color, priceLineVisible: false })
+						: this._chart.addSeries(LineSeries, {
+								color,
+								lineWidth: 1,
+								priceLineVisible: false,
+								crosshairMarkerVisible: false,
+							}),
+				);
+			}
+		}
+		const time = user.columns.data[0]!;
+		const length = user.columns.length;
+		let k = 0;
+		for (const entry of user.entries) {
+			for (const output of entry.outputs) {
+				const items: (LineData | WhitespaceData)[] = [];
+				for (let i = 0; i < length; i++) {
+					const value = output[i]!;
+					const t = seconds(time[i]!);
+					items.push(value === value ? { time: t, value } : { time: t });
+				}
+				this._outputs[k++]!.setData(items);
+			}
+		}
 	}
 
 	private _ensureSeries(kind: Prepared['kind']): ISeriesApi<SeriesType> {
