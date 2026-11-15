@@ -233,7 +233,7 @@ describe('indicators on a chart', () => {
 		const series = chart.addSeries('candlestick');
 		series.setData(data);
 		const infos = await chart.registerIndicators(pathToFileURL(resolvePath('packages/engine/test/fixtures/plugin.ts')));
-		expect(infos.map(info => info.name)).toEqual(['test-momentum', 'test-range']);
+		expect(infos.map(info => info.name)).toEqual(['test-momentum', 'test-range', 'test-decay']);
 		const momentum = series.addIndicator('test-momentum', { params: { period: 5 } });
 		await settle();
 		expect(momentum.output().type).toBe('histogram');

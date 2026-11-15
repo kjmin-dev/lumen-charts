@@ -214,7 +214,7 @@ describe('indicator plugins', () => {
 			expect(engine.mode).toBe(mode);
 			const result = events.find(event => event.plugins !== undefined)!.plugins![0]!;
 			expect(result.url).toBe(pluginUrl);
-			expect(result.indicators!.map(info => info.name)).toEqual(['test-momentum', 'test-range']);
+			expect(result.indicators!.map(info => info.name)).toEqual(['test-momentum', 'test-range', 'test-decay']);
 			const inputs = [
 				{ series, column: 2 },
 				{ series, column: 3 },

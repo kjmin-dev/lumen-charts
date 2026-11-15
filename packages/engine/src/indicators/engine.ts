@@ -36,11 +36,25 @@ export interface IndicatorHost {
 /** A recomputation running off to the side; the live values stay in place until it is done. */
 interface Job {
 	/**
-	 * Rows `[first, to)` are recomputed, where `first` is the first row of the data. `Infinity`:
-	 * everything, into a new store that replaces the live one. Otherwise the rows are spliced into the
-	 * live store, whose rows from `to` on stay as they are.
+	 * Set when the inputs changed anywhere (new data, parameters, inputs, a correction): everything is
+	 * recomputed. Otherwise the job follows prepends, and rows from `oldFirst` on changed only where
+	 * the new history reaches them.
+	 */
+	full: boolean;
+	/** First row of the live values before the prepends the job follows. */
+	oldFirst: number;
+	/**
+	 * Decided when the job starts. Rows `[first, to)` are recomputed, where `first` is the first row
+	 * of the data. `Infinity`: everything, into a new store that replaces the live one. Otherwise the
+	 * rows are spliced into the live store, whose rows from `to` on stay as they are.
 	 */
 	to: number;
+	/**
+	 * For a full recomputation that follows prepends: the first chunk boundary at which it may stop.
+	 * Reaching a boundary with the state and carry the live computation had there, bit for bit, it
+	 * stops and splices the rows before it: every later row would be the same. NaN: never.
+	 */
+	converge: number;
 	/** Null until the job starts, and again whenever it has to start over. */
 	runner: Runner | null;
 	store: ChunkedStore | null;
@@ -68,6 +82,8 @@ interface Instance {
 	job: Job | null;
 	/** First row whose values changed in the tick batch being applied. */
 	changed: number;
+	/** First row from which the last recomputation left the values unchanged (Infinity: none). */
+	unchangedFrom: number;
 	read: InputReader;
 }
 
@@ -283,6 +299,7 @@ export class IndicatorEngine {
 				runner: null,
 				job: null,
 				changed: Infinity,
+				unchangedFrom: Infinity,
 				read: (input, from, to, out, offset) => this._readInput(created, input, from, to, out, offset),
 			};
 			instance = created;
@@ -298,7 +315,7 @@ export class IndicatorEngine {
 		}
 		instance.inputs = inputs.map(input => ({ series: input.series, column: input.column }));
 		this._link(instance);
-		this._schedule(instance, Infinity);
+		this._schedule(instance, NaN);
 	}
 
 	public remove(id: number): void {
@@ -316,7 +333,7 @@ export class IndicatorEngine {
 		for (const other of this._instances) {
 			if (other.sources.includes(instance)) {
 				this._link(other);
-				this._schedule(other, Infinity);
+				this._schedule(other, NaN);
 			}
 		}
 	}
@@ -393,6 +410,8 @@ export class IndicatorEngine {
 			const waiting = instance.job?.waiting ?? NaN;
 			if (waiting >= from && waiting < to) {
 				instance.job = null;
+				// Readers cannot assume these values settled anywhere.
+				instance.unchangedFrom = Infinity;
 			}
 		}
 	}
@@ -415,7 +434,7 @@ export class IndicatorEngine {
 			instance.runner = null;
 			instance.pyramid.reset(0, 0);
 			this._fresh.delete(instance);
-			this._schedule(instance, Infinity);
+			this._schedule(instance, NaN);
 		}
 	}
 
@@ -423,19 +442,20 @@ export class IndicatorEngine {
 	public seriesChanged(series: number): void {
 		for (const instance of this._instances) {
 			if (instance.inputs.some((input, i) => input.series === series && instance.sources[i] === null)) {
-				this._schedule(instance, Infinity);
+				this._schedule(instance, NaN);
 			}
 		}
 	}
 
 	/**
-	 * History was prepended to the main series in front of `oldFirst`. Cumulative indicators are
-	 * recomputed in full; windowed ones from the new first row up to the first chunk boundary whose
-	 * window lies entirely in rows they had before, so later values (the same bits) stay.
+	 * History was prepended to the main series in front of `oldFirst`. Windowed indicators recompute
+	 * from the new first row up to the first chunk boundary whose window lies entirely in rows they
+	 * had before, so later values (the same bits) stay. Cumulative ones recompute in full, unless
+	 * their state converges: see `Job.converge`.
 	 */
 	public prepended(oldFirst: number): void {
 		for (const instance of this._instances) {
-			this._schedule(instance, this._extent(instance, oldFirst));
+			this._schedule(instance, oldFirst);
 		}
 	}
 
@@ -472,7 +492,7 @@ export class IndicatorEngine {
 			const runner = instance.runner;
 			if (job !== null && job.runner !== null && from < (job.to === Infinity ? job.runner.position : job.to)) {
 				// Rows the job has computed changed under it.
-				this._schedule(instance, Infinity);
+				this._schedule(instance, NaN);
 				continue;
 			}
 			if (runner === null || instance.store === null) {
@@ -482,7 +502,7 @@ export class IndicatorEngine {
 				// A correction of a committed row, recomputed here if it is recent and its rows are all held.
 				const start = (from >> CHUNK_SHIFT) << CHUNK_SHIFT;
 				if (job !== null || end - start > SYNC_ROWS || !host.ensure(start, end, start) || !runner.rewind(from)) {
-					this._schedule(instance, Infinity);
+					this._schedule(instance, NaN);
 					continue;
 				}
 			} else {
@@ -578,51 +598,74 @@ export class IndicatorEngine {
 	}
 
 	/**
-	 * Last row (exclusive) an instance recomputes after a prepend in front of `oldFirst`, or Infinity
-	 * for everything: rows whose window reaches back past `oldFirst`, up to the next chunk boundary.
+	 * Queues (or restarts) a recomputation, and the ones of every instance reading this one.
+	 * `oldFirst`: the first row before a prepend, for a recomputation that follows it; NaN for one
+	 * whose inputs changed anywhere.
 	 */
-	private _extent(instance: Instance, oldFirst: number): number {
-		if (instance.definition.windowed !== true || instance.runner === null) {
-			return Infinity;
-		}
-		let changed = oldFirst;
-		for (const source of instance.sources) {
-			if (source !== null) {
-				const to = source.job?.to ?? oldFirst;
-				if (to > changed) {
-					changed = to;
-				}
-			}
-		}
-		if (changed === Infinity) {
-			return Infinity;
-		}
-		const to = chunkCeil(changed + instance.definition.lookback(instance.params));
-		// Near the end of the data, recomputing everything is as cheap and keeps the tail simple.
-		return to >= this._host.end() - CHUNK_ROWS ? Infinity : to;
-	}
-
-	/** Queues (or widens and restarts) a recomputation, and the ones of every instance reading this one. */
-	private _schedule(instance: Instance, to: number): void {
+	private _schedule(instance: Instance, oldFirst: number): void {
 		const job = instance.job;
 		if (job === null) {
-			instance.job = { to, runner: null, store: null, pyramid: null, values: null, waiting: NaN };
+			instance.job = {
+				full: oldFirst !== oldFirst,
+				oldFirst,
+				to: Infinity,
+				converge: NaN,
+				runner: null,
+				store: null,
+				pyramid: null,
+				values: null,
+				waiting: NaN,
+			};
 		} else {
-			job.to = Math.max(job.to, to);
+			if (oldFirst !== oldFirst) {
+				job.full = true;
+			} else if (!(job.oldFirst >= oldFirst)) {
+				// The live values start at the first row before the earliest prepend still pending.
+				job.oldFirst = oldFirst;
+			}
 			job.runner = null;
 			job.store = null;
 			job.pyramid = null;
 			job.values = null;
 			job.waiting = NaN;
 		}
-		const extent = instance.job!.to;
+		const next = instance.job!;
 		for (const reader of this._instances) {
 			if (reader !== instance && reader.sources.includes(instance)) {
-				const windowed = reader.definition.windowed === true && reader.runner !== null && extent !== Infinity;
-				const lookback = windowed ? reader.definition.lookback(reader.params) : 0;
-				this._schedule(reader, windowed ? chunkCeil(extent + lookback) : Infinity);
+				this._schedule(reader, next.full ? NaN : next.oldFirst);
 			}
 		}
+	}
+
+	/**
+	 * Decides, as a job starts (the jobs of its inputs are done), what it recomputes: see `Job.to` and
+	 * `Job.converge`. Its inputs are unchanged from the old first row on, or from where the indicators
+	 * it reads stopped changing, whichever is later.
+	 */
+	private _plan(instance: Instance, job: Job): void {
+		job.to = Infinity;
+		job.converge = NaN;
+		if (job.full || instance.store === null || instance.runner === null) {
+			return;
+		}
+		let unchanged = job.oldFirst;
+		for (const source of instance.sources) {
+			if (source !== null && source.unchangedFrom > unchanged) {
+				unchanged = source.unchangedFrom;
+			}
+		}
+		if (unchanged === Infinity) {
+			return;
+		}
+		if (instance.definition.windowed === true) {
+			const to = chunkCeil(unchanged + instance.definition.lookback(instance.params));
+			// Near the end of the data, splicing would reach the tail: recompute everything instead.
+			if (to < this._host.end() - CHUNK_ROWS) {
+				job.to = to;
+				return;
+			}
+		}
+		job.converge = unchanged;
 	}
 
 	private _stepJob(instance: Instance, job: Job): void {
@@ -632,11 +675,12 @@ export class IndicatorEngine {
 		const outputs = instance.outputs.length;
 		if (job.to !== Infinity && (instance.store === null || instance.runner === null || job.to >= end - CHUNK_ROWS)) {
 			// Nothing to splice into, or the splice would reach the tail: recompute everything.
-			job.to = Infinity;
+			job.full = true;
 			job.runner = null;
 		}
 		let runner = job.runner;
 		if (runner === null) {
+			this._plan(instance, job);
 			runner = new Runner(instance.definition, instance.params, instance.read);
 			runner.reset(first);
 			job.runner = runner;
@@ -663,6 +707,16 @@ export class IndicatorEngine {
 				return;
 			}
 			const from = runner.position;
+			if (from >= job.converge && runner.matches(instance.runner!)) {
+				// From here on the rows are the live ones: splice those before.
+				const rows = from - runner.first;
+				const values = new Float64Array(rows * outputs);
+				for (let o = 0; o < outputs; o++) {
+					store.copyColumn(o, runner.first, from, values, o * rows);
+				}
+				this._splice(instance, runner, from, values, rows);
+				return;
+			}
 			if (from < end - 1) {
 				runner.step(end - 1);
 				this._put(runner, store, from, runner.position);
@@ -739,11 +793,12 @@ export class IndicatorEngine {
 		instance.pyramid = pyramid;
 		instance.runner = runner;
 		instance.job = null;
+		instance.unchangedFrom = Infinity;
 		this._swapped = true;
 		this._fresh.add(instance);
 	}
 
-	/** Splices the rows `[first, to)` of a completed partial recomputation into the live values. */
+	/** Splices the rows `[first, to)` of a recomputation into the live values, whose rows from `to` on stay. */
 	private _splice(instance: Instance, runner: Runner, to: number, values: Float64Array, rows: number): void {
 		const store = instance.store!;
 		const first = runner.first;
@@ -756,6 +811,7 @@ export class IndicatorEngine {
 		this._ensureLevels(instance.pyramid, store);
 		this._refreshLevels(instance.pyramid, store, first, to);
 		instance.job = null;
+		instance.unchangedFrom = to;
 		this._swapped = true;
 		this._fresh.add(instance);
 	}

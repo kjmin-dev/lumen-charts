@@ -159,6 +159,42 @@ export class Runner {
 	}
 
 	/**
+	 * True when this runner, at a chunk boundary, holds exactly (bit for bit) the state and carry the
+	 * other kept as its checkpoint at that boundary: from there on, with the same inputs, both
+	 * compute the same rows. A windowed runner starts every chunk with zero state, so only its carry
+	 * is compared.
+	 */
+	public matches(other: Runner): boolean {
+		const row = this.position;
+		if ((row & CHUNK_MASK) !== 0 || row === this.first) {
+			return false;
+		}
+		const checkpoint = other._checkpoints.get(row >> CHUNK_SHIFT);
+		const size = this.state.length;
+		const lookback = this.lookback;
+		if (checkpoint === undefined || checkpoint.length !== size + this.inputs * lookback) {
+			return false;
+		}
+		if (!this.windowed) {
+			for (let i = 0; i < size; i++) {
+				if (!Object.is(this.state[i], checkpoint[i])) {
+					return false;
+				}
+			}
+		}
+		for (let input = 0; input < this.inputs; input++) {
+			const base = input * this.stride;
+			const at = size + input * lookback;
+			for (let r = 0; r < lookback; r++) {
+				if (!Object.is(this.buffer[base + r], checkpoint[at + r])) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
 	 * Takes over the head of the data from a runner that recomputed rows `[other.first, to)` after
 	 * history was prepended: its first row and its checkpoints below `to`. The state at the position
 	 * stays, since rows from `to` on did not change.

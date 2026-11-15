@@ -21,6 +21,9 @@ function emaStep(state: Float64Array, at: number, value: number, period: number,
 		}
 		const average = sum / period;
 		state[at + 2] = average;
+		// The sum is not needed any more. Clearing it keeps in the state only what later rows depend
+		// on, so a recomputation after a prepend can recognize the state it had before.
+		state[at + 1] = 0;
 		return average;
 	}
 	const average = state[at + 2]!;
@@ -41,6 +44,7 @@ function wilderStep(state: Float64Array, at: number, value: number, period: numb
 		}
 		const average = sum / period;
 		state[at + 2] = average;
+		state[at + 1] = 0;
 		return average;
 	}
 	const next = (state[at + 2]! * (period - 1) + value) / period;

@@ -63,7 +63,10 @@ export interface IndicatorInfo {
 	 * kernel rebuilds its state from those rows after a reset. The engine then restarts the kernel at
 	 * every chunk boundary, which makes each value a function of its window alone, and after a
 	 * prepend recomputes only the rows near the old first bar. Without it (the default), the
-	 * indicator is cumulative: its state runs from the first bar, and a prepend recomputes it in full.
+	 * indicator is cumulative: its state runs from the first bar, and a prepend recomputes it from the
+	 * new first bar until the state matches, bit for bit, the one it had at a chunk boundary (from
+	 * there on nothing can differ), or in full if it never does. A kernel should therefore keep in its
+	 * state only what later rows depend on: an average that forgets its start converges quickly.
 	 */
 	windowed?: boolean;
 }

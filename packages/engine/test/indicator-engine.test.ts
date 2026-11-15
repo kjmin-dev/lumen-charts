@@ -345,7 +345,7 @@ describe('indicator engine', () => {
 		expect(checkLevel(core, model, added, 3)).toBeNull();
 	});
 
-	it('recomputes a windowed indicator only near the old first bar, a cumulative one in full', async () => {
+	it('recomputes only near a prepend what does not depend on older rows', async () => {
 		const core = new EngineCore();
 		run(core, { type: 'add', series: MAIN, kind: 'ohlcv' });
 		const count = 6 * CHUNK_ROWS;
@@ -354,39 +354,44 @@ describe('indicator engine', () => {
 		core.onwake = () => undefined;
 		run(core, { type: 'plugin', url: resolvePath('packages/engine/test/fixtures/plugin.ts') });
 		await vi.waitFor(() => {
-			expect(core.takeNotice()?.plugins?.[0]?.indicators?.length).toBe(2);
+			expect(core.takeNotice()?.plugins?.[0]?.indicators?.length).toBe(3);
 		}, WAIT);
-		run(core, {
-			type: 'indicator',
-			id: 50,
-			name: 'test-momentum',
-			params: [10],
-			inputs: [{ series: MAIN, column: 4 }],
-			outputs: [51],
-		});
-		run(core, {
-			type: 'indicator',
-			id: 52,
-			name: 'test-range',
-			params: [],
-			inputs: [
-				{ series: MAIN, column: 2 },
-				{ series: MAIN, column: 3 },
-			],
-			outputs: [53],
-		});
+		const addPlugin = (id: number, name: string, inputs: number[]): void => {
+			run(core, {
+				type: 'indicator',
+				id,
+				name,
+				params: name === 'test-momentum' ? [10] : [],
+				inputs: inputs.map(column => ({ series: MAIN, column })),
+				outputs: [id + 1],
+			});
+		};
+		addPlugin(50, 'test-momentum', [4]);
+		addPlugin(52, 'test-range', [2, 3]);
+		addPlugin(54, 'test-decay', [4]);
 		drain(core);
+		const before = run(core, { type: 'window', level: 0, start: 0, count, capacity: count });
 		counts.momentum = 0;
 		counts.range = 0;
+		counts.decay = 0;
 		const batch = 1000;
 		run(core, { type: 'prepend', series: MAIN, count: batch, data: candles(batch, 8, -batch * MIN) });
 		drain(core);
-		// The new rows and the rest of the old first chunk, against everything for the running sum.
+		// Windowed: the new rows and the rest of the old first chunk.
 		expect(counts.momentum).toBe(batch + CHUNK_ROWS);
+		// A running sum from the first bar changes everywhere: everything.
 		expect(counts.range).toBe(count + batch);
+		// An average that forgets its start reaches the state it had at the first chunk boundary after
+		// the old first bar, and stops there.
+		expect(counts.decay).toBe(batch + CHUNK_ROWS);
+		const after = run(core, { type: 'window', level: 0, start: -batch, count: count + batch, capacity: count + batch });
 		// The momentum of the first old bars now reaches into the prepended ones.
-		const window = run(core, { type: 'window', level: 0, start: 0, count: 2, capacity: 2 });
-		expect(block(window, 51)[0]).not.toBeNaN();
+		expect(block(after, 51)[batch]).not.toBeNaN();
+		// What was kept is what a full computation gives: the old values, bit for bit.
+		expect(Array.from(block(after, 55).subarray(batch + CHUNK_ROWS))).toEqual(
+			Array.from(block(before, 55).subarray(CHUNK_ROWS)),
+		);
+		expect(block(after, 53)[count + batch - 1]).not.toBe(block(before, 53)[count - 1]);
 	});
 
 	it('recomputes on a parameter change and keeps the old values until then', () => {
