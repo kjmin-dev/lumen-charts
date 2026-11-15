@@ -11,11 +11,13 @@ describe('LumenChart (Vue)', () => {
 			render: () => h(LumenChart, { options: { autoSize: false, background: background.value } }),
 		});
 		app.mount(host);
-		expect(host.querySelector('canvas')).not.toBeNull();
+		const canvases = host.querySelectorAll('canvas').length;
+		expect(canvases).toBeGreaterThan(0);
 
 		background.value = '#202020';
 		await nextTick();
-		expect(host.querySelectorAll('canvas').length).toBe(1);
+		// An update must reuse the chart, not create a second one.
+		expect(host.querySelectorAll('canvas').length).toBe(canvases);
 
 		app.unmount();
 		expect(host.querySelector('canvas')).toBeNull();

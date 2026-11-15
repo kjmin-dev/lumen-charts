@@ -10,9 +10,16 @@ export const isolationHeaders = {
 	'Cross-Origin-Embedder-Policy': 'require-corp',
 };
 
+const source = (name: string): string => fileURLToPath(new URL(`../packages/${name}/src/index.ts`, import.meta.url));
+
 export default defineConfig({
 	root: fileURLToPath(new URL('.', import.meta.url)),
 	resolve: {
+		// Measure the workspace sources as they are, without building the packages first.
+		alias: {
+			'@lumen-charts/core': source('core'),
+			'@lumen-charts/engine': source('engine'),
+		},
 		// Always resolve the "production" export condition, also on the dev server, so libraries
 		// that ship a development build with extra checks (Lightweight Charts does) are measured
 		// in their production form.

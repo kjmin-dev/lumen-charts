@@ -1,4 +1,4 @@
-import { createChart } from '@lumen-charts/core';
+import { type ChartApi, createChart } from '@lumen-charts/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('createChart', () => {
@@ -64,5 +64,398 @@ describe('createChart', () => {
 		expect(container.childElementCount).toBe(0);
 		chart.applyOptions({ background: '#333333' });
 		expect(chart.options().background).toBe('#ffffff');
+	});
+});
+
+interface Call {
+	name: string;
+	args: unknown[];
+	fillStyle: string;
+}
+
+/** Stands in for a 2D context and records what is drawn. */
+function recorder(): { calls: Call[]; ctx: CanvasRenderingContext2D } {
+	const calls: Call[] = [];
+	const state: Record<string, unknown> = { fillStyle: '' };
+	const ctx = new Proxy(state, {
+		get(target, property: string) {
+			if (property === 'measureText') {
+				return (text: string) => ({ width: text.length * 7 });
+			}
+			if (property in target) {
+				return target[property];
+			}
+			return (...args: unknown[]) => {
+				calls.push({ name: property, args, fillStyle: String(target.fillStyle) });
+			};
+		},
+		set(target, property: string, value) {
+			target[property] = value;
+			return true;
+		},
+	});
+	return { calls, ctx: ctx as unknown as CanvasRenderingContext2D };
+}
+
+const MINUTE = 60_000;
+const UP = '#00aa00';
+const DOWN = '#aa0000';
+
+function candles(count: number, start = 0) {
+	const time = new Float64Array(count);
+	const open = new Float64Array(count);
+	const high = new Float64Array(count);
+	const low = new Float64Array(count);
+	const close = new Float64Array(count);
+	for (let i = 0; i < count; i++) {
+		const base = 100 + Math.sin(i / 50) * 10;
+		time[i] = start + i * MINUTE;
+		open[i] = base;
+		close[i] = base + (i % 2 === 0 ? 1 : -1);
+		high[i] = base + 2;
+		low[i] = base - 2;
+	}
+	return { time, open, high, low, close };
+}
+
+const idOf = (series: unknown): number => (series as { id: number }).id;
+const tasks = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+
+describe('chart with series', () => {
+	let container: HTMLDivElement;
+	let frames: ((now: number) => void)[];
+	let recorders: Map<HTMLCanvasElement, ReturnType<typeof recorder>>;
+	let chart: ChartApi;
+	let now = 0;
+
+	const layer = (index: number) => recorders.get(chart.element().querySelectorAll('canvas')[index]!)!;
+	const pane = () => layer(0);
+	const priceAxis = () => layer(1);
+	const overlay = () => layer(3);
+	const clearCalls = (): void => {
+		for (const entry of recorders.values()) {
+			entry.calls.length = 0;
+		}
+	};
+	const runFrames = (): void => {
+		for (const frame of frames.splice(0)) {
+			now += 16;
+			frame(now);
+		}
+	};
+	/** Runs frames and engine tasks until the chart reports that everything is applied and painted. */
+	const settle = async (): Promise<void> => {
+		const state = { done: false };
+		void chart.whenIdle().then(() => {
+			state.done = true;
+		});
+		const step = async (remaining: number): Promise<void> => {
+			if (state.done || remaining === 0) {
+				return;
+			}
+			runFrames();
+			await new Promise(resolve => setTimeout(resolve, 0));
+			await step(remaining - 1);
+		};
+		await step(500);
+		expect(state.done).toBe(true);
+	};
+	const pointer = (type: string, x: number, y: number, init: PointerEventInit = {}): void => {
+		chart
+			.element()
+			.dispatchEvent(
+				new PointerEvent(type, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', bubbles: true, ...init }),
+			);
+	};
+	const candleRects = (): Call[] =>
+		pane().calls.filter(call => call.name === 'fillRect' && (call.fillStyle === UP || call.fillStyle === DOWN));
+
+	beforeEach(() => {
+		container = document.createElement('div');
+		document.body.appendChild(container);
+		frames = [];
+		recorders = new Map();
+		vi.stubGlobal('requestAnimationFrame', (cb: (now: number) => void) => frames.push(cb));
+		vi.stubGlobal('cancelAnimationFrame', () => {});
+		vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+			let entry = recorders.get(this);
+			if (entry === undefined) {
+				entry = recorder();
+				recorders.set(this, entry);
+			}
+			return entry.ctx;
+		} as unknown as HTMLCanvasElement['getContext']);
+		chart = createChart(container, { autoSize: false, width: 640, height: 400, worker: false });
+	});
+
+	afterEach(() => {
+		chart.destroy();
+		container.remove();
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	it('draws the latest bars as whole-pixel candles once data arrives', async () => {
+		expect(chart.engineMode()).toBe('none');
+		const series = chart.addSeries('candlestick', {
+			upColor: UP,
+			downColor: DOWN,
+			wickUpColor: UP,
+			wickDownColor: DOWN,
+		});
+		series.setData(candles(5000));
+		expect(chart.timeScale().getVisibleLogicalRange()).toBeNull();
+		await settle();
+		expect(chart.engineMode()).toBe('local');
+
+		const range = chart.timeScale().getVisibleLogicalRange()!;
+		expect(range.to).toBe(4999.5);
+		const visible = Math.round(range.to - range.from);
+		const rects = candleRects();
+		// A wick and a body per visible candle, give or take the bars cut by the edges.
+		expect(rects.length).toBeGreaterThanOrEqual(visible * 2 - 4);
+		expect(rects.length).toBeLessThanOrEqual(visible * 2 + 4);
+		for (const rect of rects) {
+			for (const value of rect.args as number[]) {
+				expect(Number.isInteger(value)).toBe(true);
+			}
+			expect(rect.args[3]).toBeGreaterThan(0);
+		}
+		expect(rects.some(rect => rect.fillStyle === UP)).toBe(true);
+		expect(rects.some(rect => rect.fillStyle === DOWN)).toBe(true);
+		expect(priceAxis().calls.filter(call => call.name === 'fillText').length).toBeGreaterThan(2);
+	});
+
+	it('applies time scale calls after the data they follow', async () => {
+		const series = chart.addSeries('candlestick');
+		series.setData(candles(20_000));
+		chart.timeScale().fitContent();
+		await settle();
+		const range = chart.timeScale().getVisibleLogicalRange()!;
+		expect(range.from).toBeCloseTo(-0.5, 6);
+		expect(range.to).toBeCloseTo(19_999.5, 6);
+
+		chart.timeScale().setVisibleLogicalRange({ from: 100, to: 300 });
+		expect(chart.timeScale().getVisibleLogicalRange()!.from).toBeCloseTo(100, 6);
+	});
+
+	it('draws at most one candle per pixel column however many bars are visible', async () => {
+		const series = chart.addSeries('candlestick', {
+			upColor: UP,
+			downColor: DOWN,
+			wickUpColor: UP,
+			wickDownColor: DOWN,
+		});
+		series.setData(candles(300_000));
+		chart.timeScale().fitContent();
+		await settle();
+		const paneWidth = chart.element().querySelectorAll('canvas')[0]!.width;
+		const rects = candleRects();
+		expect(rects.length).toBeGreaterThan(paneWidth / 2);
+		expect(rects.length).toBeLessThanOrEqual(paneWidth + 1);
+		for (const rect of rects) {
+			expect(rect.args[2]).toBe(1);
+		}
+	});
+
+	it('shows ticks on the last bar without redrawing the axes', async () => {
+		const series = chart.addSeries('candlestick', {
+			upColor: UP,
+			downColor: DOWN,
+			wickUpColor: UP,
+			wickDownColor: DOWN,
+		});
+		const data = candles(1000);
+		series.setData(data);
+		await settle();
+		const before = candleRects().length;
+		clearCalls();
+
+		const last = data.time[999]!;
+		// Stays inside the bar's old range, so the price scale has no reason to change.
+		const close = data.open[999]! - 0.5;
+		series.update({ time: last, open: data.open[999]!, high: data.high[999]!, low: data.low[999]!, close });
+		await settle();
+		expect(candleRects().length).toBe(before);
+		expect(priceAxis().calls.length).toBe(0);
+		const tags = overlay().calls.filter(call => call.name === 'fillText');
+		expect(tags.map(call => call.args[0])).toContain(close.toFixed(2));
+
+		// A new bar scrolls the chart by one bar while the last bar is in view.
+		series.update({ time: last + MINUTE, open: 100.5, high: 101, low: 100, close: 100.8 });
+		clearCalls();
+		await settle();
+		expect(chart.timeScale().getVisibleLogicalRange()!.to).toBe(1000.5);
+	});
+
+	it('keeps the view when history is prepended', async () => {
+		const series = chart.addSeries('candlestick');
+		series.setData(candles(1000, 5000 * MINUTE));
+		await settle();
+		const before = chart.timeScale().getVisibleLogicalRange()!;
+		series.prepend(candles(5000, 0));
+		await settle();
+		expect(chart.timeScale().getVisibleLogicalRange()).toEqual(before);
+		chart.timeScale().fitContent();
+		expect(chart.timeScale().getVisibleLogicalRange()!.from).toBeCloseTo(-5000.5, 6);
+	});
+
+	it('draws a line series as one path on the shared timeline', async () => {
+		const data = candles(2000);
+		chart.addSeries('candlestick').setData(data);
+		const line = chart.addSeries('line', { color: '#123456' });
+		line.setData({ time: data.time, value: data.close });
+		await settle();
+		const calls = pane().calls;
+		expect(calls.filter(call => call.name === 'stroke').length).toBe(1);
+		expect(calls.filter(call => call.name === 'beginPath').length).toBe(1);
+		expect(calls.filter(call => call.name === 'lineTo').length).toBeGreaterThan(50);
+
+		chart.removeSeries(line);
+		clearCalls();
+		await settle();
+		expect(pane().calls.filter(call => call.name === 'stroke').length).toBe(0);
+	});
+
+	it('pans with a drag and zooms with the wheel', async () => {
+		chart.addSeries('candlestick').setData(candles(5000));
+		await settle();
+		const scale = chart.timeScale();
+		const start = scale.getVisibleLogicalRange()!;
+		pointer('pointerdown', 300, 100);
+		pointer('pointermove', 360, 100);
+		pointer('pointerup', 360, 100);
+		await settle();
+		const panned = scale.getVisibleLogicalRange()!;
+		const paneWidth = Number.parseFloat(chart.element().querySelectorAll('canvas')[0]!.style.width);
+		const barSpacing = paneWidth / (start.to - start.from);
+		expect(panned.to).toBeCloseTo(start.to - 60 / barSpacing, 6);
+
+		const anchor = 200;
+		const span = panned.to - panned.from;
+		const wheel = new WheelEvent('wheel', { deltaY: 200, bubbles: true, cancelable: true });
+		// The DOM used for tests does not take pointer coordinates from the event init.
+		Object.defineProperty(wheel, 'clientX', { value: anchor });
+		chart.element().dispatchEvent(wheel);
+		await settle();
+		const zoomed = scale.getVisibleLogicalRange()!;
+		expect(zoomed.to - zoomed.from).toBeGreaterThan(span * 1.3);
+		expect(wheel.defaultPrevented).toBe(true);
+
+		// Input that carries no usable position is ignored instead of corrupting the scale.
+		chart.element().dispatchEvent(new WheelEvent('wheel', { deltaY: Number.NaN, bubbles: true, cancelable: true }));
+		await settle();
+		expect(scale.getVisibleLogicalRange()).toEqual(zoomed);
+	});
+
+	it('redraws only the overlay when the crosshair moves', async () => {
+		chart.addSeries('candlestick').setData(candles(5000));
+		await settle();
+		clearCalls();
+		pointer('pointermove', 200, 150);
+		await settle();
+		expect(pane().calls.length).toBe(0);
+		expect(priceAxis().calls.length).toBe(0);
+		const labels = overlay()
+			.calls.filter(call => call.name === 'fillText')
+			.map(call => String(call.args[0]));
+		expect(labels.some(label => /^1970-01-0\d \d\d:\d\d$/.test(label))).toBe(true);
+
+		clearCalls();
+		pointer('pointerleave', 700, 150);
+		await settle();
+		expect(overlay().calls.filter(call => call.name === 'clearRect').length).toBe(1);
+		expect(overlay().calls.filter(call => call.name === 'fillText').length).toBe(1);
+	});
+
+	const cacheOf = () =>
+		(chart as unknown as { _cache: { start: number; count: number; blocks: Map<number, Float64Array> } })._cache;
+
+	it('keeps a secondary value sent with the second of two new main bars', async () => {
+		const data = candles(1000);
+		const main = chart.addSeries('candlestick');
+		main.setData(data);
+		const line = chart.addSeries('line');
+		line.setData({ time: data.time, value: data.close });
+		await settle();
+		const t1 = data.time[999]! + MINUTE;
+		const t2 = t1 + MINUTE;
+		// One task: two new candles, then the line's value for the newest one.
+		main.update({ time: t1, open: 100, high: 101, low: 99, close: 100.5 });
+		main.update({ time: t2, open: 100.5, high: 102, low: 100, close: 101 });
+		line.update({ time: t2, value: 123 });
+		await settle();
+		const cache = cacheOf();
+		const row = 1001 - cache.start;
+		expect(row).toBeLessThan(cache.count);
+		expect(cache.blocks.get(idOf(line))![row]).toBe(123);
+	});
+
+	it('does not show a bar whose secondary values a racing snapshot left out', async () => {
+		const data = candles(5000);
+		const main = chart.addSeries('candlestick');
+		main.setData(data);
+		const line = chart.addSeries('line');
+		line.setData({ time: data.time, value: data.close });
+		await settle();
+
+		const time = data.time[4999]! + MINUTE;
+		// A new bar on both series, still buffered in the client.
+		main.update({ time, open: 100, high: 101, low: 99, close: 100.5 });
+		line.update({ time, value: 123 });
+		// In the same task the user zooms out, so the next frame requests a window ending at the
+		// end the client knows. The snapshot that comes back stops one bar short of the new bar.
+		const wheel = new WheelEvent('wheel', { deltaY: 300, bubbles: true, cancelable: true });
+		Object.defineProperty(wheel, 'clientX', { value: 500 });
+		chart.element().dispatchEvent(wheel);
+		runFrames();
+		await tasks();
+		await tasks();
+		// Before the next frame, a tick updates only the main bar.
+		main.update({ time, open: 100, high: 101.5, low: 99, close: 100.7 });
+		await tasks();
+		await tasks();
+		await settle();
+		// Then the main series moves on; the line does not tick again.
+		main.update({ time: time + MINUTE, open: 100, high: 101, low: 99, close: 100.2 });
+		await settle();
+
+		const cache = cacheOf();
+		const row = 5000 - cache.start;
+		expect(row).toBeLessThan(cache.count);
+		expect(cache.blocks.get(idOf(line))![row]).toBe(123);
+	});
+
+	it('follows the last value while the last bar is outside the cached window', async () => {
+		const data = candles(100_000);
+		const series = chart.addSeries('candlestick');
+		series.setData(data);
+		await settle();
+		chart.timeScale().setVisibleLogicalRange({ from: 1000, to: 1100 });
+		await settle();
+		const cache = cacheOf();
+		expect(cache.start + cache.count).toBeLessThan(100_000);
+		const last = 99_999;
+		const close = data.open[last]! + 7.25;
+		series.update({ time: data.time[last]!, open: data.open[last]!, high: close, low: data.low[last]!, close });
+		await settle();
+		expect((series as unknown as { lastValue: number }).lastValue).toBe(close);
+	});
+
+	it('reports rejected data by leaving the chart empty, and survives destroy while loading', async () => {
+		const series = chart.addSeries('line');
+		series.setData([
+			{ time: 5, value: 1 },
+			{ time: 4, value: 2 },
+		]);
+		await settle();
+		expect(chart.timeScale().getVisibleLogicalRange()!.to).toBe(0.5);
+
+		series.setData(Array.from({ length: 50_000 }, (_, i) => ({ time: i * MINUTE, value: i })));
+		const idle = chart.whenIdle();
+		chart.destroy();
+		await idle;
+		series.update({ time: 1, value: 1 });
+		expect(chart.engineMode()).toBe('none');
 	});
 });
