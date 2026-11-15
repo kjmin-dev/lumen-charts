@@ -2,9 +2,10 @@
 
 High-performance financial charting engine for the web.
 
-> Status: stage 2 of the [design](docs/design.md). Candlestick and line series on an ordinal time
-> scale, with the data engine in a worker, panning, zooming, live updates, level of detail and a
-> memory limit backed by a datafeed. Indicators and drawings are later stages.
+> Status: stage 3 of the [design](docs/design.md). Candlestick, line and histogram series on an
+> ordinal time scale, with the data engine in a worker, panning, zooming, live updates, level of
+> detail, a memory limit backed by a datafeed, and indicators (built-in and custom) computed in the
+> engine. Drawings are the next stage.
 
 ## Usage
 
@@ -91,7 +92,90 @@ never requested twice at once. Without a datafeed nothing is ever let go.
 The limit is a target: the bars around the view, the first and last chunk of 8,192 bars, the levels
 and the time column always stay. For now it applies only while the series with the datafeed is the
 only series with data; other series, corrections and deletions through the datafeed, resolution
-changes and cancelling requests are follow-ups (design section 8).
+changes and cancelling requests are follow-ups (design section 8). Indicator outputs are never let
+go and count toward the limit; an indicator recomputed over bars that were let go (after a prepend,
+or a parameter change) fetches them again from the datafeed, a window at a time.
+
+### Indicators
+
+```ts
+const candles = chart.addSeries('candlestick');
+candles.setData({ time, open, high, low, close, volume });
+
+const fast = candles.addIndicator('ema', { params: { period: 12 } });
+const bands = candles.addIndicator('bollinger', {
+	params: { period: 20, multiplier: 2 },
+	outputs: { middle: { color: '#ffa726', lineStyle: 'dashed' } },
+});
+const strength = candles.addIndicator('rsi');
+// Chains: an indicator of another indicator's output.
+const smoothed = strength.output().addIndicator('sma', { params: { period: 9 } });
+
+fast.applyOptions({ params: { period: 21 } }); // recomputed in the background
+bands.output('upper').applyOptions({ color: '#42a5f5' }); // style only
+strength.output().lastValue(); // for a legend, NaN until computed
+smoothed.remove();
+```
+
+Indicators run in the data engine: computed in full in the background after a load, a parameter
+change or a prepend, and incrementally on every tick, whose message carries the bar and the latest
+value of every indicator together. Their outputs are series on the main timeline, with levels of
+detail like any other, drawn on the price pane as lines (MACD's histogram as a histogram) and
+included in autoscale. While an indicator is being recomputed its old values stay on screen;
+`chart.whenIdle()` resolves once the new ones are drawn.
+
+Built-in: `sma`, `ema`, `wma`, `rsi`, `macd` (outputs `macd`, `signal`, `histogram`), `bollinger`
+(`upper`, `middle`, `lower`), `atr`, `stochastic` (`k`, `d`), `vwap` (restarting every UTC day by
+default; `anchor` in milliseconds, 0 for never), `highest` and `lowest`. An input reads a column of
+the source by default (`close`, or `high`, `low`, `close` for ATR and Stochastic); pass
+`inputs: ['high']`, `inputs: [{ series: other, column: 'close' }]` or `inputs: [someIndicator.output()]`
+to read something else. Missing bars and the warm-up read as gaps (NaN). Values are deterministic:
+incremental updates give the same bits as a full computation.
+
+A histogram series is also available for your own data, for example volume:
+`chart.addSeries('histogram', { color: '#26a69a', negativeColor: '#ef5350', base: 0 })`.
+
+### Custom indicators
+
+A plugin is an ES module of indicator definitions. Its kernel runs inside the data engine, in the
+worker or on the main thread when the page blocks workers, so the module is loaded by URL:
+
+```ts
+// my-indicators.js: a standalone module (no bare imports), served by the application
+export default [
+	{
+		name: 'momentum',
+		inputs: ['close'],
+		outputs: [{ name: 'value', style: 'histogram', color: '#26a69a' }],
+		params: [{ name: 'period', default: 10, min: 1, integer: true }],
+		windowed: true, // values depend only on the last `lookback + 1` rows
+		stateSize: () => 0,
+		lookback: params => params[0],
+		warmup: params => params[0],
+		// Rows [offset, offset + length) of a column-major buffer (inputs, then outputs); the `carry`
+		// input rows before `offset` hold the rows before the slice.
+		kernel(buffer, offset, length, state, carry, params) {
+			const stride = buffer.length / 2;
+			for (let r = offset; r < offset + length; r++) {
+				buffer[stride + r] = buffer[r] - buffer[r - params[0]];
+			}
+		},
+	},
+];
+```
+
+```ts
+await chart.registerIndicators(new URL('./my-indicators.js', import.meta.url));
+candles.addIndicator('momentum', { params: { period: 14 } });
+```
+
+The contract (`IndicatorKernel`, `IndicatorDefinition`) is documented in the types. A cumulative
+kernel (the default) keeps its running values in `state`, which is zeros on a fresh start; a
+`windowed` one must rebuild its state from the carry rows after a reset, which lets the engine
+recompute only the rows near a prepend. The page's content security policy must allow the module
+(`script-src`, and `blob:` for a module made from a Blob). Bundlers must leave it as a separate file
+with a stable URL, for example in `public/`; the engine's `import()` is marked to be ignored by
+Vite and webpack. Custom renderers and pane primitives are planned with drawings (stage 4).
 
 ### Themes and display options
 
@@ -125,7 +209,7 @@ in `ChartOptions`, `CandlestickOptions` and `LineOptions`.
 | Package                | Purpose                                                     |
 | ---------------------- | ----------------------------------------------------------- |
 | `@lumen-charts/core`   | Framework-free chart: scales, series views, canvas renderer |
-| `@lumen-charts/engine` | Data engine: chunked column store, worker host and client   |
+| `@lumen-charts/engine` | Data engine: column store, indicators, worker host, client  |
 | `@lumen-charts/react`  | `LumenChart` component                                      |
 | `@lumen-charts/vue`    | `LumenChart` component                                      |
 | `@lumen-charts/svelte` | `lumenChart` action                                         |
