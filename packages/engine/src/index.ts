@@ -4,6 +4,7 @@ export {
 	CHUNK_SHIFT,
 	CLOSE,
 	type Chunk,
+	type ChunkSummary,
 	HIGH,
 	LEVEL_CHUNK_SHIFT,
 	LINE_COLUMNS,
@@ -81,4 +82,4 @@ export {
 	TIME_AGGREGATES,
 	aggregate,
 } from './pyramid';
-export { ChunkedStore } from './store';
+export { ANCHOR_SHIFT, ChunkedStore, SUMMARY_BYTES } from './store';

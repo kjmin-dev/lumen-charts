@@ -25,8 +25,25 @@ export const OHLCV_COLUMNS = 6;
 export const LINE_COLUMNS = 2;
 
 /**
+ * What a store keeps of a chunk whose columns it let go: enough to place a time before, inside or
+ * after the chunk, and to check rows that come back.
+ */
+export interface ChunkSummary {
+	readonly firstTime: number;
+	readonly lastTime: number;
+	/** 64-bit checksum of the times, as two 32-bit halves. */
+	readonly timeHash: number;
+	readonly timeHash2: number;
+	/** 32-bit checksum of the values, to tell whether rows that come back changed at the source. */
+	readonly valueHash: number;
+	/** Times of the rows whose index is a multiple of 16, when kept (see `ChunkedStore.anchors`). */
+	readonly anchors?: Float64Array;
+}
+
+/**
  * One buffer holding every column of up to `rows` rows (`CHUNK_ROWS` unless the store says otherwise).
  * Rows in use are `[start, end)`: a chunk at the head of a store fills downward, one at the tail fills upward.
+ * A chunk let go of holds only its time column, or no column at all, and a summary.
  */
 export interface Chunk {
 	readonly buffer: ArrayBuffer;
@@ -34,6 +51,7 @@ export interface Chunk {
 	readonly columns: readonly Float64Array[];
 	start: number;
 	end: number;
+	readonly summary?: ChunkSummary;
 }
 
 export function createChunk(columnCount: number, rows: number = CHUNK_ROWS): Chunk {
