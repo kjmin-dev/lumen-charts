@@ -165,13 +165,28 @@ export function attachEngineHost(scope: EngineScope): void {
 		}
 	};
 
+	/**
+	 * Posts what an engine's work outside its commands finished (indicator values swapped in, rows to
+	 * fetch again), as a notice tagged with the engine.
+	 */
+	const notify = (hosted: Hosted): void => {
+		const notice = hosted.core.takeNotice();
+		if (notice !== null) {
+			notice.engine = hosted.id;
+			scope.postMessage(notice, transferables(notice));
+		}
+	};
+
 	/** Runs one slice of background work, taking the engines that have some in turn. */
 	const runBackground = (): void => {
 		const deadline = performance.now() + BACKGROUND_SLICE_MS;
 		let idle = 0;
 		while (idle < ring.length) {
 			backgroundTurn = (backgroundTurn + 1) % ring.length;
-			if (ring[backgroundTurn]!.core.backgroundStep()) {
+			const hosted = ring[backgroundTurn]!;
+			const more = hosted.core.backgroundStep();
+			notify(hosted);
+			if (more) {
 				idle = 0;
 				if (performance.now() >= deadline) {
 					post();
@@ -230,7 +245,10 @@ export function attachEngineHost(scope: EngineScope): void {
 		const id = data.engine ?? 0;
 		let hosted = engines.get(id);
 		if (hosted === undefined) {
-			hosted = { id, core: new EngineCore(), queue: [], head: 0, command: null, run: null };
+			const created: Hosted = { id, core: new EngineCore(), queue: [], head: 0, command: null, run: null };
+			// Work that finishes between commands goes out as soon as it is known.
+			created.core.onwake = () => notify(created);
+			hosted = created;
 			engines.set(id, hosted);
 			ring.push(hosted);
 		}
@@ -296,6 +314,11 @@ export class LocalTransport implements EngineTransport {
 	private _closed = false;
 	private _channel: MessageChannel | null = null;
 
+	public constructor() {
+		// A notice that comes between commands is delivered by the pump once the queue is empty.
+		this._core.onwake = () => this._schedule();
+	}
+
 	public post(command: Command, _transfer: ArrayBuffer[]): void {
 		if (this._closed) {
 			return;
@@ -360,11 +383,20 @@ export class LocalTransport implements EngineTransport {
 		const end = performance.now() + Math.min(SLICE_MS, Math.max(1, remaining));
 		while (this._core.backgroundStep()) {
 			if (performance.now() >= end) {
+				this._notify();
 				this._scheduleIdle();
 				return;
 			}
 		}
+		this._notify();
 	};
+
+	private _notify(): void {
+		const notice = this._core.takeNotice();
+		if (notice !== null) {
+			this.onevent?.(notice);
+		}
+	}
 
 	private readonly _pump = (): void => {
 		this._scheduled = false;
@@ -374,7 +406,14 @@ export class LocalTransport implements EngineTransport {
 				if (this._head >= this._queue.length) {
 					this._queue.length = 0;
 					this._head = 0;
-					if (this._core.busy) {
+					// Indicator values the chart waits for are computed in tasks like commands, not in idle time.
+					while (this._core.urgent && performance.now() < deadline) {
+						this._core.backgroundStep();
+					}
+					this._notify();
+					if (this._core.urgent) {
+						this._schedule();
+					} else if (this._core.busy) {
 						this._scheduleIdle();
 					}
 					return;

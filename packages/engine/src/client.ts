@@ -1,6 +1,6 @@
 import { type EngineTransport, LocalTransport } from './host';
 import { connectWorker } from './pool';
-import { type Command, type EngineEvent, type SeriesKind, TICK_STRIDE } from './protocol';
+import { type Command, type EngineEvent, type IndicatorInputRef, type SeriesKind, TICK_STRIDE } from './protocol';
 
 export interface EngineOptions {
 	/**
@@ -41,7 +41,7 @@ function defaultWorker(): Worker {
  * worker or time-sliced on the calling thread.
  */
 export class EngineClient {
-	/** Receives one event per command, in command order. */
+	/** Receives one event per command, in command order, and notices of background work in between. */
 	public onevent: ((event: EngineEvent) => void) | null = null;
 	private _transport: EngineTransport | null = null;
 	/** Commands issued before the transport is known. Buffers are transferred only once it is. */
@@ -141,6 +141,41 @@ export class EngineClient {
 
 	public removeSeries(series: number): void {
 		this._send({ type: 'remove', series }, NO_TRANSFER);
+	}
+
+	/**
+	 * Adds an indicator instance of the definition `name`. Its outputs become derived series on the
+	 * main timeline, with the ids returned. `params` follow the definition's order. Values arrive once
+	 * computed in the background, announced by an event with `stale`.
+	 */
+	public addIndicator(
+		name: string,
+		params: number[],
+		inputs: IndicatorInputRef[],
+		outputCount: number,
+	): { id: number; outputs: number[] } {
+		const id = this._nextSeries++;
+		const outputs: number[] = [];
+		for (let i = 0; i < outputCount; i++) {
+			outputs.push(this._nextSeries++);
+		}
+		this._send({ type: 'indicator', id, name, params, inputs, outputs }, NO_TRANSFER);
+		return { id, outputs };
+	}
+
+	/** Changes the definition, parameters or inputs of an indicator; its outputs keep their ids. */
+	public updateIndicator(
+		id: number,
+		name: string,
+		params: number[],
+		inputs: IndicatorInputRef[],
+		outputs: number[],
+	): void {
+		this._send({ type: 'indicator', id, name, params, inputs, outputs }, NO_TRANSFER);
+	}
+
+	public removeIndicator(id: number): void {
+		this._send({ type: 'removeIndicator', id }, NO_TRANSFER);
 	}
 
 	/**

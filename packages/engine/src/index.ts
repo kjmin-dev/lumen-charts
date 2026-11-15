@@ -44,12 +44,14 @@ export {
 	indicatorInfo,
 	resolveParams,
 } from './indicators/definition';
+export { type IndicatorHost, IndicatorEngine } from './indicators/engine';
 export { type InputReader, Runner, computeIndicator } from './indicators/runner';
 export {
 	type Command,
 	type EngineEvent,
 	type FetchRequest,
 	type HostMessage,
+	type IndicatorInputRef,
 	type Patch,
 	type ReadyMessage,
 	type RestoreResult,
