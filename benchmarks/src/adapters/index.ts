@@ -16,6 +16,16 @@ export const adapters: readonly AdapterEntry[] = [
 		description: 'Lightweight Charts with timeScale.enableConflation = false (library default)',
 		load: async () => (await import('./lightweight-charts.ts')).conflationOff,
 	},
+	{
+		id: 'lumen-worker',
+		description: 'Lumen Charts (workspace sources) with the data engine in a worker (default)',
+		load: async () => (await import('./lumen.ts')).lumenWorker,
+	},
+	{
+		id: 'lumen-main',
+		description: 'Lumen Charts (workspace sources) with the data engine on the main thread',
+		load: async () => (await import('./lumen.ts')).lumenMain,
+	},
 ];
 
 export function findAdapter(id: string): AdapterEntry {
