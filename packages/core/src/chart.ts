@@ -747,13 +747,16 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 			if (request !== null) {
 				engine.requestWindow(request.start, request.count, request.capacity, request.level);
 			}
-			// While the raw rows for the view are on their way (fetched again, or a fast scroll left the
-			// window), the finest level is drawn instead of nothing.
-			const raw = cache.held(0);
+			// While the raw rows for the view are on their way (a fast scroll left the window, or they
+			// are fetched again) or could not be fetched, the finest level is drawn instead of nothing.
+			// Not before the first raw window, though: right after a load the levels are still being
+			// built in the background, and the raw rows come first.
+			const raw = cache.level(0);
 			const visibleFrom = Math.max(scale.first, Math.ceil(scale.from - 0.5));
 			const visibleTo = Math.min(scale.end, Math.floor(scale.to + 0.5) + 1);
-			const covered = raw !== null && raw.rowsFrom(scale.first) <= visibleFrom && raw.rowsTo(scale.end) >= visibleTo;
-			if (level === 0 && !covered && scale.end - scale.first >= 16) {
+			const covered =
+				raw.capacity > 0 && raw.rowsFrom(scale.first) <= visibleFrom && raw.rowsTo(scale.end) >= visibleTo;
+			if (level === 0 && !covered && (raw.capacity > 0 || raw.incomplete) && scale.end - scale.first >= 16) {
 				const fallback = cache.plan(1, scale.from, scale.to, scale.first, scale.end);
 				if (fallback !== null) {
 					engine.requestWindow(fallback.start, fallback.count, fallback.capacity, fallback.level);

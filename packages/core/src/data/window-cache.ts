@@ -43,6 +43,8 @@ export class LevelWindow {
 	/** Items changed by patches since the last `clearDirty`: `[dirtyLo, dirtyHi)`. */
 	public dirtyLo = Infinity;
 	public dirtyHi = -Infinity;
+	/** The last snapshot came back empty because its rows could not be fetched again. */
+	public incomplete = false;
 
 	private _stale = false;
 	private _requested = false;
@@ -104,6 +106,7 @@ export class LevelWindow {
 	public reset(): void {
 		this.release();
 		this._stale = true;
+		this.incomplete = false;
 	}
 
 	public markStale(): void {
@@ -130,6 +133,7 @@ export class LevelWindow {
 	public applySnapshot(window: NonNullable<EngineEvent['window']>): void {
 		this._requested = false;
 		this._stale = false;
+		this.incomplete = window.incomplete === true;
 		this.start = window.start;
 		this.count = window.count;
 		this.capacity = window.capacity;
