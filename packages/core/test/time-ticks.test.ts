@@ -300,6 +300,30 @@ describe('TimeTicks with sessions', () => {
 		expect(day.position).toBe(960);
 	});
 
+	it('labels only trading days, months and years once labels are days apart', () => {
+		// Five-minute bars of the extended hours (from 04:00 New York time) over a quarter, too many
+		// for a label per session.
+		const newYork = timeZone('America/New_York');
+		const time: number[] = [];
+		for (let day = Date.UTC(2024, 0, 1); day < Date.UTC(2024, 3, 1); day += DAY) {
+			const weekday = new Date(day).getUTCDay();
+			if (weekday !== 0 && weekday !== 6) {
+				const open = newYork.firstAtOrAfter(day + 4 * HOUR);
+				for (let i = 0; i < 16 * 12; i++) {
+					time.push(open + i * 5 * MINUTE);
+				}
+			}
+		}
+		const column = Float64Array.from(time);
+		const calendar = sessionCalendar(equities, timeZone('UTC'))!;
+		const ticks = ticksFor(column, 0, column.length, 1000, newYork, calendar);
+		expect(ticks.length).toBeGreaterThan(5);
+		expect(ticks.every(tick => tick.weight >= WEIGHT_DAY)).toBe(true);
+		expect(ticks.map(tick => tick.label)).toEqual(expect.arrayContaining(['Feb', 'Mar']));
+		// Each at the first bar of a trading day: 04:00 New York time.
+		expect(ticks.map(tick => new Date(newYork.wall(column[tick.position]!)).getUTCHours())).toEqual(ticks.map(() => 4));
+	});
+
 	it('names days after the trading day of a session that starts the evening before', () => {
 		// Globex: 18:00 to 17:00 New York time. Hourly bars from Sunday 9 June to Wednesday 12 June 2024.
 		const futures: SessionSchedule = { ...equities, hours: [{ start: '18:00', end: '17:00' }] };

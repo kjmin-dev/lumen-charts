@@ -258,39 +258,42 @@ export class TimeTicks {
 		return floorToStep(sessions === null ? this._zone.wall(time) : sessions.dayOf(time) * DAY, step);
 	}
 
-	/** Whether a bar at `time` after one at `previous` starts an interval, or a session. */
+	/**
+	 * Whether a bar at `time` after one at `previous` starts an interval, or, on a grid finer than a
+	 * day, a session.
+	 */
 	private _begins(previous: number, time: number): boolean {
 		const sessions = this._sessions;
 		return (
 			this._interval(previous) !== this._interval(time) ||
-			(sessions !== null && sessions.nextSessionStart(previous) <= time)
+			(sessions !== null && this._step.kind === UNIFORM && sessions.nextSessionStart(previous) <= time)
 		);
 	}
 
-	/** First instant after `time` at which the next interval, or the next session, starts. */
+	/**
+	 * First instant after `time` at which the next interval starts, or, on a grid finer than a day,
+	 * the next session. Labels a day or more apart have no room for the sessions within a day.
+	 */
 	private _next(time: number): number {
 		const step = this._step;
 		const zone = this._zone;
 		const sessions = this._sessions;
-		let next: number;
 		if (step.kind === UNIFORM) {
-			next = zone.nextChange(time, step.size);
-		} else if (sessions === null) {
-			next = zone.firstAtOrAfter(nextBoundary(floorToStep(zone.wall(time), step), step), time);
-		} else {
-			let day = nextBoundary(floorToStep(sessions.dayOf(time) * DAY, step), step) / DAY;
-			if (!sessions.isTradingDay(day)) {
-				day = sessions.nextTradingDay(day);
+			const next = zone.nextChange(time, step.size);
+			if (sessions === null) {
+				return next;
 			}
-			next = sessions.dayStart(day);
-		}
-		if (sessions !== null) {
 			const session = sessions.nextSessionStart(time);
-			if (session < next) {
-				next = session;
-			}
+			return session < next ? session : next;
 		}
-		return next;
+		if (sessions === null) {
+			return zone.firstAtOrAfter(nextBoundary(floorToStep(zone.wall(time), step), step), time);
+		}
+		let day = nextBoundary(floorToStep(sessions.dayOf(time) * DAY, step), step) / DAY;
+		if (!sessions.isTradingDay(day)) {
+			day = sessions.nextTradingDay(day);
+		}
+		return sessions.dayStart(day);
 	}
 
 	/**
