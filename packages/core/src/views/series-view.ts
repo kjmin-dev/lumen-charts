@@ -76,6 +76,9 @@ export class SeriesView {
 	/** 1 where the close is not below the open. */
 	public up = new Uint8Array(0);
 
+	/** Width of a candle body in device pixels, set before a custom renderer draws the items. */
+	public barWidth = 1;
+
 	/** Price range of the items, or an empty range (`min > max`) when there is nothing to show. */
 	public min = Infinity;
 	public max = -Infinity;
