@@ -1,9 +1,9 @@
 import { EngineCore } from './core';
-import { type Command, type EngineEvent, type ReadyMessage, transferables } from './protocol';
+import { type Command, type EngineEvent, type HostMessage, type ReadyMessage, transferables } from './protocol';
 
 /** The part of a worker global scope the engine host needs. */
 export interface EngineScope {
-	addEventListener(type: 'message', listener: (event: MessageEvent<Command>) => void): void;
+	addEventListener(type: 'message', listener: (event: MessageEvent<HostMessage>) => void): void;
 	postMessage(message: EngineEvent | ReadyMessage, transfer: Transferable[]): void;
 }
 
@@ -14,56 +14,231 @@ const BACKGROUND_SLICE_MS = 4;
  * followed at once by a window request, which should not wait behind a slice of background work.
  */
 const BACKGROUND_DELAY_MS = 20;
+/**
+ * Longest stretch a worker host that serves several engines runs commands before looking at its
+ * messages again: a command of one engine waits at most this long behind a bulk load of another.
+ */
+const COMMAND_SLICE_MS = 4;
 
-/** Runs an engine inside a worker: one event per command, buffers transferred back. */
+/** One engine of a worker host, with the commands it has not answered yet. */
+interface Hosted {
+	readonly id: number;
+	readonly core: EngineCore;
+	/** Commands received and not started, in order; `head` is the next one. */
+	queue: Command[];
+	head: number;
+	/** The command being run, which may span several slices. */
+	command: Command | null;
+	run: Generator<undefined, EngineEvent, undefined> | null;
+}
+
+/**
+ * Runs engines inside a worker: one event per command, buffers transferred back.
+ *
+ * A worker serves any number of engines, each with a state of its own; a message says which engine
+ * it is for (`engine`, 0 when absent) and an engine starts with its first command.
+ * - The commands of one engine run in the order they arrive, one at a time.
+ * - A command that throws is answered with a failure event of its engine; the others never notice.
+ * - With one engine, a command runs to completion as soon as it arrives. With several, the engines
+ *   take turns: one runs its commands until none is left or the slice is over, then the host looks
+ *   at its messages, so a bulk load of one chart cannot hold up the others for long.
+ * - Background work (building levels of detail) of any engine runs only while no engine has a
+ *   command waiting.
+ */
 export function attachEngineHost(scope: EngineScope): void {
-	const core = new EngineCore();
+	const engines = new Map<number, Hosted>();
+	/** The engines in the order they take turns; `turn` is the one whose turn it is. */
+	const ring: Hosted[] = [];
+	let turn = 0;
+	let backgroundTurn = 0;
+	/** Commands received and not answered yet, over all engines. */
+	let waiting = 0;
+	/** The commands left wait for the continuation task, which is posted. */
+	let yielded = false;
+	/** Background work is on its way: the delay runs, or it continues in a posted task. */
+	let background = false;
 	let timer: ReturnType<typeof setTimeout> | null = null;
+	let posted = false;
 	let channel: MessageChannel | null = null;
-	const step = (): void => {
-		const deadline = performance.now() + BACKGROUND_SLICE_MS;
-		while (core.backgroundStep()) {
-			if (performance.now() >= deadline) {
-				// A message task lets queued commands run first and is not clamped like nested timers.
-				if (channel === null && typeof MessageChannel !== 'undefined') {
-					channel = new MessageChannel();
-					channel.port1.addEventListener('message', step);
-					channel.port1.start();
+
+	/** Runs `resume` in a later task, behind the messages that have arrived by then. */
+	const post = (): void => {
+		if (posted) {
+			return;
+		}
+		posted = true;
+		// A message task lets queued commands run first and is not clamped like nested timers.
+		if (channel === null && typeof MessageChannel !== 'undefined') {
+			channel = new MessageChannel();
+			channel.port1.addEventListener('message', resume);
+			channel.port1.start();
+		}
+		if (channel === null) {
+			setTimeout(resume, 0);
+		} else {
+			channel.port2.postMessage(null);
+		}
+	};
+
+	/** Runs waiting commands, engine by engine, until none is left or the slice is over. */
+	const pump = (): void => {
+		yielded = false;
+		const deadline = performance.now() + COMMAND_SLICE_MS;
+		while (waiting > 0) {
+			// The next engine with something to do; one exists while commands are waiting.
+			let hosted = ring[turn]!;
+			while (hosted.run === null && hosted.head === hosted.queue.length) {
+				turn = (turn + 1) % ring.length;
+				hosted = ring[turn]!;
+			}
+			turn = (turn + 1) % ring.length;
+			// Its turn: commands until it has none left.
+			for (;;) {
+				if (hosted.run === null) {
+					if (hosted.head === hosted.queue.length) {
+						hosted.queue.length = 0;
+						hosted.head = 0;
+						break;
+					}
+					hosted.command = hosted.queue[hosted.head++]!;
+					hosted.run = hosted.core.run(hosted.command);
 				}
-				if (channel === null) {
-					setTimeout(step, 0);
-				} else {
-					channel.port2.postMessage(null);
+				// A host with one engine has nobody to give way to, and runs every command in one go.
+				const sliced = ring.length > 1;
+				let event: EngineEvent | null = null;
+				try {
+					let step = hosted.run.next();
+					if (sliced) {
+						while (step.done !== true && performance.now() < deadline) {
+							step = hosted.run.next();
+						}
+					} else {
+						while (step.done !== true) {
+							step = hosted.run.next();
+						}
+					}
+					if (step.done === true) {
+						event = step.value;
+					}
+				} catch {
+					// Every command is answered, or the client would wait for this one forever.
+					event = hosted.core.failure(hosted.command!);
 				}
+				if (event !== null) {
+					hosted.command = null;
+					hosted.run = null;
+					waiting--;
+					event.engine = hosted.id;
+					scope.postMessage(event, transferables(event));
+				}
+				if (sliced && performance.now() >= deadline) {
+					if (waiting > 0) {
+						// Messages that arrived meanwhile are delivered before the continuation.
+						yielded = true;
+						post();
+					} else {
+						scheduleBackground();
+					}
+					return;
+				}
+			}
+		}
+		scheduleBackground();
+	};
+
+	const scheduleBackground = (): void => {
+		if (background) {
+			return;
+		}
+		for (const hosted of ring) {
+			if (hosted.core.busy) {
+				background = true;
+				timer = setTimeout(() => {
+					timer = null;
+					// Commands that wait for the continuation come first; it takes this up afterwards.
+					if (waiting === 0) {
+						runBackground();
+					}
+				}, BACKGROUND_DELAY_MS);
 				return;
 			}
 		}
+	};
+
+	/** Runs one slice of background work, taking the engines that have some in turn. */
+	const runBackground = (): void => {
+		const deadline = performance.now() + BACKGROUND_SLICE_MS;
+		let idle = 0;
+		while (idle < ring.length) {
+			backgroundTurn = (backgroundTurn + 1) % ring.length;
+			if (ring[backgroundTurn]!.core.backgroundStep()) {
+				idle = 0;
+				if (performance.now() >= deadline) {
+					post();
+					return;
+				}
+			} else {
+				idle++;
+			}
+		}
 		// Nothing left: an idle port is closed so it keeps nothing alive.
-		if (channel !== null) {
-			channel.port1.removeEventListener('message', step);
+		background = false;
+		if (channel !== null && !posted) {
+			channel.port1.removeEventListener('message', resume);
 			channel.port1.close();
 			channel = null;
 		}
 	};
-	scope.addEventListener('message', message => {
-		let event: EngineEvent;
-		try {
-			const run = core.run(message.data);
-			let next = run.next();
-			while (next.done !== true) {
-				next = run.next();
+
+	/** The continuation task: commands first, background work only when none is waiting. */
+	function resume(): void {
+		posted = false;
+		if (waiting > 0) {
+			pump();
+			// Background work that was under way goes on behind the commands.
+			if (background && timer === null && !posted) {
+				post();
 			}
-			event = next.value;
-		} catch {
-			// Every command is answered, or the client would wait for this one forever.
-			event = core.failure(message.data);
+		} else {
+			yielded = false;
+			if (background && timer === null) {
+				runBackground();
+			}
 		}
-		scope.postMessage(event, transferables(event));
-		if (core.busy && timer === null && channel === null) {
-			timer = setTimeout(() => {
-				timer = null;
-				step();
-			}, BACKGROUND_DELAY_MS);
+	}
+
+	const close = (id: number): void => {
+		const hosted = engines.get(id);
+		if (hosted === undefined) {
+			return;
+		}
+		engines.delete(id);
+		const index = ring.indexOf(hosted);
+		ring.splice(index, 1);
+		turn = ring.length === 0 ? 0 : turn > index ? turn - 1 : turn % ring.length;
+		backgroundTurn = 0;
+		// Its commands are never answered: nobody listens for them any more.
+		waiting -= hosted.queue.length - hosted.head + (hosted.run === null ? 0 : 1);
+	};
+
+	scope.addEventListener('message', message => {
+		const data = message.data;
+		if (data.type === 'close') {
+			close(data.engine);
+			return;
+		}
+		const id = data.engine ?? 0;
+		let hosted = engines.get(id);
+		if (hosted === undefined) {
+			hosted = { id, core: new EngineCore(), queue: [], head: 0, command: null, run: null };
+			engines.set(id, hosted);
+			ring.push(hosted);
+		}
+		hosted.queue.push(data);
+		waiting++;
+		// While commands wait for the continuation, this one waits with them, for its engine's turn.
+		if (!yielded) {
+			pump();
 		}
 	});
 	scope.postMessage({ ready: true }, []);

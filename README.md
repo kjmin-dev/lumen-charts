@@ -30,6 +30,37 @@ thread in slices of a few milliseconds, behind the same interface. Pass `worker:
 that, or `worker: () => new Worker(...)` when a bundler needs the worker created in application
 code (the worker entry is `@lumen-charts/engine/worker`).
 
+### Several charts on one page
+
+```ts
+import { createChart, setMaxWorkers } from 'lumen-charts';
+
+setMaxWorkers(2); // optional, before the charts are created
+const charts = cells.map(cell => createChart(cell));
+```
+
+Charts share what the browser gives them instead of each taking its own:
+
+- **Workers.** The first charts get a worker each, up to a limit: 4, or one less than the number of
+  processor cores where that is smaller. Every further chart joins the worker with the fewest
+  charts. Each chart keeps a data engine of its own inside its worker, the charts of a worker take
+  turns in slices of a few milliseconds, and a worker stops when its last chart is destroyed.
+  `setMaxWorkers(n)` changes the limit for charts created afterwards (`1` puts every chart on one
+  thread, `Infinity` gives every chart its own); `getMaxWorkers()` reads it. Charts given the same
+  `worker` function share the workers it makes, and it is called once per worker: define the
+  function once and pass it to every chart. A chart given a function of its own keeps a worker of
+  its own.
+- **Frames.** One animation frame draws every chart that changed. All charts read from the layout
+  before any of them writes to the DOM, and an error in one chart does not stop the others.
+- **Size.** One `ResizeObserver` sizes the auto-sized charts. A chart fills the content box of its
+  container, so padding and borders on the container are fine. Creating a chart or changing its
+  options does not read the layout: the size is read once, in the first frame or when it is first
+  needed.
+- **Viewport.** A chart scrolled out of view keeps applying data but is not drawn until it comes
+  back into view. `whenIdle()` does not wait for that.
+
+The numbers are in [docs/benchmarks/shared-resources.md](docs/benchmarks/shared-resources.md).
+
 Wide views draw from levels of detail: the engine keeps buckets of 16, 64, 256, ... bars (first
 open, highest high, lowest low, last close; the largest volume), and above 16 bars per device pixel
 the chart draws the coarsest level whose buckets fit a pixel column. Frame time stops growing with
@@ -134,7 +165,10 @@ stage 1 results against it are in [docs/benchmarks/stage-1.md](docs/benchmarks/s
 stage 2 scenarios with the stage 1 numbers on them in [docs/benchmarks/stage-2-before.md](docs/benchmarks/stage-2-before.md),
 and stage 2 (level of detail, memory limit) against them in [docs/benchmarks/stage-2.md](docs/benchmarks/stage-2.md).
 The `refetch` scenario runs a series with a datafeed under a memory limit and times how long the
-chart takes to show history it let go.
+chart takes to show history it let go. The `multi` scenario puts several auto-sized charts on one
+page, some of them below the fold, and measures workers, memory, the time until all are shown and
+the cost of a round of ticks; its results are in
+[docs/benchmarks/shared-resources.md](docs/benchmarks/shared-resources.md).
 
 Runs are headless by default (Chromium's new headless mode, rasterizing on the GPU), so no window
 takes the focus; `--headed` opens a window. Stage 0 and stage 1 were measured headed. Frame
@@ -148,8 +182,11 @@ pnpm bench --quick                      # smoke test, about a minute
 pnpm bench                              # full matrix, headless Chromium, JSON in benchmarks/results/
 pnpm bench --scenario tick --size 1m --lib lwc-conflation-off --repeats 3
 pnpm bench --case frames/line-10m,prepend --lib lumen-worker,lumen-main --repeats 3
+pnpm bench --scenario multi --lib lumen-worker --max-workers 1,4,default
+pnpm bench --packages ../other-checkout/packages --lib lumen-worker   # measure another checkout
 pnpm bench --help                       # all options (headed, Chrome channel, viewport, DPR, ...)
 pnpm bench:report <results.json>        # Markdown tables from a results file
+pnpm bench:merge <out.json> <a.json> <b.json>   # join runs of the same cases into one file
 pnpm bench:serve                        # production build of the harness page, to run by hand
 ```
 

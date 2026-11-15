@@ -1,14 +1,24 @@
-import { type EngineTransport, LocalTransport, WorkerTransport } from './host';
-import { type Command, type EngineEvent, type ReadyMessage, type SeriesKind, TICK_STRIDE } from './protocol';
+import { type EngineTransport, LocalTransport } from './host';
+import { connectWorker } from './pool';
+import { type Command, type EngineEvent, type SeriesKind, TICK_STRIDE } from './protocol';
 
 export interface EngineOptions {
 	/**
-	 * Where the engine runs. `true` (default) starts a worker and falls back to the calling thread if
+	 * Where the engine runs. `true` (default) uses a worker and falls back to the calling thread if
 	 * the page blocks workers; `false` always uses the calling thread; a function supplies the worker,
 	 * for bundlers that need the worker created in application code.
+	 *
+	 * Workers are shared: engines with the same setting run in at most `getMaxWorkers()` workers (see
+	 * `setMaxWorkers`), each engine with a state of its own. Engines given the same function share
+	 * the workers it makes, and it is called once per worker; pass a function of its own to give an
+	 * engine a worker of its own.
 	 */
 	worker?: boolean | (() => Worker);
-	/** How long to wait for the worker to start before falling back, in milliseconds. */
+	/**
+	 * How long to wait for the worker to start before falling back, in milliseconds (default 4000).
+	 * The wait starts with the worker, so an engine that joins a worker still starting waits for
+	 * what is left of the first engine's timeout.
+	 */
 	workerTimeout?: number;
 }
 
@@ -47,7 +57,7 @@ export class EngineClient {
 	private _destroyed = false;
 	private _idle: (() => void)[] = [];
 	private _mode: 'connecting' | 'worker' | 'local' = 'connecting';
-	/** Stops a worker that has not answered yet. */
+	/** Gives back the engine's place on a worker that has not answered yet. */
 	private _abortConnect: (() => void) | null = null;
 
 	public constructor(options: EngineOptions = {}) {
@@ -55,7 +65,24 @@ export class EngineClient {
 		if (worker === false || typeof Worker === 'undefined') {
 			this._attach(new LocalTransport(), 'local');
 		} else {
-			this._connect(worker === true ? defaultWorker : worker, options.workerTimeout ?? 4000);
+			const release = connectWorker(
+				worker === true ? defaultWorker : worker,
+				options.workerTimeout ?? 4000,
+				transport => {
+					this._abortConnect = null;
+					this._attach(transport, 'worker');
+				},
+				() => {
+					this._abortConnect = null;
+					this._attach(new LocalTransport(), 'local');
+				},
+			);
+			if (release === null) {
+				// Creating the worker threw: the page does not allow workers.
+				this._attach(new LocalTransport(), 'local');
+			} else if (this._transport === null) {
+				this._abortConnect = release;
+			}
 		}
 	}
 
@@ -259,52 +286,6 @@ export class EngineClient {
 		for (const resolve of waiters) {
 			resolve();
 		}
-	}
-
-	/**
-	 * Starts the worker and waits for its ready message. A page whose content security policy blocks
-	 * workers reports that either by throwing or by an asynchronous error event, so nothing is sent
-	 * (and no buffer is given away) until the worker has answered.
-	 */
-	private _connect(factory: () => Worker, timeout: number): void {
-		let worker: Worker;
-		try {
-			worker = factory();
-		} catch {
-			this._attach(new LocalTransport(), 'local');
-			return;
-		}
-		let settled = false;
-		const settle = (): boolean => {
-			if (settled) {
-				return false;
-			}
-			settled = true;
-			this._abortConnect = null;
-			clearTimeout(timer);
-			worker.removeEventListener('error', fallBack);
-			worker.removeEventListener('message', onReady);
-			return true;
-		};
-		this._abortConnect = (): void => {
-			if (settle()) {
-				worker.terminate();
-			}
-		};
-		const fallBack = (): void => {
-			if (settle()) {
-				worker.terminate();
-				this._attach(new LocalTransport(), 'local');
-			}
-		};
-		const onReady = (message: MessageEvent<ReadyMessage>): void => {
-			if (message.data.ready === true && settle()) {
-				this._attach(new WorkerTransport(worker), 'worker');
-			}
-		};
-		const timer = setTimeout(fallBack, timeout);
-		worker.addEventListener('error', fallBack);
-		worker.addEventListener('message', onReady);
 	}
 }
 

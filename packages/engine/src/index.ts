@@ -18,10 +18,12 @@ export {
 export { EngineClient, type EngineOptions, createEngine } from './client';
 export { EngineCore } from './core';
 export { type EngineScope, type EngineTransport, LocalTransport, WorkerTransport, attachEngineHost } from './host';
+export { getMaxWorkers, setMaxWorkers } from './pool';
 export {
 	type Command,
 	type EngineEvent,
 	type FetchRequest,
+	type HostMessage,
 	type Patch,
 	type ReadyMessage,
 	type RestoreResult,

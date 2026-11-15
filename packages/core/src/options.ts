@@ -115,6 +115,11 @@ export interface ChartOptions {
 	 * Where the data engine runs. `true` uses a worker and falls back to the main thread if the
 	 * page blocks workers; `false` always uses the main thread; a function supplies the worker.
 	 * Read once, when the first series is added.
+	 *
+	 * Charts share workers: the charts of a page run in at most `getMaxWorkers()` workers (see
+	 * `setMaxWorkers`), each chart with a data engine of its own inside its worker. Charts given
+	 * the same function share the workers it makes, and it is called once per worker; a chart given
+	 * a function of its own has a worker of its own.
 	 */
 	worker: boolean | (() => Worker);
 	/**

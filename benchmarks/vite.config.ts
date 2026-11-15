@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defaultClientConditions, defineConfig } from 'vite';
 
@@ -10,7 +11,13 @@ export const isolationHeaders = {
 	'Cross-Origin-Embedder-Policy': 'require-corp',
 };
 
-const source = (name: string): string => fileURLToPath(new URL(`../packages/${name}/src/index.ts`, import.meta.url));
+/**
+ * The `packages` directory whose sources are measured: this workspace's, or another checkout's
+ * (`pnpm bench --packages <dir>` sets the variable), to measure two versions of the library with
+ * the same harness.
+ */
+const packages = process.env['LUMEN_BENCH_PACKAGES'] ?? fileURLToPath(new URL('../packages', import.meta.url));
+const source = (name: string): string => resolve(packages, name, 'src/index.ts');
 
 export default defineConfig({
 	root: fileURLToPath(new URL('.', import.meta.url)),

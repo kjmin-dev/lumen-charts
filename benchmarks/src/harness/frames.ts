@@ -160,6 +160,26 @@ export function stopFrameRecording(): FrameRecording {
 }
 
 /**
+ * Resolves in a task after the current one. Called from an animation-frame callback, that task runs
+ * after the frame's style, layout, paint and commit steps.
+ */
+export function nextTask(): Promise<void> {
+	return new Promise(resolve => {
+		const channel = new MessageChannel();
+		channel.port1.addEventListener(
+			'message',
+			() => {
+				channel.port1.close();
+				resolve();
+			},
+			{ once: true },
+		);
+		channel.port1.start();
+		channel.port2.postMessage(null);
+	});
+}
+
+/**
  * Resolves after the next frame's rendering work on the main thread has finished: the callback
  * runs in the next animation frame (after any callback requested earlier), and the message it
  * posts is delivered only after that frame's style, layout, paint and commit steps.

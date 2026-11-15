@@ -66,6 +66,14 @@ export interface ChartAdapter<TPrepared = unknown> {
 	 * rendering the frame that shows it. GPU rasterization and display are not awaited.
 	 */
 	settle(): Promise<void>;
+	/**
+	 * The library's own part of `settle`: resolves once everything submitted so far has been applied
+	 * and drawn, possibly from inside the animation frame that draws it, without waiting for that
+	 * frame's rendering. With several charts on a page the harness waits for all of them like this
+	 * and then for the rendering once, so the waiting costs the same whatever a library does per
+	 * chart. Libraries without such a signal leave it out, and the harness uses `settle`.
+	 */
+	idle?(): Promise<void>;
 	/** Removes the chart and releases its resources. */
 	destroy(): void;
 }
@@ -76,8 +84,16 @@ export interface AdapterFactory {
 	readonly library: { readonly name: string; readonly version: string };
 	/** Options that define this variant, recorded with every result. */
 	readonly options: Readonly<Record<string, unknown>>;
-	/** Mounts a chart of exactly `size` inside `container`. */
-	create(container: HTMLElement, size: ChartSize): Promise<ChartAdapter>;
+	/**
+	 * Mounts a chart inside `container`: of exactly `size`, or with `auto` in the library's auto-size
+	 * mode, where the chart fills the container and follows its size.
+	 */
+	create(container: HTMLElement, size: ChartSize | 'auto'): Promise<ChartAdapter>;
+	/**
+	 * Limits the workers the library shares between its charts, for charts created afterwards. Only
+	 * libraries with such a limit implement it; a version of one that has none ignores the call.
+	 */
+	setMaxWorkers?(count: number): void;
 }
 
 /** A data set an adapter is known to fail on, so the planner leaves it out instead of running it again. */

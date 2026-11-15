@@ -29,6 +29,9 @@ import {
 import { Layer } from './render/layer';
 import { drawCandles, drawLine } from './render/series';
 import { Series, type SeriesApi, type SeriesCreateOptions, type SeriesType } from './series';
+import { type FrameClient, cancelFrame, requestFrame } from './shared/frame';
+import { type ColorSchemeWatch, watchColorScheme, watchPixelRatio } from './shared/media';
+import { observeSize, observeVisibility, unobserveSize, unobserveVisibility } from './shared/observers';
 import { type Geometry, candleWidths, placeElements } from './views/series-view';
 
 /** A range of logical positions: bar `i` covers `[i - 0.5, i + 0.5)`. */
@@ -72,7 +75,10 @@ export interface ChartApi {
 	addSeries<T extends SeriesType>(type: T, options?: SeriesCreateOptions<T>): SeriesApi<T>;
 	removeSeries(series: SeriesApi): void;
 	timeScale(): TimeScaleApi;
-	/** Resolves once all data handed over so far has been applied and painted. */
+	/**
+	 * Resolves once all data handed over so far has been applied and painted. A chart outside the
+	 * viewport is not painted until it comes back into view, and does not wait for that.
+	 */
 	whenIdle(): Promise<void>;
 	/** Where the data engine runs; `connecting` until a worker has answered or failed. */
 	engineMode(): 'none' | 'connecting' | 'worker' | 'local';
@@ -90,8 +96,15 @@ interface Deferred {
 	action: () => void;
 }
 
-class Chart implements ChartApi, InteractionHost, TimeScaleApi {
+/** The used value of a length, in CSS pixels, or NaN for anything else (`auto`, a percentage). */
+function pixels(value: string): number {
+	return value.endsWith('px') ? Number.parseFloat(value) : Number.NaN;
+}
+
+class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 	public readonly scale: TimeScale;
+	/** Whether the chart waits for the shared animation frame (see `FrameClient`). */
+	public frameQueued = false;
 	private readonly _container: HTMLElement;
 	private readonly _root: HTMLDivElement;
 	private readonly _pane: Layer;
@@ -111,7 +124,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	/** Everything applied so far, merged; the theme is laid under it whenever it changes. */
 	private _input: DeepPartial<ChartOptions>;
 	private _options: ChartOptions;
-	private _darkQuery: MediaQueryList | null = null;
+	/** The system color scheme, watched while the theme is `auto`. */
+	private _scheme: ColorSchemeWatch | null = null;
 	private _engine: EngineClient | null = null;
 	private _width = 0;
 	private _height = 0;
@@ -128,8 +142,15 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	private _layersDirty = true;
 
 	private _level: Invalidation = INVALIDATE_NONE;
-	private _frame: number | null = null;
-	private _resizeObserver: ResizeObserver | null = null;
+	/** Whether the shared resize observer reports the size of the root element. */
+	private _sizeObserved = false;
+	/** With `autoSize`: the size has to be measured before it is used (see `_ensureSize`). */
+	private _sizeStale = false;
+	/**
+	 * Whether any part of the chart is in the viewport. A chart that is not keeps applying data and
+	 * remembers its invalidation level, but draws only once it is visible again.
+	 */
+	private _visible = true;
 	private _destroyed = false;
 	private _deferred: Deferred[] = [];
 	private _idle: (() => void)[] = [];
@@ -158,7 +179,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	private _timeAxisDrawn = -1;
 	private _timeAxisOrigin = 0;
 	private readonly _axisStyle: AxisStyle = { background: '', textColor: '', font: '', pixelRatio: 1 };
-	private _ratioQuery: MediaQueryList | null = null;
+	private _unwatchPixelRatio: (() => void) | null = null;
 	private _axisFitScale = -1;
 	private _axisFitDigit = -1;
 
@@ -182,7 +203,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 		container.appendChild(this._root);
 		this._interaction = new Interaction(this._root, this);
 
-		this._watchPixelRatio();
+		this._unwatchPixelRatio = watchPixelRatio(doc.defaultView, this._onPixelRatio);
+		observeVisibility(this._root, this._onVisibility);
 		this._applyResolved(this._options);
 	}
 
@@ -203,7 +225,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 
 	public theme(): 'light' | 'dark' {
 		const theme = this._options.theme;
-		const dark = theme === 'auto' ? this._darkQuery?.matches === true : theme === 'dark';
+		const dark = theme === 'auto' ? this._scheme?.dark === true : theme === 'dark';
 		return dark ? 'dark' : 'light';
 	}
 
@@ -269,17 +291,14 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 			return;
 		}
 		this._destroyed = true;
-		this._resizeObserver?.disconnect();
-		this._resizeObserver = null;
-		if (this._frame !== null) {
-			cancelAnimationFrame(this._frame);
-			this._frame = null;
-		}
+		unobserveSize(this._root);
+		unobserveVisibility(this._root);
+		cancelFrame(this);
 		this._interaction.destroy();
-		this._ratioQuery?.removeEventListener('change', this._onPixelRatio);
-		this._ratioQuery = null;
-		this._darkQuery?.removeEventListener('change', this._onScheme);
-		this._darkQuery = null;
+		this._unwatchPixelRatio?.();
+		this._unwatchPixelRatio = null;
+		this._scheme?.release();
+		this._scheme = null;
 		this._engine?.destroy();
 		this._engine = null;
 		this._deferred = [];
@@ -313,6 +332,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	}
 
 	public getVisibleLogicalRange(): LogicalRange | null {
+		this._syncView();
 		const scale = this.scale;
 		return scale.isEmpty || scale.width <= 0 ? null : { from: scale.from, to: scale.to };
 	}
@@ -349,9 +369,23 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 		if (level > this._level) {
 			this._level = level;
 		}
-		if (this._frame === null) {
-			this._frame = requestAnimationFrame(this._draw);
+		if (this._visible) {
+			requestFrame(this);
 		}
+	}
+
+	/** Read phase of a frame: everything the draw needs from the layout, before any chart writes. */
+	public frameRead(): void {
+		this._syncView();
+	}
+
+	/**
+	 * Brings the pane size and the view up to date with the layout and with pointer input that waits
+	 * for it. Called before the view is read or changed outside a frame, so calls apply in order.
+	 */
+	private _syncView(): void {
+		this._ensureSize();
+		this._interaction.resolve();
 	}
 
 	// Data flow
@@ -366,6 +400,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 		}
 		const engine = this._engine;
 		if (engine === null || !engine.dataPending) {
+			this._syncView();
 			action();
 			this.invalidate(INVALIDATE_LIGHT);
 			return;
@@ -383,6 +418,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	};
 
 	private readonly _onEvent = (event: EngineEvent): void => {
+		// The window to ask for depends on the pane width.
+		this._ensureSize();
 		const scale = this.scale;
 		const wasEmpty = scale.isEmpty;
 		const version = scale.version;
@@ -401,6 +438,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 			(scale.version !== version || event.stale || event.window !== undefined || event.patches !== undefined);
 		const deferred = this._deferred;
 		while (deferred.length > 0 && deferred[0]!.seq <= event.ack) {
+			// Pointer input from before the call comes first.
+			this._interaction.resolve();
 			deferred.shift()!.action();
 			changed = true;
 		}
@@ -409,9 +448,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 			// so new data is drawn in one frame instead of an empty frame followed by the data.
 			this._requestWindow(this._container.ownerDocument.defaultView?.devicePixelRatio ?? 1);
 			this.invalidate(INVALIDATE_LIGHT);
-		} else {
-			this._settle();
 		}
+		// Nothing to draw, or a chart outside the viewport, which draws when it comes back.
+		this._settle();
 	};
 
 	/**
@@ -446,7 +485,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	private _isIdle(): boolean {
 		return (
 			this._destroyed ||
-			(this._frame === null && this._fetches.size === 0 && (this._engine === null || this._engine.pending === 0))
+			(!this.frameQueued && this._fetches.size === 0 && (this._engine === null || this._engine.pending === 0))
 		);
 	}
 
@@ -529,7 +568,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	// Options
 
 	private _resolve(): ChartOptions {
-		return resolveOptions(this._input, this._darkQuery?.matches === true);
+		return resolveOptions(this._input, this._scheme?.dark === true);
 	}
 
 	/** Re-resolves the options, for example after the system color scheme changed. */
@@ -566,20 +605,15 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	/** Listens to the system color scheme while the theme is `auto`. */
 	private _watchScheme(): void {
 		const auto = this._input.theme === 'auto';
-		if (auto === (this._darkQuery !== null)) {
+		if (auto === (this._scheme !== null)) {
 			return;
 		}
 		if (!auto) {
-			this._darkQuery!.removeEventListener('change', this._onScheme);
-			this._darkQuery = null;
+			this._scheme!.release();
+			this._scheme = null;
 			return;
 		}
-		const view = this._container.ownerDocument.defaultView;
-		if (view === null || typeof view.matchMedia !== 'function') {
-			return;
-		}
-		this._darkQuery = view.matchMedia('(prefers-color-scheme: dark)');
-		this._darkQuery.addEventListener?.('change', this._onScheme);
+		this._scheme = watchColorScheme(this._container.ownerDocument.defaultView, this._onScheme);
 	}
 
 	private readonly _onScheme = (): void => {
@@ -591,26 +625,64 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	// Sizing and layout
 
 	private _syncSizing(): void {
+		const root = this._root;
 		if (this._options.autoSize) {
-			this._root.style.width = '100%';
-			this._root.style.height = '100%';
-			if (this._resizeObserver === null && typeof ResizeObserver !== 'undefined') {
-				this._resizeObserver = new ResizeObserver(() => this._measure());
-				this._resizeObserver.observe(this._container);
+			root.style.width = '100%';
+			root.style.height = '100%';
+			if (!this._sizeObserved) {
+				// The observer reports after a layout, which is after the next frame's draw. That draw
+				// measures instead, in its read phase, so the first paint already has the right size.
+				// Without an observer nothing reports later changes, so every options change measures.
+				this._sizeObserved = observeSize(root, this._onSize);
+				this._sizeStale = true;
+				this.invalidate(INVALIDATE_FULL);
 			}
-			this._measure();
 		} else {
-			this._resizeObserver?.disconnect();
-			this._resizeObserver = null;
-			this._root.style.width = `${this._options.width}px`;
-			this._root.style.height = `${this._options.height}px`;
+			if (this._sizeObserved) {
+				unobserveSize(root);
+				this._sizeObserved = false;
+			}
+			this._sizeStale = false;
+			root.style.width = `${this._options.width}px`;
+			root.style.height = `${this._options.height}px`;
 			this._setSize(this._options.width, this._options.height);
 		}
 	}
 
-	private _measure(): void {
-		const rect = this._container.getBoundingClientRect();
-		this._setSize(Math.floor(rect.width), Math.floor(rect.height));
+	/** Size of the root element's content box, from the shared resize observer. */
+	private readonly _onSize = (width: number, height: number): void => {
+		if (this._destroyed || !this._options.autoSize) {
+			return;
+		}
+		this._sizeStale = false;
+		this._setSize(Math.floor(width), Math.floor(height));
+	};
+
+	/**
+	 * Measures the chart if its size is not known yet. This reads the layout, and so can force one:
+	 * it happens in the read phase of a frame, where every chart reads before any chart writes, or
+	 * earlier when a call or arriving data needs the size, but not when the chart is created: charts
+	 * created in a loop would each lay the page out again.
+	 *
+	 * The size is that of the root element, which fills the content box of the container. The
+	 * container's bounding rectangle would include its padding and borders and follow its CSS
+	 * transforms, and the canvases would no longer fit the root.
+	 */
+	private _ensureSize(): void {
+		if (!this._sizeStale) {
+			return;
+		}
+		this._sizeStale = false;
+		const root = this._root;
+		// The used width and height keep their fractions, like the sizes the observer reports;
+		// `clientWidth` is rounded, and the two would disagree by a pixel.
+		const style = this._container.ownerDocument.defaultView?.getComputedStyle(root);
+		const width = style === undefined ? Number.NaN : pixels(style.width);
+		const height = style === undefined ? Number.NaN : pixels(style.height);
+		this._setSize(
+			Math.floor(width === width ? width : root.clientWidth),
+			Math.floor(height === height ? height : root.clientHeight),
+		);
 	}
 
 	private _setSize(width: number, height: number): void {
@@ -637,19 +709,22 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	}
 
 	/** Redraws at the new resolution when the window moves to another screen or the page is zoomed. */
-	private _watchPixelRatio(): void {
-		const view = this._container.ownerDocument.defaultView;
-		if (view === null || typeof view.matchMedia !== 'function') {
+	private readonly _onPixelRatio = (): void => {
+		this.invalidate(INVALIDATE_FULL);
+	};
+
+	private readonly _onVisibility = (visible: boolean): void => {
+		if (this._destroyed || visible === this._visible) {
 			return;
 		}
-		this._ratioQuery?.removeEventListener('change', this._onPixelRatio);
-		this._ratioQuery = view.matchMedia(`(resolution: ${view.devicePixelRatio}dppx)`);
-		this._ratioQuery.addEventListener?.('change', this._onPixelRatio);
-	}
-
-	private readonly _onPixelRatio = (): void => {
-		this._watchPixelRatio();
-		this.invalidate(INVALIDATE_FULL);
+		this._visible = visible;
+		if (!visible) {
+			// Whoever waits for the chart to be idle does not wait for it to come back into view.
+			cancelFrame(this);
+			this._settle();
+		} else if (this._level !== INVALIDATE_NONE) {
+			requestFrame(this);
+		}
 	};
 
 	private _placeLayers(): void {
@@ -687,8 +762,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 
 	// Frame
 
-	private readonly _draw = (now: number): void => {
-		this._frame = null;
+	/** Write phase of a frame: sizes the canvases and draws whatever the invalidation level asks for. */
+	public frameWrite(now: number): void {
 		const level = this._level;
 		this._level = INVALIDATE_NONE;
 		const animating = this._interaction.step(now);
@@ -722,7 +797,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 			this.invalidate(INVALIDATE_LIGHT);
 		}
 		this._settle();
-	};
+	}
 
 	/**
 	 * Level of detail for a bar spacing in device pixels: raw rows up to 16 bars per pixel, then the

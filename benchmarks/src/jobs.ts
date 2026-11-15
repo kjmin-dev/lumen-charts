@@ -5,8 +5,8 @@ import type { ChartSize } from './adapter.ts';
 import type { SeriesKind } from './data.ts';
 import type { Distribution } from './stats.ts';
 
-export type ScenarioName = 'load' | 'tick' | 'frames' | 'prepend' | 'refetch';
-export const SCENARIOS: readonly ScenarioName[] = ['load', 'tick', 'frames', 'prepend', 'refetch'];
+export type ScenarioName = 'load' | 'tick' | 'frames' | 'prepend' | 'refetch' | 'multi';
+export const SCENARIOS: readonly ScenarioName[] = ['load', 'tick', 'frames', 'prepend', 'refetch', 'multi'];
 
 export interface DatasetSpec {
 	readonly kind: SeriesKind;
@@ -122,7 +122,40 @@ export interface RefetchJob extends JobBase {
 	readonly budgetMs: number;
 }
 
-export type Job = LoadJob | TickJob | FramesJob | PrependJob | RefetchJob;
+/**
+ * Several charts on one page, as a dashboard has them: `charts` charts in a grid of `columns`
+ * columns, each filling its cell (the library's auto-size mode) and holding the data set in a
+ * series of its own. The cells are sized so that the first `visibleCharts` charts fill the
+ * viewport and the others are below the fold, out of view. The charts are created and loaded in
+ * one loop, and then every chart receives the same live ticks, round after round.
+ */
+export interface MultiJob extends JobBase {
+	readonly scenario: 'multi';
+	readonly charts: number;
+	readonly visibleCharts: number;
+	readonly columns: number;
+	/** Measured rounds: the most a run measures. A round is one tick to every chart, then `settle()` of all. */
+	readonly rounds: number;
+	/**
+	 * Measuring stops after the first round that ends `budgetMs` or later after measuring started,
+	 * once at least `minRounds` rounds are measured. A budget of 0 always measures `rounds`.
+	 */
+	readonly minRounds: number;
+	readonly budgetMs: number;
+	/** Rounds applied before measuring, taken from the same stream: the most a run applies. */
+	readonly warmupRounds: number;
+	/** Warm-up stops after the first round that ends this long after it started. 0: no limit. */
+	readonly warmupBudgetMs: number;
+	/** Every Nth tick starts a new bar. */
+	readonly newBarEvery: number;
+	/**
+	 * Most workers the library shares between its charts, for libraries with such a limit (lumen's
+	 * `setMaxWorkers`); null leaves the library's default.
+	 */
+	readonly maxWorkers: number | null;
+}
+
+export type Job = LoadJob | TickJob | FramesJob | PrependJob | RefetchJob | MultiJob;
 
 /** All times start when `setData` is called, except `convertMs` and the `*WithConversionMs` sums. */
 export interface LoadTimings {
@@ -322,7 +355,89 @@ export interface RefetchRun {
 	memory: MemoryResult | null;
 }
 
-export type RunResult = LoadRun | TickRun | FramesRun | PrependRun | RefetchRun;
+/**
+ * Time the page's main thread spent, from the browser's own counters (CDP `Performance.getMetrics`).
+ * Unlike the frame probe it counts everything: message and observer callbacks, layout and style.
+ */
+export interface MainThreadTimes {
+	/** All tasks of the main thread. */
+	taskMs: number;
+	/** JavaScript, wherever it ran. */
+	scriptMs: number;
+	/** Layout, including layouts forced by a script reading the layout. */
+	layoutMs: number;
+	/** Style recalculation. */
+	styleMs: number;
+}
+
+export interface MultiRun {
+	charts: number;
+	visibleCharts: number;
+	/** CSS size of one chart. */
+	cell: ChartSize;
+	/** Generating the data set and the ticks in the page (not part of any time below). */
+	generateMs: number;
+	/**
+	 * The loop that creates every chart and hands each its data: `create` and `setData` per chart.
+	 * Synchronous time on the main thread, including any layout the library forces.
+	 */
+	createMs: number;
+	/**
+	 * From the start of that loop until every chart has settled with its data: the first paint of
+	 * all charts.
+	 */
+	shownMs: number;
+	/** JavaScript time in animation-frame callbacks during `shownMs`. */
+	shownFrameJsMs: number;
+	/** Main-thread time during `shownMs`, or null without the runner. */
+	shownMainThread: MainThreadTimes | null;
+	/**
+	 * Before the charts are created (data already generated) and after they are loaded and the
+	 * library's background work has had a second to finish, each after a full GC. `after.workers.count`
+	 * is the number of workers the charts run in.
+	 */
+	memory: MemoryResult | null;
+	/** Dedicated workers of the page once the charts are loaded, or null when they cannot be counted. */
+	workers: number | null;
+	/**
+	 * Resident memory of the browser's renderer processes at the two points `memory` is measured, and
+	 * the growth between them, or null without the runner. Unlike the heaps it includes what a thread
+	 * costs outside any heap (its stack, the engine's own structures, compiled code) and the
+	 * canvases' bitmaps that live in the renderer; it is coarser, since memory a collection frees is
+	 * not always given back to the system at once.
+	 */
+	rendererResident: { beforeBytes: number; afterBytes: number; retainedBytes: number } | null;
+	/** Sum of the `applyTick` calls of a round divided by the number of charts. */
+	sync: Distribution;
+	/** Wall time from the last `applyTick` of a round until every chart has settled. */
+	settle: Distribution;
+	/** JavaScript time in animation-frame callbacks during each round: what the frame costs. */
+	frameJs: Distribution;
+	/** Animation-frame callbacks the library ran during each round. */
+	frameCallbacks: Distribution;
+	/**
+	 * Main-thread JavaScript per tick that the page can time, per round: (the round's `applyTick`
+	 * calls + its animation-frame callbacks) / charts. Leaves out the callbacks that receive the
+	 * engine's answers; `tickMainThread` has those.
+	 */
+	mainThreadPerTick: Distribution;
+	/**
+	 * Main-thread time per measured round over the whole measured phase, from the browser's counters:
+	 * everything the round costs, including the harness's own loop. Null without the runner.
+	 */
+	tickMainThread: MainThreadTimes | null;
+	/** Rounds measured. */
+	rounds: number;
+	/** Warm-up rounds applied (fewer than the job's when its warm-up budget ran out). */
+	warmupRounds: number;
+	/**
+	 * JavaScript time in animation-frame callbacks while the charts below the fold are scrolled into
+	 * view after the last round and settle: the draws a library put off while they were out of view.
+	 */
+	revealFrameJsMs: number;
+}
+
+export type RunResult = LoadRun | TickRun | FramesRun | PrependRun | RefetchRun | MultiRun;
 
 export type FailureReason = 'error' | 'timeout' | 'crash';
 
@@ -398,6 +513,8 @@ export function caseId(job: Job): string {
 			return `${base}/${sizeLabel(job.batch)}`;
 		case 'refetch':
 			return `${base}/${job.memoryLimit / 2 ** 20}mib`;
+		case 'multi':
+			return `${base}/${job.charts}-charts${job.maxWorkers === null ? '' : `/max-workers-${job.maxWorkers}`}`;
 	}
 }
 
@@ -437,6 +554,11 @@ export interface PlanOptions {
 	 * before the budget; it only shortens runs of slow ones, whose distribution is clear long before.
 	 */
 	budgetMs?: number;
+	/**
+	 * Worker limits to run the multi-chart scenario with, one case each (see `MultiJob.maxWorkers`;
+	 * default: the library's own limit only).
+	 */
+	maxWorkers?: readonly (number | null)[];
 }
 
 export const DEFAULT_BUDGET_MS = 10_000;
@@ -513,6 +635,24 @@ const REFETCH_CASES: readonly { dataset: DatasetSpec; memoryLimit: number }[] = 
 ];
 const QUICK_REFETCH_CASES: readonly { dataset: DatasetSpec; memoryLimit: number }[] = [
 	{ dataset: { kind: 'line', size: 100 * K }, memoryLimit: 1.5 * 2 ** 20 },
+];
+
+interface MultiCase {
+	readonly dataset: DatasetSpec;
+	readonly charts: number;
+	readonly visibleCharts: number;
+	readonly columns: number;
+}
+
+// A dashboard of 16 charts, half of them below the fold, each with 100k one-minute candles (ten
+// weeks) and live ticks; and 4 charts in view with 1M candles each, where the loads are heavy
+// enough to show whether a library runs them side by side.
+const MULTI_CASES: readonly MultiCase[] = [
+	{ dataset: { kind: 'candles', size: 100 * K }, charts: 16, visibleCharts: 8, columns: 4 },
+	{ dataset: { kind: 'candles', size: M }, charts: 4, visibleCharts: 4, columns: 2 },
+];
+const QUICK_MULTI_CASES: readonly MultiCase[] = [
+	{ dataset: { kind: 'candles', size: 10 * K }, charts: 4, visibleCharts: 2, columns: 2 },
 ];
 
 const QUICK_LOAD_DATASETS: readonly DatasetSpec[] = [
@@ -623,6 +763,32 @@ export function planJobs(options: PlanOptions): Plan {
 					jumps: quick ? 3 : 20,
 					minJumps: quick ? 2 : 5,
 					budgetMs,
+				});
+			}
+		}
+	}
+
+	if (options.scenarios.includes('multi')) {
+		for (const { dataset, charts, visibleCharts, columns } of quick ? QUICK_MULTI_CASES : MULTI_CASES) {
+			if (!keep(dataset)) {
+				continue;
+			}
+			for (const maxWorkers of options.maxWorkers ?? [null]) {
+				cases.push({
+					scenario: 'multi',
+					dataset,
+					seed,
+					chart,
+					charts,
+					visibleCharts,
+					columns,
+					rounds: quick ? 30 : 300,
+					minRounds: quick ? 10 : 60,
+					budgetMs,
+					warmupRounds: quick ? 5 : 30,
+					warmupBudgetMs,
+					newBarEvery: 10,
+					maxWorkers,
 				});
 			}
 		}
