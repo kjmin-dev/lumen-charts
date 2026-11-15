@@ -119,7 +119,9 @@ pnpm build        # emit dist/ for every package with tsc
 ```
 
 Versioning uses Changesets: run `pnpm changeset` in a pull request that changes a package.
-All packages are released together under one version.
+All packages are released together under one version. Releases go to npm from CI with trusted
+publishing and provenance after a maintainer approves them; [docs/releasing.md](docs/releasing.md)
+describes the flow and the one-time setup.
 
 ## Benchmarks
 
