@@ -11,8 +11,10 @@ import { type LevelWindow, WindowCache } from './data/window-cache';
 import { ChartIndicators, type IndicatorApi, type IndicatorOptions, type IndicatorOutputApi } from './indicators';
 import { type AxisTarget, Interaction, type InteractionHost } from './input/interaction';
 import { INVALIDATE_FULL, INVALIDATE_LIGHT, INVALIDATE_NONE, type Invalidation } from './model/invalidation';
+import type { SessionInfo } from './model/sessions';
+import { TimeDisplay } from './model/time-display';
 import { TimeScale } from './model/time-scale';
-import { TimeTicks, formatDateTime } from './model/time-ticks';
+import { TimeTicks } from './model/time-ticks';
 import {
 	type CandlestickOptions,
 	type ChartOptions,
@@ -41,6 +43,7 @@ import {
 } from './render/chrome';
 import { Layer } from './render/layer';
 import { drawCandles, drawHistogram, drawLine } from './render/series';
+import { drawExtendedHours, drawSessionBreaks } from './render/sessions';
 import { Series, type SeriesApi, type SeriesCreateOptions, type SeriesType } from './series';
 import { type FrameClient, cancelFrame, requestFrame } from './shared/frame';
 import { type ColorSchemeWatch, watchColorScheme, watchPixelRatio } from './shared/media';
@@ -65,6 +68,16 @@ export interface TimeScaleApi {
 	setVisibleLogicalRange(range: LogicalRange): void;
 	/** The range on screen right now, or null while there is no data. */
 	getVisibleLogicalRange(): LogicalRange | null;
+	/**
+	 * Whether `time` (UTC milliseconds) falls in a session of the schedule (`sessions.schedule`),
+	 * extended hours included. Always true without a schedule.
+	 */
+	isInSession(time: number): boolean;
+	/**
+	 * The session `time` (UTC milliseconds) falls in, with its kind and trading day, or null outside
+	 * every session and without a schedule.
+	 */
+	sessionAt(time: number): SessionInfo | null;
 }
 
 export interface ChartApi {
@@ -181,6 +194,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	/** The scale whose ticks the horizontal grid lines follow, from the last model update. */
 	private _gridAxis: PriceAxis;
 	private readonly _timeTicks = new TimeTicks();
+	/** Time zone, sessions and label formats. */
+	private readonly _time = new TimeDisplay();
 	private readonly _cache = new WindowCache();
 	private readonly _series: Series[] = [];
 	private readonly _geometry: Geometry = { origin: 0, spacing: 1, from: 0, to: 0, shift: 0, firstRow: 0 };
@@ -255,6 +270,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	public constructor(container: HTMLElement, options: DeepPartial<ChartOptions>) {
 		this._container = container;
 		this._input = mergeOptions({}, options);
+		// Throws a RangeError for an unknown time zone or locale, or a malformed session schedule.
+		this._time.apply(resolveOptions(this._input, false));
 		this._watchScheme();
 		this._options = this._resolve();
 		this.scale = new TimeScale(this._options.timeScale.barSpacing, this._options.timeScale.rightOffset);
@@ -299,7 +316,13 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		if (this._destroyed) {
 			return;
 		}
-		this._input = mergeOptions(this._input, options);
+		const input = mergeOptions(this._input, options);
+		if (options.localization !== undefined || options.sessions !== undefined) {
+			// Throws a RangeError for an unknown time zone or locale, or a malformed session schedule,
+			// before anything changes.
+			this._time.apply(resolveOptions(input, false));
+		}
+		this._input = input;
 		this._watchScheme();
 		this._update();
 	}
@@ -451,6 +474,14 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._syncView();
 		const scale = this.scale;
 		return scale.isEmpty || scale.width <= 0 ? null : { from: scale.from, to: scale.to };
+	}
+
+	public isInSession(time: number): boolean {
+		return this._time.isInSession(time);
+	}
+
+	public sessionAt(time: number): SessionInfo | null {
+		return this._time.sessionAt(time);
 	}
 
 	// InteractionHost and SeriesHost
@@ -619,6 +650,11 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		const wasEmpty = scale.isEmpty;
 		const version = scale.version;
 		this._cache.apply(event, this._columnCount);
+		const window = event.window;
+		if (window !== undefined && window.count > 0) {
+			// Offsets of the bars that can come into view are looked up before a frame needs them.
+			this._time.cover(window.time[0]!, window.time[window.count - 1]!);
+		}
 		scale.setExtent(event.first, event.end);
 		if (wasEmpty && !scale.isEmpty) {
 			scale.reset(this._options.timeScale.barSpacing, this._options.timeScale.rightOffset);
@@ -895,6 +931,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._ticksScale = -1;
 		for (const axis of this._axes) {
 			axis.fitTicks = -1;
+		}
+		const drawn = this._drawn;
+		if (this._time.apply(options) && drawn !== null && drawn.count > 0) {
+			this._time.cover(drawn.time[0]!, drawn.time[drawn.count - 1]!);
 		}
 		this._syncSizing();
 		this._computeLayout();
@@ -1393,13 +1433,35 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._ticksGeneration++;
 			if (source === null) {
 				timeTicks.count = 0;
+				this._time.marks.breakCount = 0;
+				this._time.marks.shadeCount = 0;
 			} else {
 				// At a coarse level the labels sit on buckets, which hold `size` bars each.
+				const time = this._time;
+				const from = geometry.from - source.start;
+				const to = geometry.to - source.start;
 				timeTicks.update(
 					source.time,
-					geometry.from - source.start,
-					geometry.to - source.start,
+					from,
+					to,
 					Math.max(1, (fontSize * 7) / (scale.barSpacing * size)),
+					time.zone,
+					time.sessions,
+					time.format,
+					size,
+				);
+				const sessions = this._options.sessions;
+				// Breaks and shading are placed while a day is at least 6 CSS pixels wide, and not on
+				// daily bars.
+				time.marks.update(
+					source.time,
+					from,
+					timeTicks.dates ? from : to,
+					time.zone,
+					time.sessions,
+					scale.width / 6,
+					sessions.breaks.visible,
+					sessions.extendedHours.visible,
 				);
 			}
 		}
@@ -1411,6 +1473,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			const index = Math.max((tickStart + timeTicks.position[i]!) * size, scale.first);
 			this._tickXs[i] = Math.round(geometry.origin + index * geometry.spacing);
 		}
+		this._time.marks.place(geometry.origin, geometry.spacing, tickStart, size);
 	}
 
 	/**
@@ -1500,6 +1563,18 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		ctx.fillStyle = options.layout.background;
 		ctx.fillRect(0, 0, layer.width, layer.height);
 		const grid = this._gridAxis;
+		const marks = this._time.marks;
+		const sessions = options.sessions;
+		if (marks.shadeCount > 0) {
+			drawExtendedHours(
+				ctx,
+				marks.shadeLeft,
+				marks.shadeRight,
+				marks.shadeCount,
+				layer.height,
+				sessions.extendedHours.color,
+			);
+		}
 		drawGrid(
 			ctx,
 			layer.width,
@@ -1512,6 +1587,18 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			options.grid.horzLines,
 			ratio,
 		);
+		if (marks.breakCount > 0) {
+			const breaks = sessions.breaks;
+			drawSessionBreaks(
+				ctx,
+				marks.breakX,
+				marks.breakCount,
+				layer.height,
+				breaks.color,
+				thickness(breaks.width, ratio),
+				breaks.style,
+			);
+		}
 		if (this._watermarkLines.length > 0) {
 			this._renderWatermark(ctx, layer.width, layer.height);
 		}
@@ -1741,7 +1828,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			}
 		}
 		if (vertLine.labelVisible && options.timeScale.visible && inCache) {
-			const label = formatDateTime(drawn!.time[row]!);
+			const time = drawn!.time[row]!;
+			// Daily bars are dates, shown as they are (see `TimeTicks.dates`).
+			const label = this._time.format.crosshair(time, this._timeTicks.dates ? time : this._time.zone.wall(time));
 			const width = Math.ceil((label.length * this._digitWidth + 2 * AXIS_PADDING) * ratio);
 			const left = Math.min(Math.max(paneLeft, x - (width >> 1)), Math.max(paneLeft, paneLeft + paneWidth - width));
 			const background = vertLine.labelBackgroundColor;

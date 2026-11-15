@@ -185,6 +185,8 @@ const someTasks = async (rounds = 6): Promise<void> => {
 	}
 };
 const everyFifth = (_: number, i: number): boolean => i % 5 === 0;
+/** UTC milliseconds of a crosshair label `YYYY-MM-DD HH:MM`. */
+const labelTime = (label: string): number => Date.parse(`${label.replace(' ', 'T')}:00Z`);
 const outsideRemoved = (_: number, i: number): boolean => i < 90_010 || i > 90_019;
 
 describe('chart with series', () => {
@@ -197,7 +199,16 @@ describe('chart with series', () => {
 	const layer = (index: number) => recorders.get(chart.element().querySelectorAll('canvas')[index]!)!;
 	const pane = () => layer(0);
 	const priceAxis = () => layer(1);
+	const timeAxis = () => layer(2);
 	const overlay = () => layer(3);
+	const axisLabels = (): string[] =>
+		timeAxis()
+			.calls.filter(call => call.name === 'fillText')
+			.map(call => String(call.args[0]));
+	const crosshairLabels = (): string[] =>
+		overlay()
+			.calls.filter(call => call.name === 'fillText')
+			.map(call => String(call.args[0]));
 	const clearCalls = (): void => {
 		for (const entry of recorders.values()) {
 			entry.calls.length = 0;
@@ -1108,5 +1119,157 @@ describe('chart with series', () => {
 		const lastText = calls.map(call => call.name).lastIndexOf('fillText');
 		const firstCandle = calls.findIndex(call => call.name === 'fillRect' && call.fillStyle === '#26a69a');
 		expect(lastText).toBeLessThan(firstCandle);
+	});
+
+	describe('time zones and sessions', () => {
+		/** One-minute candles from 2024-03-08 05:00 UTC (00:00 in New York) across the change to EDT. */
+		const START = Date.UTC(2024, 2, 8, 5);
+
+		it('changes the time zone at run time: axis, crosshair, and back', async () => {
+			chart.addSeries('candlestick').setData(candles(4 * 1440, START));
+			chart.timeScale().setVisibleLogicalRange({ from: 1400, to: 1800 });
+			await settle();
+			// 04:20 to 11:00 UTC on 9 March.
+			const utc = axisLabels();
+			expect(utc).toContain('06:00');
+			expect(utc).not.toContain('9');
+			pointer('pointermove', 300, 100);
+			await settle();
+			const utcCrosshair = crosshairLabels().find(label => /^2024-03-0\d \d\d:\d\d$/.test(label))!;
+
+			clearCalls();
+			chart.applyOptions({ localization: { timeZone: 'America/New_York' } });
+			await settle();
+			// The same bars, five hours earlier on the wall clock: 23:20 on the 8th to 06:00 on the 9th.
+			const newYork = axisLabels();
+			expect(newYork).not.toEqual(utc);
+			expect(newYork).toContain('9');
+			expect(newYork).toContain('01:00');
+			const shifted = crosshairLabels().find(label => /^2024-03-0\d \d\d:\d\d$/.test(label))!;
+			expect(labelTime(utcCrosshair) - labelTime(shifted)).toBe(5 * 3_600_000);
+			expect(chart.options().localization.timeZone).toBe('America/New_York');
+
+			clearCalls();
+			chart.applyOptions({ localization: { timeZone: 'UTC' } });
+			await settle();
+			expect(axisLabels()).toEqual(utc);
+		});
+
+		it('refuses an unknown time zone or a malformed schedule and keeps the options', async () => {
+			chart.addSeries('candlestick').setData(candles(500, START));
+			await settle();
+			chart.applyOptions({ localization: { timeZone: 'Europe/Berlin' } });
+			expect(() => chart.applyOptions({ localization: { timeZone: 'Atlantis/Capital' } })).toThrow(RangeError);
+			expect(() =>
+				chart.applyOptions({ sessions: { schedule: { hours: [{ start: '09:30', end: '25:00' }] } } }),
+			).toThrow(RangeError);
+			expect(() => chart.applyOptions({ localization: { locale: 'not a locale!' } })).toThrow(RangeError);
+			expect(chart.options().localization.timeZone).toBe('Europe/Berlin');
+			expect(chart.options().sessions.schedule.hours).toEqual([]);
+			expect(() => createChart(container, { localization: { timeZone: 'Atlantis/Capital' } })).toThrow(RangeError);
+		});
+
+		it('formats with a locale and the application formatters', async () => {
+			chart.addSeries('candlestick').setData(candles(3 * 1440, START));
+			chart.timeScale().setVisibleLogicalRange({ from: 0, to: 3 * 1440 });
+			chart.applyOptions({
+				localization: { tickMarkFormatter: (_time, kind) => (kind === 'day' ? 'D' : null) },
+			});
+			await settle();
+			expect(axisLabels()).toContain('D');
+			expect(axisLabels()).toContain('12:00');
+			chart.applyOptions({
+				localization: { locale: 'en-US', tickMarkFormatter: null, timeFormatter: (time: number) => `t${time}` },
+			});
+			await settle();
+			expect(axisLabels().some(label => label.endsWith('PM'))).toBe(true);
+			clearCalls();
+			pointer('pointermove', 300, 100);
+			await settle();
+			expect(crosshairLabels().some(label => /^t\d+$/.test(label))).toBe(true);
+		});
+
+		it('draws session breaks and shades extended hours, and answers session queries', async () => {
+			// Extended equity hours in New York: 04:00 to 20:00, so 16 hours of bars a day.
+			const days = [8, 11, 12];
+			const time: number[] = [];
+			for (const day of days) {
+				const open = Date.UTC(2024, 2, day, day < 10 ? 9 : 8);
+				for (let i = 0; i < 16 * 60; i++) {
+					time.push(open + i * MINUTE);
+				}
+			}
+			const data = candles(time.length);
+			data.time.set(time);
+			chart.addSeries('candlestick').setData(data);
+			chart.timeScale().fitContent();
+			chart.applyOptions({
+				localization: { timeZone: 'America/New_York' },
+				sessions: {
+					schedule: {
+						timeZone: 'America/New_York',
+						hours: [
+							{ start: '04:00', end: '09:30', kind: 'pre' },
+							{ start: '09:30', end: '16:00' },
+							{ start: '16:00', end: '20:00', kind: 'post' },
+						],
+					},
+					breaks: { visible: true, color: '#ff00ff', style: 'solid' },
+					extendedHours: { color: '#00ffff' },
+				},
+			});
+			await settle();
+			const calls = pane().calls;
+			const breaks = calls.filter(call => call.name === 'fillRect' && call.fillStyle === '#ff00ff');
+			expect(breaks).toHaveLength(2);
+			// Three days: pre-market of the first, post and pre where two days meet (twice), and the last
+			// post-market.
+			const shades = calls.filter(call => call.name === 'fillRect' && call.fillStyle === '#00ffff');
+			expect(shades).toHaveLength(4);
+			const firstCandle = calls.findIndex(call => call.name === 'fillRect' && call.fillStyle === '#26a69a');
+			expect(calls.indexOf(shades[3]!)).toBeLessThan(firstCandle);
+			expect(calls.indexOf(breaks[1]!)).toBeLessThan(firstCandle);
+			// The second day starts at bar 960: the break sits at its left edge, between the shades.
+			const breakX = breaks[0]!.args[0] as number;
+			const shadeLeft = shades[1]!.args[0] as number;
+			const shadeRight = shadeLeft + (shades[1]!.args[2] as number);
+			expect(breakX).toBeGreaterThan(shadeLeft);
+			expect(breakX).toBeLessThan(shadeRight);
+			// The axis names the days after their trading day.
+			expect(axisLabels()).toEqual(expect.arrayContaining(['11', '12']));
+
+			const scale = chart.timeScale();
+			expect(scale.isInSession(Date.parse('2024-03-11T13:30:00Z'))).toBe(true);
+			expect(scale.isInSession(Date.parse('2024-03-10T13:30:00Z'))).toBe(false);
+			expect(scale.sessionAt(Date.parse('2024-03-11T13:30:00Z'))).toEqual({
+				index: 1,
+				kind: 'regular',
+				tradingDay: '2024-03-11',
+			});
+
+			// Hidden decorations, then no schedule: always in session.
+			chart.applyOptions({ sessions: { breaks: { visible: false }, extendedHours: { visible: false } } });
+			clearCalls();
+			await settle();
+			expect(pane().calls.filter(call => call.fillStyle === '#ff00ff' || call.fillStyle === '#00ffff')).toHaveLength(0);
+			chart.applyOptions({ sessions: { schedule: { hours: [] } } });
+			expect(scale.isInSession(Date.parse('2024-03-10T13:30:00Z'))).toBe(true);
+			expect(scale.sessionAt(Date.parse('2024-03-10T13:30:00Z'))).toBeNull();
+		});
+
+		it('shows daily bars as their UTC dates in any time zone', async () => {
+			const data = candles(400, Date.UTC(2023, 0, 2));
+			for (let i = 0; i < 400; i++) {
+				data.time[i] = Date.UTC(2023, 0, 2) + i * 86_400_000;
+			}
+			chart.addSeries('candlestick').setData(data);
+			chart.applyOptions({ localization: { timeZone: 'America/Los_Angeles' } });
+			chart.timeScale().fitContent();
+			await settle();
+			expect(axisLabels()).toContain('2024');
+			pointer('pointermove', 300, 100);
+			await settle();
+			expect(crosshairLabels().some(label => label.endsWith(' 00:00'))).toBe(true);
+		});
 	});
 });

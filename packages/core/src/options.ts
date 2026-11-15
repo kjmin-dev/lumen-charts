@@ -1,3 +1,6 @@
+import type { SessionSchedule } from './model/sessions';
+import type { TickMarkFormatter, TimeFormatter } from './model/time-format';
+
 /** Every key optional, at every level. Functions and arrays are taken as they are. */
 export type DeepPartial<T> = T extends (...args: never[]) => unknown
 	? T
@@ -129,6 +132,51 @@ export interface WatermarkOptions {
 	vertAlign: 'top' | 'center' | 'bottom';
 }
 
+/** Time zone, locale and formats of the time axis and the crosshair's time label. */
+export interface LocalizationOptions {
+	/**
+	 * Time zone whose wall-clock time the time axis and the crosshair show: an IANA name such as
+	 * `America/New_York`, `UTC` (default), or `local` for the system's zone. Bar times stay UTC
+	 * milliseconds; only what is shown changes, and labels fall on the zone's day, month and year
+	 * starts through daylight saving changes. An unknown name throws a RangeError.
+	 */
+	timeZone: string;
+	/**
+	 * BCP 47 locale of month names, dates and the clock (`de-DE`, `en-US`, ...). Empty (default):
+	 * the built-in formats, with English month names, a 24-hour clock and ISO dates.
+	 */
+	locale: string;
+	/** Formats time axis labels; null (default) uses the built-in labels. */
+	tickMarkFormatter: TickMarkFormatter | null;
+	/** Formats the crosshair's time label; null (default) uses the built-in format. */
+	timeFormatter: TimeFormatter | null;
+}
+
+export interface SessionBreakOptions {
+	visible: boolean;
+	color: string;
+	/** Width in CSS pixels. */
+	width: number;
+	style: LineStyle;
+}
+
+/** The trading sessions of the main series' market, and how the chart shows them. */
+export interface SessionOptions {
+	/**
+	 * When the market trades. Without `hours` (default) there is no schedule: the market never
+	 * closes, and days are calendar days in the chart's time zone. With a schedule, days on the time
+	 * axis are trading days and every session start is a candidate for a label.
+	 */
+	schedule: SessionSchedule;
+	/**
+	 * Vertical lines at the first bar of each trading day (each day without a schedule). Off by
+	 * default; drawn while days are at least 6 CSS pixels apart.
+	 */
+	breaks: SessionBreakOptions;
+	/** Background behind bars in extended-hours sessions (`pre` and `post`), while days are at least 6 CSS pixels apart. */
+	extendedHours: { visible: boolean; color: string };
+}
+
 export interface ChartOptions {
 	/** Width in CSS pixels. Ignored while `autoSize` is on. */
 	width: number;
@@ -156,6 +204,8 @@ export interface ChartOptions {
 	priceScales: Record<string, PriceScaleOptions>;
 	timeScale: TimeScaleOptions;
 	watermark: WatermarkOptions;
+	localization: LocalizationOptions;
+	sessions: SessionOptions;
 	/**
 	 * Where the data engine runs. `true` uses a worker and falls back to the main thread if the
 	 * page blocks workers; `false` always uses the main thread; a function supplies the worker.
@@ -188,6 +238,7 @@ export interface ThemeColors {
 	priceScale: { borderColor: string };
 	timeScale: { borderColor: string };
 	watermark: { color: string };
+	sessions: { breaks: { color: string }; extendedHours: { color: string } };
 }
 
 function themeColors(
@@ -198,6 +249,8 @@ function themeColors(
 	crosshair: string,
 	label: string,
 	watermark: string,
+	sessionBreak: string,
+	extendedHours: string,
 ): ThemeColors {
 	return {
 		layout: { background, textColor: text },
@@ -209,13 +262,34 @@ function themeColors(
 		priceScale: { borderColor: border },
 		timeScale: { borderColor: border },
 		watermark: { color: watermark },
+		sessions: { breaks: { color: sessionBreak }, extendedHours: { color: extendedHours } },
 	};
 }
 
 /** Built-in color presets, selected with the `theme` option. */
 export const themes: Readonly<Record<ThemeName, ThemeColors>> = {
-	light: themeColors('#ffffff', '#4a5160', '#eceef2', '#dcdfe5', '#6b7280', '#4a5160', 'rgba(74, 81, 96, 0.12)'),
-	dark: themeColors('#0e1116', '#aab2c0', '#1c2230', '#2a3140', '#5c6578', '#363d4c', 'rgba(170, 178, 192, 0.1)'),
+	light: themeColors(
+		'#ffffff',
+		'#4a5160',
+		'#eceef2',
+		'#dcdfe5',
+		'#6b7280',
+		'#4a5160',
+		'rgba(74, 81, 96, 0.12)',
+		'rgba(74, 81, 96, 0.4)',
+		'rgba(74, 81, 96, 0.06)',
+	),
+	dark: themeColors(
+		'#0e1116',
+		'#aab2c0',
+		'#1c2230',
+		'#2a3140',
+		'#5c6578',
+		'#363d4c',
+		'rgba(170, 178, 192, 0.1)',
+		'rgba(170, 178, 192, 0.35)',
+		'rgba(170, 178, 192, 0.06)',
+	),
 };
 
 function crosshairLine(): CrosshairLineOptions {
@@ -252,6 +326,12 @@ const BASE_OPTIONS: ChartOptions = {
 	priceScales: {},
 	timeScale: { visible: true, borderVisible: true, borderColor: '', barSpacing: 6, rightOffset: 0 },
 	watermark: { visible: false, text: '', color: '', fontSize: 48, horzAlign: 'center', vertAlign: 'center' },
+	localization: { timeZone: 'UTC', locale: '', tickMarkFormatter: null, timeFormatter: null },
+	sessions: {
+		schedule: { timeZone: '', days: [1, 2, 3, 4, 5], hours: [], holidays: [] },
+		breaks: { visible: false, color: '', width: 1, style: 'dashed' },
+		extendedHours: { visible: true, color: '' },
+	},
 	worker: true,
 	memoryLimit: Infinity,
 };
