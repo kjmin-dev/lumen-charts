@@ -401,6 +401,10 @@ does; one bound to a scale id uses the scale's base. The public forms are
 `SeriesApi.priceToCoordinate`, `coordinateToPrice` and `priceScale()`, and `ChartApi.priceScale(id)`
 (`PriceScaleApi`: options, width, visible range, conversions).
 
+**Measured** in [stage-4-price-axes.md](benchmarks/stage-4-price-axes.md): with one axis the frame
+takes what it took within one step of the 5 µs timer; a logarithmic scale costs a logarithm per price
+per frame (+25% of frame JavaScript with 1M candles and three averages in view).
+
 **Not built.** Value labels that collide are drawn over each other (Lightweight Charts moves them
 apart). Scales are never removed; an axis no longer needed is hidden. The magnet takes the first
 visible series whatever its scale. Pinch and wheel act on the time scale only.
