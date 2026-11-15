@@ -37,7 +37,43 @@ describe('WindowCache', () => {
 		cache.apply(event({ end: 10_000, stale: true }), columns);
 		const request = cache.plan(9900, 10_000.5, 0, 10_000)!;
 		expect(request.start + request.count).toBe(10_000);
-		expect(request.capacity).toBeGreaterThanOrEqual(request.count + 1024);
+		expect(request.capacity).toBe(request.count + 1024);
+		// The spare room does not grow with the number of visible bars.
+		const all = new WindowCache();
+		all.apply(event({ end: 1_000_000, stale: true }), columns);
+		const whole = all.plan(-0.5, 999_999.5, 0, 1_000_000)!;
+		expect(whole.capacity).toBe(1_000_000 + 1024);
+	});
+
+	it('extends only from the last bar of the timeline', () => {
+		const cache = new WindowCache();
+		// A snapshot that stops one bar short of the end, with spare room.
+		const snapshot = windowEvent(0, 10, 16);
+		snapshot.end = 11;
+		cache.apply(snapshot, columns);
+		// A patch for bar 10 follows the cached rows directly, but other series' values for that
+		// bar were never delivered, so the row must not become visible.
+		cache.apply(
+			event({
+				end: 11,
+				patches: [
+					{ series: TIME_PATCH, start: 10, count: 1, data: new Float64Array([100]) },
+					{ series: 1, start: 10, count: 1, data: new Float64Array([1, 1, 1, 1, 1]) },
+				],
+			}),
+			columns,
+		);
+		expect(cache.count).toBe(10);
+		expect(cache.plan(0, 10.5, 0, 11)).not.toBeNull();
+	});
+
+	it('lets go of a request the engine failed to answer', () => {
+		const cache = new WindowCache();
+		cache.apply(event({ end: 100, stale: true }), columns);
+		expect(cache.plan(0, 50, 0, 100)).not.toBeNull();
+		expect(cache.loading).toBe(true);
+		cache.apply(event({ end: 100, stale: true, failed: true }), columns);
+		expect(cache.loading).toBe(false);
 	});
 
 	it('does not request again until less than half a screen is left', () => {

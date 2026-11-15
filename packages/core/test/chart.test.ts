@@ -118,6 +118,9 @@ function candles(count: number, start = 0) {
 	return { time, open, high, low, close };
 }
 
+const idOf = (series: unknown): number => (series as { id: number }).id;
+const tasks = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+
 describe('chart with series', () => {
 	let container: HTMLDivElement;
 	let frames: ((now: number) => void)[];
@@ -363,6 +366,80 @@ describe('chart with series', () => {
 		await settle();
 		expect(overlay().calls.filter(call => call.name === 'clearRect').length).toBe(1);
 		expect(overlay().calls.filter(call => call.name === 'fillText').length).toBe(1);
+	});
+
+	const cacheOf = () =>
+		(chart as unknown as { _cache: { start: number; count: number; blocks: Map<number, Float64Array> } })._cache;
+
+	it('keeps a secondary value sent with the second of two new main bars', async () => {
+		const data = candles(1000);
+		const main = chart.addSeries('candlestick');
+		main.setData(data);
+		const line = chart.addSeries('line');
+		line.setData({ time: data.time, value: data.close });
+		await settle();
+		const t1 = data.time[999]! + MINUTE;
+		const t2 = t1 + MINUTE;
+		// One task: two new candles, then the line's value for the newest one.
+		main.update({ time: t1, open: 100, high: 101, low: 99, close: 100.5 });
+		main.update({ time: t2, open: 100.5, high: 102, low: 100, close: 101 });
+		line.update({ time: t2, value: 123 });
+		await settle();
+		const cache = cacheOf();
+		const row = 1001 - cache.start;
+		expect(row).toBeLessThan(cache.count);
+		expect(cache.blocks.get(idOf(line))![row]).toBe(123);
+	});
+
+	it('does not show a bar whose secondary values a racing snapshot left out', async () => {
+		const data = candles(5000);
+		const main = chart.addSeries('candlestick');
+		main.setData(data);
+		const line = chart.addSeries('line');
+		line.setData({ time: data.time, value: data.close });
+		await settle();
+
+		const time = data.time[4999]! + MINUTE;
+		// A new bar on both series, still buffered in the client.
+		main.update({ time, open: 100, high: 101, low: 99, close: 100.5 });
+		line.update({ time, value: 123 });
+		// In the same task the user zooms out, so the next frame requests a window ending at the
+		// end the client knows. The snapshot that comes back stops one bar short of the new bar.
+		const wheel = new WheelEvent('wheel', { deltaY: 300, bubbles: true, cancelable: true });
+		Object.defineProperty(wheel, 'clientX', { value: 500 });
+		chart.element().dispatchEvent(wheel);
+		runFrames();
+		await tasks();
+		await tasks();
+		// Before the next frame, a tick updates only the main bar.
+		main.update({ time, open: 100, high: 101.5, low: 99, close: 100.7 });
+		await tasks();
+		await tasks();
+		await settle();
+		// Then the main series moves on; the line does not tick again.
+		main.update({ time: time + MINUTE, open: 100, high: 101, low: 99, close: 100.2 });
+		await settle();
+
+		const cache = cacheOf();
+		const row = 5000 - cache.start;
+		expect(row).toBeLessThan(cache.count);
+		expect(cache.blocks.get(idOf(line))![row]).toBe(123);
+	});
+
+	it('follows the last value while the last bar is outside the cached window', async () => {
+		const data = candles(100_000);
+		const series = chart.addSeries('candlestick');
+		series.setData(data);
+		await settle();
+		chart.timeScale().setVisibleLogicalRange({ from: 1000, to: 1100 });
+		await settle();
+		const cache = cacheOf();
+		expect(cache.start + cache.count).toBeLessThan(100_000);
+		const last = 99_999;
+		const close = data.open[last]! + 7.25;
+		series.update({ time: data.time[last]!, open: data.open[last]!, high: close, low: data.low[last]!, close });
+		await settle();
+		expect((series as unknown as { lastValue: number }).lastValue).toBe(close);
 	});
 
 	it('reports rejected data by leaving the chart empty, and survives destroy while loading', async () => {

@@ -131,6 +131,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	private _timeAxisOrigin = 0;
 	private readonly _axisStyle: AxisStyle = { background: '', textColor: '', borderColor: '', font: '', pixelRatio: 1 };
 	private _ratioQuery: MediaQueryList | null = null;
+	private _axisFitScale = -1;
+	private _axisFitDigit = -1;
 
 	public constructor(container: HTMLElement, options: Partial<ChartOptions>) {
 		this._container = container;
@@ -345,7 +347,11 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 		if (wasEmpty && !scale.isEmpty) {
 			scale.reset(this._options.barSpacing, this._options.rightOffset);
 		}
-		let changed = scale.version !== version || event.stale || event.window !== undefined || event.patches !== undefined;
+		this._trackLastValues(event);
+		// A failed command changes nothing on screen, and redrawing for it would only repeat the request.
+		let changed =
+			event.failed !== true &&
+			(scale.version !== version || event.stale || event.window !== undefined || event.patches !== undefined);
 		const deferred = this._deferred;
 		while (deferred.length > 0 && deferred[0]!.seq <= event.ack) {
 			deferred.shift()!.action();
@@ -357,6 +363,35 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 			this._settle();
 		}
 	};
+
+	/**
+	 * Takes the latest value of each series straight from the patches. The last bar is often outside
+	 * the window held by the cache (the user is looking at history), and its value is still shown.
+	 */
+	private _trackLastValues(event: EngineEvent): void {
+		const patches = event.patches;
+		if (patches === undefined) {
+			return;
+		}
+		for (const patch of patches) {
+			if (patch.start + patch.count !== event.end) {
+				continue;
+			}
+			for (const series of this._series) {
+				if (series.id !== patch.series) {
+					continue;
+				}
+				const rows = patch.count;
+				const closeColumn = series.kind === 'ohlcv' ? 3 : 0;
+				const close = patch.data[closeColumn * rows + rows - 1]!;
+				if (close === close) {
+					series.lastValue = close;
+					series.lastUp = close >= patch.data[rows - 1]!;
+				}
+				break;
+			}
+		}
+	}
 
 	private _isIdle(): boolean {
 		return this._destroyed || (this._frame === null && (this._engine === null || this._engine.pending === 0));
@@ -609,6 +644,12 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi {
 	/** Adjusts the price axis width to its longest label. Returns true if the layout changed. */
 	private _fitPriceAxis(): boolean {
 		const priceScale = this._priceScale;
+		// Labels change only with the scale, so most frames have nothing to measure.
+		if (priceScale.version === this._axisFitScale && this._digitWidth === this._axisFitDigit) {
+			return false;
+		}
+		this._axisFitScale = priceScale.version;
+		this._axisFitDigit = this._digitWidth;
 		let characters = priceScale.format(priceScale.max).length;
 		for (let i = 0; i < priceScale.tickCount; i++) {
 			const length = priceScale.tickLabels[i]!.length;

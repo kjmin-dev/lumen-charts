@@ -30,6 +30,11 @@ export class WindowCache {
 
 	private _stale = false;
 	private _requested = false;
+	/**
+	 * True while the last cached row is the last row of the timeline. Only then does a new bar
+	 * directly follow the cached rows, with every series' values for it arriving as patches.
+	 */
+	private _atTail = false;
 
 	/** True while a snapshot has been requested and not received. */
 	public get loading(): boolean {
@@ -48,9 +53,14 @@ export class WindowCache {
 			this.blocks.clear();
 			this.version++;
 			this._stale = true;
+			this._atTail = false;
 		}
 		if (event.stale) {
 			this._stale = true;
+		}
+		if (event.failed === true) {
+			// The engine could not answer; whatever was requested is not coming.
+			this._requested = false;
 		}
 		const window = event.window;
 		if (window !== undefined) {
@@ -76,19 +86,30 @@ export class WindowCache {
 		}
 		const patches = event.patches;
 		if (patches === undefined || this.capacity === 0) {
+			this._atTail = this.capacity > 0 && this.start + this.count === event.end;
 			return;
 		}
 		const start = this.start;
 		const capacity = this.capacity;
-		let end = start + this.count;
+		const cachedEnd = start + this.count;
+		// The time patch comes first and tells how far the cached rows may grow in this event. They
+		// grow only from the tail of the timeline: otherwise the rows in between were never delivered.
+		let end = cachedEnd;
+		if (this._atTail) {
+			for (const patch of patches) {
+				if (patch.series === TIME_PATCH && patch.start <= cachedEnd) {
+					end = Math.max(end, Math.min(patch.start + patch.count, start + capacity));
+				}
+			}
+		}
 		for (const patch of patches) {
 			// A patch that leaves a gap after the cached rows cannot be applied. The rows it touches
 			// are outside the window, and a new snapshot is requested when they come into view.
-			if (patch.start > start + this.count) {
+			if (patch.start > end) {
 				continue;
 			}
 			const from = Math.max(patch.start, start);
-			const to = Math.min(patch.start + patch.count, start + capacity);
+			const to = Math.min(patch.start + patch.count, end);
 			if (to <= from) {
 				continue;
 			}
@@ -126,12 +147,9 @@ export class WindowCache {
 			if (to > this.dirtyHi) {
 				this.dirtyHi = to;
 			}
-			if (patch.series === TIME_PATCH && to > end) {
-				end = to;
-			}
 		}
-		// Only the time column extends the window: a row exists once the main series has it.
 		this.count = end - start;
+		this._atTail = end === event.end;
 	}
 
 	public clearDirty(): void {
@@ -164,6 +182,6 @@ export class WindowCache {
 		const stop = Math.min(end, visibleTo + 2 * screen);
 		const count = stop - start;
 		this._requested = true;
-		return { start, count, capacity: count + (stop === end ? Math.max(TAIL_ROOM, screen) : 0) };
+		return { start, count, capacity: count + (stop === end ? TAIL_ROOM : 0) };
 	}
 }

@@ -11,12 +11,19 @@ export interface EngineScope {
 export function attachEngineHost(scope: EngineScope): void {
 	const core = new EngineCore();
 	scope.addEventListener('message', message => {
-		const run = core.run(message.data);
-		let step = run.next();
-		while (step.done !== true) {
-			step = run.next();
+		let event: EngineEvent;
+		try {
+			const run = core.run(message.data);
+			let step = run.next();
+			while (step.done !== true) {
+				step = run.next();
+			}
+			event = step.value;
+		} catch {
+			// Every command is answered, or the client would wait for this one forever.
+			event = core.failure(message.data);
 		}
-		scope.postMessage(step.value, transferables(step.value));
+		scope.postMessage(event, transferables(event));
 	});
 	scope.postMessage({ ready: true }, []);
 }
@@ -65,6 +72,7 @@ export class LocalTransport implements EngineTransport {
 	private _queue: Command[] = [];
 	private _head = 0;
 	private _current: Generator<undefined, EngineEvent, undefined> | null = null;
+	private _command: Command | null = null;
 	private _scheduled = false;
 	private _closed = false;
 	private _channel: MessageChannel | null = null;
@@ -117,12 +125,23 @@ export class LocalTransport implements EngineTransport {
 					this._head = 0;
 					return;
 				}
-				this._current = this._core.run(this._queue[this._head++]!);
+				this._command = this._queue[this._head++]!;
+				this._current = this._core.run(this._command);
 			}
-			const step = this._current.next();
-			if (step.done === true) {
+			let event: EngineEvent | null = null;
+			try {
+				const step = this._current.next();
+				if (step.done === true) {
+					event = step.value;
+				}
+			} catch {
+				// Every command is answered, or the client would wait for this one forever.
+				event = this._core.failure(this._command!);
+			}
+			if (event !== null) {
 				this._current = null;
-				this.onevent?.(step.value);
+				this._command = null;
+				this.onevent?.(event);
 			}
 			if (performance.now() >= deadline) {
 				if (this._current !== null || this._head < this._queue.length) {

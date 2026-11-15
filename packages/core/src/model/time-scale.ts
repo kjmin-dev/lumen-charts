@@ -149,9 +149,14 @@ export class TimeScale {
 	}
 
 	private _clamp(): void {
+		// A pane without width (a hidden tab, a collapsed container) says nothing about what fits,
+		// so the view is left alone until it has a width again.
+		if (this.width <= 0) {
+			return;
+		}
 		this.barSpacing = this._clampSpacing(this.barSpacing);
 		const count = this.end - this.first;
-		if (count <= 0 || this.width <= 0) {
+		if (count <= 0) {
 			return;
 		}
 		const keep = Math.min(MIN_VISIBLE_BARS, count);

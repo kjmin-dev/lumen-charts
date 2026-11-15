@@ -165,11 +165,11 @@ export class SeriesView {
 					itemClose[k] = NaN;
 				} else {
 					let first = rowFrom;
-					while (open[first]! !== open[first]!) {
+					while (first < rowTo - 1 && open[first]! !== open[first]!) {
 						first++;
 					}
 					let last = rowTo - 1;
-					while (close[last]! !== close[last]!) {
+					while (last > rowFrom && close[last]! !== close[last]!) {
 						last--;
 					}
 					itemOpen[k] = open[first]!;

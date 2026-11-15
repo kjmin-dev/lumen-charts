@@ -81,6 +81,17 @@ describe('TimeScale', () => {
 		expect(ts.version).toBeGreaterThan(version);
 	});
 
+	it('keeps the zoom while the pane has no width', () => {
+		const ts = scale(100_000);
+		ts.fitContent();
+		const spacing = ts.barSpacing;
+		ts.setWidth(0);
+		ts.setExtent(0, 100_001);
+		ts.setWidth(600);
+		expect(ts.barSpacing).toBe(spacing);
+		expect(ts.to - ts.from).toBeCloseTo(100_000, 6);
+	});
+
 	it('changes its version only when the mapping changes', () => {
 		const ts = scale(1000);
 		const version = ts.version;

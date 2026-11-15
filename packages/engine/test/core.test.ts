@@ -186,6 +186,67 @@ describe('EngineCore', () => {
 		expect([...patch.data]).toEqual([NaN, 43]);
 	});
 
+	it('patches rows far apart separately instead of everything between them', () => {
+		const core = new EngineCore();
+		const count = CHUNK_ROWS * 3;
+		run(core, { type: 'add', series: 1, kind: 'ohlcv' });
+		run(core, { type: 'set', series: 1, count, data: ohlcv(count, 0, MIN) });
+		// A correction of an old bar and updates of the last two, interleaved in one batch.
+		const event = run(
+			core,
+			ticks(
+				[1, 10 * MIN, 1, 2, 0, 1, 5],
+				[1, (count - 1) * MIN, 1, 2, 0, 1, 5],
+				[1, 10 * MIN, 1, 2, 0, 1.5, 5],
+				[1, count * MIN, 3, 3, 3, 3, 1],
+				[1, 11 * MIN, 4, 4, 4, 4, 1],
+			),
+		);
+		const values = event.patches!.filter(patch => patch.series === 1);
+		expect(values.map(patch => [patch.start, patch.count])).toEqual([
+			[10, 2],
+			[count - 1, 2],
+		]);
+		expect(values[0]!.data[3 * 2]).toBe(1.5);
+		const times = event.patches!.filter(patch => patch.series === TIME_PATCH);
+		expect(times.map(patch => [patch.start, patch.count])).toEqual([
+			[10, 2],
+			[count - 1, 2],
+		]);
+		// The time patches of the main series come before any values.
+		expect(event.patches![0]!.series).toBe(TIME_PATCH);
+	});
+
+	it('skips missing values when merging a secondary series onto main bars', () => {
+		const core = new EngineCore();
+		run(core, { type: 'add', series: 1, kind: 'ohlcv' });
+		run(core, { type: 'add', series: 2, kind: 'line' });
+		run(core, { type: 'add', series: 3, kind: 'ohlcv' });
+		run(core, { type: 'set', series: 1, count: 3, data: ohlcv(3, 10, 10) });
+		// Three line points share main bar 0; the last has no value. Bar 1 has only a missing value.
+		run(core, { type: 'set', series: 2, count: 4, data: line([10, 12, 14, 20], [5, 7, NaN, NaN]) });
+		const candles = new Float64Array(2 * 6).fill(NaN);
+		candles.set([11, 13]); // times, both in main bar 0
+		candles.set([4, NaN], 2); // open
+		candles.set([6, NaN], 4); // high
+		candles.set([3, NaN], 6); // low
+		candles.set([5, NaN], 8); // close; volume stays missing on both
+		run(core, { type: 'set', series: 3, count: 2, data: candles });
+		const event = run(core, { type: 'window', start: 0, count: 3, capacity: 3 });
+		expect(column(event, 2, 0)).toEqual([7, NaN, NaN]);
+		expect(column(event, 3, 0)).toEqual([4, NaN, NaN]);
+		expect(column(event, 3, 3)).toEqual([5, NaN, NaN]);
+		expect(column(event, 3, 4)).toEqual([NaN, NaN, NaN]);
+	});
+
+	it('answers a command that fails inside the engine', () => {
+		const core = new EngineCore();
+		run(core, { type: 'add', series: 1, kind: 'line' });
+		run(core, { type: 'set', series: 1, count: 2, data: line([1, 2], [1, 2]) });
+		const event = core.failure({ type: 'window', seq: 99, start: 0, count: 2, capacity: 2 });
+		expect(event).toMatchObject({ ack: 99, end: 2, failed: true, stale: true });
+	});
+
 	it('marks the window stale when a secondary series is replaced', () => {
 		const core = new EngineCore();
 		run(core, { type: 'add', series: 1, kind: 'ohlcv' });

@@ -217,11 +217,17 @@ export class TimeTicks {
 			}
 		}
 		const seconds = step.kind === UNIFORM && step.size < MINUTE;
-		const limit = Math.ceil((to - from) / barsPerLabel) * 4 + 8;
+		// Evenly spaced data needs about one iteration per label. Data with irregular gaps can put a
+		// bar into many more step intervals than there is room for labels; past this many iterations
+		// the walk jumps straight to the next bar a label could go on.
+		const patience = Math.ceil((to - from) / barsPerLabel) * 4 + 8;
+		const stride = Math.ceil(barsPerLabel);
 		let boundary = floorToStep(time[from]!, step);
 		let lastPosition = -1;
 		let lastWeight = -1;
-		for (let guard = 0; guard < limit; guard++) {
+		// Every iteration moves on by at least one bar, so this bound is never the one that stops a
+		// normal walk.
+		for (let guard = 0; guard <= to - from; guard++) {
 			// Searching from the start of the column tells a bar that begins an interval apart from
 			// one that merely is the first visible bar.
 			const position = lowerBound(time, 0, to, boundary);
@@ -249,6 +255,12 @@ export class TimeTicks {
 			}
 			// Continuing from the bar's own interval steps over gaps in one move.
 			boundary = nextBoundary(floorToStep(barTime, step), step);
+			if (guard > patience && lastPosition >= 0 && lastPosition + stride < to) {
+				const ahead = floorToStep(time[lastPosition + stride]!, step);
+				if (ahead > boundary) {
+					boundary = ahead;
+				}
+			}
 		}
 	}
 

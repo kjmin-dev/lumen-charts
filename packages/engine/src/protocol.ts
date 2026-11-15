@@ -66,6 +66,8 @@ export interface EngineEvent {
 	stale: boolean;
 	/** Rows the command could not apply (out-of-order times, unknown series). */
 	rejected: number;
+	/** The engine failed while running the command; nothing else in this event can be relied on. */
+	failed?: boolean;
 	window?: WindowSnapshot;
 	patches?: Patch[];
 }

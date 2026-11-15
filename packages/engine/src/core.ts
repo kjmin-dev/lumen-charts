@@ -16,9 +16,14 @@ interface SeriesState {
 	readonly kind: SeriesKind;
 	readonly store: ChunkedStore;
 	readonly valueColumns: number;
-	/** Main-timeline rows changed by the command being run: `[dirtyLo, dirtyHi)`. */
-	dirtyLo: number;
-	dirtyHi: number;
+	/**
+	 * Main-timeline rows changed by the command being run, as `[from, to)` pairs. Rows far apart
+	 * (a correction of an old bar and an update of the last one) stay separate runs, so a patch
+	 * never has to carry the untouched rows between them.
+	 */
+	runs: number[];
+	/** Position in `runs` of the run touched last. */
+	run: number;
 }
 
 /**
@@ -48,8 +53,8 @@ export class EngineCore {
 					kind,
 					store: new ChunkedStore(valueColumns + 1),
 					valueColumns,
-					dirtyLo: Infinity,
-					dirtyHi: -Infinity,
+					runs: [],
+					run: 0,
 				});
 				break;
 			}
@@ -185,8 +190,8 @@ export class EngineCore {
 	private _ticks(data: Float64Array, count: number, event: EngineEvent): void {
 		const series = this._series;
 		for (const state of series.values()) {
-			state.dirtyLo = Infinity;
-			state.dirtyHi = -Infinity;
+			state.runs.length = 0;
+			state.run = 0;
 		}
 		let id = NaN;
 		let state: SeriesState | undefined;
@@ -260,28 +265,52 @@ export class EngineCore {
 			return;
 		}
 		const patches: Patch[] = [];
+		// The main series goes first: its time patches tell the client which rows exist.
+		this._patch(main, patches);
 		for (const dirty of series.values()) {
-			const start = dirty.dirtyLo;
-			const rows = dirty.dirtyHi - start;
-			if (!(rows > 0)) {
-				continue;
+			if (dirty !== main) {
+				this._patch(dirty, patches);
 			}
-			const values = new Float64Array(rows * dirty.valueColumns);
-			if (dirty === main) {
-				const time = new Float64Array(rows);
-				main.store.copyColumn(TIME, start, start + rows, time, 0);
-				patches.push({ series: TIME_PATCH, start, count: rows, data: time });
-				for (let c = 0; c < dirty.valueColumns; c++) {
-					main.store.copyColumn(c + 1, start, start + rows, values, c * rows);
-				}
-			} else {
-				this._aligned(dirty, start, start + rows, values, rows);
-			}
-			patches.push({ series: dirty.id, start, count: rows, data: values });
 		}
 		if (patches.length > 0) {
 			event.patches = patches;
 		}
+	}
+
+	/** Adds one patch per run of changed rows of a series. */
+	private _patch(state: SeriesState, patches: Patch[]): void {
+		const main = this._main!;
+		const runs = state.runs;
+		for (let r = 0; r < runs.length; r += 2) {
+			const start = runs[r]!;
+			const rows = runs[r + 1]! - start;
+			const values = new Float64Array(rows * state.valueColumns);
+			if (state === main) {
+				const time = new Float64Array(rows);
+				main.store.copyColumn(TIME, start, start + rows, time, 0);
+				patches.push({ series: TIME_PATCH, start, count: rows, data: time });
+				for (let c = 0; c < state.valueColumns; c++) {
+					main.store.copyColumn(c + 1, start, start + rows, values, c * rows);
+				}
+			} else {
+				this._aligned(state, start, start + rows, values, rows);
+			}
+			patches.push({ series: state.id, start, count: rows, data: values });
+		}
+	}
+
+	/** Event for a command that threw: it tells the client the command is over and what still holds. */
+	public failure(command: Command): EngineEvent {
+		const main = this._main;
+		return {
+			ack: command.seq,
+			epoch: this._epoch,
+			first: main === null ? 0 : main.store.first,
+			end: main === null ? 0 : main.store.end,
+			stale: true,
+			rejected: 0,
+			failed: true,
+		};
 	}
 
 	/** Index of the main bar a time belongs to: the last bar at or before it. */
@@ -375,10 +404,15 @@ export class EngineCore {
 			let high = -Infinity;
 			let low = Infinity;
 			let close = NaN;
-			let volume = 0;
+			let volume = NaN;
+			// As in every other aggregation, rows without a value are skipped, and a group made only
+			// of such rows has no value.
 			do {
 				if (valueColumns === 1) {
-					close = columns[1]![row]!;
+					const value = columns[1]![row]!;
+					if (value === value) {
+						close = value;
+					}
 				} else {
 					const o = columns[1]![row]!;
 					const h = columns[2]![row]!;
@@ -398,7 +432,7 @@ export class EngineCore {
 						close = c;
 					}
 					if (v === v) {
-						volume += v;
+						volume = volume === volume ? volume + v : v;
 					}
 				}
 				j++;
@@ -423,10 +457,25 @@ export class EngineCore {
 }
 
 function markDirty(state: SeriesState, index: number): void {
-	if (index < state.dirtyLo) {
-		state.dirtyLo = index;
+	const runs = state.runs;
+	// Ticks nearly always touch the run touched last, so that one is tried first.
+	let r = state.run;
+	if (r >= runs.length || index < runs[r]! - 1 || index > runs[r + 1]!) {
+		for (r = 0; r < runs.length; r += 2) {
+			if (index >= runs[r]! - 1 && index <= runs[r + 1]!) {
+				break;
+			}
+		}
+		if (r >= runs.length) {
+			runs.push(index, index + 1);
+			state.run = r;
+			return;
+		}
+		state.run = r;
 	}
-	if (index >= state.dirtyHi) {
-		state.dirtyHi = index + 1;
+	if (index < runs[r]!) {
+		runs[r] = index;
+	} else if (index >= runs[r + 1]!) {
+		runs[r + 1] = index + 1;
 	}
 }

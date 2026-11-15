@@ -106,6 +106,28 @@ describe('TimeTicks', () => {
 		expect(ticks.length).toBeLessThanOrEqual(13);
 	});
 
+	it('labels the whole range when bars are spaced irregularly', () => {
+		// 60% of the gaps are one second and 40% one hour, as in event data.
+		let state = 7;
+		const next = (): number => {
+			state = (state * 1664525 + 1013904223) >>> 0;
+			return state / 4294967296;
+		};
+		const count = 1000;
+		const time = new Float64Array(count);
+		let t = Date.UTC(2024, 0, 1);
+		for (let i = 0; i < count; i++) {
+			t += next() < 0.6 ? 1000 : 3_600_000;
+			time[i] = t;
+		}
+		const ticks = ticksFor(time, 0, count, 140);
+		expect(ticks.length).toBeGreaterThanOrEqual(4);
+		expect(ticks[ticks.length - 1]!.position).toBeGreaterThan(count * 0.7);
+		for (let i = 1; i < ticks.length; i++) {
+			expect(ticks[i]!.position - ticks[i - 1]!.position).toBeGreaterThanOrEqual(140);
+		}
+	});
+
 	it('returns nothing for an empty range', () => {
 		expect(ticksFor(new Float64Array(0), 0, 0, 10)).toEqual([]);
 	});
