@@ -85,6 +85,10 @@ Main thread                              Data engine (worker; time-sliced on mai
 - **Tick path**: ticks go to the engine, which replies with a single message (patch) holding the tail bar and the tail value of every indicator. The main thread applies the patch at once, so bars and indicators never disagree.
 - **One interface**: the engine sits behind one asynchronous interface. Calling code is the same whether it runs in a worker or time-sliced on the main thread.
 - **Portable renderer**: a renderer receives only a context and coordinate buffers. Moving it to `OffscreenCanvas` is an optional step in stage 5.
+- **Shared between charts**: resources of the page are shared by its charts, not taken per chart [measured: [shared resources](benchmarks/shared-resources.md)].
+  - Workers: engines share a small pool of workers (at most 4 by default). One worker hosts several engines, each with its own state, told apart by an engine id on commands and events. Commands of one engine keep their order; engines take turns in slices of 4 ms, so a bulk load does not hold up the others; background LOD work of any engine runs only while no engine has a command waiting. A worker stops with its last engine.
+  - Frame: one `requestAnimationFrame` for all charts, in two phases. Every chart reads from the layout (its size if not yet known, the rectangle pointer input needs), then every chart writes and draws.
+  - Observers: one `ResizeObserver` (content box of each chart's root element), one `IntersectionObserver` (a chart outside the viewport keeps its data and invalidation level current and draws when it comes back), and one media query list per window for the device pixel ratio and for the color scheme.
 
 ## 4. Data layer
 
@@ -129,7 +133,7 @@ Main thread                              Data engine (worker; time-sliced on mai
 ## 6. Render layer
 
 - Canvas 2D with three layers per pane: series (grid, series, indicators), drawings (placed drawings) and overlay (crosshair, last-price line, drawing being edited).
-- Four invalidation levels: None, Cursor (overlay only), Light (series layer) and Full (including layout). Changes merge into one draw per `requestAnimationFrame`.
+- Four invalidation levels: None, Cursor (overlay only), Light (series layer) and Full (including layout). Changes merge into one draw per `requestAnimationFrame`, which all charts of the page share (section 3).
 - Partial redraw (redrawing only the last bar) is left out of the baseline. It breaks when autoscale changes, when an indicator is drawn shifted into the future, and at line joins. It is reconsidered only if Light invalidation exceeds its budget.
 - Views write coordinates into reused `Float32Array`s and allocate no objects on the frame path.
 - Candles start with `fillRect` and one pass per color. Whether batching into one path is faster is an [assumption].
@@ -139,6 +143,7 @@ Main thread                              Data engine (worker; time-sliced on mai
 ## 7. Interaction
 
 - Pointer Events for all input, with kinetic scrolling.
+- Handlers store positions in the viewport; the chart's rectangle is read at most once per frame, in the read phase, and never kept, since scrolling the page changes it without a resize.
 - Hit testing: series by index arithmetic; drawings filtered by time range, then scanned linearly. A spatial index is added only after measurement.
 - Drawings are stored as (time, price) pairs. Chart state and drawings are saved and restored in a versioned serialization format.
 
