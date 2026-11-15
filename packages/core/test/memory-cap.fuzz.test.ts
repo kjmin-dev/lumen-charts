@@ -219,6 +219,7 @@ function runOne(seed: number, steps: number): string | null {
 	/** Fetch requests out, by id. */
 	const requests = new Map<number, { request: FetchRequest; due: number; cancelled: boolean }>();
 	let takeover = false;
+	let lastEpoch = -1;
 
 	const applyOp = (op: Op): void => {
 		const m = op.model;
@@ -351,6 +352,12 @@ function runOne(seed: number, steps: number): string | null {
 			return null;
 		}
 		takeover = false;
+		if (event.epoch !== lastEpoch) {
+			// New indexes: after a deletion in the middle, or several deletions whose bars came back as
+			// one gap (see `_restoreCut`), the bars keep their order but not their indexes.
+			lastEpoch = event.epoch;
+			if (main !== null) main.first = NaN;
+		}
 		if (main === null) {
 			return event.end - event.first === 0 ? null : `${what}: extent ${event.first},${event.end} without data`;
 		}
@@ -445,11 +452,12 @@ function runOne(seed: number, steps: number): string | null {
 					values = values.map(column => kept.map(k => column[k]!));
 				}
 			}
-			// A request for bars deletions remove is checked by the times kept, every 16th bar: a time
-			// slightly off elsewhere would pass (see `FetchRequest.removing`), so it only gets a bar short.
-			if (outcome === 'bad' && request.removing !== undefined && time.length > 1) {
-				time.splice(0, 1);
-				values.forEach(column => column.splice(0, 1));
+			// A request for bars deletions remove is checked by the times kept, every 16th bar: a bar
+			// missing or a time slightly off between two of them would pass as removed at the source
+			// (see `FetchRequest.removing`), so it gets a bar too many instead.
+			if (outcome === 'bad' && request.removing !== undefined && time.length > 0) {
+				time.push(time[time.length - 1]! + 0.5);
+				values.forEach(column => column.push(1));
 			} else if (outcome === 'bad' && time.length > 1) {
 				if (r() < 0.5) time[Math.floor(r() * time.length)]! += 0.5;
 				else {

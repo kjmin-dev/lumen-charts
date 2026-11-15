@@ -227,6 +227,11 @@ export class EngineCore {
 	/** Whether each of them holds bars the deletion being planned removes. */
 	private readonly _needCut: boolean[] = [];
 	private readonly _plan: DeletePlan = { mode: 'none', d0: 0, d1: 0, moveHead: false };
+	/**
+	 * Deletions after which a series' indexes are re-based: the bars of several of them came back
+	 * as one gap, so how many each removed is unknown (see `_restoreCut`).
+	 */
+	private readonly _rebaseAfter = new Map<SeriesState, Held>();
 
 	/** Indicators and their derived series. */
 	private readonly _indicators: IndicatorEngine;
@@ -656,6 +661,13 @@ export class EngineCore {
 				break;
 			case 'delete':
 				yield* this._delete(op, event);
+				if (this._rebaseAfter.get(op.state) === op) {
+					this._rebaseAfter.delete(op.state);
+					if (op.state === this._main) {
+						this._rebase(event);
+					}
+					event.stale = true;
+				}
 				break;
 			case 'tick':
 				yield* this._drain();
@@ -683,6 +695,7 @@ export class EngineCore {
 		removeWhere(this._corrections, op => op.state === state);
 		removeWhere(this._rebuilds, rebuild => rebuild.state === state);
 		this._wanted.delete(state);
+		this._rebaseAfter.delete(state);
 	}
 
 	private *_remove(id: number, event: EngineEvent): Generator<undefined, void, undefined> {
@@ -2354,10 +2367,13 @@ export class EngineCore {
 		const spanLast = store.chunkLastTime(store.gridOf(end - 1));
 		const gapAt: number[] = [];
 		const gapFrom: number[] = [];
+		let shared = false;
 		for (let i = 0; i < cuts.length; i += 2) {
 			if (cuts[i]! <= spanLast && cuts[i + 1]! >= spanFirst) {
 				const at = lowerBoundOf(times, cuts[i]!);
-				if (!gapAt.includes(at)) {
+				if (gapAt.includes(at)) {
+					shared = true;
+				} else {
 					gapAt.push(at);
 					gapFrom.push(cuts[i]!);
 				}
@@ -2419,6 +2435,16 @@ export class EngineCore {
 		for (let grid = store.gridOf(start); grid <= store.gridOf(end - 1); grid++) {
 			if (store.isEvicted(grid)) {
 				store.restore(grid, block, n, Math.max(grid << CHUNK_SHIFT, store.first) - start);
+			}
+		}
+		if (shared) {
+			// Bars of several deletions, with no kept bar between them, came back as one gap: how many
+			// each removed is unknown, so which indexes the bars keep is too. The deletions still
+			// remove the right bars; the series is re-based after the last of them.
+			for (const op of state.queue) {
+				if (op.type === 'delete') {
+					this._rebaseAfter.set(state, op);
+				}
 			}
 		}
 		// Values may have changed at the source too; the deletions rebuild what they change.
