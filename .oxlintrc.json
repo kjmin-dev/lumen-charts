@@ -21,9 +21,15 @@
 	},
 	"overrides": [
 		{
-			"files": ["**/test/**", "*.config.ts"],
+			"files": ["**/test/**", "*.config.ts", "benchmarks/runner/**"],
 			"env": {
 				"node": true
+			}
+		},
+		{
+			"files": ["benchmarks/**"],
+			"rules": {
+				"no-await-in-loop": "off"
 			}
 		}
 	]
