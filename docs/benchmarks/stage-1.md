@@ -111,3 +111,8 @@ reproduced. The cause is not known.
 pnpm bench --lib lumen-worker,lumen-main --repeats 3 --out benchmarks/results/stage-1-lumen.json
 pnpm bench:report docs/benchmarks/stage-0-baseline.json benchmarks/results/stage-1-lumen.json
 ```
+
+Since stage 2 runs are headless by default and the default matrix also has frames on 10M line points
+and the prepend scenario; add `--headed --case load,tick,frames/candles-1m` to run the stage 1
+matrix as measured here. Headless frame intervals are not comparable with the headed ones above
+(see the [stage 0 notes](stage-0-baseline.md#reproducing)). Memory now includes workers (see [stage 2 before](stage-2-before.md)).

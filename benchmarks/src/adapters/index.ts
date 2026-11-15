@@ -1,4 +1,12 @@
-import type { AdapterEntry } from '../adapter.ts';
+import type { AdapterEntry, KnownFailure } from '../adapter.ts';
+import type { DatasetSpec } from '../jobs.ts';
+
+const LWC_FAILURES: readonly KnownFailure[] = [
+	{
+		dataset: { kind: 'line', size: 10_000_000 },
+		reason: 'the renderer crashed (likely out of memory) while loading, in all 10 stage 0 runs',
+	},
+];
 
 /**
  * Every library variant the harness can measure. To add a library, write an adapter module that
@@ -9,11 +17,13 @@ export const adapters: readonly AdapterEntry[] = [
 	{
 		id: 'lwc-conflation-on',
 		description: 'Lightweight Charts with timeScale.enableConflation = true',
+		knownFailures: LWC_FAILURES,
 		load: async () => (await import('./lightweight-charts.ts')).conflationOn,
 	},
 	{
 		id: 'lwc-conflation-off',
 		description: 'Lightweight Charts with timeScale.enableConflation = false (library default)',
+		knownFailures: LWC_FAILURES,
 		load: async () => (await import('./lightweight-charts.ts')).conflationOff,
 	},
 	{
@@ -34,4 +44,14 @@ export function findAdapter(id: string): AdapterEntry {
 		throw new Error(`Unknown adapter "${id}". Known: ${adapters.map(a => a.id).join(', ')}`);
 	}
 	return entry;
+}
+
+/**
+ * Why `adapter` is known to fail on `dataset`, or null. Planners use it to leave such runs out:
+ * they only repeat a failure and cost minutes each.
+ */
+export function knownFailure(adapter: string, dataset: DatasetSpec): string | null {
+	const entry = adapters.find(a => a.id === adapter);
+	const failure = entry?.knownFailures?.find(f => f.dataset.kind === dataset.kind && f.dataset.size === dataset.size);
+	return failure === undefined ? null : `known failure: ${failure.reason}`;
 }

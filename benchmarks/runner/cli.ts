@@ -9,24 +9,27 @@ import os from 'node:os';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { type Browser, type BrowserContext, type Page, chromium } from 'playwright';
+import { type Browser, type BrowserContext, type CDPSession, type Page, chromium } from 'playwright';
 import { build, preview } from 'vite';
-import { adapters } from '../src/adapters/index.ts';
+import { adapters, knownFailure } from '../src/adapters/index.ts';
 import type { SeriesKind } from '../src/data.ts';
 import type { PageEnvironment } from '../src/harness/environment.ts';
 import { headline } from '../src/headline.ts';
 import {
 	type AdapterInfo,
 	DEFAULT_BUDGET_MS,
+	type HeapUsage,
 	type HostLoad,
 	type MemorySample,
 	type PageRunResult,
 	type PlannedJob,
 	type RunOutcome,
 	SCENARIOS,
+	type WorkerHeapUsage,
 	parseSize,
 	planJobs,
 } from '../src/jobs.ts';
+import { type CdpHeapUsage, cdpHeapUsage, memorySample, sumWorkers } from '../src/memory.ts';
 import { type CompletedJob, RESULTS_SCHEMA_VERSION, type ResultsFile, aggregate } from '../src/results.ts';
 
 const benchDir = fileURLToPath(new URL('..', import.meta.url));
@@ -36,10 +39,15 @@ const require = createRequire(import.meta.url);
 const HELP = `Usage: pnpm bench [options]
 
 Selection
-  --scenario <list>    load, tick, frames (default: all)
+  --scenario <list>    ${SCENARIOS.join(', ')} (default: all)
   --lib <list>         adapter ids (default: all): ${adapters.map(a => a.id).join(', ')}
   --size <list>        data set sizes to keep, e.g. 100k,1m (default: all)
   --kind <list>        candles, line (default: both)
+  --case <list>        keep only cases whose id begins with one of these /-separated parts,
+                       e.g. frames/line-10m,prepend (default: all)
+  --include-known-crashes
+                       also run adapters on data sets they are known to fail on; by default such
+                       runs are skipped and listed (Lightweight Charts on 10M line points)
   --repeats <n>        runs per case and adapter (default: 5, quick: 1)
   --budget <s>         measuring time after which a tick or frames run stops early, once it has
                        500 ticks or 30 frames; warm-up stops after 2 s (default: ${DEFAULT_BUDGET_MS / 1000};
@@ -48,8 +56,12 @@ Selection
   --list               print the jobs and exit
 
 Browser
-  --headless           run without a window (Chromium's new headless mode, which keeps GPU
-                       rasterization; Playwright's default headless shell renders in software)
+  --headed             open a browser window (stage 0 and 1 were measured headed). By default
+                       runs are headless, in Chromium's new headless mode, which keeps GPU
+                       rasterization (Playwright's default headless shell renders in software)
+                       and opens no window that takes the focus. Frame JavaScript time and tick
+                       cost match headed runs, but headless frame intervals stay at the refresh
+                       interval and miss raster and presentation stalls: measure those headed
   --channel <name>     Playwright channel, e.g. chrome for the installed Google Chrome
                        (default: Playwright's bundled Chromium)
   --viewport <WxH>     page viewport in CSS pixels (default: 1280x720)
@@ -96,11 +108,13 @@ const { values: args } = parseArgs({
 		lib: { type: 'string' },
 		size: { type: 'string' },
 		kind: { type: 'string' },
+		case: { type: 'string' },
+		'include-known-crashes': { type: 'boolean', default: false },
 		repeats: { type: 'string' },
 		budget: { type: 'string' },
 		quick: { type: 'boolean', default: false },
 		list: { type: 'boolean', default: false },
-		headless: { type: 'boolean', default: false },
+		headed: { type: 'boolean', default: false },
 		channel: { type: 'string' },
 		viewport: { type: 'string', default: '1280x720' },
 		dpr: { type: 'string', default: '2' },
@@ -134,22 +148,36 @@ for (const id of adapterIds) {
 		'--lib',
 	);
 }
-const plan = planJobs({
+const { jobs: plan, skipped } = planJobs({
 	scenarios: scenarios.length > 0 ? scenarios : SCENARIOS,
 	adapters: adapterIds.length > 0 ? adapterIds : adapters.map(a => a.id),
 	sizes: list(args.size).map(parseSize),
 	kinds: list(args.kind).map(k => oneOf<SeriesKind>(['candles', 'line'], k, '--kind')),
+	cases: list(args.case),
 	repeats: args.repeats !== undefined ? Number(args.repeats) : args.quick ? 1 : 5,
 	quick: args.quick,
 	chart,
 	seed: 1,
 	budgetMs,
+	...(args['include-known-crashes'] ? {} : { skip: knownFailure }),
 });
+
+function reportSkipped(): void {
+	const groups = new Map<string, number>();
+	for (const { adapter, reason } of skipped) {
+		const key = `${adapter}: ${reason}`;
+		groups.set(key, (groups.get(key) ?? 0) + 1);
+	}
+	for (const [key, count] of groups) {
+		process.stdout.write(`Skipping ${key} (${count} cases; --include-known-crashes runs them)\n`);
+	}
+}
 
 if (args.list || plan.length === 0) {
 	for (const planned of plan) {
 		process.stdout.write(`${planned.id}\n`);
 	}
+	reportSkipped();
 	process.stdout.write(`${plan.length} runs\n`);
 	process.exit(0);
 }
@@ -209,13 +237,92 @@ interface Session {
 }
 
 /**
- * Playwright's own headless browser is a separate "headless shell" build that rasterizes with
- * SwiftShader on the CPU. The `chromium` channel runs the full browser in new headless mode instead.
+ * Headless by default: a headed window takes the focus on every new page, which makes the machine
+ * unusable while a run lasts. Playwright's own headless browser is a separate "headless shell"
+ * build that rasterizes with SwiftShader on the CPU; the `chromium` channel runs the full browser
+ * in new headless mode instead, which rasterizes on the GPU like a window does.
  */
-const channel = args.channel ?? (args.headless ? 'chromium' : undefined);
+const headless = !args.headed;
+const channel = args.channel ?? (headless ? 'chromium' : undefined);
 
 function launch(): Promise<Browser> {
-	return chromium.launch({ headless: args.headless, ...(channel !== undefined ? { channel } : {}) });
+	return chromium.launch({ headless, ...(channel !== undefined ? { channel } : {}) });
+}
+
+/** Longest wait for a worker's reply; a worker that is shutting down may never answer. */
+const WORKER_REPLY_TIMEOUT_MS = 10_000;
+
+type ProtocolReply = { result?: unknown; error?: { message: string } };
+
+/**
+ * Heap usage of each dedicated worker of the page, each after a full garbage collection, summed.
+ * Every worker has a heap of its own, which `Runtime.getHeapUsage` on the page does not include.
+ *
+ * Playwright's CDP sessions cannot address the flattened child sessions that `Target.setAutoAttach`
+ * creates with `flatten: true`, so workers are attached in the older non-flat mode and spoken to
+ * through `Target.sendMessageToTarget` (deprecated in the protocol, working in Chromium 156). They
+ * are attached only while measuring, so no debugging session is attached while scenarios are timed.
+ * Returns null when attaching fails.
+ */
+async function measureWorkers(cdp: CDPSession): Promise<WorkerHeapUsage | null> {
+	const sessions: string[] = [];
+	const replies = new Map<number, (reply: ProtocolReply) => void>();
+	let nextId = 0;
+	const onAttached = (event: { sessionId: string; targetInfo: { type: string } }): void => {
+		if (event.targetInfo.type === 'worker') {
+			sessions.push(event.sessionId);
+		}
+	};
+	const onMessage = (event: { message: string }): void => {
+		const message = JSON.parse(event.message) as ProtocolReply & { id?: number };
+		if (message.id !== undefined) {
+			replies.get(message.id)?.(message);
+		}
+	};
+	const call = (sessionId: string, method: string): Promise<unknown> => {
+		const id = ++nextId;
+		return new Promise<unknown>((resolveCall, rejectCall) => {
+			const finish = (reply: ProtocolReply): void => {
+				clearTimeout(timer);
+				replies.delete(id);
+				if (reply.error === undefined) {
+					resolveCall(reply.result);
+				} else {
+					rejectCall(new Error(reply.error.message));
+				}
+			};
+			const timer = setTimeout(() => finish({ error: { message: `${method}: no reply` } }), WORKER_REPLY_TIMEOUT_MS);
+			replies.set(id, finish);
+			cdp
+				.send('Target.sendMessageToTarget', { sessionId, message: JSON.stringify({ id, method, params: {} }) })
+				.catch((error: unknown) => finish({ error: { message: String(error) } }));
+		});
+	};
+	cdp.on('Target.attachedToTarget', onAttached);
+	cdp.on('Target.receivedMessageFromTarget', onMessage);
+	try {
+		// Workers that already run are reported before this command returns.
+		await cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: false });
+		const heaps: HeapUsage[] = [];
+		for (const sessionId of sessions) {
+			try {
+				await call(sessionId, 'HeapProfiler.collectGarbage');
+				heaps.push(cdpHeapUsage((await call(sessionId, 'Runtime.getHeapUsage')) as CdpHeapUsage));
+			} catch {
+				// A worker that is shutting down (the one of a destroyed chart) has nothing left to count.
+			}
+		}
+		return sumWorkers(heaps);
+	} catch {
+		return null;
+	} finally {
+		// Turning auto-attach off detaches from the workers again.
+		await cdp
+			.send('Target.setAutoAttach', { autoAttach: false, waitForDebuggerOnStart: false, flatten: false })
+			.catch(() => undefined);
+		cdp.off('Target.attachedToTarget', onAttached);
+		cdp.off('Target.receivedMessageFromTarget', onMessage);
+	}
 }
 
 async function newPage(session: Session): Promise<{ context: BrowserContext; page: Page }> {
@@ -226,16 +333,16 @@ async function newPage(session: Session): Promise<{ context: BrowserContext; pag
 		await cdp.send('HeapProfiler.collectGarbage');
 	});
 	await page.exposeFunction('__benchMeasureMemory', async (): Promise<MemorySample> => {
-		const usage = await cdp.send('Runtime.getHeapUsage');
-		const backing = usage.backingStorageSize;
-		const embedder = usage.embedderHeapUsedSize;
-		return {
-			method: 'CDP Runtime.getHeapUsage',
-			jsHeapBytes: usage.usedSize,
-			backingStoreBytes: backing,
-			embedderHeapBytes: embedder,
-			totalBytes: usage.usedSize + backing + embedder,
-		};
+		// The page's heap first: scenarios collect its garbage right before measuring.
+		const pageHeap = cdpHeapUsage(await cdp.send('Runtime.getHeapUsage'));
+		const workers = await measureWorkers(cdp);
+		return memorySample(
+			workers === null
+				? 'CDP Runtime.getHeapUsage of the page (workers could not be attached)'
+				: 'CDP Runtime.getHeapUsage of the page and of each dedicated worker (after a GC in each worker)',
+			pageHeap,
+			workers,
+		);
 	});
 	const query = new URLSearchParams({ auto: '', width: String(chart.width), height: String(chart.height) });
 	await page.goto(`${session.baseUrl}?${query.toString()}`);
@@ -253,7 +360,12 @@ function delay<T>(ms: number, value: T): { promise: Promise<T>; cancel: () => vo
 
 async function closeContext(session: Session, context: BrowserContext): Promise<void> {
 	const closing = delay(20_000, 'stuck' as const);
-	const result = await Promise.race([context.close().then(() => 'closed' as const), closing.promise]);
+	// Closing fails when the browser has gone away, which leaves nothing to close.
+	const close = context.close().then(
+		() => 'closed' as const,
+		() => 'closed' as const,
+	);
+	const result = await Promise.race([close, closing.promise]);
 	closing.cancel();
 	if (result === 'stuck') {
 		// A renderer busy in a long synchronous call can keep the context from closing.
@@ -284,6 +396,12 @@ function hostLoad(since: { idle: number; total: number }): HostLoad {
 async function runOne(session: Session, planned: PlannedJob): Promise<CompletedJob> {
 	const started = performance.now();
 	const cpuStart = cpuTimes();
+	if (!session.browser.isConnected()) {
+		// The browser process is gone (it crashed or was killed during the previous run). Starting a
+		// new one costs that run, not the rest of the matrix.
+		process.stdout.write('  browser disconnected; restarting it\n');
+		session.browser = await launch();
+	}
 	const { context, page } = await newPage(session);
 	let library: AdapterInfo | null = null;
 	let outcome: RunOutcome;
@@ -356,6 +474,7 @@ async function main(): Promise<void> {
 	const caffeinate = keepAwake();
 	const session: Session = { browser: await launch(), baseUrl };
 	const loadStart = os.loadavg();
+	reportSkipped();
 
 	try {
 		const commandLine = await scrapeChromePage(session.browser, 'chrome://version', '#command_line');
@@ -393,13 +512,14 @@ async function main(): Promise<void> {
 					arguments: process.argv.slice(2),
 					node: process.version,
 					durationSeconds: (performance.now() - runStart) / 1000,
+					skipped,
 				},
 				machine: { ...machineEnvironment(), loadAverageStart: loadStart, loadAverageEnd: os.loadavg() },
 				browser: {
 					engine: 'chromium',
 					version: session.browser.version(),
 					channel: channel ?? 'playwright-bundled',
-					headless: args.headless,
+					headless,
 					commandLine,
 					gpuStatus,
 				},

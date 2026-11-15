@@ -16,7 +16,10 @@ import type { AdapterFactory, ChartAdapter, ChartSize, LogicalRange } from '../a
 import type { CandleColumns, LineColumns, TickColumns } from '../data.ts';
 import { settleFrames } from '../harness/frames.ts';
 
-type Prepared = { kind: 'candles'; items: CandlestickData[] } | { kind: 'line'; items: LineData[] };
+/** `prepended` is set by `preparePrepend`: how many of the items are new, older bars. */
+type Prepared = ({ kind: 'candles'; items: CandlestickData[] } | { kind: 'line'; items: LineData[] }) & {
+	prepended?: number;
+};
 
 /**
  * Lowest bar spacing the time scale may reach, in CSS pixels. The library default (0.5) caps the
@@ -28,10 +31,39 @@ function seconds(ms: number): UTCTimestamp {
 	return (ms / 1000) as UTCTimestamp;
 }
 
+function candleItems(data: CandleColumns): CandlestickData[] {
+	const { length, time, open, high, low, close } = data;
+	const items: CandlestickData[] = [];
+	for (let i = 0; i < length; i++) {
+		items.push({
+			time: seconds(time[i] ?? 0),
+			open: open[i] ?? 0,
+			high: high[i] ?? 0,
+			low: low[i] ?? 0,
+			close: close[i] ?? 0,
+		});
+	}
+	return items;
+}
+
+function lineItems(data: LineColumns): LineData[] {
+	const { length, time, value } = data;
+	const items: LineData[] = [];
+	for (let i = 0; i < length; i++) {
+		items.push({ time: seconds(time[i] ?? 0), value: value[i] ?? 0 });
+	}
+	return items;
+}
+
 class LightweightChartsAdapter implements ChartAdapter<Prepared> {
 	private readonly _chart: IChartApi;
 	private _series: ISeriesApi<SeriesType> | null = null;
 	private _kind: Prepared['kind'] | null = null;
+	/**
+	 * Rows prepended since the last `setData`. The library numbers bars from its first one, so its
+	 * indexes are the harness's (fixed origin) plus this.
+	 */
+	private _offset = 0;
 
 	public constructor(container: HTMLElement, size: ChartSize, conflation: boolean) {
 		const options: DeepPartial<TimeChartOptions> = {
@@ -48,32 +80,52 @@ class LightweightChartsAdapter implements ChartAdapter<Prepared> {
 	}
 
 	public prepareCandles(data: CandleColumns): Prepared {
-		const { length, time, open, high, low, close } = data;
-		const items: CandlestickData[] = [];
-		for (let i = 0; i < length; i++) {
-			items.push({
-				time: seconds(time[i] ?? 0),
-				open: open[i] ?? 0,
-				high: high[i] ?? 0,
-				low: low[i] ?? 0,
-				close: close[i] ?? 0,
-			});
-		}
-		return { kind: 'candles', items };
+		return { kind: 'candles', items: candleItems(data) };
 	}
 
 	public prepareLine(data: LineColumns): Prepared {
-		const { length, time, value } = data;
-		const items: LineData[] = [];
-		for (let i = 0; i < length; i++) {
-			items.push({ time: seconds(time[i] ?? 0), value: value[i] ?? 0 });
-		}
-		return { kind: 'line', items };
+		return { kind: 'line', items: lineItems(data) };
 	}
 
 	public setData(data: Prepared): void {
 		const series = this._ensureSeries(data.kind);
 		series.setData(data.items);
+		this._offset = 0;
+	}
+
+	/**
+	 * The library has no prepend. Its way to add older history is to replace the series with the older
+	 * bars followed by the current ones, which is what `prepend` does. This step builds that array:
+	 * it converts the batch and reads the current bars back with `series.data()` (one new object per
+	 * bar), so the adapter does not keep a second copy of every bar, which would add to the memory
+	 * measured after a load. The result is only valid until the series changes again.
+	 */
+	public preparePrepend(data: CandleColumns | LineColumns): Prepared {
+		const series = this._series;
+		if (series === null || this._kind !== data.kind) {
+			throw new Error(`Prepending ${data.kind} needs a ${data.kind} series with data`);
+		}
+		if (data.kind === 'candles') {
+			const items = candleItems(data);
+			const current = series.data() as readonly CandlestickData[];
+			return { kind: 'candles', items: items.concat(current), prepended: items.length };
+		}
+		const items = lineItems(data);
+		const current = series.data() as readonly LineData[];
+		return { kind: 'line', items: items.concat(current), prepended: items.length };
+	}
+
+	/**
+	 * Not equivalent to a real prepend: `setData` processes every bar of the series again, not only
+	 * the new ones, so its cost grows with the history already loaded.
+	 */
+	public prepend(data: Prepared): void {
+		const series = this._series;
+		if (series === null || this._kind !== data.kind || data.prepended === undefined) {
+			throw new Error('prepend needs the result of preparePrepend for the current series');
+		}
+		series.setData(data.items);
+		this._offset += data.prepended;
 	}
 
 	public applyTick(ticks: TickColumns, index: number): void {
@@ -96,7 +148,8 @@ class LightweightChartsAdapter implements ChartAdapter<Prepared> {
 	}
 
 	public setVisibleLogicalRange(range: LogicalRange): void {
-		this._chart.timeScale().setVisibleLogicalRange({ from: range.from, to: range.to });
+		const offset = this._offset;
+		this._chart.timeScale().setVisibleLogicalRange({ from: range.from + offset, to: range.to + offset });
 	}
 
 	public settle(): Promise<void> {

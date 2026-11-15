@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_BUDGET_MS, type PlanOptions, caseId, parseSize, planJobs, sizeLabel } from '../src/jobs.ts';
+import {
+	DEFAULT_BUDGET_MS,
+	type PlanOptions,
+	caseId,
+	matchesCase,
+	parseSize,
+	planJobs,
+	sizeLabel,
+} from '../src/jobs.ts';
 
 const base: PlanOptions = {
-	scenarios: ['load', 'tick', 'frames'],
+	scenarios: ['load', 'tick', 'frames', 'prepend'],
 	adapters: ['a', 'b'],
 	sizes: [],
 	kinds: [],
@@ -27,20 +35,63 @@ describe('sizes', () => {
 
 describe('planJobs', () => {
 	it('builds the default matrix', () => {
-		const plan = planJobs(base);
-		const cases = new Set(plan.map(p => p.caseId));
-		// load: 4 data sets; tick: 4 sizes x 2 views; frames: 5 zoom levels x 2 motions.
-		expect(cases.size).toBe(4 + 8 + 10);
-		expect(plan).toHaveLength(cases.size * 2 * 2);
+		const { jobs, skipped } = planJobs(base);
+		const cases = new Set(jobs.map(p => p.caseId));
+		// load: 4 data sets; tick: 4 sizes x 2 views; frames: 5 zoom levels x 2 motions on 1M candles
+		// and 6 x 2 on 10M line points; prepend: 2 data sets x 2 batch sizes.
+		expect(cases.size).toBe(4 + 8 + 10 + 12 + 4);
+		expect(jobs).toHaveLength(cases.size * 2 * 2);
+		expect(skipped).toEqual([]);
 		expect(cases.has('load/line-10m')).toBe(true);
 		expect(cases.has('tick/candles-1m/all')).toBe(true);
 		expect(cases.has('frames/candles-1m/zoom-all')).toBe(true);
 		expect(cases.has('frames/candles-1m/pan-200')).toBe(true);
+		expect(cases.has('frames/candles-1m/pan-2m')).toBe(false);
+		expect(cases.has('frames/line-10m/pan-2m')).toBe(true);
+		expect(cases.has('frames/line-10m/zoom-all')).toBe(true);
+		expect(cases.has('prepend/line-10m/1m')).toBe(true);
+		expect(cases.has('prepend/candles-1m/10k')).toBe(true);
+	});
+
+	it('plans prepends with the batch in the left half of the view', () => {
+		const { jobs } = planJobs({ ...base, scenarios: ['prepend'], adapters: ['a'], repeats: 1 });
+		const views = jobs.map(p => (p.job.scenario === 'prepend' ? [p.caseId, p.job.batch, p.job.visibleBars] : []));
+		expect(views).toEqual([
+			['prepend/candles-1m/10k', 10_000, 20_000],
+			// Twice the batch would be wider than the 1M bars there are to show.
+			['prepend/candles-1m/1m', 1_000_000, 1_000_000],
+			['prepend/line-10m/10k', 10_000, 20_000],
+			['prepend/line-10m/1m', 1_000_000, 2_000_000],
+		]);
+		for (const { job } of jobs) {
+			expect(job.scenario === 'prepend' && job.budgetMs).toBe(DEFAULT_BUDGET_MS);
+			expect(job.scenario === 'prepend' && job.minPrepends <= job.prepends).toBe(true);
+		}
+	});
+
+	it('skips adapters on data sets they are known to fail on, and lists them', () => {
+		const { jobs, skipped } = planJobs({
+			...base,
+			repeats: 1,
+			skip: (adapter, dataset) => (adapter === 'b' && dataset.size === 10_000_000 ? 'crashes' : null),
+		});
+		expect(jobs.some(p => p.job.adapter === 'b' && p.job.dataset.size === 10_000_000)).toBe(false);
+		expect(jobs.some(p => p.job.adapter === 'a' && p.job.dataset.size === 10_000_000)).toBe(true);
+		// load, 12 frames cases and 2 prepend cases on 10M line points.
+		expect(skipped).toHaveLength(15);
+		expect(skipped[0]).toEqual({ caseId: 'load/line-10m', adapter: 'b', reason: 'crashes' });
+	});
+
+	it('selects cases by id prefix', () => {
+		const { jobs } = planJobs({ ...base, adapters: ['a'], repeats: 1, cases: ['frames/line-10m', 'prepend'] });
+		const cases = new Set(jobs.map(p => p.caseId));
+		expect(cases.size).toBe(12 + 4);
+		expect([...cases].every(id => id.startsWith('frames/line-10m/') || id.startsWith('prepend/'))).toBe(true);
 	});
 
 	it('runs every adapter back to back within a repeat', () => {
-		const plan = planJobs({ ...base, scenarios: ['load'], sizes: [1_000_000], kinds: ['candles'] });
-		expect(plan.map(p => p.id)).toEqual([
+		const { jobs } = planJobs({ ...base, scenarios: ['load'], sizes: [1_000_000], kinds: ['candles'] });
+		expect(jobs.map(p => p.id)).toEqual([
 			'load/candles-1m/a#1',
 			'load/candles-1m/b#1',
 			'load/candles-1m/a#2',
@@ -49,36 +100,49 @@ describe('planJobs', () => {
 	});
 
 	it('filters by scenario, size and kind', () => {
-		const plan = planJobs({ ...base, scenarios: ['tick'], sizes: [100_000], adapters: ['a'], repeats: 1 });
-		expect(plan.map(p => p.caseId)).toEqual(['tick/candles-100k/latest', 'tick/candles-100k/all']);
-		const tick = plan[0]?.job;
+		const { jobs } = planJobs({ ...base, scenarios: ['tick'], sizes: [100_000], adapters: ['a'], repeats: 1 });
+		expect(jobs.map(p => p.caseId)).toEqual(['tick/candles-100k/latest', 'tick/candles-100k/all']);
+		const tick = jobs[0]?.job;
 		expect(tick?.scenario === 'tick' && tick.ticks).toBe(10_000);
-		expect(planJobs({ ...base, kinds: ['line'], scenarios: ['tick'] })).toHaveLength(0);
+		expect(planJobs({ ...base, kinds: ['line'], scenarios: ['tick'] }).jobs).toHaveLength(0);
 	});
 
 	it('gives tick and frames runs a time budget unless it is 0', () => {
-		const plan = planJobs({ ...base, scenarios: ['tick', 'frames'], adapters: ['a'], repeats: 1 });
-		for (const { job } of plan) {
+		const { jobs } = planJobs({ ...base, scenarios: ['tick', 'frames'], adapters: ['a'], repeats: 1 });
+		for (const { job } of jobs) {
 			expect(job.scenario !== 'load' && job.budgetMs).toBe(DEFAULT_BUDGET_MS);
-			expect(job.scenario !== 'load' && job.warmupBudgetMs).toBe(2_000);
+			expect((job.scenario === 'tick' || job.scenario === 'frames') && job.warmupBudgetMs).toBe(2_000);
 		}
-		const tick = plan.find(p => p.job.scenario === 'tick')?.job;
+		const tick = jobs.find(p => p.job.scenario === 'tick')?.job;
 		expect(tick?.scenario === 'tick' && tick.minTicks).toBe(500);
 		const unlimited = planJobs({ ...base, scenarios: ['tick', 'frames'], adapters: ['a'], repeats: 1, budgetMs: 0 });
-		for (const { job } of unlimited) {
-			expect(job.scenario !== 'load' && job.budgetMs + job.warmupBudgetMs).toBe(0);
+		for (const { job } of unlimited.jobs) {
+			expect((job.scenario === 'tick' || job.scenario === 'frames') && job.budgetMs + job.warmupBudgetMs).toBe(0);
 		}
 	});
 
 	it('has a small quick mode', () => {
-		const plan = planJobs({ ...base, quick: true, repeats: 1 });
-		expect(plan.every(p => p.job.dataset.size <= 10_000)).toBe(true);
-		const frames = plan.find(p => p.job.scenario === 'frames')?.job;
+		const { jobs } = planJobs({ ...base, quick: true, repeats: 1 });
+		expect(jobs.every(p => p.job.dataset.size <= 10_000)).toBe(true);
+		const frames = jobs.find(p => p.job.scenario === 'frames')?.job;
 		expect(frames?.scenario === 'frames' && frames.frames).toBe(60);
+		expect(jobs.some(p => p.job.scenario === 'prepend')).toBe(true);
 	});
 
 	it('names cases by scenario, data set and parameters', () => {
-		const [first] = planJobs({ ...base, scenarios: ['frames'], adapters: ['a'], repeats: 1 });
+		const [first] = planJobs({ ...base, scenarios: ['frames'], adapters: ['a'], repeats: 1 }).jobs;
 		expect(first && caseId(first.job)).toBe('frames/candles-1m/pan-200');
+	});
+});
+
+describe('matchesCase', () => {
+	it('matches whole /-separated parts from the start', () => {
+		expect(matchesCase('frames/line-10m/pan-200', 'frames')).toBe(true);
+		expect(matchesCase('frames/line-10m/pan-200', 'frames/line-10m')).toBe(true);
+		expect(matchesCase('frames/line-10m/pan-200', 'frames/line-10m/pan-200')).toBe(true);
+		expect(matchesCase('frames/candles-1m/pan-2000', 'frames/candles-1m/pan-200')).toBe(false);
+		expect(matchesCase('load/line-10m', 'load/line-1m')).toBe(false);
+		expect(matchesCase('load/line-10m', 'line-10m')).toBe(false);
+		expect(matchesCase('load/line-10m', '')).toBe(false);
 	});
 });

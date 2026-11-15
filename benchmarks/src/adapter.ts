@@ -1,4 +1,4 @@
-import type { CandleColumns, LineColumns, TickColumns } from './data.ts';
+import type { CandleColumns, LineColumns, SeriesKind, TickColumns } from './data.ts';
 
 /** Size of the chart in CSS pixels. */
 export interface ChartSize {
@@ -8,7 +8,8 @@ export interface ChartSize {
 
 /**
  * Range of bar indexes, where bar `i` is the i-th row of the data set. Both ends are inclusive and
- * may be fractional or outside the data: `to - from + 1` bars fill the plot width.
+ * may be fractional or outside the data: `to - from + 1` bars fill the plot width. Indexes have a
+ * fixed origin: rows added by `prepend` get negative indexes and existing rows keep theirs.
  */
 export interface LogicalRange {
 	readonly from: number;
@@ -32,6 +33,17 @@ export interface ChartAdapter<TPrepared = unknown> {
 	prepareLine(data: LineColumns): TPrepared;
 	/** Replaces the series with prepared data, creating a series of the matching type if needed. */
 	setData(data: TPrepared): void;
+	/**
+	 * Converts older history for `prepend`. Unlike `prepareCandles` / `prepareLine` it may read the
+	 * chart's current data, for libraries that can only replace a series as a whole; it must not
+	 * change the chart. Scenarios time it separately from `prepend`.
+	 */
+	preparePrepend(data: CandleColumns | LineColumns): TPrepared;
+	/**
+	 * Adds prepared history before the first bar of the series. Every row is older than the current
+	 * first bar. Existing bars keep their logical indexes; the new ones take the indexes below.
+	 */
+	prepend(data: TPrepared): void;
 	/**
 	 * Applies tick `index` of `ticks` to the tail of the series: the last bar is replaced when the
 	 * tick has its time, otherwise a bar is appended. Any per-tick conversion is part of the call.
@@ -58,10 +70,19 @@ export interface AdapterFactory {
 	create(container: HTMLElement, size: ChartSize): Promise<ChartAdapter>;
 }
 
+/** A data set an adapter is known to fail on, so the planner leaves it out instead of running it again. */
+export interface KnownFailure {
+	/** Same shape as a job's data set (`DatasetSpec`). */
+	readonly dataset: { readonly kind: SeriesKind; readonly size: number };
+	/** What happened and where it was measured. */
+	readonly reason: string;
+}
+
 /** Registry entry. `load` imports the library only when a run selects it. */
 export interface AdapterEntry {
 	/** Stable id used on the command line and in results, for example `lwc-conflation-on`. */
 	readonly id: string;
 	readonly description: string;
+	readonly knownFailures?: readonly KnownFailure[];
 	load(): Promise<AdapterFactory>;
 }

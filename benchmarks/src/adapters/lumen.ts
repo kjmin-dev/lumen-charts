@@ -55,6 +55,24 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 		}
 	}
 
+	public preparePrepend(data: CandleColumns | LineColumns): Prepared {
+		return data.kind === 'candles' ? this.prepareCandles(data) : this.prepareLine(data);
+	}
+
+	public prepend(data: Prepared): void {
+		if (this._series === null || this._kind !== data.kind) {
+			throw new Error(`Prepending ${data.kind} needs a ${data.kind} series with data`);
+		}
+		// lumen keeps a fixed index origin, as the harness's logical ranges do, so nothing is remapped.
+		if (data.kind === 'candles') {
+			const { time, open, high, low, close } = data.columns;
+			(this._series as SeriesApi<'candlestick'>).prepend({ time, open, high, low, close });
+		} else {
+			const { time, value } = data.columns;
+			(this._series as SeriesApi<'line'>).prepend({ time, value });
+		}
+	}
+
 	public applyTick(ticks: TickColumns, index: number): void {
 		if (this._series === null || this._kind !== ticks.kind) {
 			throw new Error(`Ticks of kind ${ticks.kind} need a ${ticks.kind} series`);
