@@ -315,13 +315,95 @@ to change.
   - Corrections: `update` corrects any existing bar, also a dropped one; the correction waits until its bars are back and the levels are rebuilt from all members. Bars that come back with other values than the ones dropped are taken over as corrections at the source. TradingView handles history changes with `onResetCacheNeededCallback` (reload everything); here only the bars concerned are fetched.
   - Deletions: `removeBars({ from, to })`. Bars at either end are cut off and the others keep their indexes. In the middle, the bars on one side move over to close the gap: the side with fewer dropped bars, then the shorter one. For the main series that re-bases those indexes and starts a new epoch, as a new history does. A tombstone (the bar kept with no values) would keep indexes without moving anything, but the bar would still take a slot on the ordinal time scale, keep its time for secondary bars to merge into, and no longer match a Datafeed that has removed it; re-basing costs a copy of the shorter side and new windows, once per deletion, and leaves no trace.
   - Resolution changes: `setData(bars, { datafeed })` replaces the history and the Datafeed. It drops the series' requests (aborting them), its waiting operations, its windows (new epoch for the main series) and its levels.
-- Price axes: multiple axes; logarithmic, percentage and indexed-to-100 modes; formatting by tick size.
+- Price axes: multiple axes; logarithmic, percentage and indexed-to-100 modes; formatting by tick size. Section 8.1 describes what stage 4 built.
 - Plugins: custom series, plus pane and series primitives. As built in stage 3: custom indicators
   loaded as modules into the engine (section 5.1), whose outputs are derived series; custom
   renderers and primitives come with stage 4.
 - The core has no framework dependency: strict TypeScript, ESM, tree-shakeable.
 - Accessibility: keyboard control and a data summary for screen readers are in scope.
 - Out of scope: a user scripting language like Pine. The isolated engine leaves room for one later.
+
+### 8.1 As built in stage 4: price axes
+
+**Scales and axes.** A chart has a default price scale (id `default`, configured by
+`ChartOptions.priceScale`) and any number of others by id (`ChartOptions.priceScales`). Series and
+indicator outputs name theirs with `priceScaleId`, which can change at any time; an id that no option
+names gets an overlay scale with default options. A scale with a visible axis has a canvas of its
+own, made the first time the axis is shown; a scale without one is an overlay. Axes are laid out on
+their side from the pane outward: the default scale first, then the others in the order of
+`priceScales`. The default scale's canvas keeps its place in the DOM, and further ones go in below
+the overlay canvas, so a chart with one axis has the same four canvases as before.
+
+**Values.** A scale maps a price to a value and the value to a coordinate:
+
+- The value is the price (`normal`), its decimal logarithm (`logarithmic`), its change in percent from
+  a base price (`percentage`), or the price as an index on which the base is 100 (`indexed`).
+- The base is the series' value at the first visible bar: its close, or at a coarse level the last
+  close of the first visible bucket. Each series on a percentage or indexed scale has a base of its
+  own, so all of them start at 0% (or 100) and compare. Conversions that take no base use the base of
+  the scale's first series with one.
+- Values map to coordinates linearly, `y = offset - value * scale`, with `scale` negative on an
+  inverted scale. Percentage and indexed values are linear in the price given the base, so the base
+  folds into the offset and factor and a view projects with one multiply-add per price, as before.
+  Only the logarithmic mode takes a logarithm per price. Prices it cannot show (zero or below) become
+  NaN and are not drawn, like gaps.
+- On an inverted scale a view's `yHigh` and `yLow` still hold the upper and the lower row of an item,
+  so lines, wicks and merged pixel columns draw unchanged; candle bodies and histogram colors take
+  the inversion into account.
+
+**Autoscale.** In every model update each scale collects the value range of its visible series in
+view (a histogram's base included where the scale can show it) and fits it, if it autoscales or
+has never been fitted. A scale that does not autoscale keeps its range in values; a change of mode,
+which changes the units, fits it once. Dragging an axis scales its range around the middle and turns
+autoscale off; a double click on the axis turns it back on; dragging the pane up or down moves the
+scales that do not autoscale.
+
+**Ticks and labels.**
+
+- Linear ticks are multiples of 1, 2 or 5 times a power of ten, and of the tick size (`minMove`) of
+  the scale's first series when it has one.
+- On a logarithmic scale that spans less than a factor of 3, ticks are multiples of one round step,
+  the one the top of the range needs. Over a wider range the step grows with the price: each tick is
+  the first multiple of the round step nearest to the distance to the price `spacing` pixels higher
+  (1, 2, 4, 10, 20, 40, ... over decades; every decade or every few when decades get narrow). Ticks
+  are always at least `spacing` pixels apart.
+- Ticks cover the pane, but not more than `spacing` pixels beyond the scale's range: an oscillator
+  that its margins keep in a band below the prices labels that band only.
+- Labels take the decimals of the series' tick size or `precision`; without either, as many as the
+  tick step needs (2 to 8). Prices are rounded to the tick size. Percentage labels carry a `%`.
+- The crosshair shows its price on every visible axis, each in its own values; the magnet snaps to
+  the first visible series and labels that series' scale with its exact value. A series' value label
+  goes on the axis of its scale, an overlay's on the default axis (or the first visible one).
+- The horizontal grid follows the default scale, unless it has no series and a visible axis has.
+
+**Frame path.** Per frame the chart loops over the scales twice (collect, then fit), sets each
+series' projection (offset, factor, logarithm or not) and projects into the view's reused typed
+arrays; tick rows go into a reused array per axis. Value labels are formatted again only when the
+value, the base or the scale's format changed. Nothing reads the layout outside the shared frame's
+read phase: the axis under the pointer is the event's target, which needs no layout read.
+
+**Coordinate interface.** Drawings (stage 4) bind to this. There is one pane, so "per pane" is per
+chart until panes exist.
+
+| Where                                    | Symbol                                                                     | What                                                                                                                                                |
+| ---------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core/src/model/price-scale.ts` | `PriceScale.priceToY(price, base?)`, `yToPrice(y, base?)`                  | Price to CSS pixels from the top of the pane and back; `base` (percentage, indexed) defaults to `PriceScale.base`, that of the scale's first series |
+|                                          | `toValue(price, base?)`, `fromValue(value, base?)`, `valueToY`, `yToValue` | The two steps of the above, for code that works on values; `y = offset - value * scale`                                                             |
+|                                          | `version`, `hasRange`, `mode`, `inverted`, `id`                            | `version` changes with the mapping of values to coordinates; nothing is mapped before `hasRange`                                                    |
+| `packages/core/src/price-axes.ts`        | `PriceAxis` (`scale`, `settings`, `axisLeft`, `axisWidth`)                 | A scale with its options and axis place; implements the public `PriceScaleApi`                                                                      |
+| `packages/core/src/series.ts`            | `Series.axis`, `Series.base`, `Series.deviceY(price)`                      | The scale a series was drawn on, its base, and the device-pixel row of a price as last drawn (the frame path's form)                                |
+| `packages/core/src/chart.ts`             | `Chart.priceAxisOf(series)`, `Chart.priceScale(id)`                        | Scale of a series (following `priceScaleId`), and of an id (made as an overlay if new)                                                              |
+| `packages/core/src/options.ts`           | `DEFAULT_PRICE_SCALE_ID`                                                   | `'default'`                                                                                                                                         |
+
+A drawing stored as (time, price) pairs bound to a series converts with its series' scale and base,
+and moves with them in percentage and indexed modes as the first visible bar changes, as the series
+does; one bound to a scale id uses the scale's base. The public forms are
+`SeriesApi.priceToCoordinate`, `coordinateToPrice` and `priceScale()`, and `ChartApi.priceScale(id)`
+(`PriceScaleApi`: options, width, visible range, conversions).
+
+**Not built.** Value labels that collide are drawn over each other (Lightweight Charts moves them
+apart). Scales are never removed; an axis no longer needed is hidden. The magnet takes the first
+visible series whatever its scale. Pinch and wheel act on the time scale only.
 
 ## 9. Stages and measurement gates
 
