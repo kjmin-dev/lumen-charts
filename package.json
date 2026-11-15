@@ -17,6 +17,11 @@
 		"format": "oxfmt",
 		"format:check": "oxfmt --check",
 		"dev": "pnpm --filter @lumen-charts/example-vanilla dev",
+		"bench": "pnpm --filter @lumen-charts/benchmarks bench",
+		"bench:install": "pnpm --filter @lumen-charts/benchmarks exec playwright install chromium",
+		"bench:dev": "pnpm --filter @lumen-charts/benchmarks dev",
+		"bench:serve": "pnpm --filter @lumen-charts/benchmarks serve",
+		"bench:report": "pnpm --filter @lumen-charts/benchmarks report",
 		"changeset": "changeset",
 		"version-packages": "changeset version",
 		"release": "pnpm build && changeset publish"

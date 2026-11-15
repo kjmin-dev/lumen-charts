@@ -37,10 +37,28 @@ pnpm build        # emit dist/ for every package with tsc
 Versioning uses Changesets: run `pnpm changeset` in a pull request that changes a package.
 All packages are released together under one version.
 
+## Benchmarks
+
+`benchmarks/` is a browser harness that measures chart libraries through one adapter interface
+(`benchmarks/src/adapter.ts`). It currently measures Lightweight Charts 5.3.0 with conflation on
+and off; the stage 0 baseline and the definition of every metric are in
+[docs/benchmarks/stage-0-baseline.md](docs/benchmarks/stage-0-baseline.md).
+
+```sh
+pnpm bench:install                      # once: download Playwright's Chromium (CI never needs it)
+pnpm bench --quick                      # smoke test, about a minute
+pnpm bench                              # full matrix, headed Chromium, JSON in benchmarks/results/
+pnpm bench --scenario tick --size 1m --lib lwc-conflation-off --repeats 3
+pnpm bench --help                       # all options (headless, Chrome channel, viewport, DPR, ...)
+pnpm bench:report <results.json>        # Markdown tables from a results file
+pnpm bench:serve                        # production build of the harness page, to run by hand
+```
+
 ## Layout
 
 ```
-packages/   libraries published to npm
-examples/   runnable examples (not published)
-docs/       design documents
+packages/     libraries published to npm
+examples/     runnable examples (not published)
+benchmarks/   benchmark harness (not published)
+docs/         design documents and benchmark results
 ```

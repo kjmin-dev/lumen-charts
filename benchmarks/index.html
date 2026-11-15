@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Lumen Charts benchmarks</title>
+		<link rel="icon" href="data:," />
+		<style>
+			body {
+				margin: 0;
+				font:
+					14px system-ui,
+					sans-serif;
+				background: #ffffff;
+				color: #111111;
+			}
+			#chart {
+				position: relative;
+				overflow: hidden;
+			}
+			#controls {
+				padding: 8px 16px 32px;
+			}
+			#controls form {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 8px 16px;
+				align-items: center;
+			}
+			#controls fieldset {
+				border: 1px solid #cccccc;
+			}
+			#controls table {
+				border-collapse: collapse;
+				margin: 8px 0;
+			}
+			#controls td,
+			#controls th {
+				border: 1px solid #dddddd;
+				padding: 2px 6px;
+				text-align: left;
+			}
+			#controls textarea {
+				width: 100%;
+				box-sizing: border-box;
+				font:
+					12px ui-monospace,
+					monospace;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="chart"></div>
+		<div id="controls"></div>
+		<script type="module" src="/src/harness/main.ts"></script>
+	</body>
+</html>

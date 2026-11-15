@@ -164,7 +164,7 @@ Conditions: two reference devices (one desktop, one mid-range Android) with a fi
 
 ## 10. Open questions
 
-- The O(N) cost per tick in Lightweight Charts comes from reading the source. Stage 0 measures it in a browser.
+- Settled by stage 0: the cost per tick in Lightweight Charts is O(N). One `update()` takes 76.7–82.7 µs at 10,000 candles and 9,061–11,103 µs at 1 million [measured: [stage 0 baseline](benchmarks/stage-0-baseline.md)].
 - Visual quality during fast scrolling with the window cache is unverified. Stage 2 checks whether the swap from a coarse level to raw bars is visible.
 - Benchmarks ran on one Apple M1. x86, Firefox and Android are unmeasured.
 - The review's experiments ran on a heavily loaded machine. Their direction holds; their absolute numbers need re-measuring.
