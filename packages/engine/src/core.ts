@@ -526,9 +526,13 @@ export class EngineCore {
 		this._rebase(event);
 	}
 
-	/** Indexes now mean other bars: a raw window waiting for rows is answered empty and pins are dropped. */
+	/**
+	 * Indexes now mean other bars: a raw window waiting for rows is answered empty, pins are dropped,
+	 * and indicator values, which are kept by index, are dropped and computed again.
+	 */
 	private _rebase(event: EngineEvent): void {
 		this._epoch++;
+		this._indicators.timelineChanged();
 		this._pinFrom = NaN;
 		this._pinTo = NaN;
 		const deferred = this._deferred;
@@ -1346,6 +1350,16 @@ export class EngineCore {
 			}
 			return;
 		}
+		if (state.store.evictedCount > 0) {
+			// Recomputations ask for the rows they read first (`_ensureRows`); should any be missing
+			// anyway, they read as missing values rather than as the wrong bars.
+			this._clearNeeds();
+			this._needTimes(state, this._rowTime(from), to < main.store.end ? this._rowTime(to) : Infinity);
+			if (this._missing(0)) {
+				out.fill(NaN, offset, offset + to - from);
+				return;
+			}
+		}
 		const rows = to - from;
 		const size = rows * state.valueColumns;
 		if (this._readScratch.length < size) {
@@ -1557,6 +1571,11 @@ export class EngineCore {
 		}
 		if (plan.mode === 'middle') {
 			this._rebase(event);
+		} else {
+			// Indexes stay, but the first or the last bars are gone: every indicator is computed again
+			// over what is left (one that reads only other series too, since the timeline starts or ends
+			// elsewhere), and its values stay on screen until then.
+			this._indicators.rowsRemoved();
 		}
 		event.stale = true;
 	}
