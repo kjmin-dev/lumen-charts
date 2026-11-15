@@ -22,6 +22,8 @@ import { ANCHOR_SHIFT, ChunkedStore, SUMMARY_BYTES } from './store';
 const BUILD_SLICE = 65_536;
 /** Most chunks one fetch request asks for. */
 const FETCH_CHUNKS = 16;
+/** Most chunks let go in one go (about 3 ms of summaries on an Apple M1). */
+const EVICT_SLICE = 32;
 /** log2 of the rows per bucket of the finest level. */
 const BUCKET_SHIFT = 4;
 /** Numbers a tick keeps while it waits: its time and values. */
@@ -198,6 +200,8 @@ export class EngineCore {
 
 	/** Memory the engine aims to stay under, in bytes. */
 	private _limit = Infinity;
+	/** More chunks are over the limit and could go than one call of `_enforceLimit` lets go. */
+	private _overLimit = false;
 	/** Rows of the last raw window asked for, which are kept when the limit lets rows go. */
 	private _pinFrom = NaN;
 	private _pinTo = NaN;
@@ -373,9 +377,12 @@ export class EngineCore {
 		}
 	}
 
-	/** True while level-of-detail buckets are waiting to be built or indicators to be recomputed. */
+	/**
+	 * True while level-of-detail buckets are waiting to be built, indicators to be recomputed, or
+	 * chunks to be let go.
+	 */
 	public get busy(): boolean {
-		return this._pending.size > 0 || this._indicators.busy;
+		return this._pending.size > 0 || this._indicators.busy || this._overLimit;
 	}
 
 	/**
@@ -416,19 +423,18 @@ export class EngineCore {
 
 	/**
 	 * Runs one slice of background work: indicator recomputations first, then the build of
-	 * level-of-detail buckets. Returns true while more remains. A host calls this when no command is
-	 * waiting, and afterwards `takeNotice`; commands that need the buckets finish the build themselves.
+	 * level-of-detail buckets, then letting go of chunks over the memory limit. Returns true while
+	 * more remains. A host calls this when no command is waiting, and afterwards `takeNotice`;
+	 * commands that need the buckets finish the build themselves.
 	 */
 	public backgroundStep(): boolean {
-		const computing = this._indicators.busy;
-		if (this._indicators.step()) {
+		if (this._indicators.step() || this._buildStep()) {
 			return true;
 		}
-		if (computing) {
-			// Rows the recomputation read may go now.
-			this._enforceLimit();
-		}
-		return this._buildStep();
+		// Rows can only be let go once the levels that summarize them are built, and rows a
+		// recomputation read may go once it is done with them.
+		this._enforceLimit();
+		return this._overLimit;
 	}
 
 	/**
@@ -462,23 +468,6 @@ export class EngineCore {
 		}
 		this._finish(event);
 		return event;
-	}
-
-	/** Runs one slice of the build of levels of detail. Returns true while more remains. */
-	private _buildStep(): boolean {
-		if (this._pending.size === 0) {
-			return false;
-		}
-		this._build ??= this._buildAll();
-		if (this._build.next().done === true) {
-			this._build = null;
-		}
-		if (this._pending.size > 0) {
-			return true;
-		}
-		// Rows can only be let go once the levels that summarize them are built.
-		this._enforceLimit();
-		return false;
 	}
 
 	/** Event for a command that threw: it tells the client the command is over and what still holds. */
@@ -1749,21 +1738,33 @@ export class EngineCore {
 	 * Lets go of chunks far from the view until the engine holds no more than the limit, or nothing
 	 * more can go. Levels of detail always stay, so zoomed-out views keep drawing, and every chunk let
 	 * go keeps a summary to check the rows that come back.
+	 *
+	 * At most `EVICT_SLICE` chunks per call: a summary takes a pass over the chunk, and letting go of
+	 * a whole history at once (10M points right after their levels are built) would take over 100 ms.
+	 * The rest goes in background steps (`_overLimit`), between commands.
 	 */
 	private _enforceLimit(): void {
-		if (this._running || this._pending.size > 0 || !this._evicting()) {
+		if (this._running || this._pending.size > 0) {
+			return;
+		}
+		this._overLimit = false;
+		if (!this._evicting()) {
 			return;
 		}
 		let bytes = this.byteLength;
 		if (bytes <= this._limit) {
 			return;
 		}
-		for (const candidate of this._candidates()) {
+		const candidates = this._candidates();
+		const n = Math.min(candidates.length, EVICT_SLICE);
+		for (let i = 0; i < n; i++) {
+			const candidate = candidates[i]!;
 			bytes -= candidate.state.store.evict(candidate.grid, candidate.keepTime, candidate.anchors);
 			if (bytes <= this._limit) {
-				break;
+				return;
 			}
 		}
+		this._overLimit = candidates.length > n;
 	}
 
 	/**
@@ -2557,6 +2558,18 @@ export class EngineCore {
 		while (this._buildStep()) {
 			yield;
 		}
+	}
+
+	/** Runs one slice of the background build of levels. Returns true while more remains. */
+	private _buildStep(): boolean {
+		if (this._pending.size === 0) {
+			return false;
+		}
+		this._build ??= this._buildAll();
+		if (this._build.next().done === true) {
+			this._build = null;
+		}
+		return this._pending.size > 0;
 	}
 
 	private *_buildAll(): Generator<undefined, void, undefined> {

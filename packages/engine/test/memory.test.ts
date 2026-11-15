@@ -266,6 +266,9 @@ function several(): EngineCore {
 		// Levels.
 	}
 	run(core, { type: 'limit', bytes: 1 });
+	while (core.backgroundStep()) {
+		// Chunks over the limit beyond the first slice go between commands, as a host runs them.
+	}
 	return core;
 }
 
@@ -284,6 +287,29 @@ describe('memory limit with several series', () => {
 		// Other series are merged into main bars by time, so the main series keeps its times.
 		expect(storeOf(core, 1).timelessCount).toBe(0);
 		expect(storeOf(core, 2).timelessCount).toBe(storeOf(core, 2).evictedCount);
+		expect(core.memory.evictable).toBe(0);
+	});
+
+	it('lets go of many chunks a slice at a time, between commands', () => {
+		const core = new EngineCore();
+		run(core, { type: 'add', series: 1, kind: 'line', fetchable: true });
+		run(core, { type: 'add', series: 2, kind: 'line', fetchable: true });
+		for (const series of [1, 2]) {
+			run(core, { type: 'set', series, count: COUNT, data: rows(0, COUNT) });
+		}
+		while (core.backgroundStep()) {
+			// Levels.
+		}
+		run(core, { type: 'limit', bytes: 1 });
+		// A summary takes a pass over the chunk: one command lets go of 32 chunks at most.
+		const evicted = () => storeOf(core, 1).evictedCount + storeOf(core, 2).evictedCount;
+		expect(evicted()).toBe(32);
+		expect(core.busy).toBe(true);
+		while (core.backgroundStep()) {
+			// The rest, as a host runs it.
+		}
+		expect(core.busy).toBe(false);
+		expect(evicted()).toBeGreaterThan(32);
 		expect(core.memory.evictable).toBe(0);
 	});
 
