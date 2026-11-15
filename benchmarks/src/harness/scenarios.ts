@@ -1,6 +1,7 @@
 import type { AdapterFactory, ChartAdapter, ChartSize, LogicalRange } from '../adapter.ts';
 import { findAdapter } from '../adapters/index.ts';
 import {
+	type CandleColumns,
 	DEFAULT_INTERVAL_MS,
 	Random,
 	type LineColumns,
@@ -13,6 +14,8 @@ import type {
 	AdapterInfo,
 	ApplyJob,
 	ApplyRun,
+	DrawingsJob,
+	DrawingsRun,
 	FramesJob,
 	FramesRun,
 	IndicatorFramesJob,
@@ -38,6 +41,7 @@ import type {
 	TickJob,
 	TickRun,
 } from '../jobs.ts';
+import { generateDrawings } from '../drawings.ts';
 import { memoryResult } from '../memory.ts';
 import { motionRanges } from '../motion.ts';
 import { summarize } from '../stats.ts';
@@ -116,6 +120,8 @@ function runScenario(job: Job, factory: AdapterFactory, container: HTMLElement, 
 			return runFrames(job, factory, container);
 		case 'multi':
 			return runMulti(job, factory, container, probes);
+		case 'drawings':
+			return runDrawings(job, factory, container);
 	}
 }
 
@@ -1087,4 +1093,192 @@ async function runOperations(
 		resolutionMs,
 		staleFetches: source.fetches - fetchesBefore,
 	};
+}
+
+/** Path of the pointer over the pane at step `k`: two sines of different periods, so it sweeps the pane. */
+function pathPoint(k: number, rect: DOMRect, out: { x: number; y: number }): void {
+	// The pane is the chart without its axes, which take the right and bottom edge.
+	out.x = rect.left + rect.width * (0.45 + 0.4 * Math.sin((2 * Math.PI * k) / 97));
+	out.y = rect.top + rect.height * (0.45 + 0.4 * Math.sin((2 * Math.PI * k) / 61));
+}
+
+function pointerEvent(type: string, x: number, y: number, pressed: boolean): PointerEvent {
+	return new PointerEvent(type, {
+		clientX: x,
+		clientY: y,
+		pointerId: 1,
+		pointerType: 'mouse',
+		isPrimary: true,
+		button: type === 'pointermove' ? -1 : 0,
+		buttons: pressed ? 1 : 0,
+		bubbles: true,
+		cancelable: true,
+	});
+}
+
+/**
+ * Drawings on a 1M-candle chart, one step per animation frame: the pointer hovering along a path
+ * (the stage 4 gate), dragging a drawing along it, or a pan. Frame JavaScript time includes the
+ * pointer event, which the harness dispatches in a timed frame callback, and the chart's draw for
+ * it. For hovers, the library's public hit test is then timed alone at every position of the path.
+ */
+async function runDrawings(job: DrawingsJob, factory: AdapterFactory, container: HTMLElement): Promise<DrawingsRun> {
+	const data = generateSeries('candles', { seed: job.seed, count: job.dataset.size }) as CandleColumns;
+	const adapter = await createSettled(factory, container, job.chart);
+	const { addDrawings, pointerTarget, hitTestDrawing } = adapter;
+	if (addDrawings === undefined || pointerTarget === undefined || hitTestDrawing === undefined) {
+		throw new Error('This adapter has no drawings');
+	}
+	try {
+		adapter.setData(prepare(adapter, data));
+		await adapter.settle();
+		const n = data.length;
+		const visibleBars = Math.min(job.visibleBars, n);
+		const view = { from: n - visibleBars, to: n - 1 };
+		adapter.setVisibleLogicalRange(view);
+		await adapter.settle();
+		const drawings = generateDrawings(data, job.drawings, view.from, view.to, job.seed + 3);
+		addDrawings.call(adapter, drawings);
+		await adapter.settle();
+
+		const target = pointerTarget.call(adapter);
+		// Read once, before measuring: the page does not scroll during the run.
+		const rect = target.getBoundingClientRect();
+		const point = { x: 0, y: 0 };
+		const steps = job.warmupFrames + job.frames + 2;
+		const ranges = job.variant === 'pan' ? motionRanges('pan', n, visibleBars, steps, 1) : [];
+		// A drag starts on a drawing in view: the first point of the path where the hit test finds one.
+		let pressAt = 0;
+		if (job.variant === 'drag') {
+			while (pressAt < 2000) {
+				pathPoint(pressAt, rect, point);
+				if (hitTestDrawing.call(adapter, point.x - rect.left, point.y - rect.top)) {
+					break;
+				}
+				pressAt++;
+			}
+			if (pressAt === 2000) {
+				throw new Error('No drawing on the path to drag');
+			}
+			target.dispatchEvent(pointerEvent('pointerdown', point.x, point.y, true));
+			await adapter.settle();
+		}
+		const step = (k: number): void => {
+			if (job.variant === 'pan') {
+				adapter.setVisibleLogicalRange(ranges[k] ?? view);
+				return;
+			}
+			pathPoint(pressAt + k, rect, point);
+			target.dispatchEvent(pointerEvent('pointermove', point.x, point.y, job.variant === 'drag'));
+		};
+		step(0);
+		await adapter.settle();
+
+		let first = 0;
+		let last = 0;
+		startFrameRecording();
+		let recording;
+		try {
+			await new Promise<void>((resolve, reject) => {
+				const warmupStart = performance.now();
+				let measureStart = 0;
+				let frame = 0;
+				const onFrame = (): void => {
+					const now = performance.now();
+					if (first === 0) {
+						const warmedUp =
+							frame >= job.warmupFrames ||
+							(frame >= MIN_WARMUP_FRAMES && overBudget(warmupStart, job.warmupBudgetMs, now));
+						if (warmedUp) {
+							first = frame + 1;
+							measureStart = now;
+						}
+					} else if (last === 0) {
+						const measured = frame + 1 - first;
+						if (measured >= job.frames || (measured >= job.minFrames && overBudget(measureStart, job.budgetMs, now))) {
+							last = frame + 1;
+						}
+					} else if (frame === last) {
+						resolve();
+						return;
+					}
+					try {
+						step(frame + 1);
+					} catch (error) {
+						reject(error);
+						return;
+					}
+					frame++;
+					requestTimedFrame(onFrame);
+				};
+				requestTimedFrame(onFrame);
+			});
+		} finally {
+			recording = stopFrameRecording();
+		}
+		await adapter.settle();
+		if (job.variant === 'drag') {
+			target.dispatchEvent(pointerEvent('pointerup', point.x, point.y, false));
+			await adapter.settle();
+		}
+		if (recording.timestamps.length < last) {
+			throw new Error(`Recorded ${recording.timestamps.length} frames, expected at least ${last}`);
+		}
+		const frameJs: number[] = [];
+		const interval: number[] = [];
+		for (let k = first; k < last; k++) {
+			frameJs.push(recording.jsTime[k] ?? 0);
+			interval.push((recording.timestamps[k] ?? 0) - (recording.timestamps[k - 1] ?? 0));
+		}
+
+		let hitTest: DrawingsRun['hitTest'] = null;
+		let hitTestMean: number | null = null;
+		let redraw: DrawingsRun['redraw'] = null;
+		let hits: number | null = null;
+		if (job.variant === 'hover') {
+			// Frame k drew the hover of step k: the same positions, hit-tested alone.
+			const single: number[] = [];
+			const rest: number[] = [];
+			hits = 0;
+			for (let k = first; k < last; k++) {
+				pathPoint(k, rect, point);
+				const x = point.x - rect.left;
+				const y = point.y - rect.top;
+				const t0 = performance.now();
+				const hit = hitTestDrawing.call(adapter, x, y);
+				const time = performance.now() - t0;
+				single.push(time);
+				rest.push(Math.max(0, (recording.jsTime[k] ?? 0) - time));
+				if (hit) {
+					hits++;
+				}
+			}
+			const passes = 20;
+			const t0 = performance.now();
+			for (let pass = 0; pass < passes; pass++) {
+				for (let k = first; k < last; k++) {
+					pathPoint(k, rect, point);
+					hitTestDrawing.call(adapter, point.x - rect.left, point.y - rect.top);
+				}
+			}
+			hitTestMean = (performance.now() - t0) / (passes * (last - first));
+			hitTest = summarize(single);
+			redraw = summarize(rest);
+		}
+		return {
+			frameJs: summarize(frameJs),
+			hitTest,
+			hitTestMean,
+			redraw,
+			hits,
+			interval: summarize(interval),
+			frames: last - first,
+			warmupFrames: first - 1,
+			drawings: drawings.length,
+			drawingsInView: drawings.filter(drawing => drawing.inView).length,
+			visibleBars,
+		};
+	} finally {
+		adapter.destroy();
+	}
 }

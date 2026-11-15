@@ -1,5 +1,5 @@
 import type { AdapterEntry, KnownFailure } from '../adapter.ts';
-import { type DatasetSpec, INDICATOR_SCENARIOS, type ScenarioName } from '../jobs.ts';
+import { DRAWING_SCENARIOS, type DatasetSpec, INDICATOR_SCENARIOS, type ScenarioName } from '../jobs.ts';
 
 const LWC_FAILURES: readonly KnownFailure[] = [
 	{
@@ -34,6 +34,7 @@ export const adapters: readonly AdapterEntry[] = [
 		datafeed: true,
 		indicators: true,
 		priceAxes: true,
+		drawings: true,
 		load: async () => (await import('./lumen.ts')).lumenWorker,
 	},
 	{
@@ -42,6 +43,7 @@ export const adapters: readonly AdapterEntry[] = [
 		datafeed: true,
 		indicators: true,
 		priceAxes: true,
+		drawings: true,
 		load: async () => (await import('./lumen.ts')).lumenMain,
 	},
 ];
@@ -68,6 +70,10 @@ export function knownFailure(adapter: string, dataset: DatasetSpec, scenario?: S
 	}
 	if (scenario === 'axes-frames' && entry?.priceAxes !== true) {
 		return 'the adapter cannot lay out price axes';
+	}
+
+	if (scenario !== undefined && DRAWING_SCENARIOS.includes(scenario) && entry?.drawings !== true) {
+		return 'the library has no drawings';
 	}
 	const failure = entry?.knownFailures?.find(f => f.dataset.kind === dataset.kind && f.dataset.size === dataset.size);
 	return failure === undefined ? null : `known failure: ${failure.reason}`;

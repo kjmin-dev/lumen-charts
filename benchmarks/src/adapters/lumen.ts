@@ -2,6 +2,7 @@ import * as lumen from '@lumen-charts/core';
 import { type ChartApi, type IndicatorApi, type IndicatorInput, type SeriesApi, createChart } from '@lumen-charts/core';
 import type { AdapterFactory, ChartAdapter, ChartSize, LogicalRange } from '../adapter.ts';
 import type { CandleColumns, LineColumns, SeriesColumns, TickColumns } from '../data.ts';
+import type { BenchDrawing } from '../drawings.ts';
 import { afterNextFrame, nextTask, pendingFrameCallbacks } from '../harness/frames.ts';
 import { INDICATOR_SET } from '../indicators.ts';
 import type { PriceAxesLayout } from '../jobs.ts';
@@ -159,6 +160,29 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 
 	public setVisibleLogicalRange(range: LogicalRange): void {
 		this._chart.timeScale().setVisibleLogicalRange({ from: range.from, to: range.to });
+	}
+
+	public addDrawings(drawings: readonly BenchDrawing[]): void {
+		const api = (this._chart as Partial<Pick<ChartApi, 'drawings'>>).drawings?.();
+		// The code of earlier stages, measured with the same harness, has no drawings.
+		if (api === undefined) {
+			throw new Error('This version of lumen has no drawings');
+		}
+		for (const drawing of drawings) {
+			api.add({
+				type: drawing.type,
+				points: drawing.points,
+				options: drawing.text === undefined ? undefined : { text: drawing.text },
+			});
+		}
+	}
+
+	public pointerTarget(): HTMLElement {
+		return this._chart.element();
+	}
+
+	public hitTestDrawing(x: number, y: number): boolean {
+		return this._chart.drawings().hitTest(x, y) !== null;
 	}
 
 	public async settle(): Promise<void> {

@@ -716,6 +716,53 @@ function refetchOperations(): string {
 	);
 }
 
+function drawings(): string {
+	const list = cases.filter(c => c.job.scenario === 'drawings');
+	const rows: string[][] = [];
+	for (const id of caseIds('drawings')) {
+		for (const adapter of adaptersOf(list)) {
+			const c = find(id, adapter);
+			if (c === undefined || c.job.scenario !== 'drawings') {
+				continue;
+			}
+			rows.push([
+				`${c.job.variant}, ${c.job.drawings} drawings (${median(c, 'drawingsInView') ?? '–'} in view), ` +
+					`${datasetLabel(c.job.dataset)}, ${c.job.visibleBars} bars in view`,
+				adapter,
+				cell(c, 'frameJs.p50', US),
+				cell(c, 'frameJs.p95', US),
+				cell(c, 'frameJs.p99', US),
+				cell(c, 'frameJs.max', US),
+				cell(c, 'hitTestMean', US),
+				cell(c, 'hitTest.p99', US),
+				cell(c, 'redraw.p50', US),
+				cell(c, 'redraw.p99', US),
+				cell(c, 'hits'),
+				cell(c, 'frames'),
+				hostIdle(c),
+			]);
+		}
+	}
+	return table(
+		[
+			'Case',
+			'Adapter',
+			'Frame JS p50 (µs)',
+			'p95 (µs)',
+			'p99 (µs)',
+			'max (µs)',
+			'Hit test mean (µs)',
+			'Hit test p99 (µs)',
+			'Rest of frame p50 (µs)',
+			'p99 (µs)',
+			'Hits',
+			'Frames',
+			'CPU idle',
+		],
+		rows,
+	);
+}
+
 // The scenario of each section, if any: sections without results of it are left out.
 const sections: [string, () => string, string?][] = [
 	['Environment', environment],
@@ -736,6 +783,7 @@ const sections: [string, () => string, string?][] = [
 	['Price axes: pan and zoom frames (three averages on the candles)', () => frames('axes-frames'), 'axes-frames'],
 	['Several charts on one page', multi, 'multi'],
 	['Operations on history let go', refetchOperations, 'refetch'],
+	['Drawings: hover, drag and pan with drawings on the chart', drawings, 'drawings'],
 	['Failed runs', failures],
 	['Skipped cases', skippedCases],
 ];
