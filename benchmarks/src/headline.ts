@@ -57,9 +57,14 @@ export function headline(result: CaseResult): string {
 			);
 		case 'refetch':
 			return (
-				`shown p50 ${ms(m('shownMs.p50'))} p95 ${ms(m('shownMs.p95'))} max ${ms(m('shownMs.max'))}; ` +
+				`shown p50 ${ms(m('shownMs.p50'))} p95 ${ms(m('shownMs.p95'))} max ${ms(m('shownMs.max'))} ` +
+				`(frames p50 ${m('shownFrames.p50') ?? '–'}); ` +
 				`fetches per jump p50 ${m('fetches.p50') ?? '–'}; retained after load ${mb(m('memoryAfterLoad.retainedBytes'))}, ` +
-				`after the jumps ${mb(m('memory.retainedBytes'))}`
+				`after the jumps ${mb(m('memory.retainedBytes'))}` +
+				(m('operations.resolutionMs') === undefined
+					? ''
+					: `; correct let go p50 ${ms(m('operations.correctLetGoMs.p50'))}, remove p50 ${ms(m('operations.removeMs.p50'))}, ` +
+						`resolution ${ms(m('operations.resolutionMs'))}`)
 			);
 		case 'multi':
 			return (
