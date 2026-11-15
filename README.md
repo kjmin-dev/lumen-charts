@@ -159,3 +159,7 @@ examples/     runnable examples (not published)
 benchmarks/   benchmark harness (not published)
 docs/         design documents and benchmark results
 ```
+
+## License
+
+[MIT](LICENSE). Each published package carries a copy of the license.
