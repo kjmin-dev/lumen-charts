@@ -159,6 +159,39 @@ export function drawCandles(
 }
 
 /**
+ * Draws histogram bars from projected items, `width` device pixels wide, from the `base` row to the
+ * value: the part above the base in `color`, the part below in `negativeColor`, one pass per color.
+ * An item that merges several bars (a pixel column, or a bucket of a coarse level) spans its
+ * highest and lowest value, so spikes survive zooming out. Items are on whole pixels.
+ */
+export function drawHistogram(
+	ctx: CanvasRenderingContext2D,
+	view: SeriesView,
+	base: number,
+	width: number,
+	color: string,
+	negativeColor: string,
+): void {
+	const { x, yHigh, yLow, count } = view;
+	const half = width >> 1;
+	ctx.fillStyle = color;
+	for (let k = 0; k < count; k++) {
+		const top = yHigh[k]!;
+		// Rows grow downward: values above the base are above its row. NaN fails the test.
+		if (top < base) {
+			ctx.fillRect(x[k]! - half, top, width, base - top);
+		}
+	}
+	ctx.fillStyle = negativeColor;
+	for (let k = 0; k < count; k++) {
+		const bottom = yLow[k]!;
+		if (bottom > base) {
+			ctx.fillRect(x[k]! - half, base, width, bottom - base);
+		}
+	}
+}
+
+/**
  * Draws a line from projected items as one path. For merged pixel columns the path visits the
  * first value, both extremes and the last value of each column, so spikes survive zooming out.
  * A step line runs level to the next item and then jumps. `dash` is empty for a solid line.

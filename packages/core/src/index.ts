@@ -1,5 +1,13 @@
 export { type ChartApi, type LogicalRange, type TimeScaleApi, createChart } from './chart';
 export type { LineColumns, LinePoint, OhlcBar, OhlcColumns } from './data/input';
+export type {
+	IndicatorApi,
+	IndicatorInput,
+	IndicatorOptions,
+	IndicatorOutputApi,
+	IndicatorOutputOptions,
+	SourceColumn,
+} from './indicators';
 export {
 	type CandlestickOptions,
 	type ChartOptions,
@@ -9,6 +17,7 @@ export {
 	type DeepPartial,
 	type GridLineOptions,
 	type GridOptions,
+	type HistogramOptions,
 	type LayoutOptions,
 	type LineOptions,
 	type LineStyle,

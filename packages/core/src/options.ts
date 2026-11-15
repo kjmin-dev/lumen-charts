@@ -259,6 +259,16 @@ export interface LineOptions extends SeriesOptionsCommon {
 	crosshairMarkerRadius: number;
 }
 
+/** A bar per point from `base` to the value, for volume or an oscillator's histogram. */
+export interface HistogramOptions extends SeriesOptionsCommon {
+	/** Color of bars at or above the base. */
+	color: string;
+	/** Color of bars below the base; empty takes `color`. */
+	negativeColor: string;
+	/** Value the bars start from. Autoscale always includes it. */
+	base: number;
+}
+
 const COMMON_SERIES_OPTIONS: SeriesOptionsCommon = {
 	visible: true,
 	lastValueVisible: true,
@@ -288,6 +298,14 @@ export const DEFAULT_LINE_OPTIONS: LineOptions = {
 	lineType: 'simple',
 	crosshairMarkerVisible: true,
 	crosshairMarkerRadius: 4,
+};
+
+export const DEFAULT_HISTOGRAM_OPTIONS: HistogramOptions = {
+	...COMMON_SERIES_OPTIONS,
+	priceLineVisible: false,
+	color: '#26a69a',
+	negativeColor: '',
+	base: 0,
 };
 
 type Plain = Record<string, unknown>;

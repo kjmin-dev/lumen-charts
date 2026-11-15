@@ -1,5 +1,6 @@
 import { type EngineClient, type EngineEvent, columnCount, createEngine, levelFor } from '@lumen-charts/engine';
 import { type LevelWindow, WindowCache } from './data/window-cache';
+import { ChartIndicators, type IndicatorApi, type IndicatorOptions, type IndicatorOutputApi } from './indicators';
 import { Interaction, type InteractionHost } from './input/interaction';
 import { INVALIDATE_FULL, INVALIDATE_LIGHT, INVALIDATE_NONE, type Invalidation } from './model/invalidation';
 import { PriceScale } from './model/price-scale';
@@ -9,6 +10,7 @@ import {
 	type CandlestickOptions,
 	type ChartOptions,
 	type DeepPartial,
+	type HistogramOptions,
 	type LineOptions,
 	mergeOptions,
 	optionsEqual,
@@ -27,7 +29,7 @@ import {
 	textColorOn,
 } from './render/chrome';
 import { Layer } from './render/layer';
-import { drawCandles, drawLine } from './render/series';
+import { drawCandles, drawHistogram, drawLine } from './render/series';
 import { Series, type SeriesApi, type SeriesCreateOptions, type SeriesType } from './series';
 import { type FrameClient, cancelFrame, requestFrame } from './shared/frame';
 import { type ColorSchemeWatch, watchColorScheme, watchPixelRatio } from './shared/media';
@@ -73,13 +75,36 @@ export interface ChartApi {
 	 * `memoryLimit` option apply to it.
 	 */
 	addSeries<T extends SeriesType>(type: T, options?: SeriesCreateOptions<T>): SeriesApi<T>;
+	/**
+	 * Removes a series, and every indicator that reads it.
+	 */
 	removeSeries(series: SeriesApi): void;
+	/**
+	 * Adds an indicator computed from `source` (a series, or an indicator output to chain from) in
+	 * the data engine, with the worker when there is one. Its outputs are series on the main timeline,
+	 * drawn on the price pane and included in autoscale; ticks of the source update them in the same
+	 * message as the bars. `name` is a built-in (`sma`, `ema`, `wma`, `rsi`, `macd`, `bollinger`,
+	 * `atr`, `stochastic`, `vwap`, `highest`, `lowest`). Values appear once computed in the background. Throws for an unknown name
+	 * and a `RangeError` for a parameter out of bounds.
+	 */
+	addIndicator(
+		source: SeriesApi | IndicatorOutputApi,
+		name: string,
+		options?: DeepPartial<IndicatorOptions>,
+	): IndicatorApi;
+	/** Removes an indicator, and every indicator that reads its outputs. */
+	removeIndicator(indicator: IndicatorApi): void;
 	timeScale(): TimeScaleApi;
 	/**
 	 * Resolves once all data handed over so far has been applied and painted. A chart outside the
 	 * viewport is not painted until it comes back into view, and does not wait for that.
 	 */
 	whenIdle(): Promise<void>;
+	/**
+	 * Resolves once all data handed over so far has been applied on the main thread, indicator
+	 * values computed from it included, without waiting for the frame that draws it.
+	 */
+	whenApplied(): Promise<void>;
 	/** Where the data engine runs; `connecting` until a worker has answered or failed. */
 	engineMode(): 'none' | 'connecting' | 'worker' | 'local';
 	/** Removes the chart from the DOM and releases its resources. */
@@ -158,6 +183,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 	private _memoryLimit = Infinity;
 	/** Datafeed requests in flight, by series and first row. */
 	private readonly _fetches = new Set<string>();
+	/** Indicators, their definitions and the modules being loaded. */
+	private readonly _indicators: ChartIndicators;
+	private _applied: (() => void)[] = [];
 	/** Pause before asking again for rows whose fetch failed; grows with every failure. */
 	private _fetchBackoff = 0;
 
@@ -206,6 +234,15 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 		this._unwatchPixelRatio = watchPixelRatio(doc.defaultView, this._onPixelRatio);
 		observeVisibility(this._root, this._onVisibility);
 		this._applyResolved(this._options);
+		this._indicators = new ChartIndicators({
+			seriesList: this._series,
+			engine: () => this._engine,
+			ensureEngine: () => this._ensureEngine(),
+			invalidate: level => this.invalidate(level),
+			forget: series => this._cache.removeSeries(series),
+			addIndicator: (source, name, settings) => this.addIndicator(source, name, settings),
+			removeIndicator: indicator => this.removeIndicator(indicator),
+		});
 	}
 
 	// ChartApi
@@ -241,17 +278,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 	}
 
 	public addSeries<T extends SeriesType>(type: T, options: SeriesCreateOptions<T> = {}): SeriesApi<T> {
-		if (this._engine === null && !this._destroyed) {
-			this._engine = createEngine({ worker: this._options.worker });
-			this._engine.onevent = this._onEvent;
-			this._memoryLimit = this._options.memoryLimit;
-			if (this._memoryLimit !== Infinity) {
-				this._engine.setMemoryLimit(this._memoryLimit);
-			}
-		}
+		const engine = this._ensureEngine();
 		const { datafeed, ...style } = options;
 		const kind = type === 'candlestick' ? 'ohlcv' : 'line';
-		const id = this._engine?.addSeries(kind, datafeed !== undefined) ?? -1;
+		const id = engine?.addSeries(kind, datafeed !== undefined) ?? -1;
 		const series = new Series(this, id, type, style as Partial<CandlestickOptions> | Partial<LineOptions>);
 		series.datafeed = (datafeed as Series['datafeed'] | undefined) ?? null;
 		this._series.push(series);
@@ -260,13 +290,27 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 
 	public removeSeries(series: SeriesApi): void {
 		const index = this._series.indexOf(series as unknown as Series);
-		if (index < 0) {
+		if (index < 0 || this._series[index]!.derived) {
 			return;
 		}
+		this._indicators.removeReadersOf(this._series[index]!.id);
+		// Its indicators' outputs were listed after it, so removing them left it in place.
 		const removed = this._series.splice(index, 1)[0]!;
 		this._cache.removeSeries(removed.id);
 		this._engine?.removeSeries(removed.id);
 		this.invalidate(INVALIDATE_LIGHT);
+	}
+
+	public addIndicator(
+		source: SeriesApi | IndicatorOutputApi | Series,
+		name: string,
+		options: DeepPartial<IndicatorOptions> = {},
+	): IndicatorApi {
+		return this._indicators.add(source, name, options);
+	}
+
+	public removeIndicator(indicator: IndicatorApi): void {
+		this._indicators.remove(indicator);
 	}
 
 	public timeScale(): TimeScaleApi {
@@ -279,6 +323,15 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 		}
 		return new Promise(resolve => {
 			this._idle.push(resolve);
+		});
+	}
+
+	public whenApplied(): Promise<void> {
+		if (this._isApplied()) {
+			return Promise.resolve();
+		}
+		return new Promise(resolve => {
+			this._applied.push(resolve);
 		});
 	}
 
@@ -302,6 +355,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 		this._engine?.destroy();
 		this._engine = null;
 		this._deferred = [];
+		this._settleApplied();
 		this._pane.release();
 		this._priceAxis.release();
 		this._timeAxis.release();
@@ -390,6 +444,39 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 
 	// Data flow
 
+	/** The data engine, created with the first series. */
+	private _ensureEngine(): EngineClient | null {
+		if (this._engine === null && !this._destroyed) {
+			this._engine = createEngine({ worker: this._options.worker });
+			this._engine.onevent = this._onEvent;
+			this._memoryLimit = this._options.memoryLimit;
+			if (this._memoryLimit !== Infinity) {
+				this._engine.setMemoryLimit(this._memoryLimit);
+			}
+		}
+		return this._engine;
+	}
+
+	private _isApplied(): boolean {
+		const engine = this._engine;
+		return (
+			this._destroyed ||
+			engine === null ||
+			(engine.pending === 0 && this._indicators.computing === 0 && this._fetches.size === 0)
+		);
+	}
+
+	private _settleApplied(): void {
+		if (this._applied.length === 0 || !this._isApplied()) {
+			return;
+		}
+		const waiters = this._applied;
+		this._applied = [];
+		for (const resolve of waiters) {
+			resolve();
+		}
+	}
+
 	/**
 	 * Runs `action` once the engine has applied all data handed over so far, keeping call order.
 	 * Window requests in flight do not delay it: a view change does not depend on them.
@@ -429,6 +516,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 			scale.reset(this._options.timeScale.barSpacing, this._options.timeScale.rightOffset);
 		}
 		this._trackLastValues(event);
+		this._indicators.computing = event.computing ?? 0;
 		if (event.fetch !== undefined || event.restored !== undefined || event.window?.incomplete === true) {
 			this._handleFetches(event);
 		}
@@ -451,6 +539,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 		}
 		// Nothing to draw, or a chart outside the viewport, which draws when it comes back.
 		this._settle();
+		this._settleApplied();
 	};
 
 	/**
@@ -485,7 +574,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 	private _isIdle(): boolean {
 		return (
 			this._destroyed ||
-			(!this.frameQueued && this._fetches.size === 0 && (this._engine === null || this._engine.pending === 0))
+			(!this.frameQueued &&
+				this._fetches.size === 0 &&
+				this._indicators.computing === 0 &&
+				(this._engine === null || this._engine.pending === 0))
 		);
 	}
 
@@ -529,6 +621,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 				// After destroy the engine is gone, and nothing waits for the rows.
 				this._engine?.restoreRows(series.id, start, data, count);
 				this._settle();
+				this._settleApplied();
 			};
 			let pending: Promise<unknown>;
 			try {
@@ -919,6 +1012,12 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 			if (view.max > max) {
 				max = view.max;
 			}
+			if (series.type === 'histogram' && view.min <= view.max) {
+				// Bars grow from their base, which is always in view.
+				const base = (series.seriesOptions as HistogramOptions).base;
+				min = Math.min(min, base);
+				max = Math.max(max, base);
+			}
 			const lastRow = Math.floor((scale.end - 1) / size) - source.start;
 			if (lastRow >= 0 && lastRow < source.count) {
 				const close = series.close[lastRow]!;
@@ -936,7 +1035,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 		const offset = priceScale.offset * ratio;
 		const priceToDevice = priceScale.scale * ratio;
 		for (const series of this._series) {
-			series.view.project(offset, priceToDevice, series.kind === 'ohlcv');
+			series.view.project(offset, priceToDevice, series.type !== 'line');
 		}
 
 		const fontSize = this._options.layout.fontSize;
@@ -1051,6 +1150,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 			}
 			if (series.kind === 'ohlcv') {
 				drawCandles(ctx, view, widths.body, widths.wick, border, series.seriesOptions as CandlestickOptions);
+			} else if (series.type === 'histogram') {
+				const histogram = series.seriesOptions as HistogramOptions;
+				const base = Math.round((this._priceScale.offset - histogram.base * this._priceScale.scale) * ratio);
+				drawHistogram(ctx, view, base, widths.body, histogram.color, histogram.negativeColor || histogram.color);
 			} else {
 				const line = series.seriesOptions as LineOptions;
 				const width = Math.max(1, line.lineWidth * ratio);
@@ -1276,7 +1379,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 		const ratio = this._pixelRatio;
 		const priceScale = this._priceScale;
 		for (const series of this._series) {
-			if (series.kind !== 'line' || row >= series.close.length) {
+			if (series.type !== 'line' || row >= series.close.length) {
 				continue;
 			}
 			const line = series.seriesOptions as LineOptions;
@@ -1308,6 +1411,12 @@ function thickness(width: number, pixelRatio: number): number {
  * hollow body (a faint color with an outline) gives way to its outline color.
  */
 function seriesColor(ctx: CanvasRenderingContext2D, series: Series): string {
+	if (series.type === 'histogram') {
+		const histogram = series.seriesOptions as HistogramOptions;
+		return series.lastValue < histogram.base && histogram.negativeColor !== ''
+			? histogram.negativeColor
+			: histogram.color;
+	}
 	if (series.kind !== 'ohlcv') {
 		return (series.seriesOptions as LineOptions).color;
 	}
