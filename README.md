@@ -128,8 +128,11 @@ All packages are released together under one version.
 (`lwc-conflation-on`, `lwc-conflation-off`) and lumen from the workspace sources with the data
 engine in a worker or on the main thread (`lumen-worker`, `lumen-main`). The stage 0 baseline and
 the definition of every metric are in [docs/benchmarks/stage-0-baseline.md](docs/benchmarks/stage-0-baseline.md);
-stage 1 results against it are in [docs/benchmarks/stage-1.md](docs/benchmarks/stage-1.md), and the
-stage 2 scenarios with the stage 1 numbers on them in [docs/benchmarks/stage-2-before.md](docs/benchmarks/stage-2-before.md).
+stage 1 results against it are in [docs/benchmarks/stage-1.md](docs/benchmarks/stage-1.md), the
+stage 2 scenarios with the stage 1 numbers on them in [docs/benchmarks/stage-2-before.md](docs/benchmarks/stage-2-before.md),
+and stage 2 (level of detail, memory limit) against them in [docs/benchmarks/stage-2.md](docs/benchmarks/stage-2.md).
+The `refetch` scenario runs a series with a datafeed under a memory limit and times how long the
+chart takes to show history it let go.
 
 Runs are headless by default (Chromium's new headless mode, rasterizing on the GPU), so no window
 takes the focus; `--headed` opens a window. Stage 0 and stage 1 were measured headed. Frame
