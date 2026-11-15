@@ -252,7 +252,9 @@ The `refetch` scenario runs a series with a datafeed under a memory limit and ti
 chart takes to show history it let go. The `multi` scenario puts several auto-sized charts on one
 page, some of them below the fold, and measures workers, memory, the time until all are shown and
 the cost of a round of ticks; its results are in
-[docs/benchmarks/shared-resources.md](docs/benchmarks/shared-resources.md).
+[docs/benchmarks/shared-resources.md](docs/benchmarks/shared-resources.md). The stage 3 scenarios
+(`ind-load`, `ind-apply`, `ind-frames`, `ind-prepend`) put 20 indicators on the candles; results are
+in [docs/benchmarks/stage-3.md](docs/benchmarks/stage-3.md).
 
 Runs are headless by default (Chromium's new headless mode, rasterizing on the GPU), so no window
 takes the focus; `--headed` opens a window. Stage 0 and stage 1 were measured headed. Frame

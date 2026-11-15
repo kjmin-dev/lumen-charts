@@ -305,5 +305,9 @@ Conditions: two reference devices (one desktop, one mid-range Android) with a fi
 
 - Settled by stage 0: the cost per tick in Lightweight Charts is O(N). One `update()` takes 76.7–82.7 µs at 10,000 candles and 9,061–11,103 µs at 1 million [measured: [stage 0 baseline](benchmarks/stage-0-baseline.md)].
 - Settled by stage 2: the swap between raw bars and a coarse level is not visible. With the origin on a whole device pixel and exactly 16, 64, 256, ... bars per pixel, both draw the same items and price range (tested at the switches to levels 1 to 4, with gaps in the data and a partial first bucket); headless screenshots on both sides of the switches to levels 1 to 4 look the same. During a fast scroll the chart draws the finest level until the raw bars arrive.
+- Open after stage 3: with 20 indicators and all 1M bars in view, a tick applied through the worker
+  waits for the frame in progress, so its p99 is the frame time, 3.9–4.5 ms against the gate's 4 ms
+  [measured: [stage 3](benchmarks/stage-3.md)]. Cheaper wide-view frames or partial redraw (stage 5)
+  would lower it; the main-thread engine's p99 is 0.22–0.33 ms.
 - Benchmarks ran on one Apple M1. x86, Firefox and Android are unmeasured.
 - The review's experiments ran on a heavily loaded machine. Their direction holds; their absolute numbers need re-measuring.
