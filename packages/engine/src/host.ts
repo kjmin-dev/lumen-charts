@@ -101,6 +101,8 @@ export class WorkerTransport implements EngineTransport {
 
 /** Longest stretch the main-thread engine runs before giving the thread back. */
 const SLICE_MS = 4;
+/** Background work waits at most this long for idle time on a busy main thread. */
+const IDLE_TIMEOUT_MS = 500;
 
 /**
  * Runs the engine on the calling thread, for pages where workers are blocked.
@@ -115,6 +117,7 @@ export class LocalTransport implements EngineTransport {
 	private _current: Generator<undefined, EngineEvent, undefined> | null = null;
 	private _command: Command | null = null;
 	private _scheduled = false;
+	private _idleScheduled = false;
 	private _closed = false;
 	private _channel: MessageChannel | null = null;
 
@@ -156,6 +159,38 @@ export class LocalTransport implements EngineTransport {
 		this._channel.port2.postMessage(null);
 	}
 
+	/**
+	 * Background work (building levels of detail) waits for idle time, so it never runs between an
+	 * answer and the frame that draws it, as message tasks posted back to back would.
+	 */
+	private _scheduleIdle(): void {
+		if (this._idleScheduled || this._closed) {
+			return;
+		}
+		this._idleScheduled = true;
+		if (typeof requestIdleCallback === 'function') {
+			requestIdleCallback(this._idle, { timeout: IDLE_TIMEOUT_MS });
+		} else {
+			setTimeout(this._idle, 0);
+		}
+	}
+
+	private readonly _idle = (deadline?: IdleDeadline): void => {
+		this._idleScheduled = false;
+		if (this._closed || this._current !== null || this._head < this._queue.length) {
+			// Commands come first; the pump schedules this again once they are answered.
+			return;
+		}
+		const remaining = deadline === undefined || deadline.didTimeout ? SLICE_MS : deadline.timeRemaining();
+		const end = performance.now() + Math.min(SLICE_MS, Math.max(1, remaining));
+		while (this._core.backgroundStep()) {
+			if (performance.now() >= end) {
+				this._scheduleIdle();
+				return;
+			}
+		}
+	};
+
 	private readonly _pump = (): void => {
 		this._scheduled = false;
 		const deadline = performance.now() + SLICE_MS;
@@ -164,12 +199,8 @@ export class LocalTransport implements EngineTransport {
 				if (this._head >= this._queue.length) {
 					this._queue.length = 0;
 					this._head = 0;
-					// Idle: build level-of-detail buckets in the same slices, between frames.
-					while (this._core.backgroundStep()) {
-						if (performance.now() >= deadline) {
-							this._schedule();
-							return;
-						}
+					if (this._core.busy) {
+						this._scheduleIdle();
 					}
 					return;
 				}
