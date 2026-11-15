@@ -31,7 +31,7 @@ import { drawCandles, drawLine } from './render/series';
 import { Series, type SeriesApi, type SeriesCreateOptions, type SeriesType } from './series';
 import { type FrameClient, cancelFrame, requestFrame } from './shared/frame';
 import { type ColorSchemeWatch, watchColorScheme, watchPixelRatio } from './shared/media';
-import { observeSize, unobserveSize } from './shared/observers';
+import { observeSize, observeVisibility, unobserveSize, unobserveVisibility } from './shared/observers';
 import { type Geometry, candleWidths, placeElements } from './views/series-view';
 
 /** A range of logical positions: bar `i` covers `[i - 0.5, i + 0.5)`. */
@@ -75,7 +75,10 @@ export interface ChartApi {
 	addSeries<T extends SeriesType>(type: T, options?: SeriesCreateOptions<T>): SeriesApi<T>;
 	removeSeries(series: SeriesApi): void;
 	timeScale(): TimeScaleApi;
-	/** Resolves once all data handed over so far has been applied and painted. */
+	/**
+	 * Resolves once all data handed over so far has been applied and painted. A chart outside the
+	 * viewport is not painted until it comes back into view, and does not wait for that.
+	 */
 	whenIdle(): Promise<void>;
 	/** Where the data engine runs; `connecting` until a worker has answered or failed. */
 	engineMode(): 'none' | 'connecting' | 'worker' | 'local';
@@ -143,6 +146,11 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 	private _sizeObserved = false;
 	/** With `autoSize`: the size has to be measured before it is used (see `_ensureSize`). */
 	private _sizeStale = false;
+	/**
+	 * Whether any part of the chart is in the viewport. A chart that is not keeps applying data and
+	 * remembers its invalidation level, but draws only once it is visible again.
+	 */
+	private _visible = true;
 	private _destroyed = false;
 	private _deferred: Deferred[] = [];
 	private _idle: (() => void)[] = [];
@@ -196,6 +204,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 		this._interaction = new Interaction(this._root, this);
 
 		this._unwatchPixelRatio = watchPixelRatio(doc.defaultView, this._onPixelRatio);
+		observeVisibility(this._root, this._onVisibility);
 		this._applyResolved(this._options);
 	}
 
@@ -283,6 +292,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 		}
 		this._destroyed = true;
 		unobserveSize(this._root);
+		unobserveVisibility(this._root);
 		cancelFrame(this);
 		this._interaction.destroy();
 		this._unwatchPixelRatio?.();
@@ -359,7 +369,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 		if (level > this._level) {
 			this._level = level;
 		}
-		requestFrame(this);
+		if (this._visible) {
+			requestFrame(this);
+		}
 	}
 
 	/** Read phase of a frame: everything the draw needs from the layout, before any chart writes. */
@@ -436,9 +448,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 			// so new data is drawn in one frame instead of an empty frame followed by the data.
 			this._requestWindow(this._container.ownerDocument.defaultView?.devicePixelRatio ?? 1);
 			this.invalidate(INVALIDATE_LIGHT);
-		} else {
-			this._settle();
 		}
+		// Nothing to draw, or a chart outside the viewport, which draws when it comes back.
+		this._settle();
 	};
 
 	/**
@@ -699,6 +711,20 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 	/** Redraws at the new resolution when the window moves to another screen or the page is zoomed. */
 	private readonly _onPixelRatio = (): void => {
 		this.invalidate(INVALIDATE_FULL);
+	};
+
+	private readonly _onVisibility = (visible: boolean): void => {
+		if (this._destroyed || visible === this._visible) {
+			return;
+		}
+		this._visible = visible;
+		if (!visible) {
+			// Whoever waits for the chart to be idle does not wait for it to come back into view.
+			cancelFrame(this);
+			this._settle();
+		} else if (this._level !== INVALIDATE_NONE) {
+			requestFrame(this);
+		}
 	};
 
 	private _placeLayers(): void {
