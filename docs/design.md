@@ -217,6 +217,9 @@ indicator in full; a prepend recomputes it as far as the new history changes it.
   its inputs: its inputs are unchanged from where the indicators it reads stopped changing.
 - The main-thread engine runs these jobs in message tasks, like commands, not in idle time: their
   results are on the way to the screen. Level-of-detail builds still wait for idle time.
+- In a worker shared by several charts (section 3), these jobs are part of each engine's background
+  work: engines take turns, and none runs while an engine has a command waiting. What a turn
+  finished goes out as a notice tagged with that engine's id.
 
 **Notices.** The protocol gains an event that answers no command: values swapped in (the windows
 held are stale, and the latest values come as patches), plugin modules loaded, or rows a
@@ -245,6 +248,9 @@ and plain metadata (inputs, outputs with their style, parameters with bounds, `w
   definitions it exports: the default export or `indicators`, one or an array. The import runs in
   the worker, or on the main thread with the fallback. The engine returns the plain metadata, so
   the main thread never needs the kernel.
+- Registration is per chart. Charts that share a worker each register the module in their own
+  engine, and the worker imports it once. Engines in one worker call the same kernel functions, so
+  a kernel keeps what it needs between calls in its state and carry, not in module variables.
 - The module is loaded by URL, so it must be a standalone ES module: no bare imports a browser
   cannot resolve.
 - CSP: the page's `script-src` must allow its origin. A worker created from a URL follows the CSP

@@ -18,12 +18,19 @@ rasterization) on an Apple M1 on AC power, viewport 1280 × 720, DPR 2, chart 12
 | [stage-3-lwc-1m.json](stage-3-lwc-1m.json)                                                | Lightweight Charts, load of 1M candles                     | `d556a85` | 1             | 5.79 → 8.43                       |
 | [stage-3-regression-1.json](stage-3-regression-1.json), [`-2`](stage-3-regression-2.json) | stage 1 and 2 gate cases on this branch                    | `d556a85` | 1 each        | 6.62 → 4.68, 4.00 → 4.00          |
 | [stage-3-regression-main.json](stage-3-regression-main.json)                              | the same cases on `main`, between the two                  | `74052b7` | 1             | 4.68 → 4.00                       |
+| [stage-3-rebased.json](stage-3-rebased.json)                                              | the gate cases after rebasing onto shared workers, frames  | `047a4fa` | 1             | 3.15 → 3.94                       |
+| [stage-3-rebased-regression.json](stage-3-rebased-regression.json)                        | stage 1 and 2 gate cases and tick to applied, rebased      | `047a4fa` | 1             | 3.94 → 5.58                       |
+| [stage-3-rebased-frames.json](stage-3-rebased-frames.json)                                | frames with indicators, rebased                            | `047a4fa` | 2             | 5.58 → 4.32                       |
 
 - Every file records "uncommitted changes": a README paragraph pointing here was being written in the
   tree. The commit in a file is read when its run ends. `stage-3-lwc-100k.json` records `d556a85`
   because that commit (line drawing, core only) landed while it ran; its page was built from
   `723dee3` at the start. `main` ran from an export of `74052b7` outside git, so that file records no
   commit.
+- The three rebased files record uncommitted changes too: a design note and a test were being
+  written; the library sources are those of `047a4fa`.
+- Commits are named as they were when measured. The branch was then rebased onto `591934d`:
+  `723dee3` became `670f584` and `d556a85` became `59d8123` (the same changes, on the new base).
 - Tables give the median with the range of the runs in parentheses, or the value of the one run.
   Times in ms unless marked.
 - Other agents were building and testing on the machine: the load average went from 2.6 to 8.8.
@@ -214,6 +221,60 @@ drawing change included) and on `main` (`74052b7`), run as branch, main, branch 
 - Frames, ticks and prepends were measured with the time budget of 3 s and one run per case and side,
   enough to show the absence of a step change, not to resolve differences of a few percent.
 
+## On shared workers and frames
+
+While this branch was open, `main` gained shared page resources (`591934d`, see
+[shared-resources.md](shared-resources.md)): charts share workers, one worker host serves several
+engines in turn, and one animation frame draws every chart. The branch was rebased onto it. In the
+shared host, indicator jobs are part of each engine's background turn, and what a turn finished
+goes out as a notice tagged with that engine's id. The indicator code did not change otherwise.
+
+The gate cases, the stage 1 and 2 cases and the wide frames were run again on the rebased branch
+(`047a4fa`): tick to applied twice (once in each of the first two files below), frames twice, the
+rest once. Before comes from the tables above.
+
+| Criterion, 20 indicators on 1M candles                   | Target | lumen-worker, before → rebased            | lumen-main, before → rebased |
+| -------------------------------------------------------- | ------ | ----------------------------------------- | ---------------------------- |
+| Tick to applied patch p99, latest 200 bars in view       | 4 ms   | 3.10–3.34 → 3.05, 3.60                    | 0.260–0.330 → 0.295, 0.310   |
+| Tick to applied patch p99, all 1M bars in view           | 4 ms   | 3.92–4.26 (4.52 busier) → 4.44, 4.26      | 0.230–0.255 → 0.275, 0.265   |
+| Indicators recomputed and shown after a 10k prepend, p95 | 1 s    | 53.1–54.8 → 53.0                          | 36.2 → 35.7                  |
+| Indicators recomputed and shown after a 1M prepend, p95  | 1 s    | 502–581 → 543                             | 634–667 → 601                |
+| Load: first frame / settled                              |        | 16.3 / 400–417 → 14.9 / 400               | 22.9 / 317–350 → 19.1 / 333  |
+| Retained after load (MiB)                                |        | 317 → 317                                 | 315 → 315                    |
+| Frame JS p95, pan 20,000 bars                            |        | 4.93 → 4.81–4.89                          | 4.74 → 4.73–4.80             |
+| Frame JS p95, pan all 1M bars                            |        | 4.73 → 4.74–4.77 (5.55 in the first file) | 4.68 → 4.67–4.69 (5.46)      |
+| Frame JS p95, zoom all 1M bars                           |        | 5.61 → 4.74–4.76                          | 5.45 → 4.71                  |
+
+- **The gate stands as it was.** The prepend bound is met with the same margin, and the main-thread
+  tick p99 stays at 0.27–0.31 ms. The worker's tick p99 with all 1M bars in view is still at the
+  gate, not under it: 4.26 and 4.44 ms against 3.92–4.52 before, for the reason given above (a
+  reply that arrives during a frame waits for it).
+- The main-thread engine again had single long ticks of 73 and 233 ms in two of the four runs
+  (its averages, 0.13–0.20 ms, include them), as in the busier run before the rebase; not
+  investigated.
+- Frames: before is the run after the line drawing change. The single pan-all run of the first
+  rebased file (p95 5.55 and 5.46 ms) was above the two runs of the frames file (4.67–4.77 ms),
+  which match the run before; for one chart the shared frame adds nothing measurable.
+
+The stage 1 and 2 gate cases without indicators, rebased (`stage-3-rebased-regression.json`), next
+to the branch and `main` runs of the regression check above:
+
+| Case                                 | Metric                    | lumen-worker: before (branch, main, branch) → rebased | lumen-main: before → rebased |
+| ------------------------------------ | ------------------------- | ----------------------------------------------------- | ---------------------------- |
+| tick, 1M candles, last 200 in view   | sync avg (µs)             | 0.54–0.70 → 0.67                                      | 0.69–0.80 → 0.72             |
+| tick, 1M candles, all in view        | sync avg (µs)             | 0.62–0.67 → 0.47                                      | 0.60–0.69 → 0.60             |
+| tick, 1M candles, all in view        | main thread per tick (µs) | 8.24–8.75 → 6.24                                      | 7.82–7.97 → 7.98             |
+| frames, 10M line, pan 20k            | JS p95                    | 1.11–1.19 → 1.20                                      | 1.12–1.19 → 1.22             |
+| frames, 10M line, zoom 20k           | JS p95                    | 1.23–1.38 → 1.35                                      | 1.17–1.26 → 1.34             |
+| frames, 10M line, pan all            | JS p95                    | 0.65–0.80 → 0.81                                      | 0.29–0.82 → 0.84             |
+| frames, 10M line, zoom all           | JS p95                    | 0.33–0.94 → 0.94                                      | 0.93–1.12 → 0.88             |
+| prepend 10k to 10M line, 20k in view | shown p95                 | 17.8–19.2 → 18.6                                      | 17.7–18.3 → 18.3             |
+| prepend 1M to 10M line, 2M in view   | shown p95                 | 30.1–31.4 → 33.5                                      | 21.5–28.7 → 21.5             |
+| prepend 1M to 1M candles, 1M in view | shown p95                 | 37.8–50.4 → 36.9                                      | 38.0–39.3 → 39.2             |
+
+- No step change: every rebased value is within or next to the range of the three runs before,
+  differences go both ways, and the stage 1 and 2 gates hold with the same margins.
+
 ## What changed
 
 - **Indicators in the data engine.** Built-ins: SMA, EMA, WMA, RSI, MACD (3 outputs), Bollinger bands
@@ -272,6 +333,10 @@ pnpm bench --case ind-load/candles-100k,ind-apply/candles-100k/latest,ind-frames
   --lib lwc-conflation-on,lumen-worker --repeats 1 --budget 3 --timeout 180 --out benchmarks/results/stage-3-lwc-100k.json
 pnpm bench --case tick/candles-1m,frames/line-10m/pan-20k,frames/line-10m/zoom-20k,frames/line-10m/pan-all,frames/line-10m/zoom-all,prepend/line-10m,prepend/candles-1m/1m \
   --lib lumen-worker,lumen-main --repeats 1 --budget 3 --out benchmarks/results/stage-3-regression-1.json
+pnpm bench --case ind-load/candles-1m,ind-apply/candles-1m,ind-prepend/candles-1m,ind-frames/candles-1m/pan-all \
+  --lib lumen-worker,lumen-main --repeats 1 --budget 3 --out benchmarks/results/stage-3-rebased.json
+pnpm bench --case ind-frames/candles-1m/pan-20k,ind-frames/candles-1m/pan-all,ind-frames/candles-1m/zoom-all \
+  --lib lumen-worker,lumen-main --repeats 2 --budget 3 --out benchmarks/results/stage-3-rebased-frames.json
 pnpm bench:report docs/benchmarks/stage-3-lumen.json
 ```
 
