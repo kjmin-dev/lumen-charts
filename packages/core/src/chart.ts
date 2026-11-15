@@ -470,9 +470,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient {
 		if (this._destroyed) {
 			return;
 		}
-		if (level >= INVALIDATE_LIGHT && this.scale.version !== this._plannedScale) {
+		if (level >= INVALIDATE_LIGHT && this._visible && this.scale.version !== this._plannedScale) {
 			// The view changed: rows it needs are asked for now rather than in the next frame, so rows
-			// that must be fetched again are usually back by the frame that draws the view.
+			// that must be fetched again are usually back by the frame that draws the view. A chart
+			// outside the viewport asks in the frame that draws it once it is back.
 			this._requestWindow(this._container.ownerDocument.defaultView?.devicePixelRatio ?? 1);
 		}
 		if (level > this._level) {
