@@ -31,20 +31,35 @@ export interface DatafeedRequest {
 	to: number;
 	/** Number of bars in `[from, to]`. */
 	countBack: number;
+	/**
+	 * Aborted when the bars are no longer needed: the view moved away from them before they came,
+	 * the history was replaced (`setData`, for example at another resolution), or the series was
+	 * removed or the chart destroyed. Pass it on to `fetch` to cancel the request; whatever a
+	 * request resolves to after its signal was aborted is ignored.
+	 */
+	signal: AbortSignal;
 }
 
 /**
- * A source the chart can fetch history from again. With a datafeed and the chart's `memoryLimit`,
- * the data engine may let go of bars far from the view and ask for them when they are needed.
- * Requests for the same bars are never in flight twice; a failed request is tried again the next
- * time the bars are needed, after a pause that grows with every failure (1 s up to 30 s).
+ * A source the chart can fetch history from again, modeled on the pull side of TradingView's
+ * datafeed contract. With a datafeed and the chart's `memoryLimit`, the data engine may let go of
+ * bars far from the view and ask for them when they are needed. Requests for the same bars are
+ * never in flight twice; a failed request is tried again the next time the bars are needed (or
+ * right away, when a correction or a deletion waits for them), after a pause that grows with every
+ * failure (1 s up to 30 s).
+ *
+ * The bars a datafeed returns are the source of truth for the bars it covers: values that changed
+ * at the source while the chart had let the bars go are taken over as corrections, and the levels
+ * of detail are rebuilt from them. Bars added or removed at the source in the middle of history do
+ * not match the bars the chart let go and are refused; tell the chart about them with
+ * `SeriesApi.removeBars` or a new `setData`.
  */
 export interface Datafeed<T extends SeriesType = SeriesType> {
 	/**
 	 * Resolves to the bars with times in `[request.from, request.to]`, oldest first, in any format
-	 * `setData` accepts (bars outside the range are ignored). They must be the bars handed over
-	 * before: bars that differ in number or time are refused with a console warning, and the chart
-	 * keeps drawing a coarser level of detail there.
+	 * `setData` accepts (bars outside the range are ignored). They must be the bars the chart has
+	 * there, as many and with the same times: bars that differ in number or time are refused with a
+	 * console warning, and the chart keeps drawing a coarser level of detail there.
 	 */
 	getBars(request: DatafeedRequest): Promise<SeriesTypes[SeriesType & T]['data']>;
 }
@@ -53,6 +68,22 @@ export interface Datafeed<T extends SeriesType = SeriesType> {
 export type SeriesCreateOptions<T extends SeriesType> = Partial<SeriesTypes[T]['options']> & {
 	datafeed?: Datafeed<T>;
 };
+
+/** Options of `SeriesApi.setData`. */
+export interface SetDataOptions<T extends SeriesType = SeriesType> {
+	/**
+	 * The datafeed the new history is fetched back from, or null for none (then nothing of it is let
+	 * go). Pass it when the new history comes from another source, as when switching resolution or
+	 * symbol with a datafeed that serves one; leave it out to keep the current datafeed.
+	 */
+	datafeed?: Datafeed<T> | null;
+}
+
+/** Bars with times in `[from, to]`, UTC milliseconds, both inclusive. */
+export interface TimeRange {
+	from: number;
+	to: number;
+}
 
 /** What each series type takes: its options, one update, and a whole history. */
 export interface SeriesTypes {
@@ -68,12 +99,32 @@ export type AnySeriesOptions = CandlestickOptions | LineOptions | HistogramOptio
 
 export interface SeriesApi<T extends SeriesType = SeriesType> {
 	readonly type: T;
-	/** Replaces the history. Times are UTC milliseconds and must be strictly increasing. */
-	setData(data: SeriesTypes[T]['data']): void;
-	/** Updates the bar with this time, or appends a new bar if the time is later than the last one. */
+	/**
+	 * Replaces the history. Times are UTC milliseconds and must be strictly increasing. This is also
+	 * how to switch resolution (1 minute to 5 minutes, say) or symbol: datafeed requests still out for
+	 * the old history are aborted and their answers ignored, and the levels of detail are rebuilt.
+	 * For the series whose timeline the chart shows (the first one with data), every index then
+	 * means another bar, as after the first `setData`.
+	 */
+	setData(data: SeriesTypes[T]['data'], options?: SetDataOptions<T>): void;
+	/**
+	 * Updates the bar with this time, or appends a new bar if the time is later than the last one.
+	 * An older bar is corrected in place, and the levels of detail are rebuilt from all the bars they
+	 * summarize. When the memory limit has let that bar go, the correction is applied once the bars it
+	 * needs are fetched back from the datafeed, which happens at once; other updates do not wait for
+	 * it. A time between two existing bars is refused: bars cannot be inserted in the middle.
+	 */
 	update(bar: SeriesTypes[T]['bar']): void;
 	/** Adds older history before the first bar. Indexes of existing bars do not change. */
 	prepend(data: SeriesTypes[T]['data']): void;
+	/**
+	 * Removes the bars with times in `range`. Removing bars at either end leaves the indexes of the
+	 * other bars as they are. Removing bars in the middle closes the gap: the bars on one side move
+	 * over, so for the series whose timeline the chart shows, the indexes of those bars change
+	 * (logical ranges set before refer to other bars afterwards). When that needs bars the memory limit
+	 * let go, they are fetched back first, and later calls on this series wait for it.
+	 */
+	removeBars(range: TimeRange): void;
 	applyOptions(options: Partial<SeriesTypes[T]['options']>): void;
 	options(): Readonly<SeriesTypes[T]['options']>;
 	/**
@@ -87,6 +138,8 @@ export interface SeriesHost {
 	engine(): EngineClient | null;
 	invalidate(level: Invalidation): void;
 	addIndicator(source: Series, name: string, options?: DeepPartial<IndicatorOptions>): IndicatorApi;
+	/** The series got a new history with the command `seq`: requests for the old one are obsolete. */
+	reloaded(series: Series, seq: number): void;
 }
 
 function defaultOptions(type: SeriesType): AnySeriesOptions {
@@ -118,6 +171,12 @@ export class Series implements SeriesApi {
 
 	/** Where bars let go under the memory limit are fetched back from. */
 	public datafeed: Datafeed | null = null;
+	/** `seq` of the last `setData`: fetch requests from events before it are for the old history. */
+	public reloadSeq = 0;
+	/** Pause after the last failed datafeed request; it doubles with every failure in a row. */
+	public fetchBackoff = 0;
+	/** Times of bars whose request failed, and until when (`performance.now()`) they are not asked for again. */
+	public failures: { from: number; to: number; until: number }[] = [];
 
 	/** Latest known value, for the last-value line. */
 	public lastValue = NaN;
@@ -140,10 +199,28 @@ export class Series implements SeriesApi {
 		this.seriesOptions = { ...defaultOptions(type), ...definedOnly(options) } as AnySeriesOptions;
 	}
 
-	public setData(data: SeriesTypes[SeriesType]['data']): void {
+	public setData(data: SeriesTypes[SeriesType]['data'], options?: SetDataOptions): void {
 		const packed = this._pack(data);
 		this.lastValue = NaN;
-		this._host.engine()?.setData(this.id, packed.data, packed.count);
+		let fetchable: boolean | undefined;
+		if (options !== undefined && 'datafeed' in options) {
+			this.datafeed = options.datafeed ?? null;
+			fetchable = this.datafeed !== null;
+		}
+		const engine = this._host.engine();
+		if (engine !== null) {
+			this._host.reloaded(this, engine.setData(this.id, packed.data, packed.count, fetchable));
+		}
+	}
+
+	public removeBars(range: TimeRange): void {
+		const { from, to } = range;
+		if (!(from <= to)) {
+			return;
+		}
+		// Bars removed at the source explain answers there that did not match: no need to pause.
+		this.failures = this.failures.filter(failure => failure.to < from || failure.from > to);
+		this._host.engine()?.deleteBars(this.id, from, to);
 	}
 
 	public prepend(data: SeriesTypes[SeriesType]['data']): void {

@@ -31,8 +31,56 @@ describe('WindowCache', () => {
 		expect(request.start + request.count).toBe(5101 + 2 * 101);
 		expect(request.capacity).toBe(request.count);
 		expect(cache.raw.loading).toBe(true);
-		// Nothing more is requested while the answer is on its way.
-		expect(cache.plan(0, 0, 100, 0, 10_000)).toBeNull();
+		// Nothing more is requested while the answer is on its way and covers the view.
+		expect(cache.plan(0, 5050, 5150, 0, 10_000)).toBeNull();
+	});
+
+	it('supersedes a request on its way once the view leaves what it covers', () => {
+		const cache = new WindowCache();
+		cache.apply(event({ end: 10_000, stale: true }), columns);
+		cache.plan(0, 5000, 5100, 0, 10_000);
+		cache.raw.sent(7);
+		// Rows fetched again can take a while; the view moved far away meanwhile.
+		const next = cache.plan(0, 100, 200, 0, 10_000)!;
+		expect(next.start).toBe(0);
+		cache.raw.sent(8);
+		// The answer to the first request is still current data, but the second one is awaited.
+		const first = windowEvent(4798, 505, 505);
+		first.window!.request = 7;
+		cache.apply(first, columns);
+		expect(cache.raw.loading).toBe(true);
+		expect(cache.raw.start).toBe(4798);
+		const second = windowEvent(0, 405, 405);
+		second.window!.request = 8;
+		cache.apply(second, columns);
+		expect(cache.raw.loading).toBe(false);
+	});
+
+	it('takes a snapshot as it is, without the patches of its own event', () => {
+		const cache = new WindowCache();
+		const answer = windowEvent(0, 100, 200);
+		// A patch the engine made before it took the snapshot, of a bar a deletion in the same event
+		// removed: it neither overwrites the snapshot nor grows it past the end of the timeline.
+		answer.patches = [
+			{ series: TIME_PATCH, level: 0, start: 99, count: 3, data: new Float64Array([990, 1000, 1010]) },
+			{ series: 1, level: 0, start: 99, count: 3, data: new Float64Array(15).fill(-1) },
+		];
+		cache.apply(answer, columns);
+		expect(cache.raw.count).toBe(100);
+		expect(cache.raw.blocks.get(1)![3 * 200 + 99]).toBe(99);
+		// A later tick at the end grows it.
+		cache.apply(
+			event({
+				end: 101,
+				patches: [
+					{ series: TIME_PATCH, level: 0, start: 100, count: 1, data: new Float64Array([1000]) },
+					{ series: 1, level: 0, start: 100, count: 1, data: new Float64Array([1, 2, 0, 1.5, 9]) },
+				],
+			}),
+			columns,
+		);
+		expect(cache.raw.count).toBe(101);
+		expect(cache.raw.blocks.get(1)![3 * 200 + 100]).toBe(1.5);
 	});
 
 	it('leaves room to append when the window reaches the last bar', () => {

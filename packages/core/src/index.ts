@@ -29,7 +29,16 @@ export {
 	type WatermarkOptions,
 	themes,
 } from './options';
-export type { Datafeed, DatafeedRequest, SeriesApi, SeriesCreateOptions, SeriesType, SeriesTypes } from './series';
+export type {
+	Datafeed,
+	DatafeedRequest,
+	SeriesApi,
+	SeriesCreateOptions,
+	SeriesType,
+	SeriesTypes,
+	SetDataOptions,
+	TimeRange,
+} from './series';
 export type { BarIndex, Coordinate, Logical, Nominal } from './types';
 export {
 	type IndicatorDefinition,

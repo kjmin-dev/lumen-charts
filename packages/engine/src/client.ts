@@ -129,14 +129,11 @@ export class EngineClient {
 	}
 
 	/**
-	 * Hands back rows asked for by a `FetchRequest` that starts at `start` (column-major, time
-	 * first, taken over like `setData`), or null when fetching them failed.
+	 * Hands back the rows of the `FetchRequest` with id `request` (column-major, time first, taken
+	 * over like `setData`), or null when fetching them failed.
 	 */
-	public restoreRows(series: number, start: number, data: Float64Array | null, count: number): void {
-		this._send(
-			{ type: 'rows', series, start, count, data },
-			data === null ? NO_TRANSFER : [data.buffer as ArrayBuffer],
-		);
+	public restoreRows(request: number, data: Float64Array | null, count: number): void {
+		this._send({ type: 'rows', request, count, data }, data === null ? NO_TRANSFER : [data.buffer as ArrayBuffer]);
 	}
 
 	public removeSeries(series: number): void {
@@ -188,10 +185,19 @@ export class EngineClient {
 
 	/**
 	 * Replaces the data of a series. `data` is column-major with time first and is handed over to
-	 * the engine: do not use it afterwards.
+	 * the engine: do not use it afterwards. `fetchable` changes whether rows of the series can be
+	 * fetched again (see `addSeries`); it stays as it was when omitted. Returns the command's `seq`.
 	 */
-	public setData(series: number, data: Float64Array, count: number): void {
-		this._send({ type: 'set', series, count, data }, [data.buffer as ArrayBuffer]);
+	public setData(series: number, data: Float64Array, count: number, fetchable?: boolean): number {
+		return this._send(
+			fetchable === undefined ? { type: 'set', series, count, data } : { type: 'set', series, count, data, fetchable },
+			[data.buffer as ArrayBuffer],
+		);
+	}
+
+	/** Removes the bars of a series with times in `[from, to]` (UTC milliseconds, inclusive). */
+	public deleteBars(series: number, from: number, to: number): void {
+		this._send({ type: 'delete', series, from, to }, NO_TRANSFER);
 	}
 
 	/** Adds older history before the first bar. Takes ownership of `data` like `setData`. */
@@ -231,9 +237,10 @@ export class EngineClient {
 	/**
 	 * Asks for a snapshot of main-timeline rows `[start, start + count)` in buffers of `capacity`
 	 * rows. At a coarse `level`, the range and the capacity count buckets of that level instead.
+	 * Returns the command's `seq`, which the snapshot carries as `request`.
 	 */
-	public requestWindow(start: number, count: number, capacity: number, level = 0): void {
-		this._send({ type: 'window', level, start, count, capacity }, NO_TRANSFER);
+	public requestWindow(start: number, count: number, capacity: number, level = 0): number {
+		return this._send({ type: 'window', level, start, count, capacity }, NO_TRANSFER);
 	}
 
 	/** Resolves once every command issued so far has been answered. */
@@ -275,9 +282,9 @@ export class EngineClient {
 		this._post({ type: 'ticks', seq, count, data }, [data.buffer]);
 	};
 
-	private _send(body: CommandBody, transfer: ArrayBuffer[]): void {
+	private _send(body: CommandBody, transfer: ArrayBuffer[]): number {
 		if (this._destroyed) {
-			return;
+			return -1;
 		}
 		// Buffered ticks were issued first, so they go first.
 		this._flushTicks();
@@ -287,6 +294,7 @@ export class EngineClient {
 			this._dataSeq = seq;
 		}
 		this._post({ ...body, seq } as Command, transfer);
+		return seq;
 	}
 
 	private _post(command: Command, transfer: ArrayBuffer[]): void {

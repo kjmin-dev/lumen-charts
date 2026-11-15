@@ -1,4 +1,12 @@
-import { CHUNK_ROWS, EngineCore, type EngineEvent, computeIndicator, ema, sma } from '@lumen-charts/engine';
+import {
+	CHUNK_ROWS,
+	EngineCore,
+	type EngineEvent,
+	type FetchRequest,
+	computeIndicator,
+	ema,
+	sma,
+} from '@lumen-charts/engine';
 import { describe, expect, it } from 'vitest';
 import { line, run } from './helpers';
 
@@ -10,7 +18,10 @@ function rows(start: number, end: number): Float64Array {
 	return line(times.slice(start, end), values.slice(start, end));
 }
 
-/** A fetchable line of 24 chunks that has let go of most of its values. */
+/** Bytes of one chunk of a line let go: its times and values. */
+const CHUNK = CHUNK_ROWS * 16;
+
+/** A fetchable line of 24 chunks that has let go of most of its rows. */
 function loaded(): EngineCore {
 	const core = new EngineCore();
 	run(core, { type: 'add', series: 1, kind: 'line', fetchable: true });
@@ -18,8 +29,8 @@ function loaded(): EngineCore {
 	while (core.backgroundStep()) {
 		// Levels first, as a host builds them between commands.
 	}
-	const floor = core.byteLength - COUNT * 8;
-	run(core, { type: 'limit', bytes: floor + CHUNK_ROWS * 8 * 4 });
+	const floor = core.byteLength - COUNT * 16;
+	run(core, { type: 'limit', bytes: floor + CHUNK * 4 });
 	return core;
 }
 
@@ -34,7 +45,7 @@ function settle(core: EngineCore): { fetched: number; peak: number } {
 		for (const request of event?.fetch ?? []) {
 			fetched += request.end - request.start;
 			const data = rows(request.start, request.end);
-			answer(run(core, { type: 'rows', series: 1, start: request.start, count: data.length / 2, data }));
+			answer(run(core, { type: 'rows', request: request.id, count: data.length / 2, data }));
 			peak = Math.max(peak, core.byteLength);
 		}
 	};
@@ -57,7 +68,7 @@ function derived(core: EngineCore, series: number): Float64Array {
 	while (event.window === undefined) {
 		const request = requests.shift()!;
 		const data = rows(request.start, request.end);
-		event = run(core, { type: 'rows', series: 1, start: request.start, count: data.length / 2, data });
+		event = run(core, { type: 'rows', request: request.id, count: data.length / 2, data });
 		requests.push(...(event.fetch ?? []));
 	}
 	return event.window.series.find(entry => entry.series === series)!.data;
@@ -85,7 +96,7 @@ describe('indicators under a memory limit', () => {
 		// (the outputs, which stay, take up the room), and at no point were more than the chunks the
 		// recomputation reads ahead back in memory.
 		expect(core.memory.evictable).toBe(0);
-		expect(peak - core.byteLength).toBeLessThan(20 * CHUNK_ROWS * 8);
+		expect(peak - core.byteLength).toBeLessThan(20 * CHUNK);
 	});
 
 	it('gives the recomputation up when the rows cannot be fetched, keeping the old values', () => {
@@ -98,12 +109,17 @@ describe('indicators under a memory limit', () => {
 			inputs: [{ series: 1, column: 1 }],
 			outputs: [11],
 		});
-		// Every fetch fails, the one asked for ahead and the one the recomputation then waits for.
+		// Every fetch fails, the ones asked for ahead and the one the recomputation then waits for.
+		// Rows still wanted are asked for again at once, as the chart would after its pause.
 		let last: EngineEvent | null = null;
+		let again: FetchRequest[] = [];
 		for (let i = 0; i < 100; i++) {
 			core.backgroundStep();
-			for (const request of core.takeNotice()?.fetch ?? []) {
-				last = run(core, { type: 'rows', series: 1, start: request.start, count: 0, data: null });
+			const requests = [...again, ...(core.takeNotice()?.fetch ?? [])];
+			again = [];
+			for (const request of requests) {
+				last = run(core, { type: 'rows', request: request.id, count: 0, data: null });
+				again.push(...(last.fetch ?? []));
 			}
 		}
 		expect(last!.restored!.outcome).toBe('failed');
