@@ -53,5 +53,13 @@ export function headline(result: CaseResult): string {
 				`fetches per jump p50 ${m('fetches.p50') ?? '–'}; retained after load ${mb(m('memoryAfterLoad.retainedBytes'))}, ` +
 				`after the jumps ${mb(m('memory.retainedBytes'))}`
 			);
+		case 'multi':
+			return (
+				`${m('charts') ?? '–'} charts in ${m('workers') ?? '–'} workers; shown ${ms(m('shownMs'))} ` +
+				`(create ${ms(m('createMs'))}); retained ${mb(m('memory.retainedBytes'))} ` +
+				`(page ${mb(m('memory.retainedPageBytes'))}, workers ${mb(m('memory.retainedWorkerBytes'))}); ` +
+				`tick round: frame JS p50 ${ms(m('frameJs.p50'))} p95 ${ms(m('frameJs.p95'))}, ` +
+				`main thread ${ms(m('tickMainThread.taskMs'))}; per tick ${ms(m('mainThreadPerTick.mean'))}`
+			);
 	}
 }

@@ -1,7 +1,8 @@
+import * as lumen from '@lumen-charts/core';
 import { type ChartApi, type SeriesApi, createChart } from '@lumen-charts/core';
 import type { AdapterFactory, ChartAdapter, ChartSize, LogicalRange } from '../adapter.ts';
 import type { CandleColumns, LineColumns, SeriesColumns, TickColumns } from '../data.ts';
-import { pendingFrameCallbacks } from '../harness/frames.ts';
+import { afterNextFrame, pendingFrameCallbacks } from '../harness/frames.ts';
 
 /** Columns are lumen's own input format, so preparing passes them through unchanged. */
 type Prepared = { kind: 'candles'; columns: CandleColumns } | { kind: 'line'; columns: LineColumns };
@@ -33,8 +34,11 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 	private _series: AnySeries | null = null;
 	private _kind: Prepared['kind'] | null = null;
 
-	public constructor(container: HTMLElement, size: ChartSize, worker: boolean) {
-		this._chart = createChart(container, { width: size.width, height: size.height, autoSize: false, worker });
+	public constructor(container: HTMLElement, size: ChartSize | 'auto', worker: boolean) {
+		this._chart = createChart(
+			container,
+			size === 'auto' ? { worker } : { width: size.width, height: size.height, autoSize: false, worker },
+		);
 	}
 
 	public prepareCandles(data: CandleColumns): Prepared {
@@ -128,6 +132,10 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 			if (pendingFrameCallbacks() === 0) {
 				return;
 			}
+			// A frame is still to come. If it is this chart's, `whenIdle` waits for it. If it is another
+			// chart's (several charts on a page), this chart is idle already, and asking again at once
+			// would spin through tasks until that frame; waiting for the frame costs nothing instead.
+			await afterNextFrame();
 		}
 	}
 
@@ -168,6 +176,12 @@ function factory(worker: boolean): AdapterFactory {
 		library: { name: '@lumen-charts/core', version: 'workspace' },
 		options: { worker },
 		create: (container, size) => Promise.resolve(new LumenAdapter(container, size, worker)),
+		setMaxWorkers: count => {
+			// Read from the namespace, so the harness also builds against sources from before worker
+			// sharing, which have no such function (`pnpm bench --packages`).
+			const set = (lumen as { setMaxWorkers?: (count: number) => void }).setMaxWorkers;
+			set?.(count);
+		},
 	};
 }
 

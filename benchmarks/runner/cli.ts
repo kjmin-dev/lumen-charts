@@ -21,6 +21,7 @@ import {
 	DEFAULT_BUDGET_MS,
 	type HeapUsage,
 	type HostLoad,
+	type MainThreadTimes,
 	type MemorySample,
 	type PageRunResult,
 	type PlannedJob,
@@ -53,6 +54,10 @@ Selection
   --budget <s>         measuring time after which a tick or frames run stops early, once it has
                        500 ticks or 30 frames; warm-up stops after 2 s (default: ${DEFAULT_BUDGET_MS / 1000};
                        0 measures all 10,000 ticks and 300 frames, as the stage 0 baseline did)
+  --max-workers <list> worker limits to run the multi scenario with, one case each: numbers, or
+                       default for the library's own limit (default: default)
+  --packages <dir>     measure the packages/ directory of another checkout instead of this
+                       workspace's, with this harness: for comparing two versions of the library
   --quick              smoke test: small data sets, short runs, one repeat
   --list               print the jobs and exit
 
@@ -113,6 +118,8 @@ const { values: args } = parseArgs({
 		'include-known-crashes': { type: 'boolean', default: false },
 		repeats: { type: 'string' },
 		budget: { type: 'string' },
+		'max-workers': { type: 'string' },
+		packages: { type: 'string' },
 		quick: { type: 'boolean', default: false },
 		list: { type: 'boolean', default: false },
 		headed: { type: 'boolean', default: false },
@@ -140,6 +147,22 @@ const budgetMs = args.budget !== undefined ? Number(args.budget) * 1000 : DEFAUL
 if (!(budgetMs >= 0)) {
 	throw new Error(`--budget expects a number of seconds, got "${args.budget}"`);
 }
+const maxWorkers = list(args['max-workers']).map(value => {
+	if (value === 'default') {
+		return null;
+	}
+	const count = Number(value);
+	if (!Number.isInteger(count) || count < 1) {
+		throw new Error(`--max-workers expects numbers of at least 1 or "default", got "${value}"`);
+	}
+	return count;
+});
+// pnpm runs package scripts in the package directory; resolve paths against where they were typed.
+const invokedFrom = process.env['INIT_CWD'] ?? process.cwd();
+if (args.packages !== undefined) {
+	// Read by the Vite configuration, which runs in this process.
+	process.env['LUMEN_BENCH_PACKAGES'] = resolve(invokedFrom, args.packages);
+}
 const scenarios = list(args.scenario).map(s => oneOf(SCENARIOS, s, '--scenario'));
 const adapterIds = list(args.lib);
 for (const id of adapterIds) {
@@ -160,6 +183,7 @@ const { jobs: plan, skipped } = planJobs({
 	chart,
 	seed: 1,
 	budgetMs,
+	...(maxWorkers.length > 0 ? { maxWorkers } : {}),
 	...(args['include-known-crashes'] ? {} : { skip: knownFailure }),
 });
 
@@ -360,6 +384,23 @@ async function newPage(session: Session): Promise<{ context: BrowserContext; pag
 			workers,
 		);
 	});
+	let performanceEnabled = false;
+	await page.exposeFunction('__benchMainThread', async (): Promise<MainThreadTimes> => {
+		if (!performanceEnabled) {
+			// The counters run from the start of the page; enabling the domain only makes them readable.
+			await cdp.send('Performance.enable');
+			performanceEnabled = true;
+		}
+		const { metrics } = await cdp.send('Performance.getMetrics');
+		// Seconds in the protocol.
+		const ms = (name: string): number => (metrics.find(metric => metric.name === name)?.value ?? 0) * 1000;
+		return {
+			taskMs: ms('TaskDuration'),
+			scriptMs: ms('ScriptDuration'),
+			layoutMs: ms('LayoutDuration'),
+			styleMs: ms('RecalcStyleDuration'),
+		};
+	});
 	const query = new URLSearchParams({ auto: '', width: String(chart.width), height: String(chart.height) });
 	await page.goto(`${session.baseUrl}?${query.toString()}`);
 	await page.waitForFunction(() => window.bench !== undefined);
@@ -475,10 +516,9 @@ function format(seconds: number): string {
 
 async function main(): Promise<void> {
 	const createdAt = new Date();
-	// pnpm runs package scripts in the package directory; resolve --out against where it was typed.
 	const out =
 		args.out !== undefined
-			? resolve(process.env['INIT_CWD'] ?? process.cwd(), args.out)
+			? resolve(invokedFrom, args.out)
 			: resolve(benchDir, 'results', `${createdAt.toISOString().replace(/[:.]/g, '-')}.json`);
 	process.stdout.write(`Building the harness page…\n`);
 	await build({ configFile: resolve(benchDir, 'vite.config.ts'), logLevel: 'warn' });
@@ -547,6 +587,9 @@ async function main(): Promise<void> {
 					commit: command('git', ['-C', repoDir, 'rev-parse', 'HEAD']),
 					dirty: (command('git', ['-C', repoDir, 'status', '--porcelain']) ?? '') !== '',
 				},
+				// Which library sources the workspace adapters were built from: the workspace's (the commit
+				// above), or the directory given with --packages, as it was typed.
+				sources: args.packages ?? 'workspace',
 				packages: {
 					'lightweight-charts': packageVersion('lightweight-charts'),
 					playwright: packageVersion('playwright'),

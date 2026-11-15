@@ -65,11 +65,9 @@ class LightweightChartsAdapter implements ChartAdapter<Prepared> {
 	 */
 	private _offset = 0;
 
-	public constructor(container: HTMLElement, size: ChartSize, conflation: boolean) {
+	public constructor(container: HTMLElement, size: ChartSize | 'auto', conflation: boolean) {
 		const options: DeepPartial<TimeChartOptions> = {
-			width: size.width,
-			height: size.height,
-			autoSize: false,
+			...(size === 'auto' ? { autoSize: true } : { width: size.width, height: size.height, autoSize: false }),
 			timeScale: {
 				enableConflation: conflation,
 				minBarSpacing: MIN_BAR_SPACING,

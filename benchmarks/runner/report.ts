@@ -561,6 +561,65 @@ function refetch(): string {
 	);
 }
 
+function multi(): string {
+	const list = cases.filter(c => c.job.scenario === 'multi');
+	const rows: string[][] = [];
+	for (const id of caseIds('multi')) {
+		for (const adapter of adaptersOf(list)) {
+			const c = find(id, adapter);
+			if (c === undefined || c.job.scenario !== 'multi') {
+				continue;
+			}
+			rows.push([
+				`${c.job.charts} charts (${c.job.visibleCharts} in view), ${datasetLabel(c.job.dataset)} each` +
+					(c.job.maxWorkers === null ? '' : `, at most ${c.job.maxWorkers} workers`),
+				adapter,
+				cell(c, 'workers'),
+				cell(c, 'memory.retainedWorkerBytes', MIB),
+				cell(c, 'memory.retainedPageBytes', MIB),
+				cell(c, 'createMs', MS),
+				cell(c, 'shownMs', MS),
+				cell(c, 'shownMainThread.layoutMs', MS),
+				cell(c, 'frameJs.p50', MS),
+				cell(c, 'frameJs.p95', MS),
+				cell(c, 'frameCallbacks.p50'),
+				cell(c, 'tickMainThread.taskMs', MS),
+				cell(c, 'tickMainThread.scriptMs', MS),
+				cell(c, 'mainThreadPerTick.mean', US),
+				cell(c, 'settle.p50', MS),
+				cell(c, 'settle.p95', MS),
+				cell(c, 'revealFrameJsMs', MS),
+				cell(c, 'rounds'),
+				hostIdle(c),
+			]);
+		}
+	}
+	return table(
+		[
+			'Case',
+			'Adapter',
+			'Workers',
+			'Workers retain (MiB)',
+			'Page retains (MiB)',
+			'Create loop (ms)',
+			'All shown (ms)',
+			'Layout until shown (ms)',
+			'Round frame JS p50 (ms)',
+			'p95 (ms)',
+			'Frame callbacks per round',
+			'Main thread per round (ms)',
+			'of it script (ms)',
+			'Timed JS per tick (µs)',
+			'Round settle p50 (ms)',
+			'p95 (ms)',
+			'Reveal frame JS (ms)',
+			'Rounds',
+			'CPU idle',
+		],
+		rows,
+	);
+}
+
 // The scenario of each section, if any: sections without results of it are left out.
 const sections: [string, () => string, string?][] = [
 	['Environment', environment],
@@ -572,6 +631,7 @@ const sections: [string, () => string, string?][] = [
 	['Prepend', prepend, 'prepend'],
 	['Memory after the prepends', prependMemory, 'prepend'],
 	['Refetch under a memory limit', refetch, 'refetch'],
+	['Several charts on one page', multi, 'multi'],
 	['Failed runs', failures],
 	['Skipped cases', skippedCases],
 ];

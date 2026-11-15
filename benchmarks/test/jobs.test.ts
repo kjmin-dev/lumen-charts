@@ -129,6 +129,33 @@ describe('planJobs', () => {
 		expect(jobs.some(p => p.job.scenario === 'prepend')).toBe(true);
 	});
 
+	it('plans the multi-chart scenario once per worker limit', () => {
+		const all: PlanOptions = { ...base, scenarios: ['multi'], adapters: ['a'], repeats: 1 };
+		expect(planJobs(all).jobs.map(p => p.caseId)).toEqual([
+			'multi/candles-100k/16-charts',
+			'multi/candles-1m/4-charts',
+		]);
+		const options: PlanOptions = { ...all, sizes: [100_000] };
+		const [job] = planJobs(options).jobs;
+		expect(job?.caseId).toBe('multi/candles-100k/16-charts');
+		expect(job?.job.scenario === 'multi' && [job.job.charts, job.job.visibleCharts, job.job.maxWorkers]).toEqual([
+			16,
+			8,
+			null,
+		]);
+		const limited = planJobs({ ...options, maxWorkers: [1, null, 4] }).jobs;
+		expect(limited.map(p => p.caseId)).toEqual([
+			'multi/candles-100k/16-charts/max-workers-1',
+			'multi/candles-100k/16-charts',
+			'multi/candles-100k/16-charts/max-workers-4',
+		]);
+		// One pattern selects the scenario with every limit.
+		const selected = planJobs({ ...options, maxWorkers: [1, 4], cases: ['multi/candles-100k/16-charts'] }).jobs;
+		expect(selected).toHaveLength(2);
+		const quick = planJobs({ ...all, quick: true }).jobs[0]?.job;
+		expect(quick?.scenario === 'multi' && quick.charts).toBe(4);
+	});
+
 	it('names cases by scenario, data set and parameters', () => {
 		const [first] = planJobs({ ...base, scenarios: ['frames'], adapters: ['a'], repeats: 1 }).jobs;
 		expect(first && caseId(first.job)).toBe('frames/candles-1m/pan-200');

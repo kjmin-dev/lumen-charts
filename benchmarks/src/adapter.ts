@@ -76,8 +76,16 @@ export interface AdapterFactory {
 	readonly library: { readonly name: string; readonly version: string };
 	/** Options that define this variant, recorded with every result. */
 	readonly options: Readonly<Record<string, unknown>>;
-	/** Mounts a chart of exactly `size` inside `container`. */
-	create(container: HTMLElement, size: ChartSize): Promise<ChartAdapter>;
+	/**
+	 * Mounts a chart inside `container`: of exactly `size`, or with `auto` in the library's auto-size
+	 * mode, where the chart fills the container and follows its size.
+	 */
+	create(container: HTMLElement, size: ChartSize | 'auto'): Promise<ChartAdapter>;
+	/**
+	 * Limits the workers the library shares between its charts, for charts created afterwards. Only
+	 * libraries with such a limit implement it; a version of one that has none ignores the call.
+	 */
+	setMaxWorkers?(count: number): void;
 }
 
 /** A data set an adapter is known to fail on, so the planner leaves it out instead of running it again. */

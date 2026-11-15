@@ -1,4 +1,4 @@
-import type { Job, MemorySample, PageRunResult } from '../jobs.ts';
+import type { Job, MainThreadTimes, MemorySample, PageRunResult } from '../jobs.ts';
 import type { PageEnvironment } from './environment.ts';
 
 /** What the harness page exposes as `window.bench` for the runner. */
@@ -14,6 +14,8 @@ declare global {
 		__benchCollectGarbage?: () => Promise<void>;
 		/** Installed by the runner (CDP `Runtime.getHeapUsage`). */
 		__benchMeasureMemory?: () => Promise<MemorySample>;
+		/** Installed by the runner (CDP `Performance.getMetrics`): main-thread time since the page started. */
+		__benchMainThread?: () => Promise<MainThreadTimes>;
 		/** Present when Chromium runs with `--js-flags=--expose-gc`. */
 		gc?: () => void;
 	}
