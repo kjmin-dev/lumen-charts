@@ -20,6 +20,32 @@ export { EngineCore } from './core';
 export { type EngineScope, type EngineTransport, LocalTransport, WorkerTransport, attachEngineHost } from './host';
 export { getMaxWorkers, setMaxWorkers } from './pool';
 export {
+	BUILTIN_INDICATORS,
+	atr,
+	bollinger,
+	ema,
+	highest,
+	lowest,
+	macd,
+	rsi,
+	sma,
+	stochastic,
+	vwap,
+	wma,
+} from './indicators/builtins';
+export {
+	type IndicatorDefinition,
+	type IndicatorInfo,
+	type IndicatorKernel,
+	type IndicatorOutputInfo,
+	type IndicatorParam,
+	SOURCE_COLUMNS,
+	defineIndicator,
+	indicatorInfo,
+	resolveParams,
+} from './indicators/definition';
+export { type InputReader, Runner, computeIndicator } from './indicators/runner';
+export {
 	type Command,
 	type EngineEvent,
 	type FetchRequest,
