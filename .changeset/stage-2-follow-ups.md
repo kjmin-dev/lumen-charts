@@ -19,7 +19,11 @@ Complete the datafeed contract and the memory limit.
 - Chunks let go keep a summary instead of their time column (first and last time, checksums), which
   lowers the floor on 10M line points from about 109 MiB to the levels of detail.
 - History fetched again is drawn in the frame after the view changed instead of the second one.
+- Indicators follow changes of history: a correction recomputes them (in place when the bar is
+  recent), a deletion recomputes them in the background, and a recomputation fetches the rows of
+  every series it reads that were let go.
 
 Engine protocol: fetch requests carry an `id`, `rows` hands rows back by it, events may carry
-`cancel`, `waiting`, `applied` and `refused`, a `delete` command removes bars, `set` takes
-`fetchable`, and window snapshots carry the `request` they answer.
+`cancel`, `waiting`, `applied` and `refused` (notices carry `fetch` and `cancel` for recomputations),
+a `delete` command removes bars, `set` takes `fetchable`, and window snapshots carry the `request`
+they answer.

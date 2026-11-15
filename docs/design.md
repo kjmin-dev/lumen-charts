@@ -245,6 +245,25 @@ toward the limit.
   and the next change tries again.
 - Windowed indicators after a prepend read only the new rows and the first chunk, which is always
   held; converging cumulative ones read the new rows and the few chunks before convergence.
+- As built in the stage 2 follow-ups: a recomputation may read any series with data, so the rows of
+  other series under the main rows it reads next are fetched and kept as well. A failed fetch of
+  rows it does not wait for yet is asked for again (after the chart's pause); a failed fetch of the
+  rows it waits for gives it up.
+
+**Changes of history** (stage 2 follow-ups, section 8).
+
+- A correction is a tick on an older bar, also when it waited for its bar to come back or the bar
+  came back changed at the source, and follows the rule above: in place when recent, a full
+  recomputation otherwise.
+- Removing bars of another series changes the values merged into the main rows those bars belonged
+  to, and is handled like a correction of those rows.
+- Removing bars at either end of the main series leaves the other indexes as they are: every
+  indicator is recomputed in the background, and the values on screen stay until then. Removing
+  bars in its middle re-bases indexes, which drops the values and recomputes them, as a new history
+  does.
+- A computation starts at the main timeline's first row, which is no longer 0 once bars were removed
+  at the head. Slices follow the chunks, so a computation from scratch that should give the same
+  bits starts at that row too.
 
 **Plugins.** A custom indicator is a definition: kernel, sizes (`stateSize`, `lookback`, `warmup`)
 and plain metadata (inputs, outputs with their style, parameters with bounds, `windowed`).

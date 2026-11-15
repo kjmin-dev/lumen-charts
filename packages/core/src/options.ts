@@ -127,7 +127,7 @@ export interface ChartOptions {
 	 * `datafeed`: bars far from the view are let go and fetched back from the datafeed when they are
 	 * needed again, each chunk let go keeping a summary of its times to check them. The levels of
 	 * detail always stay, so zoomed-out views keep drawing meanwhile. A series without a datafeed is
-	 * never let go. Default: no limit.
+	 * never let go, and neither are indicator outputs, which count toward the limit. Default: no limit.
 	 */
 	memoryLimit: number;
 }

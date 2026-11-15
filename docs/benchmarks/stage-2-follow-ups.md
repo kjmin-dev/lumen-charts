@@ -7,6 +7,10 @@ view changed, and a 55.8 ms outlier among the 1M-candle prepends. This document 
 measured against `main` before, and what it costs. The design choices are in section 8 of the
 [design](../design.md); the API is in the README ("History on demand").
 
+The work was measured on `main` at `591934d` and then rebased onto stage 3 (indicators, `cab3cc9`),
+where corrections, deletions and rows let go now also reach the indicators. The section "Stacked on
+stage 3" gives what that changed and the cases measured again on top of it.
+
 The short version, on 10M line points with a datafeed in the page:
 
 - **Memory floor: 111 → 34.5 MiB.** A chunk let go keeps a 128-byte summary instead of its time
@@ -26,6 +30,9 @@ The short version, on 10M line points with a datafeed in the page:
   sides run in the same of the machine's two states; see "Gate cases".
 - **The prepend outlier** is the engine's own work for 1M candles (16 to 80 ms in Node, on both
   versions) crossing a frame boundary. Not fixed; see "The prepend outlier".
+- **On top of stage 3**, indicators recompute after corrections and deletions to the bits of a
+  computation from scratch (unit tests), and the stage 3 gate cases and the refetch scenario measure
+  the same as before the rebase, within runs on a heavily loaded machine.
 
 ## Conditions
 
@@ -61,6 +68,14 @@ Files:
   [stage-2-follow-ups-frames-after.json](stage-2-follow-ups-frames-after.json): the frame cases
   again, 2 more passes.
 - [stage-2-follow-ups-prepend.json](stage-2-follow-ups-prepend.json): 1M-candle prepends, 5 runs.
+- [stage-2-follow-ups-s3-before.json](stage-2-follow-ups-s3-before.json) and
+  [stage-2-follow-ups-s3-after.json](stage-2-follow-ups-s3-after.json): stage 3 tick to applied,
+  prepends with indicators and ticks, on `cab3cc9` and on the rebased branch, 2 passes;
+  [stage-2-follow-ups-s3-main-before.json](stage-2-follow-ups-s3-main-before.json) and
+  [stage-2-follow-ups-s3-main-after.json](stage-2-follow-ups-s3-main-after.json): two of those cases
+  again with the engine on the main thread, 2 passes of 2 runs;
+  [stage-2-follow-ups-s3-refetch.json](stage-2-follow-ups-s3-refetch.json): the refetch scenario on
+  the rebased branch.
 
 ## The refetch scenario
 
@@ -243,6 +258,67 @@ are the gate passes above; passes 3 and 4 ran the frame cases alone, load averag
   window plan that now also runs when the view changes, a few comparisons per change; it was not
   broken down. p95 stays below 0.49 ms in passes 2–4 on both sides, against a target of 16 ms.
 
+## Stacked on stage 3
+
+Stage 3 (`cab3cc9`) added indicators computed in the engine, with hooks for ticks, prepends, new
+histories and rows let go. The branch was rebased onto it commit by commit; the engine of this
+branch took over those hooks, and `18b0dcd` connects what stage 3 could not know about:
+
+- **Corrections** reach the indicators through the tick path, also those that waited for their bar
+  or came back changed at the source: recomputed in place when recent, in the background otherwise.
+- **Deletions.** Removing bars of another series changes the main rows its bars merged into and is
+  handled like a correction of them. Removing bars at either end of the main series recomputes every
+  indicator in the background with the old values on screen. Removing bars in its middle re-bases
+  indexes, which drops the values and recomputes them, as a new history does.
+- **Rows let go.** A recomputation keeps and fetches the rows of every series it reads, not only the
+  main one; rows it asks for come with notices (`fetch` and `cancel`). A failed fetch of rows it waits
+  for gives it up, as in stage 3; one of rows it reads later is asked for again after the chart's
+  pause. Stage 3's memory tests now count chunks let go as their times and values (16 bytes per line
+  bar), and hand rows back by request id.
+- **Tests** (`indicator-history.test.ts`) compare the derived series after a held and a let-go
+  correction, deletions in the middle, at the head and at the tail (with a chained indicator), and
+  deletions and corrections of another series, with a computation from scratch, bit for bit. A
+  computation from scratch has to start at the engine's first row: slices follow the chunks, and a
+  windowed kernel sums from the start of a slice, so after bars were removed at the head (first row
+  10, not 0) one that starts at 0 differs in the last bits. Removing any of the hooks above fails
+  these tests.
+
+**The cases the integration could affect**, before (`cab3cc9`) and after (`18b0dcd`) alternately, 2
+passes. The load average was 9–51 (40.6–22.8, 22.8–14.4, 13.6–8.9 and 8.9–50.5 per invocation).
+
+| Case, 20 indicators on 1M candles                | Adapter      | Before       | After        |
+| ------------------------------------------------ | ------------ | ------------ | ------------ |
+| Tick to applied p99, latest 200 bars (gate 4 ms) | lumen-worker | 3.41, 3.04   | 3.55, 3.53   |
+| Tick to applied p99, all 1M bars                 | lumen-worker | 4.40, 4.24   | 4.29, 4.69   |
+| Tick to applied p99, latest 200 bars             | lumen-main   | 0.270, 0.235 | 0.405, 0.365 |
+| Tick to applied p99, all 1M bars                 | lumen-main   | 0.230, 0.270 | 0.255, 0.430 |
+| Prepend 10k, shown p95 (gate 1 s)                | lumen-worker | 54.0, 53.9   | 53.2, 53.3   |
+| Prepend 10k, shown p95                           | lumen-main   | 37.5, 36.1   | 36.7, 36.9   |
+| Prepend 1M, shown p95                            | lumen-worker | 528, 540     | 511, 747     |
+| Prepend 1M, shown p95                            | lumen-main   | 573, 617     | 588, 705     |
+
+Times in ms, one value per pass. Ticks on 1M candles without indicators (`update()` mean 0.36–0.75
+µs) are the same on both sides.
+
+- **The worker cases are the same**: tick to applied with all 1M bars in view sits at the 4 ms gate
+  on both sides, as stage 3 reported. The 747 and 705 ms prepends are from the last invocation, whose
+  load average rose from 9 to 51.
+- **Tick to applied on the main thread** came out higher after in both passes. Two more passes of
+  two runs each with only that case and the 10k prepend (load average 25–58) gave p99 0.250, 0.265,
+  0.235 and 0.260 ms before and 0.410, 0.250, 0.410 and 0.390 ms after: higher in three runs of four,
+  by about 0.15 ms, at a tenth of the gate. The engine's own time per tick with 20 indicators is the
+  same on both versions (in Node, 3 runs each alternating: median 0.065–0.072 ms against
+  0.067–0.073 ms), so the difference, if it is one, is on the chart's side; it was not broken down.
+- **10k prepends on the main thread** are shown one or two frames after the call on both sides
+  (p50 19–35 ms; the same split appears in stage 3's own runs), so their p50 is not compared.
+
+**The refetch scenario on the rebased branch** (2 repeats, load average 86–183): every jump is drawn
+in one frame (shown p50 16.5–16.7 ms) and the worker's memory is the same as before the rebase (130,
+34.6 and 261 MiB after the load). The main thread's samples after the load are higher (103–171 MiB
+at the floor, 374–694 MiB with three series): its idle slices had done less of the letting go after
+1.5 and 3 s on a machine that busy, and it is at the limit after the jumps (34.9 and 262 MiB).
+Removing 10 bars took 106 and 126 ms (p50), against about 91 ms at a load average of 7–12.
+
 ## Known limits
 
 - **Answers for chunks a deletion removes bars from** are checked by the times kept (every 16th bar
@@ -262,6 +338,9 @@ are the gate passes above; passes 3 and 4 ran the frame cases alone, load averag
   go is rebuilt once the neighbouring rows are back.
 - **The memory limit is a target**: the window around the view, the first and last chunk of each
   series and the levels always stay.
+- **Tick to applied on the main thread with 20 indicators** measured about 0.15 ms higher at p99 in
+  most runs after the rebase (0.25–0.43 ms against 0.23–0.27 ms; gate 4 ms), with the engine's own
+  time per tick unchanged. Not broken down.
 - The refetch scenario's datafeed answers at once, in the page; a network adds its round trip to
   every latency here. Memory excludes canvas and GPU memory, as in stage 0.
 
@@ -283,13 +362,18 @@ pnpm bench:merge benchmarks/results/after.json benchmarks/results/after-1.json b
 # The prepend outlier
 pnpm bench --case prepend/candles-1m/1m --lib lumen-worker --repeats 5
 
+# On top of stage 3: the cases the indicator integration could affect, alternately as above
+git worktree add ../lumen-s3 cab3cc9
+pnpm bench --case ind-apply/candles-1m,ind-prepend/candles-1m,tick/candles-1m --lib lumen-worker,lumen-main \
+  --repeats 1 --budget 3 --packages ../lumen-s3/packages
+
 pnpm bench:report docs/benchmarks/stage-2-follow-ups-refetch-after.json
 ```
 
 The `ops` case needs `removeBars`, which `591934d` lacks, so it runs on the branch only. The Node
-timings of prepends and of letting go were one-off scripts outside the repository. All benchmark
-runs for this document took 12 minutes of wall time (468 s for the first round, 255 s for the
-second), plus about a minute for the Node timings.
+timings of prepends, of letting go and of ticks with indicators were one-off scripts outside the
+repository. All benchmark runs for this document took 17 minutes of wall time (468 s for the first
+round, 255 s for the second, 313 s on top of stage 3), plus about two minutes for the Node timings.
 
 Unit tests that back the claims: `packages/engine/test/store.test.ts` (summaries, lookups across
 chunks let go, removing rows), `packages/engine/test/memory.test.ts` (the floor, refetch checks,
