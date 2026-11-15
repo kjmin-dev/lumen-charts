@@ -41,6 +41,13 @@ export interface IndicatorOptions {
 	inputs: IndicatorInput[];
 	/** Options of each output's series, by output name. */
 	outputs: Record<string, IndicatorOutputOptions>;
+	/**
+	 * Price scale of the outputs (see `SeriesOptionsCommon.priceScaleId`), for example one of their
+	 * own for an oscillator. Setting it moves every output; a `priceScaleId` in `outputs` moves that
+	 * output alone, and wins within the same call. Empty (the default): the scale the source series
+	 * was on when the indicator was added.
+	 */
+	priceScaleId: string;
 }
 
 /** One output of an indicator: a series on the main timeline, computed in the data engine. */
@@ -149,6 +156,9 @@ export class Indicator implements IndicatorApi {
 	private _params: Float64Array;
 	private _inputs: IndicatorInput[];
 	private _refs: IndicatorInputRef[];
+	private _priceScaleId: string;
+	/** Scale of the source when the indicator was added, for outputs that name none. */
+	private readonly _sourceScaleId: string;
 	private readonly _resolve: (input: IndicatorInput, index: number) => IndicatorInputRef;
 
 	public constructor(
@@ -166,6 +176,8 @@ export class Indicator implements IndicatorApi {
 		this._params = resolveParams(info.params, (options.params ?? {}) as Record<string, number>);
 		this._inputs = this._inputsWith((options.inputs ?? []) as IndicatorInput[]);
 		this._refs = this._inputs.map((input, i) => resolve(input, i));
+		this._priceScaleId = options.priceScaleId ?? '';
+		this._sourceScaleId = source.seriesOptions.priceScaleId;
 		const created = engine?.addIndicator(info.name, Array.from(this._params), this._refs, info.outputs.length);
 		this.id = created?.id ?? -1;
 		info.outputs.forEach((output, i) => {
@@ -174,7 +186,11 @@ export class Indicator implements IndicatorApi {
 				host,
 				created?.outputs[i] ?? -1,
 				output.style === 'histogram' ? 'histogram' : 'line',
-				{ ...outputDefaults(output), ...definedOnly(style as Partial<AnySeriesOptions>) },
+				{
+					...outputDefaults(output),
+					priceScaleId: this._outputScaleId(),
+					...definedOnly(style as Partial<AnySeriesOptions>),
+				},
 				true,
 			);
 			this.outputList.push(new IndicatorOutput(this, output.name, series));
@@ -221,6 +237,14 @@ export class Indicator implements IndicatorApi {
 			this._inputs = inputs;
 		}
 		let restyled = false;
+		if (options.priceScaleId !== undefined && options.priceScaleId !== this._priceScaleId) {
+			this._priceScaleId = options.priceScaleId;
+			const priceScaleId = this._outputScaleId();
+			for (const output of this.outputList) {
+				output.series.seriesOptions = { ...output.series.seriesOptions, priceScaleId };
+			}
+			restyled = true;
+		}
 		for (const output of this.outputList) {
 			const style = options.outputs?.[output.name];
 			if (style !== undefined) {
@@ -254,7 +278,7 @@ export class Indicator implements IndicatorApi {
 		for (const output of this.outputList) {
 			outputs[output.name] = output.options();
 		}
-		return { params, inputs: [...this._inputs], outputs };
+		return { params, inputs: [...this._inputs], outputs, priceScaleId: this._priceScaleId };
 	}
 
 	public output(name?: string): IndicatorOutputApi {
@@ -271,6 +295,11 @@ export class Indicator implements IndicatorApi {
 
 	public remove(): void {
 		this.host.removeIndicator(this);
+	}
+
+	/** Scale of outputs that name none of their own. */
+	private _outputScaleId(): string {
+		return this._priceScaleId === '' ? this._sourceScaleId : this._priceScaleId;
 	}
 
 	/** Inputs given, then the definition's default columns for the rest. */

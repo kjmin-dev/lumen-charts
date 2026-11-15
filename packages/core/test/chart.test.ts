@@ -443,7 +443,7 @@ describe('chart with series', () => {
 			_cache: { held(level: number): { count: number } | null };
 			_drawn: { level: number } | null;
 			_geometry: { to: number; shift: number; firstRow: number };
-			_priceScale: { min: number; max: number };
+			_axes: { scale: { min: number; max: number } }[];
 		};
 
 	it('draws a wide view from a coarse level, exactly scaled, without holding raw rows', async () => {
@@ -458,7 +458,8 @@ describe('chart with series', () => {
 		line.setData({ time: data.time, value: spiked });
 		chart.timeScale().fitContent();
 		await settle();
-		const { _cache, _drawn, _geometry, _priceScale } = internals();
+		const { _cache, _drawn, _geometry, _axes } = internals();
+		const priceScale = _axes[0]!.scale;
 		expect(_drawn!.level).toBeGreaterThanOrEqual(1);
 		expect(_cache.held(0)).toBeNull();
 		// The price range is exactly that of the rows drawn, spike included.
@@ -469,7 +470,7 @@ describe('chart with series', () => {
 			low = Math.min(low, data.low[i]!, spiked[i]!);
 			high = Math.max(high, data.high[i]!, spiked[i]!);
 		}
-		expect([_priceScale.min, _priceScale.max]).toEqual([low, high]);
+		expect([priceScale.min, priceScale.max]).toEqual([low, high]);
 		expect(high).toBe(500);
 		const paneWidth = chart.element().querySelectorAll('canvas')[0]!.width;
 		expect(candleRects().length).toBeLessThanOrEqual(paneWidth + 1);
@@ -480,7 +481,7 @@ describe('chart with series', () => {
 		const last = count - 1;
 		main.update({ time: data.time[last]!, open: data.open[last]!, high: 900, low: data.low[last]!, close: 120 });
 		await settle();
-		expect(_priceScale.max).toBe(900);
+		expect(priceScale.max).toBe(900);
 
 		// Zoomed in, the chart draws raw rows again and lets go of the coarse level.
 		const level = _drawn!.level;
