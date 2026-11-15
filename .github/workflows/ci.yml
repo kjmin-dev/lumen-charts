@@ -29,3 +29,5 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      # What npm would receive: licenses, READMEs, exports, source maps, no workspace: ranges.
+      - run: pnpm release:check

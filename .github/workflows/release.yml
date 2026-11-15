@@ -1,0 +1,71 @@
+name: Release
+
+# Publishes the packages when main holds versions that npm does not have yet: after a
+# "version packages" pull request (pnpm version-packages) is merged. See docs/releasing.md.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      releasable: ${{ steps.plan.outputs.releasable }}
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      # Asks the registry which versions are missing; needs no dependencies.
+      - id: plan
+        run: node scripts/release.ts plan
+        env:
+          NPM_PUBLISH: ${{ vars.NPM_PUBLISH }}
+
+  publish:
+    needs: plan
+    # Off until npm is set up: the repository variable NPM_PUBLISH turns it on.
+    if: needs.plan.outputs.releasable == 'true' && vars.NPM_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    # Deployment protection: main only, and a maintainer approves every release.
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/lumen-charts/v/${{ needs.plan.outputs.version }}
+    permissions:
+      contents: write # release tag and GitHub release
+      id-token: write # npm trusted publishing (OIDC) and provenance
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
+      - run: npm install --global npm@11
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+      - run: pnpm release:check
+      - run: pnpm release:publish
+      - name: Tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          node scripts/release.ts notes "$VERSION" > "$RUNNER_TEMP/notes.md"
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+          flags=()
+          if [[ "$VERSION" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "v$VERSION" --title "v$VERSION" --notes-file "$RUNNER_TEMP/notes.md" "${flags[@]}"

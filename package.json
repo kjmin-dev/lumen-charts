@@ -24,11 +24,14 @@
 		"bench:serve": "pnpm --filter @lumen-charts/benchmarks serve",
 		"bench:report": "pnpm --filter @lumen-charts/benchmarks report",
 		"changeset": "changeset",
-		"version-packages": "changeset version",
-		"release": "pnpm build && changeset publish"
+		"version-packages": "changeset version && oxfmt",
+		"release:check": "node scripts/release.ts check",
+		"release:plan": "node scripts/release.ts plan",
+		"release:publish": "node scripts/release.ts publish"
 	},
 	"devDependencies": {
 		"@changesets/cli": "^3.0.3",
+		"@types/node": "^26.6.6",
 		"@types/react": "^19.3.0",
 		"@types/react-dom": "^19.3.0",
 		"happy-dom": "^21.0.4",
