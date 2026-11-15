@@ -20,7 +20,8 @@ Share browser resources between the charts of a page instead of creating them pe
   writes to the DOM, and an error in one chart no longer stops the others from drawing.
 - Size: an auto-sized chart now fills the content box of its container. It used the container's
   bounding rectangle, which made the chart too large in a container with padding or a border and
-  wrong under a CSS transform. Creating a chart or changing its options no longer forces a layout.
+  wrong under a CSS transform. Creating a chart or changing its options no longer reads the
+  layout: the size is read once, in the first frame or when it is first needed.
 - Viewport: a chart scrolled out of view keeps applying data but is not drawn until it comes back.
   `whenIdle()` does not wait for that.
 - Pointer input: hover, wheel and pinch read the chart's position at most once per frame. A wheel

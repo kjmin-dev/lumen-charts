@@ -54,7 +54,8 @@ Charts share what the browser gives them instead of each taking its own:
   before any of them writes to the DOM, and an error in one chart does not stop the others.
 - **Size.** One `ResizeObserver` sizes the auto-sized charts. A chart fills the content box of its
   container, so padding and borders on the container are fine. Creating a chart or changing its
-  options does not force a layout.
+  options does not read the layout: the size is read once, in the first frame or when it is first
+  needed.
 - **Viewport.** A chart scrolled out of view keeps applying data but is not drawn until it comes
   back into view. `whenIdle()` does not wait for that.
 
