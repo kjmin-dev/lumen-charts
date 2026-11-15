@@ -360,7 +360,12 @@ function delay<T>(ms: number, value: T): { promise: Promise<T>; cancel: () => vo
 
 async function closeContext(session: Session, context: BrowserContext): Promise<void> {
 	const closing = delay(20_000, 'stuck' as const);
-	const result = await Promise.race([context.close().then(() => 'closed' as const), closing.promise]);
+	// Closing fails when the browser has gone away, which leaves nothing to close.
+	const close = context.close().then(
+		() => 'closed' as const,
+		() => 'closed' as const,
+	);
+	const result = await Promise.race([close, closing.promise]);
 	closing.cancel();
 	if (result === 'stuck') {
 		// A renderer busy in a long synchronous call can keep the context from closing.
@@ -391,6 +396,12 @@ function hostLoad(since: { idle: number; total: number }): HostLoad {
 async function runOne(session: Session, planned: PlannedJob): Promise<CompletedJob> {
 	const started = performance.now();
 	const cpuStart = cpuTimes();
+	if (!session.browser.isConnected()) {
+		// The browser process is gone (it crashed or was killed during the previous run). Starting a
+		// new one costs that run, not the rest of the matrix.
+		process.stdout.write('  browser disconnected; restarting it\n');
+		session.browser = await launch();
+	}
 	const { context, page } = await newPage(session);
 	let library: AdapterInfo | null = null;
 	let outcome: RunOutcome;
