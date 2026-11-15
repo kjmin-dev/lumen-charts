@@ -164,8 +164,9 @@ typed arrays only, so a WASM build can replace a kernel without other changes.
 - Incremental updates give the same bits as a full computation over the same rows.
 - After a prepend, a windowed indicator recomputed only near the old first bar gives the same bits
   as a full computation over the new history. This is what the boundary restarts buy.
-- A cumulative indicator is recomputed in full after a prepend, so its bits are those of a full
-  computation from the new first bar.
+- A cumulative indicator recomputed after a prepend stops only where its state and carry equal, bit
+  for bit, the checkpoint the previous computation kept at that chunk boundary. From there on the
+  rows cannot differ, so the result is again that of a full computation from the new first bar.
 
 **Incremental ticks.** All rows but the last are committed: the live runner holds the state and
 carry after the second-to-last row.
@@ -192,8 +193,8 @@ carry after the second-to-last row.
   for MACD's histogram. They overlay the price pane, and autoscale includes them; a histogram's
   base is always in range.
 
-**Full computations in the background.** Load, a parameter change, a new input and a cumulative
-prepend recompute an indicator in full.
+**Recomputations in the background.** Load, a parameter change and a new input recompute an
+indicator in full; a prepend recomputes it as far as the new history changes it.
 
 - The job runs in slices of one chunk into storage of its own (values and pyramid), in the order
   indicators were added. That order is topological: an input can only read an earlier indicator,
@@ -205,6 +206,15 @@ prepend recompute an indicator in full.
 - After a prepend, a windowed indicator recomputes only the rows from the new first bar up to the
   first chunk boundary whose window lies entirely in rows it had before. Those rows are spliced
   in, and their buckets rebuilt, in one step. Near the end of the data it recomputes everything.
+- A cumulative indicator recomputes from the new first bar and, at every chunk boundary from the
+  old first bar on, compares its state and carry with the live computation's checkpoint there. Once
+  they are equal it stops and splices the rows before the boundary the same way. Exponential and
+  Wilder averages forget their start within a few thousand rows and a daily VWAP at the next day,
+  so a prepend costs about the new rows plus a chunk, not the whole history; a running sum from the
+  first bar never converges and is recomputed in full. Kernels therefore keep in their state only
+  what later rows depend on (the built-ins clear their seeding sums once seeded).
+- An indicator that reads another decides what to recompute when its job starts, after the jobs of
+  its inputs: its inputs are unchanged from where the indicators it reads stopped changing.
 - The main-thread engine runs these jobs in message tasks, like commands, not in idle time: their
   results are on the way to the screen. Level-of-detail builds still wait for idle time.
 
@@ -226,7 +236,7 @@ toward the limit.
 - If the datafeed cannot return the rows, the recomputation is given up: the values on screen stay,
   and the next change tries again.
 - Windowed indicators after a prepend read only the new rows and the first chunk, which is always
-  held.
+  held; converging cumulative ones read the new rows and the few chunks before convergence.
 
 **Plugins.** A custom indicator is a definition: kernel, sizes (`stateSize`, `lookback`, `warmup`)
 and plain metadata (inputs, outputs with their style, parameters with bounds, `windowed`).

@@ -117,9 +117,9 @@ strength.output().lastValue(); // for a legend, NaN until computed
 smoothed.remove();
 ```
 
-Indicators run in the data engine: computed in full in the background after a load, a parameter
-change or a prepend, and incrementally on every tick, whose message carries the bar and the latest
-value of every indicator together. Their outputs are series on the main timeline, with levels of
+Indicators run in the data engine: computed in the background after a load, a parameter change or
+a prepend (after a prepend only as far as the new history changes them), and incrementally on every
+tick, whose message carries the bar and the latest value of every indicator together. Their outputs are series on the main timeline, with levels of
 detail like any other, drawn on the price pane as lines (MACD's histogram as a histogram) and
 included in autoscale. While an indicator is being recomputed its old values stay on screen;
 `chart.whenIdle()` resolves once the new ones are drawn.
