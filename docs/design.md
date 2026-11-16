@@ -115,6 +115,7 @@ Main thread                              Data engine (worker; time-sliced on mai
   - Line and indicator series: minimum, maximum, first and last. Using the close alone loses extremes [review: at level 64, 77% of buckets missed the true maximum by more than 0.2%].
 - Extra memory: about 7% for OHLCV and 27% for a line series.
 - NaN values are skipped during aggregation. A bucket that holds only NaN is NaN.
+- As built in stage 5: of a bucket that holds zeros of both signs, the highest value is +0 and the lowest is −0, whatever their order (section 5.1, "Extremes and the sign of zero").
 - A tail update rebuilds the last bucket from its members (at most 16 raw rows at level 16, or 4 child buckets above it). A correction can lower the high, so merging in the new value alone gives wrong results.
 - Visible-range min/max comes from pyramid lookups plus raw scans at both ends.
 - As built in the stage 2 follow-ups: a correction rebuilds its buckets from all members also when its bar was dropped (it waits until the bar is back), and so do bars that come back from the Datafeed with other values than the ones dropped. A deletion rebuilds the buckets at its edges, and those of the bars it moved.
@@ -143,7 +144,7 @@ Main thread                              Data engine (worker; time-sliced on mai
 - As decided in stage 5 ([measured](benchmarks/stage-5-profile.md)): no WASM kernels for now.
   - Share: kernels take 56% of the engine's time in a load of 1M bars with 20 indicators, 2% of its time in a tick, and none of a frame.
   - Speed: Rust ports of eight kernels gave the same bits over 1M rows. The recursive ones (SMA, EMA, WMA, RSI, MACD, Bollinger) ran at 0.95–1.24 times JavaScript. Only the loops that take a minimum and a maximum gained: rolling extremes 10 times, Stochastic 3.9 times, level-of-detail buckets 7 times (20 with SIMD).
-  - Those loops are slow in JavaScript because V8 compiles their comparisons to branches that prices mispredict. With `Math.max` and `Math.min` (after a test for NaN) they run 1.5–4.8 times faster, at the speed of scalar WASM for the buckets. That change is adopted instead (section 6.2); what WASM would add after it is under a tenth of a load that has no budget to meet.
+  - Those loops are slow in JavaScript because V8 compiles their comparisons to branches that prices mispredict. With `Math.max` and `Math.min` (after a test for NaN) they run 1.5–4.8 times faster, at the speed of scalar WASM for the buckets. That change is adopted instead (section 6.2, built in stage 5); what WASM would add after it is under a tenth of a load that has no budget to meet.
   - Reconsidered when a kernel V8 compiles badly cannot be fixed in JavaScript, or when loads get a gate the JavaScript kernels miss.
 
 ### 5.1 As built in stage 3
@@ -162,8 +163,10 @@ typed arrays only, so a WASM build can replace a kernel without other changes.
 - Built-ins: SMA, EMA, WMA, RSI, MACD (macd, signal, histogram), Bollinger bands (upper, middle,
   lower), ATR, Stochastic (k, d), VWAP (anchored to UTC days by default) and rolling highest and
   lowest. EMA-like averages are seeded with the simple average of their first `period` values.
-- Only `+ - * /` and `Math.sqrt` are used. Each kernel is tested against a brute-force reference,
-  with gaps, warm-up, chains and data on both sides of index 0.
+- Only `+ - * /` and `Math.sqrt` are used, and since stage 5 `Math.max` and `Math.min` for the
+  rolling extremes (exact, and defined for every operand; see "Extremes and the sign of zero"
+  below). Each kernel is tested against a brute-force reference, with gaps, warm-up, chains and
+  data on both sides of index 0.
 
 **Runner.** One driver runs every kernel, in the engine and in the standalone `computeIndicator`.
 
@@ -183,6 +186,33 @@ typed arrays only, so a WASM build can replace a kernel without other changes.
 - A cumulative indicator recomputed after a prepend stops only where its state and carry equal, bit
   for bit, the checkpoint the previous computation kept at that chunk boundary. From there on the
   rows cannot differ, so the result is again that of a full computation from the new first bar.
+
+**Extremes and the sign of zero (stage 5).** Every highest and lowest value is taken with
+`Math.max` and `Math.min` after a test that skips missing values: in level-of-detail buckets
+(`aggregate`, `lineBuckets`), in the bars of a secondary series merged into one main bar, in the
+rolling extremes and Stochastic's range, in the pixel columns and the price range of
+`SeriesView`, and in the range of a price axis. One rule follows for all of them:
+
+- **Of a set that holds both zeros, the highest value is +0 and the lowest is −0**, wherever they
+  are in it (−0 orders below +0, as in IEEE 754 `maximum` and `minimum`). A set of only one kind of
+  zero keeps that zero. Nothing else differs from a comparison: the two give the same bits for
+  every other input, missing values and infinities included.
+- The rule does not depend on order or grouping, so a value has the same bits however it is
+  reached: a bucket from its rows or from the four buckets below it, a level built at once or grown
+  by ticks, prepends and corrections, a pixel column merged from raw rows or from buckets, a
+  rolling extreme in whatever slices its rows are computed, and the engine in a worker or on the
+  main thread (the same code).
+- Comparisons kept the zero met first. That was the same in most of these places, but not in the
+  rolling extremes, which cut rows into blocks from where a slice starts: a window of both zeros
+  gave +0 or −0 depending on the slicing (38% of such rows in a test of period 3), against the
+  first guarantee above. The rule removes that.
+- A WASM port has to use `f64.max` and `f64.min`, which follow the same rule, not a comparison
+  and a select.
+- Tested with rows that are zeros of both signs with gaps between them: `aggregate` in every
+  order, levels grown by prepends, ticks and corrections against brute force and against the same
+  rows loaded in two steps, rolling extremes and Stochastic from different starting rows, indicator
+  values and their buckets through ticks and a prepend, and view items from raw rows against those
+  from every level, all bit for bit.
 
 **Incremental ticks.** All rows but the last are committed: the live runner holds the state and
 carry after the second-to-last row.
@@ -348,7 +378,8 @@ and pane or series primitives were deferred to stage 4, which defined them toget
 ### 6.2 As decided in stage 5
 
 Stage 5 profiled `main` after stage 4 and decided each optional step against the criteria above
-([stage 5 profile](benchmarks/stage-5-profile.md)). Nothing of it is built yet.
+([stage 5 profile](benchmarks/stage-5-profile.md)). Of the two steps adopted, the min/max loops
+are built; partial redraw is not yet.
 
 - **Partial redraw: adopted for tick frames.** Light invalidation exceeds its budget in one place:
   with 20 indicators and all 1M bars in view, a tick's frame takes 4.1 ms of JavaScript (p99
@@ -370,6 +401,19 @@ Stage 5 profiled `main` after stage 4 and decided each optional step against the
   by comparison. With `Math.max` and `Math.min` they run 1.5–4.8 times faster, more on noisy series
   than on smooth ones. The one difference is the sign of a zero where a bucket holds both zeros,
   which the change has to settle in one rule for every place a value can be computed two ways.
+  - As built ([measured](benchmarks/stage-5-min-max.md)): changed in `SeriesView.update` (both
+    merges and the price range), `aggregate`, `lineBuckets`, `rollingExtreme`, the merge of
+    secondary bars into a main bar and the range of a price axis. ATR's largest of three ranges
+    stays a comparison (no gain measured), as does `lowestPositive`.
+  - The rule: of values that include both zeros, the highest is +0 and the lowest −0, in any order
+    (section 5.1, "Extremes and the sign of zero"). It also removes a dependence of the rolling
+    extremes on where a slice starts, which the comparisons had for such windows.
+  - Measured at 1M candles with 20 indicators, before and after in turns on a busy machine: a pan
+    frame with 20,000 bars in view 5.5 → 4.2 ms of JavaScript at p50 (−24%), with all bars in view
+    4.1 → 3.8 ms at p50 and 5.6 → 4.9 ms at p95; a load's indicators settled after 351 instead of
+    431 ms through the worker (313 instead of 391 ms on the main thread); a 1M prepend shown after
+    0.41 instead of 0.53 s. Frames without indicators and ticks show no change beyond the spread
+    of the runs.
 - **`OffscreenCanvas`: deferred.** Drawing costs the same in a worker (3.4 against 3.5 ms a
   frame), and no frame misses its budget for being on the main thread (p95 0.3–6.7 ms against
   8 ms). It keeps 60 frames a second under a host page that blocks the main thread 91% of the
@@ -641,6 +685,11 @@ Stage 5, the evidence (measured, [stage 5 profile](benchmarks/stage-5-profile.md
 of tick frames and branch-free min/max loops are adopted, WASM kernels are rejected for now,
 `OffscreenCanvas` and the GPU layer are deferred (sections 5 and 6.2). Each adopted step is
 measured again on the gate cases when it is built.
+
+Stage 5, the min/max loops (measured, [stage 5 min and max](benchmarks/stage-5-min-max.md)): with
+20 indicators on 1M candles, pan frames take 4.2 instead of 5.5 ms of JavaScript at p50 with 20,000
+bars in view and 4.9 instead of 5.6 ms at p95 with all bars in view (gate: p95 8 ms), and the
+indicators of a load settle a fifth sooner.
 
 ## 10. Open questions
 

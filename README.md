@@ -608,7 +608,9 @@ are in [docs/benchmarks/stage-4-drawings.md](docs/benchmarks/stage-4-drawings.md
 scenario saves and restores a chart with 5 indicators and 1,000 drawings; results are in
 [docs/benchmarks/stage-4-save-restore.md](docs/benchmarks/stage-4-save-restore.md). Where frame,
 tick and load time goes, from traces of these scenarios, and what that decides about the optional
-steps of stage 5 is in [docs/benchmarks/stage-5-profile.md](docs/benchmarks/stage-5-profile.md).
+steps of stage 5 is in [docs/benchmarks/stage-5-profile.md](docs/benchmarks/stage-5-profile.md). The
+first of them, the min/max loops, is measured before and after in
+[docs/benchmarks/stage-5-min-max.md](docs/benchmarks/stage-5-min-max.md).
 
 Runs are headless by default (Chromium's new headless mode, rasterizing on the GPU), so no window
 takes the focus; `--headed` opens a window. Stage 0 and stage 1 were measured headed. Frame
