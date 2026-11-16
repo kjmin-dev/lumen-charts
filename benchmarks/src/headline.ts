@@ -40,6 +40,7 @@ export function headline(result: CaseResult): string {
 		case 'frames':
 		case 'ind-frames':
 		case 'axes-frames':
+		case 'tz-frames':
 			return (
 				`JS p50 ${ms(m('jsTime.p50'))} p95 ${ms(m('jsTime.p95'))}; ` +
 				`interval p50 ${ms(m('interval.p50'))} p95 ${ms(m('interval.p95'))}`
@@ -74,6 +75,12 @@ export function headline(result: CaseResult): string {
 				`(page ${mb(m('memory.retainedPageBytes'))}, workers ${mb(m('memory.retainedWorkerBytes'))}); ` +
 				`tick round: frame JS p50 ${ms(m('frameJs.p50'))} p95 ${ms(m('frameJs.p95'))}, ` +
 				`main thread ${ms(m('tickMainThread.taskMs'))}; per tick ${ms(m('mainThreadPerTick.mean'))}`
+			);
+		case 'tz-change':
+			return (
+				`zone change work p50 ${ms(m('warm.workMs.p50'))} max ${ms(m('warm.workMs.max'))} ` +
+				`(first to a zone p50 ${ms(m('cold.workMs.p50'))} max ${ms(m('cold.workMs.max'))}); ` +
+				`other option change p50 ${ms(m('baseline.workMs.p50'))}; shown p50 ${ms(m('warm.shownMs.p50'))}`
 			);
 	}
 }

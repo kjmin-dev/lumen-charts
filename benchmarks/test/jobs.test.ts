@@ -113,7 +113,9 @@ describe('planJobs', () => {
 	it('gives tick and frames runs a time budget unless it is 0', () => {
 		const { jobs } = planJobs({ ...base, scenarios: ['tick', 'frames'], adapters: ['a'], repeats: 1 });
 		for (const { job } of jobs) {
-			expect(job.scenario !== 'load' && job.scenario !== 'ind-load' && job.budgetMs).toBe(DEFAULT_BUDGET_MS);
+			expect(
+				job.scenario !== 'load' && job.scenario !== 'ind-load' && job.scenario !== 'tz-change' && job.budgetMs,
+			).toBe(DEFAULT_BUDGET_MS);
 			expect((job.scenario === 'tick' || job.scenario === 'frames') && job.warmupBudgetMs).toBe(2_000);
 		}
 		const tick = jobs.find(p => p.job.scenario === 'tick')?.job;
