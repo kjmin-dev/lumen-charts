@@ -15,6 +15,7 @@ import { adapters, knownFailure } from '../src/adapters/index.ts';
 import type { SeriesKind } from '../src/data.ts';
 import type { PageEnvironment } from '../src/harness/environment.ts';
 import { headline } from '../src/headline.ts';
+import { planJobs } from '../src/plan.ts';
 import { TRACE_CATEGORIES } from '../src/profile.ts';
 import { redactLocalPaths } from '../src/redact.ts';
 import {
@@ -27,13 +28,12 @@ import {
 	type PageRunResult,
 	type PlannedJob,
 	type RunOutcome,
-	SCENARIOS,
 	type WorkerHeapUsage,
 	parseSize,
-	planJobs,
 } from '../src/jobs.ts';
 import { type CdpHeapUsage, cdpHeapUsage, memorySample, sumWorkers } from '../src/memory.ts';
 import { type CompletedJob, RESULTS_SCHEMA_VERSION, type ResultsFile, aggregate } from '../src/results.ts';
+import { SCENARIOS } from '../src/scenarios/index.ts';
 import { type RunProfile, sourceResolver, writeProfile, writeSummary } from './profile.ts';
 
 const benchDir = fileURLToPath(new URL('..', import.meta.url));

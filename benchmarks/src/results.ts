@@ -9,12 +9,12 @@ import { type RunSpread, spread } from './stats.ts';
  */
 export const RESULTS_SCHEMA_VERSION = 2;
 
-export interface CaseResult {
+export interface CaseResult<J extends Job = Job> {
 	/** Scenario, data set and parameters, without the adapter (see `caseId`). */
 	caseId: string;
 	adapter: string;
 	/** The job of the first repeat (all repeats are identical). */
-	job: Job;
+	job: J;
 	library: AdapterInfo | null;
 	/** `ok` when every run succeeded, `partial` when some did, `failed` when none did. */
 	status: 'ok' | 'partial' | 'failed';

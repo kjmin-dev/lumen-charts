@@ -1,5 +1,6 @@
 import type { LogicalRange } from './adapter.ts';
-import type { Motion } from './jobs.ts';
+
+export type Motion = 'pan' | 'zoom';
 
 /** Pan speed: fraction of the visible width moved per frame. */
 export const PAN_STEP = 0.01;

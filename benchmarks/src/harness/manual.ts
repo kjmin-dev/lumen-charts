@@ -4,7 +4,9 @@
 import type { ChartSize } from '../adapter.ts';
 import { adapters, knownFailure } from '../adapters/index.ts';
 import type { SeriesKind } from '../data.ts';
-import { K, M, type PlannedJob, type RunOutcome, SCENARIOS, type ScenarioName, planJobs, sizeLabel } from '../jobs.ts';
+import { K, M, type PlannedJob, type RunOutcome, sizeLabel } from '../jobs.ts';
+import { planJobs } from '../plan.ts';
+import { SCENARIOS } from '../scenarios/index.ts';
 import { type CompletedJob, RESULTS_SCHEMA_VERSION, type ResultsFile, aggregate } from '../results.ts';
 import type { BenchApi } from './api.ts';
 import { headline } from '../headline.ts';
@@ -78,7 +80,7 @@ export function setupManualPage(bench: BenchApi, chart: ChartSize): void {
 		const quick = form.querySelector<HTMLInputElement>('input[name="quick"]')?.checked ?? false;
 		const repeats = Number(form.querySelector<HTMLInputElement>('input[name="repeats"]')?.value ?? '1');
 		const { jobs: plan } = planJobs({
-			scenarios: checkedValues(form, 'scenario') as ScenarioName[],
+			scenarios: checkedValues(form, 'scenario'),
 			adapters: checkedValues(form, 'adapter'),
 			sizes: quick ? [] : checkedValues(form, 'size').map(label => SIZES.find(s => sizeLabel(s) === label) ?? 0),
 			kinds: checkedValues(form, 'kind') as SeriesKind[],

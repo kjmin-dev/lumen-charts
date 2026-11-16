@@ -17,6 +17,7 @@ import {
 import type { AdapterFactory, ChartAdapter, ChartSize, LogicalRange } from '../adapter.ts';
 import type { CandleColumns, LineColumns, TickColumns } from '../data.ts';
 import { settleFrames } from '../harness/frames.ts';
+import type { AppliedAdapter, IndicatorAdapter } from '../scenarios/indicators.ts';
 import { UserIndicators } from './user-indicators.ts';
 
 /**
@@ -62,7 +63,7 @@ function lineItems(data: LineColumns): LineData[] {
 	return items;
 }
 
-class LightweightChartsAdapter implements ChartAdapter<Prepared> {
+class LightweightChartsAdapter implements ChartAdapter<Prepared>, IndicatorAdapter, AppliedAdapter {
 	private readonly _chart: IChartApi;
 	private _series: ISeriesApi<SeriesType> | null = null;
 	private _kind: Prepared['kind'] | null = null;

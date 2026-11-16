@@ -5,7 +5,7 @@ import { collectEnvironment } from './environment.ts';
 import { installFrameProbe } from './frames.ts';
 import { setupManualPage } from './manual.ts';
 import { describeProbes, probes } from './probes.ts';
-import { runJob } from './scenarios.ts';
+import { runJob } from './run.ts';
 
 // Before any chart exists, so every animation frame a library requests is timed.
 installFrameProbe();

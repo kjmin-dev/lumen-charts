@@ -1,6 +1,4 @@
-import type { CandleColumns, LineColumns, SeriesColumns, SeriesKind, TickColumns } from './data.ts';
-import type { PriceAxesLayout } from './jobs.ts';
-import type { BenchDrawing } from './drawings.ts';
+import type { CandleColumns, LineColumns, SeriesKind, TickColumns } from './data.ts';
 
 /** Size of the chart in CSS pixels. */
 export interface ChartSize {
@@ -27,6 +25,10 @@ export interface LogicalRange {
  *
  * Calls other than `settle` may return before the library has applied them (for example when the
  * data engine runs in a worker). `settle` is the only synchronization point.
+ *
+ * This is what every library can do. What only some can, a scenario that needs it declares as an
+ * interface of its own in its module (`scenarios/`), which the adapters of those libraries
+ * implement; the scenario asks for it with `supports`.
  */
 export interface ChartAdapter<TPrepared = unknown> {
 	/** Converts candles to the library's input format. Must not touch the chart. */
@@ -51,87 +53,23 @@ export interface ChartAdapter<TPrepared = unknown> {
 	 * tick has its time, otherwise a bar is appended. Any per-tick conversion is part of the call.
 	 */
 	applyTick(ticks: TickColumns, index: number): void;
-	/**
-	 * Like `setData`, with a datafeed the library may fetch bars from again and a memory limit in
-	 * bytes it may let bars go past. `datafeed` returns the rows with times in `[from, to]`. Only
-	 * libraries with `datafeed` set in their registry entry implement it.
-	 */
-	setDataWithDatafeed?(
-		data: TPrepared,
-		datafeed: (from: number, to: number) => SeriesColumns,
-		memoryLimit: number,
-	): void;
-	/**
-	 * Puts the first `count` indicators of the stage 3 set (`INDICATOR_SET`) on the series the next
-	 * `setData` creates, which then keeps the candles' volume; ticks and prepends update them. Called
-	 * before `setData`. Only libraries with `indicators` set in their registry entry implement it.
-	 */
-	withIndicators?(count: number): void;
-	/**
-	 * Lays out the price axes of the series and indicators the next `setData` creates, as `layout`
-	 * says (see `PriceAxesLayout`). Called before `setData`. Only libraries with `priceAxes` set in
-	 * their registry entry implement it.
-	 */
-	withPriceAxes?(layout: PriceAxesLayout): void;
-	/**
-	 * Resolves once everything submitted so far has been applied, indicator values included, without
-	 * waiting for a frame. A library that applies updates synchronously resolves at once.
-	 */
-	applied?(): Promise<void>;
-	/** Adds another line series on the same chart, with a datafeed or (null) without one. */
-	addSeriesWithDatafeed?(data: TPrepared, datafeed: ((from: number, to: number) => SeriesColumns) | null): void;
-	/** Replaces the history of the series with a datafeed, and the datafeed, as a change of resolution does. */
-	reloadWithDatafeed?(data: TPrepared, datafeed: (from: number, to: number) => SeriesColumns): void;
-	/** Sets the value of the line point at `time`, which may be any existing one. */
-	correctBar?(time: number, value: number): void;
-	/** Removes the bars with times in `[from, to]`. */
-	removeBars?(from: number, to: number): void;
-	/**
-	 * Shows times in `timeZone` (an IANA name), and with `sessions` gives the chart the extended hours
-	 * of a New York equity exchange, with breaks and shaded extended hours. Only libraries with
-	 * `timeZones` set in their registry entry implement it.
-	 */
-	setTimeZone?(timeZone: string, sessions: boolean): void;
-	/** Changes an option unrelated to time (the text color), which redraws like any change of options. */
-	repaint?(): void;
 	/** Shows the given range of bars, as a scripted pan or zoom would. */
 	setVisibleLogicalRange(range: LogicalRange): void;
-	/**
-	 * Adds drawings to the chart. Only libraries with `drawings` set in their registry entry
-	 * implement it, together with `pointerTarget` and `hitTestDrawing`.
-	 */
-	addDrawings?(drawings: readonly BenchDrawing[]): void;
-	/** The element pointer events go to, to hover and drag drawings. */
-	pointerTarget?(): HTMLElement;
-	/**
-	 * The library's public hit test of drawings at `(x, y)`, CSS pixels from the top left corner of
-	 * `pointerTarget`: whether a drawing is there.
-	 */
-	hitTestDrawing?(x: number, y: number): boolean;
-	/**
-	 * The state of the chart as the library saves it, without bars. Only libraries with `state` set in
-	 * their registry entry implement it, together with `restoreState` and `clearState`.
-	 */
-	saveState?(): unknown;
-	/** Restores a state `saveState` returned, possibly after a trip through JSON. */
-	restoreState?(state: unknown): void;
-	/** Removes the series, indicators and drawings of the chart, as restoring an empty state does. */
-	clearState?(): void;
 	/**
 	 * Resolves once everything submitted so far has been applied and the main thread has finished
 	 * rendering the frame that shows it. GPU rasterization and display are not awaited.
 	 */
 	settle(): Promise<void>;
-	/**
-	 * The library's own part of `settle`: resolves once everything submitted so far has been applied
-	 * and drawn, possibly from inside the animation frame that draws it, without waiting for that
-	 * frame's rendering. With several charts on a page the harness waits for all of them like this
-	 * and then for the rendering once, so the waiting costs the same whatever a library does per
-	 * chart. Libraries without such a signal leave it out, and the harness uses `settle`.
-	 */
-	idle?(): Promise<void>;
 	/** Removes the chart and releases its resources. */
 	destroy(): void;
+}
+
+/**
+ * Whether `value` (an adapter or a factory) has the methods of `T`, an interface a scenario declares
+ * for what only some libraries can do.
+ */
+export function supports<T extends object>(value: object, ...methods: (keyof T)[]): value is T {
+	return methods.every(method => typeof (value as Record<PropertyKey, unknown>)[method] === 'function');
 }
 
 /** A loaded library variant that creates charts. */
@@ -145,11 +83,6 @@ export interface AdapterFactory {
 	 * mode, where the chart fills the container and follows its size.
 	 */
 	create(container: HTMLElement, size: ChartSize | 'auto'): Promise<ChartAdapter>;
-	/**
-	 * Limits the workers the library shares between its charts, for charts created afterwards. Only
-	 * libraries with such a limit implement it; a version of one that has none ignores the call.
-	 */
-	setMaxWorkers?(count: number): void;
 }
 
 /** A data set an adapter is known to fail on, so the planner leaves it out instead of running it again. */
@@ -166,17 +99,11 @@ export interface AdapterEntry {
 	readonly id: string;
 	readonly description: string;
 	readonly knownFailures?: readonly KnownFailure[];
-	/** The library can fetch history again from a datafeed (`setDataWithDatafeed`), for the refetch scenario. */
-	readonly datafeed?: boolean;
-	/** The adapter can put indicators on a series (`withIndicators`, `applied`), for the stage 3 scenarios. */
-	readonly indicators?: boolean;
-	/** The adapter can lay out price axes (`withPriceAxes`), for the stage 4 price axes scenario. */
-	readonly priceAxes?: boolean;
-	/** The library has drawings (`addDrawings`, `pointerTarget`, `hitTestDrawing`), for the stage 4 scenarios. */
-	readonly drawings?: boolean;
-	/** The library saves and restores the state of a chart (`saveState`, `restoreState`, `clearState`). */
-	readonly state?: boolean;
-	/** The library shows time zones and sessions (`setTimeZone`, `repaint`), for the stage 4 scenarios. */
-	readonly timeZones?: boolean;
+	/**
+	 * What the adapter can do beyond `ChartAdapter`, by the names the scenarios that need it ask for
+	 * (`requires` of a scenario): the planner leaves the adapter out of the scenarios it cannot run.
+	 * The adapter implements the interface the scenario's module declares for it.
+	 */
+	readonly capabilities?: readonly string[];
 	load(): Promise<AdapterFactory>;
 }

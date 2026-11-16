@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { FramesRun, PlannedJob, RunOutcome } from '../src/jobs.ts';
+import type { RunOutcome } from '../src/jobs.ts';
 import { type CompletedJob, type ResultsFile, aggregate, mergeResults, numericLeaves } from '../src/results.ts';
+import type { FramesJob, FramesRun } from '../src/scenarios/frames.ts';
 import { summarize } from '../src/stats.ts';
 
-const job: PlannedJob['job'] = {
+const job: FramesJob = {
 	scenario: 'frames',
 	adapter: 'a',
 	dataset: { kind: 'candles', size: 1000 },
