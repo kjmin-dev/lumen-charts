@@ -381,9 +381,9 @@ and pane or series primitives were deferred to stage 4, which defined them toget
   numbers each), refreshed only by `update`. A hit test scans it from the top, skipping primitives
   whose bounds (grown by the tolerance) miss the point, and asks only the rest. For drawings the
   bounds are the time filter in screen space, and a drawing whose time span misses the view skips
-  its geometry altogether. Measured with 1,000 drawings, half in view: a hit test takes 2–3 µs and
-  a whole hover frame 0.29 ms at p99 (`docs/benchmarks/stage-4-drawings.md`), so no spatial index
-  was added.
+  its geometry altogether. Measured with 1,000 drawings, half in view: a hit test takes about 2 µs and
+  a whole hover frame 0.30–0.33 ms at p99 (`docs/benchmarks/stage-4-drawings.md`), so no spatial
+  index was added.
 - **State.** `toJSON()` gives `{ version: 1, id, type, points: [{ time, price }], options, zIndex,
   pane, priceScaleId }` per drawing (`DrawingState` in `packages/core/src/drawings/types.ts`);
   `drawings.add` takes it back and refuses other versions.
@@ -521,7 +521,8 @@ Conditions: two reference devices (one desktop, one mid-range Android) with a fi
 
 Stage 4, drawings (measured, [stage 4 drawings](benchmarks/stage-4-drawings.md)): with 1,000
 drawings, half in view, the JavaScript of a hover frame (pointer event, hit test, overlay) has a
-p99 of 0.29 ms with the engine in a worker and on the main thread.
+p99 of 0.30 ms with the engine in a worker and 0.33 ms on the main thread, of which the hit test is
+about 2 µs.
 
 ## 10. Open questions
 

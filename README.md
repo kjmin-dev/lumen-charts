@@ -444,7 +444,9 @@ the cost of a round of ticks; its results are in
 in [docs/benchmarks/stage-3.md](docs/benchmarks/stage-3.md). The `axes-frames` scenario pans and
 zooms candles with three moving averages on one axis, on a logarithmic or a percentage scale, and on
 four axes; it and the frame cases of earlier stages against `main` are in
-[docs/benchmarks/stage-4-price-axes.md](docs/benchmarks/stage-4-price-axes.md).
+[docs/benchmarks/stage-4-price-axes.md](docs/benchmarks/stage-4-price-axes.md). The `drawings`
+scenario hovers, drags and pans over 1,000 drawings on 1M candles (the stage 4 hover gate); results
+are in [docs/benchmarks/stage-4-drawings.md](docs/benchmarks/stage-4-drawings.md).
 
 Runs are headless by default (Chromium's new headless mode, rasterizing on the GPU), so no window
 takes the focus; `--headed` opens a window. Stage 0 and stage 1 were measured headed. Frame
