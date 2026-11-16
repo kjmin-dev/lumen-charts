@@ -371,6 +371,28 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _timeAxisDrawn = -1;
 	private _timeAxisOrigin = 0;
 	private readonly _axisStyle: AxisStyle = { background: '', textColor: '', font: '', pixelRatio: 1 };
+
+	/**
+	 * The series layer cannot be brought up to date by redrawing the columns of changed items: set
+	 * by every change other than data changed in place, and until the layer is drawn in full.
+	 */
+	private _paneStale = true;
+	/** What the series layer was last drawn with, besides the series (see `Series.isDrawn`). */
+	private readonly _paneGeometry: Geometry = { origin: NaN, spacing: NaN, from: 0, to: 0, shift: 0, firstRow: 0 };
+	private _paneSource = -1;
+	/**
+	 * Where the layer has its vertical grid lines, session breaks and session shading. A new bar
+	 * computes the time ticks again, mostly to the same positions: the positions decide.
+	 */
+	private readonly _paneTickXs = new DrawnPositions();
+	private readonly _paneBreaks = new DrawnPositions();
+	private readonly _paneShadeLeft = new DrawnPositions();
+	private readonly _paneShadeRight = new DrawnPositions();
+	private _paneGrid: PriceAxis | null = null;
+	private _paneGridTicks = -1;
+	/** Device columns `[_clipLeft, _clipRight)` the frame redraws, set by `_dirtyColumns`. */
+	private _clipLeft = 0;
+	private _clipRight = 0;
 	private _unwatchPixelRatio: (() => void) | null = null;
 
 	public constructor(container: HTMLElement, options: DeepPartial<ChartOptions>) {
@@ -398,6 +420,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._root.append(this._pane.canvas, main.layer.canvas, this._timeAxis.canvas, this._overlay.canvas);
 		container.appendChild(this._root);
 		this._interaction = new Interaction(this._root, this);
+		// The event does not bubble; capturing on the root hears it for every canvas, also later ones.
+		this._root.addEventListener('contextrestored', this._onContextRestored, true);
 
 		this._unwatchPixelRatio = watchPixelRatio(doc.defaultView, this._onPixelRatio);
 		observeVisibility(this._root, this._onVisibility);
@@ -847,6 +871,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._layers.detachAll();
 		this._drawings?.destroy();
 		this._root.removeEventListener('keydown', this._onKey);
+		this._root.removeEventListener('contextrestored', this._onContextRestored, true);
 		this._pane.release();
 		for (const axis of this._axes) {
 			axis.layer?.release();
@@ -971,6 +996,19 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	/** Coalesces any number of changes into one draw per animation frame. */
 	public invalidate(level: Invalidation): void {
+		if (level >= INVALIDATE_LIGHT) {
+			// Options, the view, the set of series, a primitive: anything on the series layer may differ.
+			this._paneStale = true;
+		}
+		this._schedule(level);
+	}
+
+	/**
+	 * Asks for a frame at `level`. Called directly, a Light frame may keep the series layer and redraw
+	 * the columns of changed items only: for data that changed, which the frame checks against what
+	 * the layer shows (see `_dirtyColumns`).
+	 */
+	private _schedule(level: Invalidation): void {
 		if (this._destroyed) {
 			return;
 		}
@@ -1148,10 +1186,14 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			if (merged !== this._drawingsMerged) {
 				this._drawingsMerged = merged;
 				this._layers.normal.changed = true;
+				this._paneStale = true;
 			}
 			return;
 		}
-		this._drawingsMerged = false;
+		if (this._drawingsMerged) {
+			this._drawingsMerged = false;
+			this._paneStale = true;
+		}
 		if (layer === null) {
 			const created = new Layer(this._root.ownerDocument, false);
 			created.canvas.style.pointerEvents = 'none';
@@ -1334,6 +1376,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._interaction.resolve();
 			deferred.shift()!.action();
 			changed = true;
+			// A call that waited for the data can change anything.
+			this._paneStale = true;
 		}
 		if (this._pendingView !== null) {
 			this._resolveView();
@@ -1342,7 +1386,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			// Requested now rather than in the next draw, the rows usually arrive before that frame,
 			// so new data is drawn in one frame instead of an empty frame followed by the data.
 			this._requestWindow(this._container.ownerDocument.defaultView?.devicePixelRatio ?? 1);
-			this.invalidate(INVALIDATE_LIGHT);
+			// Data alone: the frame redraws the columns that changed if everything else is as drawn.
+			this._schedule(INVALIDATE_LIGHT);
 		}
 		// Nothing to draw, or a chart outside the viewport, which draws when it comes back.
 		this._settle();
@@ -1813,6 +1858,17 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this.invalidate(INVALIDATE_FULL);
 	};
 
+	/**
+	 * The browser lost a canvas (the GPU process restarted, say) and hands it back empty. Layers keep
+	 * what they drew between frames: axes while their ticks stay, drawings while nothing moves, the
+	 * series layer outside the columns a tick changed. So everything is drawn again.
+	 */
+	private readonly _onContextRestored = (): void => {
+		this._layersDirty = true;
+		this._layers.normal.changed = true;
+		this.invalidate(INVALIDATE_FULL);
+	};
+
 	private readonly _onVisibility = (visible: boolean): void => {
 		if (this._destroyed || visible === this._visible) {
 			return;
@@ -1829,6 +1885,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	private _placeLayers(): void {
 		this._layersDirty = false;
+		// A canvas that changes size is cleared, and the pixel ratio and fonts may differ.
+		this._paneStale = true;
 		const ratio = this._container.ownerDocument.defaultView?.devicePixelRatio ?? 1;
 		this._pixelRatio = ratio;
 		const { _paneLeft: paneLeft, _paneWidth: paneWidth, _paneHeight: paneHeight } = this;
@@ -1875,6 +1933,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			// Merged into the series layer, drawings are drawn with the series.
 			level = INVALIDATE_LIGHT;
 		}
+		if (this._drawingsMerged && this._layers.normal.changed) {
+			// Also when the last merged drawing went away.
+			this._paneStale = true;
+		}
 		const animating = this._interaction.step(now);
 		if (level === INVALIDATE_FULL || this._font === '') {
 			this._placeLayers();
@@ -1896,6 +1958,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			if (this._paneWidth > 0 && this._paneHeight > 0) {
 				this._renderPane();
 				this._renderAxes();
+			} else {
+				// The changed items of this frame are not drawn, and the next frame will not know them.
+				this._paneStale = true;
 			}
 		}
 		if (this._paneWidth > 0 && this._paneHeight > 0) {
@@ -2246,6 +2311,94 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		return changed;
 	}
 
+	/**
+	 * Finds the device columns a frame has to redraw when only data changed, into `_clipLeft` and
+	 * `_clipRight`. Returns `PANE_FULL` when the series layer has to be drawn as a whole, `PANE_KEPT`
+	 * when it shows everything already, `PANE_PARTIAL` otherwise.
+	 *
+	 * The layer can be patched when it was drawn with this geometry, window, grid and price mappings,
+	 * and everything on it is drawn by the chart itself: then it differs from a full redraw only where
+	 * the items the views rebuilt are drawn. A changed item moves the line from its neighbor on either
+	 * side, so the columns reach from the item before the first one to the item after the last, plus
+	 * what the stroke or the bar covers around them. A new price range, a scrolled view, a replaced
+	 * window, a custom renderer or a primitive below the series fail the test.
+	 */
+	private _dirtyColumns(width: number): number {
+		const geometry = this._geometry;
+		const drawn = this._paneGeometry;
+		const grid = this._gridAxis;
+		const layers = this._layers;
+		const marks = this._time.marks;
+		if (
+			this._paneStale ||
+			geometry.origin !== drawn.origin ||
+			geometry.spacing !== drawn.spacing ||
+			geometry.from !== drawn.from ||
+			geometry.to !== drawn.to ||
+			geometry.shift !== drawn.shift ||
+			geometry.firstRow !== drawn.firstRow ||
+			(this._drawn === null ? -1 : this._drawn.version) !== this._paneSource ||
+			!this._paneTickXs.match(this._tickXs, this._timeTicks.count) ||
+			!this._paneBreaks.match(marks.breakX, marks.breakCount) ||
+			!this._paneShadeLeft.match(marks.shadeLeft, marks.shadeCount) ||
+			!this._paneShadeRight.match(marks.shadeRight, marks.shadeCount) ||
+			grid !== this._paneGrid ||
+			grid.scale.ticksGeneration !== this._paneGridTicks ||
+			layers.bottom.entries.length > 0 ||
+			(this._drawingsMerged && layers.normal.entries.length > 0)
+		) {
+			return PANE_FULL;
+		}
+		const ratio = this._pixelRatio;
+		const body = this._widths.body;
+		let left = Infinity;
+		let right = -Infinity;
+		for (const series of this._series) {
+			if (!series.isDrawn()) {
+				return PANE_FULL;
+			}
+			const view = series.view;
+			const count = view.count;
+			if (count === 0) {
+				continue;
+			}
+			if (series.renderer !== null) {
+				return PANE_FULL;
+			}
+			if (view.dirtyTo <= view.dirtyFrom) {
+				continue;
+			}
+			const reach = seriesReach(series, ratio, body);
+			const from = view.x[Math.max(0, view.dirtyFrom - 1)]! - reach;
+			// Dashes are counted along the path, so a change moves every dash after it.
+			const to = isDashed(series) ? width : view.x[Math.min(count - 1, view.dirtyTo)]! + reach;
+			if (from < left) {
+				left = from;
+			}
+			if (to > right) {
+				right = to;
+			}
+		}
+		left = Math.max(0, Math.floor(left));
+		right = Math.min(width, Math.ceil(right));
+		if (!(right > left)) {
+			return PANE_KEPT;
+		}
+		if (left === 0 && right === width) {
+			return PANE_FULL;
+		}
+		this._clipLeft = left;
+		this._clipRight = right;
+		return PANE_PARTIAL;
+	}
+
+	/**
+	 * Draws the series layer: all of it, or only the columns in which a tick changed something
+	 * (`_dirtyColumns`). Those are cleared and drawn through a clip with the same calls in the same
+	 * order as the whole layer, so the result is the full redraw's, pixel for pixel: each series is
+	 * drawn from the last item whose stroke or bar ends left of the columns to the first one that
+	 * starts right of them, which leaves every pixel inside with the same shapes over it.
+	 */
 	private _renderPane(): void {
 		const layer = this._pane;
 		const ctx = layer.ctx;
@@ -2254,6 +2407,20 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 		const options = this._options;
 		const ratio = this._pixelRatio;
+		const widths = this._widths;
+		// A bucket drawn as one candle (a coarse level shown wider than a pixel) is as wide as its bars.
+		candleWidths(this._geometry.spacing * 2 ** this._geometry.shift, ratio, widths);
+		const mode = this._dirtyColumns(layer.width);
+		const partial = mode === PANE_PARTIAL;
+		if (mode === PANE_KEPT) {
+			return;
+		}
+		if (partial) {
+			ctx.save();
+			ctx.beginPath();
+			ctx.rect(this._clipLeft, 0, this._clipRight - this._clipLeft, layer.height);
+			ctx.clip();
+		}
 		ctx.fillStyle = options.layout.background;
 		ctx.fillRect(0, 0, layer.width, layer.height);
 		const grid = this._gridAxis;
@@ -2305,12 +2472,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 				layers.bottom.draw(this._targetOf(ctx));
 			}
 		}
-		const widths = this._widths;
-		// A bucket drawn as one candle (a coarse level shown wider than a pixel) is as wide as its bars.
-		candleWidths(this._geometry.spacing * 2 ** this._geometry.shift, ratio, widths);
 		const border = Math.max(1, Math.floor(ratio));
 		for (const series of this._series) {
 			const view = series.view;
+			series.markDrawn();
 			if (view.count === 0 || !series.seriesOptions.visible) {
 				continue;
 			}
@@ -2320,9 +2485,30 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 				series.renderer.draw(this._targetOf(ctx), view, axis === null ? this._view : this._viewFor(axis.id));
 				continue;
 			}
+			let from = 0;
+			let to = view.count;
+			if (partial) {
+				const reach = seriesReach(series, ratio, widths.body);
+				// One item more on either side: where a line starts or ends it has a cap, not a join.
+				from = isDashed(series) ? 0 : Math.max(0, view.firstAfter(this._clipLeft - reach) - 1);
+				to = Math.min(to, view.firstAfter(this._clipRight + reach) + 1);
+				if (to <= from) {
+					continue;
+				}
+			}
 			const inverted = series.deviceScale < 0;
 			if (series.kind === 'ohlcv') {
-				drawCandles(ctx, view, widths.body, widths.wick, border, series.seriesOptions as CandlestickOptions, inverted);
+				drawCandles(
+					ctx,
+					view,
+					widths.body,
+					widths.wick,
+					border,
+					series.seriesOptions as CandlestickOptions,
+					inverted,
+					from,
+					to,
+				);
 			} else if (series.type === 'histogram') {
 				const histogram = series.seriesOptions as HistogramOptions;
 				let base = Math.round(series.deviceY(histogram.base));
@@ -2338,11 +2524,13 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 					histogram.color,
 					histogram.negativeColor || histogram.color,
 					inverted,
+					from,
+					to,
 				);
 			} else {
 				const line = series.seriesOptions as LineOptions;
 				const width = Math.max(1, line.lineWidth * ratio);
-				drawLine(ctx, view, line.color, width, dashPattern(line.lineStyle, width), line.lineType === 'step');
+				drawLine(ctx, view, line.color, width, dashPattern(line.lineStyle, width), line.lineType === 'step', from, to);
 			}
 		}
 		if (primitives && this._drawingsMerged) {
@@ -2351,6 +2539,26 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			}
 			layers.normal.draw(this._targetOf(ctx));
 		}
+		if (partial) {
+			ctx.restore();
+			return;
+		}
+		const geometry = this._geometry;
+		const drawn = this._paneGeometry;
+		drawn.origin = geometry.origin;
+		drawn.spacing = geometry.spacing;
+		drawn.from = geometry.from;
+		drawn.to = geometry.to;
+		drawn.shift = geometry.shift;
+		drawn.firstRow = geometry.firstRow;
+		this._paneSource = this._drawn === null ? -1 : this._drawn.version;
+		this._paneTickXs.take(this._tickXs, this._timeTicks.count);
+		this._paneBreaks.take(marks.breakX, marks.breakCount);
+		this._paneShadeLeft.take(marks.shadeLeft, marks.shadeCount);
+		this._paneShadeRight.take(marks.shadeRight, marks.shadeCount);
+		this._paneGrid = grid;
+		this._paneGridTicks = grid.scale.ticksGeneration;
+		this._paneStale = false;
 	}
 
 	private _renderWatermark(ctx: CanvasRenderingContext2D, width: number, height: number): void {
@@ -2651,6 +2859,56 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 }
 
 /** Device-pixel thickness of a line `width` CSS pixels wide. */
+/** Device positions the series layer was drawn with, to tell whether they are still the same. */
+class DrawnPositions {
+	private _values = new Float32Array(16);
+	private _count = -1;
+
+	public match(values: Float32Array, count: number): boolean {
+		if (count !== this._count) {
+			return false;
+		}
+		const own = this._values;
+		for (let i = 0; i < count; i++) {
+			if (values[i] !== own[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	public take(values: Float32Array, count: number): void {
+		if (this._values.length < count) {
+			this._values = new Float32Array(count * 2);
+		}
+		this._values.set(values.subarray(0, count));
+		this._count = count;
+	}
+}
+
+/** What a frame does with the series layer (see `Chart._dirtyColumns`). */
+const PANE_FULL = 0;
+const PANE_PARTIAL = 1;
+const PANE_KEPT = 2;
+
+/** A line series drawn with dashes or dots. */
+function isDashed(series: Series): boolean {
+	return series.type === 'line' && (series.seriesOptions as LineOptions).lineStyle !== 'solid';
+}
+
+/**
+ * How far from the x of an item, in device pixels, anything drawn for that item alone can color a
+ * pixel: a bar is narrower than `body` on either side; a line's stroke, joins and caps stay within
+ * half its width of the path, which runs up to half a pixel beside the item, and antialiasing
+ * spreads an edge by less than a pixel.
+ */
+function seriesReach(series: Series, pixelRatio: number, body: number): number {
+	if (series.type !== 'line') {
+		return body + 1;
+	}
+	return Math.max(1, (series.seriesOptions as LineOptions).lineWidth * pixelRatio) / 2 + 2;
+}
+
 function thickness(width: number, pixelRatio: number): number {
 	return Math.max(1, Math.floor(width * pixelRatio));
 }

@@ -239,6 +239,11 @@ export class Series implements SeriesApi {
 	public deviceOffset = 0;
 	public deviceScale = 0;
 	public deviceLog = false;
+	/** What the series layer last drew this series with: the view's generation and the mapping above. */
+	public drawnGeneration = -1;
+	public drawnOffset = 0;
+	public drawnScale = 0;
+	public drawnLog = false;
 
 	private readonly _host: SeriesHost;
 	/** What the last value label was made from, and the label. */
@@ -368,6 +373,25 @@ export class Series implements SeriesApi {
 		this.deviceOffset = offset;
 		this.deviceScale = factor;
 		this.deviceLog = mode === 'logarithmic';
+	}
+
+	/** Whether the series layer shows the series as its items and its mapping are now, dirty items aside. */
+	public isDrawn(): boolean {
+		return (
+			this.view.generation === this.drawnGeneration &&
+			sameNumber(this.deviceOffset, this.drawnOffset) &&
+			sameNumber(this.deviceScale, this.drawnScale) &&
+			this.deviceLog === this.drawnLog
+		);
+	}
+
+	/** Notes that the series layer has drawn the series as it is. */
+	public markDrawn(): void {
+		this.drawnGeneration = this.view.generation;
+		this.drawnOffset = this.deviceOffset;
+		this.drawnScale = this.deviceScale;
+		this.drawnLog = this.deviceLog;
+		this.view.drawn();
 	}
 
 	/** Device-pixel row of a price, as last drawn; NaN for a price the scale cannot show. */

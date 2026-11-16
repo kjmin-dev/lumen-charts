@@ -19,8 +19,10 @@ export const isolationHeaders = {
 const packages = process.env['LUMEN_BENCH_PACKAGES'] ?? fileURLToPath(new URL('../packages', import.meta.url));
 const source = (name: string): string => resolve(packages, name, 'src/index.ts');
 
+const root = fileURLToPath(new URL('.', import.meta.url));
+
 export default defineConfig({
-	root: fileURLToPath(new URL('.', import.meta.url)),
+	root,
 	resolve: {
 		// Measure the workspace sources as they are, without building the packages first.
 		alias: {
@@ -37,6 +39,8 @@ export default defineConfig({
 	build: {
 		target: 'es2022',
 		sourcemap: true,
+		// The harness page, and the page of the pixel check (`pnpm bench:pixels`).
+		rollupOptions: { input: [resolve(root, 'index.html'), resolve(root, 'pixels.html')] },
 		// A profiled run (`pnpm bench --profile`) keeps function names, so CPU samples can be read.
 		...(process.env['LUMEN_BENCH_PROFILE'] === undefined ? {} : { minify: false }),
 	},

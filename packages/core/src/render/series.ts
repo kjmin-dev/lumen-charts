@@ -2,6 +2,12 @@ import type { SeriesView } from '../views/series-view';
 import { NO_DASH } from './chrome';
 
 /**
+ * Every function here draws items `[from, to)` of a view, all of them by default. A frame that
+ * redraws a range of columns passes the items that can reach into it (see `Chart._renderPane`):
+ * rectangles are drawn per item, and a line drawn from a later item on is the same path from there.
+ */
+
+/**
  * Fills one rectangle per item of the given direction from `top` to `bottom` (inclusive), `width`
  * wide and starting `half` left of the item. `inset` shrinks every side; items too short to keep a
  * pixel after that are skipped.
@@ -15,11 +21,13 @@ function rects(
 	half: number,
 	width: number,
 	inset: number,
+	from: number,
+	to: number,
 ): void {
-	const { x, up, count } = view;
+	const { x, up } = view;
 	const left = inset - half;
 	const shrink = 2 * inset;
-	for (let k = 0; k < count; k++) {
+	for (let k = from; k < to; k++) {
 		if (up[k] !== direction) {
 			continue;
 		}
@@ -58,9 +66,11 @@ function outerWicks(
 	bottom: Float32Array,
 	half: number,
 	width: number,
+	from: number,
+	to: number,
 ): void {
-	const { x, up, yHigh, yLow, count } = view;
-	for (let k = 0; k < count; k++) {
+	const { x, up, yHigh, yLow } = view;
+	for (let k = from; k < to; k++) {
 		if (up[k] !== direction) {
 			continue;
 		}
@@ -94,11 +104,13 @@ function outlines(
 	half: number,
 	width: number,
 	border: number,
+	from: number,
+	to: number,
 ): void {
-	const { x, up, count } = view;
+	const { x, up } = view;
 	const offset = border / 2;
 	ctx.beginPath();
-	for (let k = 0; k < count; k++) {
+	for (let k = from; k < to; k++) {
 		if (up[k] !== direction) {
 			continue;
 		}
@@ -127,6 +139,8 @@ export function drawCandles(
 	border: number,
 	style: CandleStyle,
 	inverted = false,
+	from = 0,
+	to = view.count,
 ): void {
 	const wickHalf = wick >> 1;
 	const bodyHalf = body >> 1;
@@ -140,22 +154,22 @@ export function drawCandles(
 		if (outlined) {
 			if (style.wickVisible) {
 				ctx.fillStyle = wickColor;
-				outerWicks(ctx, view, direction, top, bottom, wickHalf, wick);
+				outerWicks(ctx, view, direction, top, bottom, wickHalf, wick, from, to);
 			}
 			ctx.fillStyle = bodyColor;
-			rects(ctx, view, direction, top, bottom, bodyHalf, body, border);
+			rects(ctx, view, direction, top, bottom, bodyHalf, body, border, from, to);
 			ctx.strokeStyle = up ? style.borderUpColor : style.borderDownColor;
-			outlines(ctx, view, direction, top, bottom, bodyHalf, body, border);
+			outlines(ctx, view, direction, top, bottom, bodyHalf, body, border, from, to);
 			continue;
 		}
 		if (style.wickVisible) {
 			ctx.fillStyle = wickColor;
-			rects(ctx, view, direction, view.yHigh, view.yLow, wickHalf, wick, 0);
+			rects(ctx, view, direction, view.yHigh, view.yLow, wickHalf, wick, 0, from, to);
 		}
 		if (!style.wickVisible || body > wick || bodyColor !== wickColor) {
 			// When the body is no wider than the wick and has its color, the wick already covers it.
 			ctx.fillStyle = bodyColor;
-			rects(ctx, view, direction, top, bottom, bodyHalf, body, 0);
+			rects(ctx, view, direction, top, bottom, bodyHalf, body, 0, from, to);
 		}
 	}
 }
@@ -175,11 +189,13 @@ export function drawHistogram(
 	color: string,
 	negativeColor: string,
 	inverted = false,
+	from = 0,
+	to = view.count,
 ): void {
-	const { x, yHigh, yLow, count } = view;
+	const { x, yHigh, yLow } = view;
 	const half = width >> 1;
 	ctx.fillStyle = inverted ? negativeColor : color;
-	for (let k = 0; k < count; k++) {
+	for (let k = from; k < to; k++) {
 		const top = yHigh[k]!;
 		// Rows grow downward: values above the base are above its row. NaN fails the test.
 		if (top < base) {
@@ -187,7 +203,7 @@ export function drawHistogram(
 		}
 	}
 	ctx.fillStyle = inverted ? color : negativeColor;
-	for (let k = 0; k < count; k++) {
+	for (let k = from; k < to; k++) {
 		const bottom = yLow[k]!;
 		if (bottom > base) {
 			ctx.fillRect(x[k]! - half, base, width, bottom - base);
@@ -196,27 +212,16 @@ export function drawHistogram(
 }
 
 /**
- * Draws a line from projected items as one path. For merged pixel columns the path covers the
- * first value, both extremes and the last value of each column, so spikes survive zooming out: it
- * enters at the first value, sweeps to the extreme nearer to it and then to the other one, and ends
- * at the last value, leaving out every point within half a pixel of where the pen already is. The
- * column covers the same pixels with two calls instead of four in the common case of a smooth line.
- * A step line runs level to the next item and then jumps. `dash` is empty for a solid line.
+ * Adds the path of a line over items `[from, to)` to the current path of `ctx` (see `drawLine`).
+ * Returns the number of segments added.
  */
-export function drawLine(
-	ctx: CanvasRenderingContext2D,
-	view: SeriesView,
-	color: string,
-	width: number,
-	dash: readonly number[],
-	step: boolean,
-): void {
-	const { x, yOpen, yHigh, yLow, yClose, count, merged } = view;
-	ctx.beginPath();
+function traceLine(ctx: CanvasRenderingContext2D, view: SeriesView, step: boolean, from: number, to: number): number {
+	const { x, yOpen, yHigh, yLow, yClose, merged } = view;
+	let segments = 0;
 	let drawing = false;
 	let previous = 0;
 	if (merged) {
-		for (let k = 0; k < count; k++) {
+		for (let k = from; k < to; k++) {
 			const first = yOpen[k]!;
 			if (first !== first) {
 				drawing = false;
@@ -226,8 +231,10 @@ export function drawLine(
 			if (drawing) {
 				if (step) {
 					ctx.lineTo(px, previous);
+					segments++;
 				}
 				ctx.lineTo(px, first);
+				segments++;
 			} else {
 				ctx.moveTo(px, first);
 				drawing = true;
@@ -241,17 +248,20 @@ export function drawLine(
 				const far = near === top ? bottom : top;
 				if (Math.abs(near - pen) >= 0.5) {
 					ctx.lineTo(px, near);
+					segments++;
 				}
 				ctx.lineTo(px, far);
+				segments++;
 				pen = far;
 			}
 			previous = yClose[k]!;
 			if (Math.abs(previous - pen) >= 0.5) {
 				ctx.lineTo(px, previous);
+				segments++;
 			}
 		}
 	} else {
-		for (let k = 0; k < count; k++) {
+		for (let k = from; k < to; k++) {
 			const y = yClose[k]!;
 			if (y !== y) {
 				drawing = false;
@@ -260,14 +270,55 @@ export function drawLine(
 			if (drawing) {
 				if (step) {
 					ctx.lineTo(x[k]!, previous);
+					segments++;
 				}
 				ctx.lineTo(x[k]!, y);
+				segments++;
 			} else {
 				ctx.moveTo(x[k]!, y);
 				drawing = true;
 			}
 			previous = y;
 		}
+	}
+	return segments;
+}
+
+/**
+ * Draws a line from projected items as one path. For merged pixel columns the path covers the
+ * first value, both extremes and the last value of each column, so spikes survive zooming out: it
+ * enters at the first value, sweeps to the extreme nearer to it and then to the other one, and ends
+ * at the last value, leaving out every point within half a pixel of where the pen already is. The
+ * column covers the same pixels with two calls instead of four in the common case of a smooth line.
+ * A step line runs level to the next item and then jumps. `dash` is empty for a solid line.
+ *
+ * From a later item on, the path starts where the whole path arrives at that item, so it covers the
+ * same pixels wherever the stroke around its first and last item does not reach. Dashes are counted
+ * from the start of a path: a dashed line keeps its pattern only when drawn from its first item.
+ *
+ * A range that holds a single segment is widened until it holds two, or is the whole line. Browsers
+ * stroke a path of one segment as another shape than a longer path (Chromium antialiases the ends
+ * of the one beyond the cap, and not those of the other), so part of a line must never be one
+ * segment unless the whole line is.
+ */
+export function drawLine(
+	ctx: CanvasRenderingContext2D,
+	view: SeriesView,
+	color: string,
+	width: number,
+	dash: readonly number[],
+	step: boolean,
+	from = 0,
+	to = view.count,
+): void {
+	const count = view.count;
+	ctx.beginPath();
+	let segments = traceLine(ctx, view, step, from, to);
+	for (let grow = 4; segments === 1 && (from > 0 || to < count); grow *= 4) {
+		from = Math.max(0, from - grow);
+		to = Math.min(count, to + grow);
+		ctx.beginPath();
+		segments = traceLine(ctx, view, step, from, to);
 	}
 	ctx.lineWidth = width;
 	ctx.lineJoin = step ? 'miter' : 'round';
