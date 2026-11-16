@@ -302,8 +302,7 @@ export class PriceAxes {
 	 */
 	public updateTicks(tickSpacing: number, ratio: number): void {
 		const axes = this.list;
-		// Ticks of the visible axes, and of the scale the grid follows: the default one, unless it has
-		// no series and a visible axis has.
+		// The grid follows the default scale, unless it has no series and a visible axis has.
 		let grid = axes[0]!;
 		if (grid.count === 0) {
 			for (const axis of axes) {
@@ -357,6 +356,13 @@ export class PriceAxes {
 			axis.layer = this._layout.addAxisLayer();
 		}
 		axis.layer?.setVisible(axis.settings.visible);
+	}
+
+	/** Has the widths of the axes fitted again by the next frame: fonts or formats may differ. */
+	public resetFit(): void {
+		for (const axis of this.list) {
+			axis.fitTicks = -1;
+		}
 	}
 
 	/**

@@ -39,30 +39,70 @@ import { type FrameClient, cancelFrame, requestFrame } from './shared/frame';
 import { watchPixelRatio } from './shared/media';
 import { observeVisibility, unobserveVisibility } from './shared/observers';
 
+/**
+ * The chart behind `ChartApi`: it owns the parts, wires them to each other, and runs the frame.
+ *
+ * What stays here is what crosses the parts: the public methods, which mostly hand over to one
+ * part; invalidation and scheduling (`invalidate`, `_schedule`); the two phases of a frame
+ * (`frameRead`, `frameWrite`); applying options to every part; and who waits for the chart to be
+ * idle. A feature lives in its part:
+ *
+ * - `ChartSettings` (settings.ts): the options applied and what they resolve to.
+ * - `ChartLayout` (render/layout.ts): the root element, the canvases, sizing and layout.
+ * - `PriceAxes` (price-axes.ts): the price scales and their axes.
+ * - `DataFlow` (data/data-flow.ts): the data engine, its events, window requests, deferred calls.
+ * - `DatafeedFetches` (data/datafeed.ts): rows fetched again from the datafeeds of series.
+ * - `ChartIndicators` (indicators.ts): indicators and their output series.
+ * - `FrameModel` (model/frame-model.ts): what a frame draws, from the view and the window cache.
+ * - `PanePrimitives` (drawings/pane-primitives.ts): primitives, drawings and their layer.
+ * - `PaneRenderer`, `AxisRenderer`, `OverlayRenderer` (render/): the series layer, axes, overlay.
+ * - `StateIo` (state-io.ts): save and restore, and the view of a restored state.
+ *
+ * Parts get the parts and callbacks they need rather than the chart, and nothing here runs per
+ * item: a frame makes a handful of calls into them.
+ */
 class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, PriceAxisHost {
 	public readonly scale: TimeScale;
 	/** Whether the chart waits for the shared animation frame (see `FrameClient`). */
 	public frameQueued = false;
-	/** The root element, its canvases, and the sizes of the chart, the pane and the axes. */
-	private readonly _layout: ChartLayout;
-	private readonly _interaction: Interaction;
-	/** The price scales with their axes. */
-	private readonly _axes: PriceAxes;
-	/** What the frame draws: the rows in view, their place, and the ticks. */
-	private readonly _model: FrameModel;
+
+	// What the parts share.
+	private readonly _series: Series[] = [];
+	private readonly _cache = new WindowCache();
 	/** Time zone, sessions and label formats. */
 	private readonly _time = new TimeDisplay();
-	private readonly _cache = new WindowCache();
-	private readonly _series: Series[] = [];
+	/** Logical positions of times, for anchors stored as times. */
+	private readonly _times = new TimeIndex();
+	private readonly _crosshair = new Crosshair();
 
+	// The parts.
 	private readonly _settings: ChartSettings;
+	/** The root element, its canvases, and the sizes of the chart, the pane and the axes. */
+	private readonly _layout: ChartLayout;
+	/** The price scales with their axes. */
+	private readonly _axes: PriceAxes;
+	/** Indicators, their definitions and the modules being loaded. */
+	private readonly _indicators: ChartIndicators;
+	/** Requests to the datafeeds of series for rows the engine needs again. */
+	private readonly _fetches: DatafeedFetches;
+	/** The data engine and what its events change. */
+	private readonly _data: DataFlow;
+	/** What the frame draws: the rows in view, their place, and the ticks. */
+	private readonly _model: FrameModel;
+	private readonly _interaction: Interaction;
+	/** The primitives and drawings of the pane, and their layer. */
+	private readonly _primitives: PanePrimitives;
+	/** Saves and restores the state of the chart, and holds a restored view until it can be shown. */
+	private readonly _stateIo: StateIo;
+	/** What draws the series layer, the axes and the overlay. */
+	private readonly _paneRenderer: PaneRenderer;
+	private readonly _axisRenderer: AxisRenderer;
+	private readonly _overlayRenderer: OverlayRenderer;
 
 	private _level: Invalidation = INVALIDATE_NONE;
 	/** While a state is restored, changes only note the level they need: one invalidation at the end. */
 	private _batching = false;
 	private _batchLevel: Invalidation = INVALIDATE_NONE;
-	/** Saves and restores the state of the chart, and holds a restored view until it can be shown. */
-	private readonly _stateIo: StateIo;
 	/** Series named by the chart so far (see `SeriesCreateOptions.id`). */
 	private _named = 0;
 	/**
@@ -71,25 +111,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	 */
 	private _visible = true;
 	private _destroyed = false;
+	/** Who waits for the chart to be idle (`whenIdle`), and for its data to be applied (`whenApplied`). */
 	private _idle: (() => void)[] = [];
-	/** The data engine and what its events change. */
-	private readonly _data: DataFlow;
-	/** Requests to the datafeeds of series for rows the engine needs again. */
-	private readonly _fetches: DatafeedFetches;
-	/** Indicators, their definitions and the modules being loaded. */
-	private readonly _indicators: ChartIndicators;
 	private _applied: (() => void)[] = [];
-
-	private readonly _crosshair = new Crosshair();
-	/** The primitives and drawings of the pane, and their layer. */
-	private readonly _primitives: PanePrimitives;
-	/** What draws the series layer, the axes and the overlay. */
-	private readonly _paneRenderer: PaneRenderer;
-	private readonly _axisRenderer: AxisRenderer;
-	private readonly _overlayRenderer: OverlayRenderer;
-	/** Logical positions of times, for anchors stored as times. */
-	private readonly _times = new TimeIndex();
-
 	private _unwatchPixelRatio: (() => void) | null = null;
 
 	public constructor(container: HTMLElement, options: DeepPartial<ChartOptions>) {
@@ -341,15 +365,6 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		return this;
 	}
 
-	private _seriesNamed(id: string): Series | undefined {
-		for (const series of this._series) {
-			if (!series.derived && series.id === id) {
-				return series;
-			}
-		}
-		return undefined;
-	}
-
 	public saveState(selection: ChartStateSelection = {}): ChartState {
 		return this._stateIo.save(selection);
 	}
@@ -499,10 +514,11 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	}
 
 	public setCrosshair(x: number, y: number, visible: boolean): void {
-		this._crosshair.x = x;
-		this._crosshair.y = y;
-		this._crosshair.visible = visible;
-		this._crosshair.hoverDirty = true;
+		const crosshair = this._crosshair;
+		crosshair.x = x;
+		crosshair.y = y;
+		crosshair.visible = visible;
+		crosshair.hoverDirty = true;
 	}
 
 	public pointerDelegate(): PointerDelegate | null {
@@ -555,7 +571,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	/**
 	 * Asks for a frame at `level`. Called directly, a Light frame may keep the series layer and redraw
 	 * the columns of changed items only: for data that changed, which the frame checks against what
-	 * the layer shows (see `_dirtyColumns`).
+	 * the layer shows (see `PaneRenderer._dirtyColumns`).
 	 */
 	private _schedule(level: Invalidation): void {
 		if (this._destroyed) {
@@ -595,7 +611,16 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._interaction.resolve();
 	}
 
-	// Data flow
+	private _seriesNamed(id: string): Series | undefined {
+		for (const series of this._series) {
+			if (!series.derived && series.id === id) {
+				return series;
+			}
+		}
+		return undefined;
+	}
+
+	// Waiting for the chart
 
 	private _isApplied(): boolean {
 		const engine = this._data.engine;
@@ -660,9 +685,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._primitives.applyOptions(options);
 		this._layout.font = '';
 		this._model.resetTicks();
-		for (const axis of this._axes.list) {
-			axis.fitTicks = -1;
-		}
+		this._axes.resetFit();
 		this._applyTime(options);
 		this._layout.syncSizing();
 		this._layout.compute();
@@ -686,7 +709,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 	};
 
-	// Sizing and layout
+	// What the page tells the chart
 
 	/** Redraws at the new resolution when the window moves to another screen or the page is zoomed. */
 	private readonly _onPixelRatio = (): void => {
@@ -718,6 +741,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 	};
 
+	// Frame
+
 	/** Sizes the canvases to the layout, at the device pixel ratio of the window. */
 	private _placeLayers(): void {
 		// A canvas that changes size is cleared, and the pixel ratio and fonts may differ.
@@ -731,25 +756,26 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._axisRenderer.reset();
 	}
 
-	// Frame
-
 	/** Write phase of a frame: sizes the canvases and draws whatever the invalidation level asks for. */
 	public frameWrite(now: number): void {
-		if (this._primitives.placement && this._primitives.placeLayer(this._layout.pixelRatio)) {
-			this._paneRenderer.stale = true;
+		const layout = this._layout;
+		const primitives = this._primitives;
+		const pane = this._paneRenderer;
+		if (primitives.placement && primitives.placeLayer(layout.pixelRatio)) {
+			pane.stale = true;
 		}
 		let level = this._level;
 		this._level = INVALIDATE_NONE;
-		if (level < INVALIDATE_LIGHT && this._primitives.merged && this._primitives.layers.normal.changed) {
+		if (level < INVALIDATE_LIGHT && primitives.merged && primitives.layers.normal.changed) {
 			// Merged into the series layer, drawings are drawn with the series.
 			level = INVALIDATE_LIGHT;
 		}
-		if (this._primitives.merged && this._primitives.layers.normal.changed) {
+		if (primitives.merged && primitives.layers.normal.changed) {
 			// Also when the last merged drawing went away.
-			this._paneRenderer.stale = true;
+			pane.stale = true;
 		}
 		const animating = this._interaction.step(now);
-		if (level === INVALIDATE_FULL || this._layout.font === '') {
+		if (level === INVALIDATE_FULL || layout.font === '') {
 			this._placeLayers();
 		}
 		if (level >= INVALIDATE_LIGHT) {
@@ -759,36 +785,37 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 				const scale = this.scale;
 				const from = scale.from;
 				const to = scale.to;
-				this._layout.compute();
+				layout.compute();
 				scale.setVisibleRange(from, to);
 				this._model.update();
 			}
-			if (this._layout.dirty) {
+			if (layout.dirty) {
 				this._placeLayers();
 			}
-			if (this._layout.paneWidth > 0 && this._layout.paneHeight > 0) {
-				this._paneRenderer.render();
+			if (layout.paneWidth > 0 && layout.paneHeight > 0) {
+				pane.render();
 				this._axisRenderer.render();
 			} else {
 				// The changed items of this frame are not drawn, and the next frame will not know them.
-				this._paneRenderer.stale = true;
+				pane.stale = true;
 			}
 		}
-		if (this._layout.paneWidth > 0 && this._layout.paneHeight > 0) {
-			if (this._primitives.drawings !== null) {
+		if (layout.paneWidth > 0 && layout.paneHeight > 0) {
+			if (primitives.drawings !== null) {
 				// Tools place points with the view of this frame, also before the first drawing exists.
-				const moved = this._primitives.sync();
-				if (this._primitives.layer !== null && this._primitives.layers.normal.changed) {
-					this._primitives.render();
+				const moved = primitives.sync();
+				if (primitives.layer !== null && primitives.layers.normal.changed) {
+					primitives.render();
 				}
-				if (this._primitives.drawings !== null && (this._crosshair.hoverDirty || moved)) {
-					this._crosshair.hoverDirty = false;
-					this._primitives.drawings.hover(this._crosshair.x, this._crosshair.y, this._crosshair.visible);
+				const crosshair = this._crosshair;
+				if (primitives.drawings !== null && (crosshair.hoverDirty || moved)) {
+					crosshair.hoverDirty = false;
+					primitives.drawings.hover(crosshair.x, crosshair.y, crosshair.visible);
 				}
 			}
 			this._overlayRenderer.render();
 		}
-		this._primitives.applyCursor();
+		primitives.applyCursor();
 		this._times.flush(this._data.engine);
 		this._cache.clearDirty();
 		if (animating) {

@@ -243,6 +243,7 @@ export class OverlayRenderer {
 	/** Dots where the crosshair crosses line series, ringed in the background color. */
 	private _renderMarkers(ctx: CanvasRenderingContext2D, x: number, row: number): void {
 		const ratio = this._layout.pixelRatio;
+		const background = this._settings.options.layout.background;
 		for (const series of this._series) {
 			if (series.type !== 'line' || row >= series.close.length) {
 				continue;
@@ -257,7 +258,7 @@ export class OverlayRenderer {
 				continue;
 			}
 			const radius = line.crosshairMarkerRadius * ratio;
-			ctx.fillStyle = this._settings.options.layout.background;
+			ctx.fillStyle = background;
 			ctx.beginPath();
 			ctx.arc(x, y, radius + ratio, 0, 2 * Math.PI);
 			ctx.fill();
