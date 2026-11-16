@@ -512,8 +512,11 @@ describe('chart with series', () => {
 	const datafeedBars = 200_000;
 	const datafeedData = candles(datafeedBars);
 	const coreOf = () =>
-		(chart as unknown as { _engine: { _transport: { _core: { memory: { evictable: number; bytes: number } } } } })
-			._engine._transport._core;
+		(
+			chart as unknown as {
+				_data: { engine: { _transport: { _core: { memory: { evictable: number; bytes: number } } } } };
+			}
+		)._data.engine._transport._core;
 	/** Lets the engine finish building levels and letting rows go, between frames. */
 	const idleEngine = async (rounds = 50): Promise<void> => {
 		if (rounds > 0) {

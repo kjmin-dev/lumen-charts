@@ -1,12 +1,6 @@
 import type { ChartApi, LogicalRange, TimeScaleApi } from './api';
-import {
-	type EngineClient,
-	type EngineEvent,
-	type IndicatorInfo,
-	columnCount,
-	createEngine,
-	levelFor,
-} from '@lumen-charts/engine';
+import type { EngineClient, IndicatorInfo } from '@lumen-charts/engine';
+import { DataFlow } from './data/data-flow';
 import { DatafeedFetches } from './data/datafeed';
 import { type LevelWindow, WindowCache } from './data/window-cache';
 import { Drawings } from './drawings/manager';
@@ -84,11 +78,6 @@ import { watchPixelRatio } from './shared/media';
 import { observeVisibility, unobserveVisibility } from './shared/observers';
 import { type Geometry, candleWidths, placeElements } from './views/series-view';
 
-interface Deferred {
-	seq: number;
-	action: () => void;
-}
-
 class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, PriceAxisHost {
 	public readonly scale: TimeScale;
 	/** Whether the chart waits for the shared animation frame (see `FrameClient`). */
@@ -109,7 +98,6 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private readonly _widths = { body: 1, wick: 1 };
 
 	private readonly _settings: ChartSettings;
-	private _engine: EngineClient | null = null;
 	private _watermarkLines: string[] = [];
 
 	private _level: Invalidation = INVALIDATE_NONE;
@@ -126,17 +114,14 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	 */
 	private _visible = true;
 	private _destroyed = false;
-	private _deferred: Deferred[] = [];
 	private _idle: (() => void)[] = [];
-	/** Limit last sent to the engine. */
-	private _memoryLimit = Infinity;
+	/** The data engine and what its events change. */
+	private readonly _data: DataFlow;
 	/** Requests to the datafeeds of series for rows the engine needs again. */
 	private readonly _fetches: DatafeedFetches;
 	/** Indicators, their definitions and the modules being loaded. */
 	private readonly _indicators: ChartIndicators;
 	private _applied: (() => void)[] = [];
-	/** Scale version the last window request was planned for. */
-	private _plannedScale = -1;
 
 	private _crosshairVisible = false;
 	private _crosshairX = 0;
@@ -222,6 +207,59 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			resized: () => this._resolveView(),
 		});
 		this._axes = new PriceAxes(this, this._settings, this._layout);
+		this._indicators = new ChartIndicators({
+			seriesList: this._series,
+			engine: () => this._data.engine,
+			ensureEngine: () => this._data.ensureEngine(),
+			invalidate: level => this.invalidate(level),
+			reloaded: (series, seq) => this.reloaded(series, seq),
+			forget: series => this._cache.removeSeries(series),
+			seriesRemoved: series => this._detachSeriesPrimitives(series),
+			attachSeriesPrimitive: (series, primitive) => this.attachSeriesPrimitive(series, primitive),
+			detachSeriesPrimitive: (series, primitive) => this.detachSeriesPrimitive(series, primitive),
+			baseUrl: () => container.ownerDocument.baseURI,
+			addIndicator: (source, name, settings) => this.addIndicator(source, name, settings),
+			removeIndicator: indicator => this.removeIndicator(indicator),
+			priceAxisOf: series => this.priceAxisOf(series),
+		});
+		this._fetches = new DatafeedFetches(
+			this._series,
+			this._cache,
+			() => this._data.engine,
+			() => {
+				this._settle();
+				this._settleApplied();
+			},
+		);
+		this._data = new DataFlow(
+			{
+				syncView: () => this._syncView(),
+				resolveInput: () => this._interaction.resolve(),
+				invalidate: level => this.invalidate(level),
+				dataChanged: () => this._schedule(INVALIDATE_LIGHT),
+				callApplied: () => {
+					this._paneStale = true;
+				},
+				resolveView: () => {
+					if (this._pendingView !== null) {
+						this._resolveView();
+					}
+				},
+				settled: () => {
+					this._settle();
+					this._settleApplied();
+				},
+			},
+			this._settings,
+			this._layout,
+			this.scale,
+			this._cache,
+			this._series,
+			this._time,
+			this._times,
+			this._indicators,
+			this._fetches,
+		);
 		this._interaction = new Interaction(this._layout.root, this);
 		// The event does not bubble; capturing on the root hears it for every canvas, also later ones.
 		this._layout.root.addEventListener('contextrestored', this._onContextRestored, true);
@@ -235,30 +273,6 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._primitiveChanged('normal');
 		};
 		this._applyResolved(this._settings.options);
-		this._fetches = new DatafeedFetches(
-			this._series,
-			this._cache,
-			() => this._engine,
-			() => {
-				this._settle();
-				this._settleApplied();
-			},
-		);
-		this._indicators = new ChartIndicators({
-			seriesList: this._series,
-			engine: () => this._engine,
-			ensureEngine: () => this._ensureEngine(),
-			invalidate: level => this.invalidate(level),
-			reloaded: (series, seq) => this.reloaded(series, seq),
-			forget: series => this._cache.removeSeries(series),
-			seriesRemoved: series => this._detachSeriesPrimitives(series),
-			attachSeriesPrimitive: (series, primitive) => this.attachSeriesPrimitive(series, primitive),
-			detachSeriesPrimitive: (series, primitive) => this.detachSeriesPrimitive(series, primitive),
-			baseUrl: () => container.ownerDocument.baseURI,
-			addIndicator: (source, name, settings) => this.addIndicator(source, name, settings),
-			removeIndicator: indicator => this.removeIndicator(indicator),
-			priceAxisOf: series => this.priceAxisOf(series),
-		});
 	}
 
 	// ChartApi
@@ -307,7 +321,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		} else if (this._seriesNamed(name) !== undefined) {
 			throw new Error(`lumen-charts: a series with id "${name}" exists already`);
 		}
-		const engine = this._ensureEngine();
+		const engine = this._data.ensureEngine();
 		const kind = type === 'candlestick' ? 'ohlcv' : 'line';
 		const engineId = engine?.addSeries(kind, datafeed !== undefined) ?? -1;
 		const series = new Series(
@@ -334,7 +348,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._detachSeriesPrimitives(removed);
 		this._fetches.abort(removed);
 		this._cache.removeSeries(removed.engineId);
-		this._engine?.removeSeries(removed.engineId);
+		this._data.engine?.removeSeries(removed.engineId);
 		this.invalidate(INVALIDATE_LIGHT);
 	}
 
@@ -653,7 +667,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	}
 
 	public engineMode(): 'none' | 'connecting' | 'worker' | 'local' {
-		return this._engine === null ? 'none' : this._engine.mode;
+		return this._data.engine === null ? 'none' : this._data.engine.mode;
 	}
 
 	public destroy(): void {
@@ -662,6 +676,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 		this._destroyed = true;
 		this._layout.destroy();
+		this._data.close();
 		unobserveVisibility(this._layout.root);
 		cancelFrame(this);
 		this._interaction.destroy();
@@ -669,9 +684,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._unwatchPixelRatio = null;
 		this._settings.release();
 		this._fetches.destroy();
-		this._engine?.destroy();
-		this._engine = null;
-		this._deferred = [];
+		this._data.destroy();
 		this._indicators.destroy();
 		this._settleApplied();
 		this._layers.detachAll();
@@ -687,14 +700,14 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	// TimeScaleApi
 
 	public fitContent(): void {
-		this._afterData(() => {
+		this._data.afterData(() => {
 			this._viewSet();
 			this.scale.fitContent();
 		});
 	}
 
 	public scrollToRealTime(): void {
-		this._afterData(() => {
+		this._data.afterData(() => {
 			this._viewSet();
 			this.scale.scrollToRealTime();
 		});
@@ -702,7 +715,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	public setVisibleLogicalRange(range: LogicalRange): void {
 		const { from, to } = range;
-		this._afterData(() => {
+		this._data.afterData(() => {
 			this._viewSet();
 			this.scale.setVisibleRange(from, to);
 		});
@@ -770,7 +783,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	}
 
 	public engine(): EngineClient | null {
-		return this._engine;
+		return this._data.engine;
 	}
 
 	public reloaded(series: Series, seq: number): void {
@@ -805,11 +818,11 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			}
 			return;
 		}
-		if (level >= INVALIDATE_LIGHT && this._visible && this.scale.version !== this._plannedScale) {
+		if (level >= INVALIDATE_LIGHT && this._visible && this.scale.version !== this._data.plannedScale) {
 			// The view changed: rows it needs are asked for now rather than in the next frame, so rows
 			// that must be fetched again are usually back by the frame that draws the view. A chart
 			// outside the viewport asks in the frame that draws it once it is back.
-			this._requestWindow(this._layout.devicePixelRatio());
+			this._data.requestWindow(this._layout.devicePixelRatio());
 		}
 		if (level > this._level) {
 			this._level = level;
@@ -1056,21 +1069,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	// Data flow
 
-	/** The data engine, created with the first series (or plugin module). */
-	private _ensureEngine(): EngineClient | null {
-		if (this._engine === null && !this._destroyed) {
-			this._engine = createEngine({ worker: this._settings.options.worker });
-			this._engine.onevent = this._onEvent;
-			this._memoryLimit = this._settings.options.memoryLimit;
-			if (this._memoryLimit !== Infinity) {
-				this._engine.setMemoryLimit(this._memoryLimit);
-			}
-		}
-		return this._engine;
-	}
-
 	private _isApplied(): boolean {
-		const engine = this._engine;
+		const engine = this._data.engine;
 		return (
 			this._destroyed ||
 			engine === null ||
@@ -1089,134 +1089,13 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 	}
 
-	/**
-	 * Runs `action` once the engine has applied all data handed over so far, keeping call order.
-	 * Window requests in flight do not delay it: a view change does not depend on them.
-	 */
-	private _afterData(action: () => void): void {
-		if (this._destroyed) {
-			return;
-		}
-		const engine = this._engine;
-		if (engine === null || !engine.dataPending) {
-			this._syncView();
-			action();
-			this.invalidate(INVALIDATE_LIGHT);
-			return;
-		}
-		this._deferred.push({ seq: engine.barrier(), action });
-	}
-
-	private readonly _columnCount = (id: number, level: number): number => {
-		for (const series of this._series) {
-			if (series.engineId === id) {
-				return columnCount(series.kind, level);
-			}
-		}
-		return 1;
-	};
-
-	private readonly _onEvent = (event: EngineEvent): void => {
-		// The window to ask for depends on the pane width.
-		this._layout.ensureSize();
-		const scale = this.scale;
-		const wasEmpty = scale.isEmpty;
-		const version = scale.version;
-		this._cache.apply(event, this._columnCount);
-		const window = event.window;
-		if (window !== undefined) {
-			// Offsets of the bars that can come into view are looked up before a frame needs them.
-			this._time.cover(window.time, window.count, 2 ** this._cache.level(window.level).shift);
-		}
-		scale.setExtent(event.first, event.end);
-		const times = this._times;
-		times.setTimeline(event.epoch, event.first, event.end);
-		times.setWindow(this._cache.held(0));
-		if (event.resolved !== undefined) {
-			times.apply(event.ack, event.resolved);
-		} else if (event.failed === true) {
-			times.cancel(event.ack);
-		}
-		if (wasEmpty && !scale.isEmpty) {
-			scale.reset(this._settings.options.timeScale.barSpacing, this._settings.options.timeScale.rightOffset);
-		}
-		this._trackLastValues(event);
-		this._indicators.computing = event.computing ?? 0;
-		if (event.plugins !== undefined) {
-			this._indicators.settlePlugins(event.plugins);
-		}
-		if (
-			event.fetch !== undefined ||
-			event.cancel !== undefined ||
-			event.restored !== undefined ||
-			event.window?.incomplete === true
-		) {
-			this._fetches.handle(event);
-		}
-		// A failed command changes nothing on screen, and redrawing for it would only repeat the request.
-		let changed =
-			event.failed !== true &&
-			(scale.version !== version || event.stale || event.window !== undefined || event.patches !== undefined);
-		const deferred = this._deferred;
-		while (deferred.length > 0 && deferred[0]!.seq <= event.ack) {
-			// Pointer input from before the call comes first.
-			this._interaction.resolve();
-			deferred.shift()!.action();
-			changed = true;
-			// A call that waited for the data can change anything.
-			this._paneStale = true;
-		}
-		if (this._pendingView !== null) {
-			this._resolveView();
-		}
-		if (changed) {
-			// Requested now rather than in the next draw, the rows usually arrive before that frame,
-			// so new data is drawn in one frame instead of an empty frame followed by the data.
-			this._requestWindow(this._layout.devicePixelRatio());
-			// Data alone: the frame redraws the columns that changed if everything else is as drawn.
-			this._schedule(INVALIDATE_LIGHT);
-		}
-		// Nothing to draw, or a chart outside the viewport, which draws when it comes back.
-		this._settle();
-		this._settleApplied();
-	};
-
-	/**
-	 * Takes the latest value of each series straight from the patches. The last bar is often outside
-	 * the window held by the cache (the user is looking at history), and its value is still shown.
-	 */
-	private _trackLastValues(event: EngineEvent): void {
-		const patches = event.patches;
-		if (patches === undefined) {
-			return;
-		}
-		for (const patch of patches) {
-			if (patch.level !== 0 || patch.start + patch.count !== event.end) {
-				continue;
-			}
-			for (const series of this._series) {
-				if (series.engineId !== patch.series) {
-					continue;
-				}
-				const rows = patch.count;
-				const closeColumn = series.kind === 'ohlcv' ? 3 : 0;
-				const close = patch.data[closeColumn * rows + rows - 1]!;
-				if (close === close) {
-					series.lastValue = close;
-					series.lastUp = close >= patch.data[rows - 1]!;
-				}
-				break;
-			}
-		}
-	}
-
 	private _isIdle(): boolean {
 		return (
 			this._destroyed ||
 			(!this.frameQueued &&
 				this._fetches.fetching === 0 &&
 				this._indicators.computing === 0 &&
-				(this._engine === null || this._engine.pending === 0))
+				(this._data.engine === null || this._data.engine.pending === 0))
 		);
 	}
 
@@ -1241,10 +1120,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 		this._settings.options = next;
 		this._applyResolved(next);
-		if (this._engine !== null && next.memoryLimit !== this._memoryLimit) {
-			this._memoryLimit = next.memoryLimit;
-			this._engine.setMemoryLimit(next.memoryLimit);
-		}
+		this._data.setMemoryLimit(next.memoryLimit);
 		this.invalidate(INVALIDATE_FULL);
 	}
 
@@ -1391,7 +1267,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._renderOverlay();
 		}
 		this._applyCursor();
-		this._times.flush(this._engine);
+		this._times.flush(this._data.engine);
 		this._cache.clearDirty();
 		if (animating) {
 			this.invalidate(INVALIDATE_LIGHT);
@@ -1399,59 +1275,17 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._settle();
 	}
 
-	/**
-	 * Level of detail for a bar spacing in device pixels: raw rows up to 16 bars per pixel, then the
-	 * coarsest level whose buckets are not wider than a pixel.
-	 */
-	private _levelFor(spacing: number): number {
-		const scale = this.scale;
-		return spacing < 1 ? levelFor(1 / spacing, scale.end - scale.first) : 0;
-	}
-
-	/**
-	 * Asks the engine for the rows or buckets around the visible range at the level the view needs,
-	 * unless the cache has or awaits them.
-	 */
-	private _requestWindow(ratio: number): void {
-		const scale = this.scale;
-		const engine = this._engine;
-		this._plannedScale = scale.version;
-		if (engine !== null && !scale.isEmpty) {
-			const level = this._levelFor(scale.barSpacing * ratio);
-			const cache = this._cache;
-			const request = cache.plan(level, scale.from, scale.to, scale.first, scale.end);
-			if (request !== null) {
-				cache.level(level).sent(engine.requestWindow(request.start, request.count, request.capacity, request.level));
-			}
-			// While the raw rows for the view are on their way (a fast scroll left the window, or they
-			// are fetched again) or could not be fetched, the finest level is drawn instead of nothing.
-			// Not before the first raw window, though: right after a load the levels are still being
-			// built in the background, and the raw rows come first.
-			const raw = cache.level(0);
-			const visibleFrom = Math.max(scale.first, Math.ceil(scale.from - 0.5));
-			const visibleTo = Math.min(scale.end, Math.floor(scale.to + 0.5) + 1);
-			const covered =
-				raw.capacity > 0 && raw.rowsFrom(scale.first) <= visibleFrom && raw.rowsTo(scale.end) >= visibleTo;
-			if (level === 0 && !covered && (raw.capacity > 0 || raw.incomplete) && scale.end - scale.first >= 16) {
-				const fallback = cache.plan(1, scale.from, scale.to, scale.first, scale.end);
-				if (fallback !== null) {
-					cache.level(1).sent(engine.requestWindow(fallback.start, fallback.count, fallback.capacity, fallback.level));
-				}
-			}
-		}
-	}
-
 	/** Brings scales, items and ticks up to date with the time scale and the window cache. */
 	private _updateModel(): void {
 		const scale = this.scale;
 		const cache = this._cache;
 		const ratio = this._layout.pixelRatio;
-		this._requestWindow(ratio);
+		this._data.requestWindow(ratio);
 
 		const geometry = this._geometry;
 		const spacing = scale.barSpacing * ratio;
 		let origin = (scale.width - (scale.end - 1 + scale.rightOffset + 0.5) * scale.barSpacing) * ratio;
-		const level = this._levelFor(spacing);
+		const level = this._data.levelFor(spacing);
 		// Visible rows. Below a pixel per bar, rows are binned into pixel columns: the origin sits on
 		// a whole pixel, so the bins (and the level the rows come from) never change the picture, and
 		// a row is visible when its column is inside the pane.
