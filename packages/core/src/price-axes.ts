@@ -1,8 +1,16 @@
 import type { AxisTarget } from './input/interaction';
 import { INVALIDATE_LIGHT, type Invalidation } from './model/invalidation';
 import { PriceScale } from './model/price-scale';
-import type { DeepPartial, PriceScaleOptions } from './options';
+import {
+	type ChartOptions,
+	DEFAULT_PRICE_SCALE_ID,
+	type DeepPartial,
+	type PriceScaleOptions,
+	overlayScaleOptions,
+} from './options';
 import type { Layer } from './render/layer';
+import type { ChartLayout } from './render/layout';
+import type { ChartSettings } from './settings';
 import type { Series } from './series';
 
 /** A range of values of a price scale, `from` below `to`. */
@@ -51,6 +59,10 @@ export interface PriceAxisHost {
 }
 
 export const MIN_AXIS_WIDTH = 40;
+/** Space between an axis label and the edges of its axis, in CSS pixels. */
+export const AXIS_PADDING = 8;
+/** The price axis grows as soon as a label needs it but shrinks only past this slack, to avoid jitter. */
+const AXIS_SHRINK_SLACK = 12;
 
 /**
  * A price scale of the chart and what it takes to draw it: its options, its axis canvas (made when
@@ -208,6 +220,167 @@ export class PriceAxis implements PriceScaleApi, AxisTarget {
 	private _manual(): void {
 		if (this.settings.autoScale) {
 			this._host.applyPriceScaleOptions(this.id, { autoScale: false });
+		}
+	}
+}
+
+/**
+ * The price scales of a chart with their axes: the default scale, those the `priceScales` option
+ * lists, and the overlays series name.
+ */
+export class PriceAxes {
+	/**
+	 * Price scales with their axes, in layout order: the default scale, those `priceScales` lists in
+	 * its order, then overlays only series named. Axes on one side go outward from the pane in it.
+	 */
+	public list: PriceAxis[] = [];
+	/** The scale whose ticks the horizontal grid lines follow, from the last model update. */
+	public grid: PriceAxis;
+	private readonly _byId = new Map<string, PriceAxis>();
+	private readonly _host: PriceAxisHost;
+	private readonly _settings: ChartSettings;
+	private readonly _layout: ChartLayout;
+
+	public constructor(host: PriceAxisHost, settings: ChartSettings, layout: ChartLayout) {
+		this._host = host;
+		this._settings = settings;
+		this._layout = layout;
+		const main = new PriceAxis(DEFAULT_PRICE_SCALE_ID, host, settings.options.priceScale);
+		main.layer = layout.mainAxis;
+		this.list.push(main);
+		this._byId.set(main.id, main);
+		this.grid = main;
+	}
+
+	/**
+	 * Gives every price scale its options and puts the scales in layout order: the default one, those
+	 * `priceScales` lists, then the overlays only series named. Makes the canvases of axes shown for
+	 * the first time and hides those of hidden ones.
+	 */
+	public sync(options: ChartOptions): void {
+		const main = this._byId.get(DEFAULT_PRICE_SCALE_ID)!;
+		main.setSettings(options.priceScale);
+		const ordered = [main];
+		for (const id of Object.keys(options.priceScales)) {
+			const axis = this.get(id);
+			axis.setSettings(options.priceScales[id]!);
+			ordered.push(axis);
+		}
+		const overlay = overlayScaleOptions(this._settings.theme());
+		for (const axis of this.list) {
+			if (!ordered.includes(axis)) {
+				axis.setSettings(overlay);
+				ordered.push(axis);
+			}
+		}
+		this.list = ordered;
+		for (const axis of ordered) {
+			this._syncAxisLayer(axis);
+		}
+	}
+
+	/** The price scale with this id, made as an overlay if there is none. */
+	public get(id: string): PriceAxis {
+		let axis = this._byId.get(id);
+		if (axis === undefined) {
+			axis = new PriceAxis(
+				id,
+				this._host,
+				this._settings.options.priceScales[id] ?? overlayScaleOptions(this._settings.theme()),
+			);
+			axis.scale.setHeight(this._layout.paneHeight);
+			this._byId.set(id, axis);
+			this.list.push(axis);
+			this._syncAxisLayer(axis);
+		}
+		return axis;
+	}
+
+	/** The price scale a series is on, following its `priceScaleId`. */
+	public of(series: Series): PriceAxis {
+		// Options are replaced as a whole on every change: while they are the same, so is the scale.
+		const options = series.seriesOptions;
+		let axis = series.axis;
+		if (axis === null || series.axisOptions !== options) {
+			axis = this.get(options.priceScaleId || DEFAULT_PRICE_SCALE_ID);
+			series.axis = axis;
+			series.axisOptions = options;
+		}
+		return axis;
+	}
+
+	/** Makes the canvas of an axis shown for the first time, below the overlay, and shows or hides it. */
+	private _syncAxisLayer(axis: PriceAxis): void {
+		if (axis.layer === null && axis.settings.visible) {
+			axis.layer = this._layout.addAxisLayer();
+		}
+		axis.layer?.setVisible(axis.settings.visible);
+	}
+
+	/**
+	 * Adjusts the widths of the price axes to their longest labels. Returns true if the layout changed.
+	 * `empty` says the chart has no bars, and so no labels to fit.
+	 */
+	public fitWidths(empty: boolean): boolean {
+		let changed = false;
+		for (const axis of this.list) {
+			const priceScale = axis.scale;
+			// Labels change only with the ticks, so most frames have nothing to measure.
+			if (
+				!axis.settings.visible ||
+				(priceScale.ticksGeneration === axis.fitTicks && this._layout.digitWidth === axis.fitDigit)
+			) {
+				continue;
+			}
+			axis.fitTicks = priceScale.ticksGeneration;
+			axis.fitDigit = this._layout.digitWidth;
+			if (axis.count === 0 || !priceScale.hasRange || empty) {
+				continue;
+			}
+			let characters = Math.max(
+				priceScale.formatValue(priceScale.max).length,
+				priceScale.formatValue(priceScale.min).length,
+			);
+			for (let i = 0; i < priceScale.tickCount; i++) {
+				const length = priceScale.tickLabels[i]!.length;
+				if (length > characters) {
+					characters = length;
+				}
+			}
+			const needed = Math.max(
+				MIN_AXIS_WIDTH,
+				Math.ceil((characters * this._layout.digitWidth + 2 * AXIS_PADDING) / 4) * 4,
+			);
+			if (needed <= axis.axisWidth && needed + AXIS_SHRINK_SLACK >= axis.axisWidth) {
+				continue;
+			}
+			axis.axisWidth = needed;
+			changed = true;
+		}
+		return changed;
+	}
+
+	/** The visible axis drawn on `target` (the element under the pointer), or null. */
+	public at(target: EventTarget | null): PriceAxis | null {
+		for (const axis of this.list) {
+			if (axis.settings.visible && axis.layer !== null && axis.layer.canvas === target) {
+				return axis;
+			}
+		}
+		return null;
+	}
+
+	/** Moves the scales that do not autoscale with a drag of `dy` CSS pixels. */
+	public scrollBy(dy: number): void {
+		let moved = false;
+		for (const axis of this.list) {
+			if (!axis.settings.autoScale && axis.count > 0 && axis.scale.hasRange) {
+				axis.scale.scrollBy(dy);
+				moved = true;
+			}
+		}
+		if (moved) {
+			this._host.invalidate(INVALIDATE_LIGHT);
 		}
 	}
 }

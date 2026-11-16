@@ -42,11 +42,10 @@ import {
 	type PriceScaleOptions,
 	mergeOptions,
 	optionsEqual,
-	overlayScaleOptions,
 	resolveOptions,
 	shallowEqual,
 } from './options';
-import { MIN_AXIS_WIDTH, PriceAxis, type PriceAxisHost, type PriceScaleApi } from './price-axes';
+import { AXIS_PADDING, type PriceAxis, PriceAxes, type PriceAxisHost, type PriceScaleApi } from './price-axes';
 import {
 	type AxisStyle,
 	dashPattern,
@@ -85,10 +84,6 @@ import { watchPixelRatio } from './shared/media';
 import { observeVisibility, unobserveVisibility } from './shared/observers';
 import { type Geometry, candleWidths, placeElements } from './views/series-view';
 
-const AXIS_PADDING = 8;
-/** The price axis grows as soon as a label needs it but shrinks only past this slack, to avoid jitter. */
-const AXIS_SHRINK_SLACK = 12;
-
 interface Deferred {
 	seq: number;
 	action: () => void;
@@ -101,14 +96,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	/** The root element, its canvases, and the sizes of the chart, the pane and the axes. */
 	private readonly _layout: ChartLayout;
 	private readonly _interaction: Interaction;
-	/**
-	 * Price scales with their axes, in layout order: the default scale, those `priceScales` lists in
-	 * its order, then overlays only series named. Axes on one side go outward from the pane in it.
-	 */
-	private _axes: PriceAxis[] = [];
-	private readonly _axesById = new Map<string, PriceAxis>();
-	/** The scale whose ticks the horizontal grid lines follow, from the last model update. */
-	private _gridAxis: PriceAxis;
+	/** The price scales with their axes. */
+	private readonly _axes: PriceAxes;
 	private readonly _timeTicks = new TimeTicks();
 	/** Time zone, sessions and label formats. */
 	private readonly _time = new TimeDisplay();
@@ -229,14 +218,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		const doc = container.ownerDocument;
 		this._layout = new ChartLayout(container, this._settings, this.scale, {
 			invalidate: level => this.invalidate(level),
-			priceAxes: () => this._axes,
+			priceAxes: () => this._axes.list,
 			resized: () => this._resolveView(),
 		});
-		const main = new PriceAxis(DEFAULT_PRICE_SCALE_ID, this, this._settings.options.priceScale);
-		main.layer = this._layout.mainAxis;
-		this._axes.push(main);
-		this._axesById.set(main.id, main);
-		this._gridAxis = main;
+		this._axes = new PriceAxes(this, this._settings, this._layout);
 		this._interaction = new Interaction(this._layout.root, this);
 		// The event does not bubble; capturing on the root hears it for every canvas, also later ones.
 		this._layout.root.addEventListener('contextrestored', this._onContextRestored, true);
@@ -473,7 +458,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 		if (plan.view !== null) {
 			for (const id of Object.keys(plan.view.priceRanges)) {
-				this._axisFor(id).setVisibleRange(plan.view.priceRanges[id]!);
+				this._axes.get(id).setVisibleRange(plan.view.priceRanges[id]!);
 			}
 			this._pendingView = plan.view.timeRange;
 			this._resolveView();
@@ -558,7 +543,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _saveView(): ViewState {
 		this._syncView();
 		const priceRanges: ViewState['priceRanges'] = {};
-		for (const axis of this._axes) {
+		for (const axis of this._axes.list) {
 			const range = axis.settings.autoScale ? null : axis.getVisibleRange();
 			if (range !== null) {
 				priceRanges[axis.id] = range;
@@ -617,7 +602,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	}
 
 	public priceScale(id: string = DEFAULT_PRICE_SCALE_ID): PriceScaleApi {
-		return this._axisFor(id);
+		return this._axes.get(id);
 	}
 
 	public drawings(): DrawingsApi {
@@ -639,7 +624,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		if (!this._destroyed && this._series.includes(series)) {
 			this._ensureDrawings();
 			series.primitives.add(primitive);
-			this._layers.attach(primitive, this._viewFor(this._axisOf(series).id));
+			this._layers.attach(primitive, this._viewFor(this._axes.of(series).id));
 		}
 	}
 
@@ -767,25 +752,11 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	}
 
 	public priceAxisAt(target: EventTarget | null): AxisTarget | null {
-		for (const axis of this._axes) {
-			if (axis.settings.visible && axis.layer !== null && axis.layer.canvas === target) {
-				return axis;
-			}
-		}
-		return null;
+		return this._axes.at(target);
 	}
 
 	public scrollPrices(dy: number): void {
-		let moved = false;
-		for (const axis of this._axes) {
-			if (!axis.settings.autoScale && axis.count > 0 && axis.scale.hasRange) {
-				axis.scale.scrollBy(dy);
-				moved = true;
-			}
-		}
-		if (moved) {
-			this.invalidate(INVALIDATE_LIGHT);
-		}
+		this._axes.scrollBy(dy);
 	}
 
 	// PriceAxisHost and SeriesHost
@@ -795,7 +766,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	}
 
 	public priceAxisOf(series: Series): PriceAxis {
-		return this._axisOf(series);
+		return this._axes.of(series);
 	}
 
 	public engine(): EngineClient | null {
@@ -1026,7 +997,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _viewFor(id: string): PaneViewState {
 		let view = this._views.get(id);
 		if (view === undefined) {
-			const scale = this._axisFor(id).scale;
+			const scale = this._axes.get(id).scale;
 			view = new PaneViewState(id, this._times, new ScaleMapping(scale), () => this._coarseWindow());
 			this._views.set(id, view);
 		}
@@ -1279,7 +1250,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	/** Pushes resolved options into the parts that keep their own copy. */
 	private _applyResolved(options: ChartOptions): void {
-		this._syncAxes(options);
+		this._axes.sync(options);
 		const watermark = options.watermark;
 		this._watermarkLines = watermark.visible && watermark.text !== '' ? watermark.text.split('\n') : [];
 		this._layout.timeAxis.setVisible(options.timeScale.visible);
@@ -1293,7 +1264,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 		this._layout.font = '';
 		this._ticksScale = -1;
-		for (const axis of this._axes) {
+		for (const axis of this._axes.list) {
 			axis.fitTicks = -1;
 		}
 		this._applyTime(options);
@@ -1311,67 +1282,6 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		if (this._time.apply(options) && drawn !== null) {
 			this._time.cover(drawn.time, drawn.count, 2 ** drawn.shift);
 		}
-	}
-
-	/**
-	 * Gives every price scale its options and puts the scales in layout order: the default one, those
-	 * `priceScales` lists, then the overlays only series named. Makes the canvases of axes shown for
-	 * the first time and hides those of hidden ones.
-	 */
-	private _syncAxes(options: ChartOptions): void {
-		const main = this._axesById.get(DEFAULT_PRICE_SCALE_ID)!;
-		main.setSettings(options.priceScale);
-		const ordered = [main];
-		for (const id of Object.keys(options.priceScales)) {
-			const axis = this._axisFor(id);
-			axis.setSettings(options.priceScales[id]!);
-			ordered.push(axis);
-		}
-		const overlay = overlayScaleOptions(this.theme());
-		for (const axis of this._axes) {
-			if (!ordered.includes(axis)) {
-				axis.setSettings(overlay);
-				ordered.push(axis);
-			}
-		}
-		this._axes = ordered;
-		for (const axis of ordered) {
-			this._syncAxisLayer(axis);
-		}
-	}
-
-	/** The price scale with this id, made as an overlay if there is none. */
-	private _axisFor(id: string): PriceAxis {
-		let axis = this._axesById.get(id);
-		if (axis === undefined) {
-			axis = new PriceAxis(id, this, this._settings.options.priceScales[id] ?? overlayScaleOptions(this.theme()));
-			axis.scale.setHeight(this._layout.paneHeight);
-			this._axesById.set(id, axis);
-			this._axes.push(axis);
-			this._syncAxisLayer(axis);
-		}
-		return axis;
-	}
-
-	/** The price scale a series is on, following its `priceScaleId`. */
-	private _axisOf(series: Series): PriceAxis {
-		// Options are replaced as a whole on every change: while they are the same, so is the scale.
-		const options = series.seriesOptions;
-		let axis = series.axis;
-		if (axis === null || series.axisOptions !== options) {
-			axis = this._axisFor(options.priceScaleId || DEFAULT_PRICE_SCALE_ID);
-			series.axis = axis;
-			series.axisOptions = options;
-		}
-		return axis;
-	}
-
-	/** Makes the canvas of an axis shown for the first time, below the overlay, and shows or hides it. */
-	private _syncAxisLayer(axis: PriceAxis): void {
-		if (axis.layer === null && axis.settings.visible) {
-			axis.layer = this._layout.addAxisLayer();
-		}
-		axis.layer?.setVisible(axis.settings.visible);
 	}
 
 	private readonly _onScheme = (): void => {
@@ -1446,7 +1356,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 		if (level >= INVALIDATE_LIGHT) {
 			this._updateModel();
-			if (this._fitPriceAxes()) {
+			if (this._axes.fitWidths(this.scale.isEmpty)) {
 				// The axis takes its width from the pane. The same bars stay visible, slightly narrower.
 				const scale = this.scale;
 				const from = scale.from;
@@ -1578,14 +1488,14 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			);
 		}
 
-		const axes = this._axes;
+		const axes = this._axes.list;
 		for (let i = 0; i < axes.length; i++) {
 			axes[i]!.beginFrame();
 		}
 		const size = 2 ** geometry.shift;
 		for (const series of this._series) {
 			const visible = series.seriesOptions.visible;
-			const axis = visible ? this._axisOf(series) : null;
+			const axis = visible ? this._axes.of(series) : null;
 			if (axis !== null) {
 				axis.count++;
 				if (axis.first === null) {
@@ -1653,7 +1563,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 				}
 			}
 		}
-		this._gridAxis = grid;
+		this._axes.grid = grid;
 		const fontSize = this._settings.options.layout.fontSize;
 		const tickSpacing = Math.max(32, fontSize * 3.5);
 		for (const axis of axes) {
@@ -1777,46 +1687,6 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 	}
 
-	/** Adjusts the widths of the price axes to their longest labels. Returns true if the layout changed. */
-	private _fitPriceAxes(): boolean {
-		let changed = false;
-		for (const axis of this._axes) {
-			const priceScale = axis.scale;
-			// Labels change only with the ticks, so most frames have nothing to measure.
-			if (
-				!axis.settings.visible ||
-				(priceScale.ticksGeneration === axis.fitTicks && this._layout.digitWidth === axis.fitDigit)
-			) {
-				continue;
-			}
-			axis.fitTicks = priceScale.ticksGeneration;
-			axis.fitDigit = this._layout.digitWidth;
-			if (axis.count === 0 || !priceScale.hasRange || this.scale.isEmpty) {
-				continue;
-			}
-			let characters = Math.max(
-				priceScale.formatValue(priceScale.max).length,
-				priceScale.formatValue(priceScale.min).length,
-			);
-			for (let i = 0; i < priceScale.tickCount; i++) {
-				const length = priceScale.tickLabels[i]!.length;
-				if (length > characters) {
-					characters = length;
-				}
-			}
-			const needed = Math.max(
-				MIN_AXIS_WIDTH,
-				Math.ceil((characters * this._layout.digitWidth + 2 * AXIS_PADDING) / 4) * 4,
-			);
-			if (needed <= axis.axisWidth && needed + AXIS_SHRINK_SLACK >= axis.axisWidth) {
-				continue;
-			}
-			axis.axisWidth = needed;
-			changed = true;
-		}
-		return changed;
-	}
-
 	/**
 	 * Finds the device columns a frame has to redraw when only data changed, into `_clipLeft` and
 	 * `_clipRight`. Returns `PANE_FULL` when the series layer has to be drawn as a whole, `PANE_KEPT`
@@ -1832,7 +1702,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _dirtyColumns(width: number): number {
 		const geometry = this._geometry;
 		const drawn = this._paneGeometry;
-		const grid = this._gridAxis;
+		const grid = this._axes.grid;
 		const layers = this._layers;
 		const marks = this._time.marks;
 		if (
@@ -1929,7 +1799,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 		ctx.fillStyle = options.layout.background;
 		ctx.fillRect(0, 0, layer.width, layer.height);
-		const grid = this._gridAxis;
+		const grid = this._axes.grid;
 		const marks = this._time.marks;
 		const sessions = options.sessions;
 		if (marks.shadeCount > 0) {
@@ -2097,7 +1967,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		style.textColor = options.layout.textColor;
 		style.font = this._layout.font;
 		style.pixelRatio = ratio;
-		for (const axis of this._axes) {
+		for (const axis of this._axes.list) {
 			const priceScale = axis.scale;
 			const layer = axis.layer;
 			if (!axis.settings.visible || layer === null || axis.drawn === priceScale.ticksGeneration) {
@@ -2159,7 +2029,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		const font = this._layout.font;
 		// Value labels of overlays go on the default scale's axis, or on the first visible one.
 		let overlayAxis: PriceAxis | null = null;
-		for (const axis of this._axes) {
+		for (const axis of this._axes.list) {
 			if (axis.settings.visible) {
 				overlayAxis = axis;
 				break;
@@ -2253,7 +2123,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			// A label on every axis with something on it, each in its own values.
 			const background = horzLine.labelBackgroundColor;
 			const top = y - (tagHeight >> 1);
-			for (const axis of this._axes) {
+			for (const axis of this._axes.list) {
 				const priceScale = axis.scale;
 				if (!axis.settings.visible || axis.count === 0 || !priceScale.hasRange) {
 					continue;

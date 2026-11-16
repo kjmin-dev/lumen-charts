@@ -84,7 +84,8 @@ describe('price axes', () => {
 	let now = 0;
 
 	const canvases = () => [...chart.element().querySelectorAll('canvas')];
-	const axisOf = (id: string) => (chart as unknown as { _axesById: Map<string, AxisInternals> })._axesById.get(id)!;
+	const axisOf = (id: string) =>
+		(chart as unknown as { _axes: { _byId: Map<string, AxisInternals> } })._axes._byId.get(id)!;
 	const callsOf = (canvas: HTMLCanvasElement): Call[] => recorders.get(canvas)!.calls;
 	const pane = () => callsOf(canvases()[0]!);
 	const overlay = () => callsOf(canvases().at(-1)!);

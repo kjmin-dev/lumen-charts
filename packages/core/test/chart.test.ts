@@ -453,13 +453,15 @@ describe('chart with series', () => {
 		(chart as unknown as { _cache: { raw: { start: number; count: number; blocks: Map<number, Float64Array> } } })
 			._cache.raw;
 
-	const internals = () =>
-		chart as unknown as {
+	const internals = () => {
+		const parts = chart as unknown as {
 			_cache: { held(level: number): { count: number } | null };
 			_drawn: { level: number } | null;
 			_geometry: { to: number; shift: number; firstRow: number };
-			_axes: { scale: { min: number; max: number } }[];
+			_axes: { list: { scale: { min: number; max: number } }[] };
 		};
+		return { _cache: parts._cache, _drawn: parts._drawn, _geometry: parts._geometry, _axes: parts._axes.list };
+	};
 
 	it('draws a wide view from a coarse level, exactly scaled, without holding raw rows', async () => {
 		const count = 300_000;
