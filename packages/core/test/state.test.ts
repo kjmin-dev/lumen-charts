@@ -572,6 +572,53 @@ describe('chart state', () => {
 		});
 	});
 
+	it('restores the shortened state the README shows', async () => {
+		const t = testChart();
+		t.chart.restoreState({
+			version: 1,
+			options: { theme: 'dark', priceScales: { rsi: { visible: true, position: 'left' } } },
+			series: [
+				{
+					id: 'AAPL',
+					type: 'candlestick',
+					options: { priceScaleId: 'default', upColor: '#26a69a' },
+					pane: 0,
+					order: 0,
+				},
+			],
+			indicators: [
+				{
+					id: 'rsi-14',
+					name: 'rsi',
+					source: { series: 'AAPL' },
+					params: { period: 14 },
+					inputs: ['close'],
+					outputs: { value: { color: '#7e57c2', priceScaleId: 'rsi' } },
+					priceScaleId: 'rsi',
+					order: 1,
+				},
+			],
+			drawings: [{ version: 1, id: 'd-1', type: 'horizontalLine', points: [{ time: 1767225600000, price: 187.5 }] }],
+			view: {
+				timeRange: { from: 1767139200000, to: 1767312000000 },
+				priceRanges: { rsi: { from: 0, to: 100 } },
+			},
+		} as unknown as ChartState);
+		const [series] = t.chart.series();
+		expect(series!.id).toBe('AAPL');
+		// One-minute bars from before the saved view to after it.
+		series!.setData(candles(4000, 1767139200000 / MINUTE - 500));
+		await t.settle();
+		const state = t.chart.saveState();
+		expect(state.view).toEqual({
+			timeRange: { from: 1767139200000, to: 1767312000000 },
+			priceRanges: { rsi: { from: 0, to: 100 } },
+		});
+		expect(t.chart.priceScale('rsi').options()).toMatchObject({ visible: true, position: 'left', autoScale: false });
+		expect(t.chart.indicators()[0]!.output().options().color).toBe('#7e57c2');
+		expect(t.chart.drawings().get('d-1')!.points()).toEqual([{ time: 1767225600000, price: 187.5 }]);
+	});
+
 	describe('what cannot be saved', () => {
 		it('keeps formatters, the size and the engine options of the chart it restores into', async () => {
 			const { state } = await configured();
