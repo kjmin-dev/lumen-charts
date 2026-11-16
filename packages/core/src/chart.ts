@@ -2,7 +2,7 @@ import type { ChartApi, LogicalRange, TimeScaleApi } from './api';
 import type { EngineClient, IndicatorInfo } from '@lumen-charts/engine';
 import { DataFlow } from './data/data-flow';
 import { DatafeedFetches } from './data/datafeed';
-import { type LevelWindow, WindowCache } from './data/window-cache';
+import { WindowCache } from './data/window-cache';
 import { Drawings } from './drawings/manager';
 import type { DrawingsApi } from './drawings/types';
 import {
@@ -21,11 +21,11 @@ import {
 	INVALIDATE_NONE,
 	type Invalidation,
 } from './model/invalidation';
+import { FrameModel } from './model/frame-model';
 import type { SessionInfo } from './model/sessions';
 import { TimeDisplay } from './model/time-display';
 import { TimeIndex } from './model/time-index';
 import { TimeScale } from './model/time-scale';
-import { TimeTicks } from './model/time-ticks';
 import {
 	type CandlestickOptions,
 	type ChartOptions,
@@ -76,7 +76,7 @@ import { canvasFits } from './shared/canvas-budget';
 import { type FrameClient, cancelFrame, report, requestFrame } from './shared/frame';
 import { watchPixelRatio } from './shared/media';
 import { observeVisibility, unobserveVisibility } from './shared/observers';
-import { type Geometry, candleWidths, placeElements } from './views/series-view';
+import { type Geometry, candleWidths } from './views/series-view';
 
 class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, PriceAxisHost {
 	public readonly scale: TimeScale;
@@ -87,14 +87,12 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private readonly _interaction: Interaction;
 	/** The price scales with their axes. */
 	private readonly _axes: PriceAxes;
-	private readonly _timeTicks = new TimeTicks();
+	/** What the frame draws: the rows in view, their place, and the ticks. */
+	private readonly _model: FrameModel;
 	/** Time zone, sessions and label formats. */
 	private readonly _time = new TimeDisplay();
 	private readonly _cache = new WindowCache();
 	private readonly _series: Series[] = [];
-	private readonly _geometry: Geometry = { origin: 0, spacing: 1, from: 0, to: 0, shift: 0, firstRow: 0 };
-	/** Window the series were drawn from in the last model update. */
-	private _drawn: LevelWindow | null = null;
 	private readonly _widths = { body: 1, wick: 1 };
 
 	private readonly _settings: ChartSettings;
@@ -154,14 +152,6 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _defaultCursor = 'crosshair';
 	private _cursor = '';
 
-	/** Device-pixel positions of vertical grid lines and time axis labels. */
-	private _tickXs = new Float32Array(64);
-	/** What the time ticks were last computed for, and a counter that changes when they are recomputed. */
-	private _ticksScale = -1;
-	private _ticksCache = -1;
-	private _ticksFrom = 0;
-	private _ticksTo = 0;
-	private _ticksGeneration = 0;
 	/** What the time axis last showed; -1 forces a redraw. */
 	private _timeAxisDrawn = -1;
 	private _timeAxisOrigin = 0;
@@ -259,6 +249,17 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._times,
 			this._indicators,
 			this._fetches,
+		);
+		this._model = new FrameModel(
+			this._settings,
+			this._layout,
+			this.scale,
+			this._cache,
+			this._series,
+			this._axes,
+			this._time,
+			this._times,
+			this._data,
 		);
 		this._interaction = new Interaction(this._layout.root, this);
 		// The event does not bubble; capturing on the root hears it for every canvas, also later ones.
@@ -571,7 +572,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		const scale = this.scale;
 		let timeRange: ViewState['timeRange'] = null;
 		if (!scale.isEmpty && scale.width > 0) {
-			const coarse = this._coarseWindow();
+			const coarse = this._model.coarseWindow();
 			const from = Math.round(this._times.estimateTime(scale.from, coarse));
 			const to = Math.round(this._times.estimateTime(scale.to, coarse));
 			if (from < to) {
@@ -913,12 +914,6 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		series.primitives.clear();
 	}
 
-	/** A window of buckets that answers for times the raw rows do not hold. */
-	private _coarseWindow(): LevelWindow | null {
-		const drawn = this._drawn;
-		return drawn !== null && drawn.level > 0 ? drawn : this._cache.held(1);
-	}
-
 	/**
 	 * Price of a point placed at bar `index` and row `y` on the scale of `view`: in magnet mode, the
 	 * open, high, low or close nearest to `y` of the first visible series on that scale, where the bar
@@ -927,7 +922,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	 */
 	private _snapPrice(index: number, y: number, view: PaneViewState): number {
 		const free = view.yToPrice(y);
-		const drawn = this._drawn;
+		const drawn = this._model.drawn;
 		if (this._settings.options.crosshair.mode !== 'magnet' || drawn === null) {
 			return free;
 		}
@@ -1011,7 +1006,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		let view = this._views.get(id);
 		if (view === undefined) {
 			const scale = this._axes.get(id).scale;
-			view = new PaneViewState(id, this._times, new ScaleMapping(scale), () => this._coarseWindow());
+			view = new PaneViewState(id, this._times, new ScaleMapping(scale), () => this._model.coarseWindow());
 			this._views.set(id, view);
 		}
 		return view;
@@ -1019,7 +1014,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	/** Hands the mapping of the last model update (what is on screen) to the views of primitives. */
 	private _syncPaneView(): void {
-		const geometry = this._geometry;
+		const geometry = this._model.geometry;
 		const scale = this.scale;
 		for (const view of this._views.values()) {
 			view.sync(
@@ -1139,7 +1134,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._primitiveChanged('normal');
 		}
 		this._layout.font = '';
-		this._ticksScale = -1;
+		this._model.resetTicks();
 		for (const axis of this._axes.list) {
 			axis.fitTicks = -1;
 		}
@@ -1154,7 +1149,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	 * for an unknown time zone or locale, or a malformed schedule, and then changes nothing.
 	 */
 	private _applyTime(options: ChartOptions): void {
-		const drawn = this._drawn;
+		const drawn = this._model.drawn;
 		if (this._time.apply(options) && drawn !== null) {
 			this._time.cover(drawn.time, drawn.count, 2 ** drawn.shift);
 		}
@@ -1231,7 +1226,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._placeLayers();
 		}
 		if (level >= INVALIDATE_LIGHT) {
-			this._updateModel();
+			this._model.update();
 			if (this._axes.fitWidths(this.scale.isEmpty)) {
 				// The axis takes its width from the pane. The same bars stay visible, slightly narrower.
 				const scale = this.scale;
@@ -1239,7 +1234,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 				const to = scale.to;
 				this._layout.compute();
 				scale.setVisibleRange(from, to);
-				this._updateModel();
+				this._model.update();
 			}
 			if (this._layout.dirty) {
 				this._placeLayers();
@@ -1275,252 +1270,6 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._settle();
 	}
 
-	/** Brings scales, items and ticks up to date with the time scale and the window cache. */
-	private _updateModel(): void {
-		const scale = this.scale;
-		const cache = this._cache;
-		const ratio = this._layout.pixelRatio;
-		this._data.requestWindow(ratio);
-
-		const geometry = this._geometry;
-		const spacing = scale.barSpacing * ratio;
-		let origin = (scale.width - (scale.end - 1 + scale.rightOffset + 0.5) * scale.barSpacing) * ratio;
-		const level = this._data.levelFor(spacing);
-		// Visible rows. Below a pixel per bar, rows are binned into pixel columns: the origin sits on
-		// a whole pixel, so the bins (and the level the rows come from) never change the picture, and
-		// a row is visible when its column is inside the pane.
-		let rowFrom: number;
-		let rowTo: number;
-		if (spacing < 1) {
-			origin = Math.round(origin);
-			rowFrom = Math.ceil(-origin / spacing);
-			rowTo = Math.ceil((Math.max(1, Math.round(scale.width * ratio)) - origin) / spacing);
-		} else {
-			rowFrom = Math.ceil(scale.from - 0.5);
-			rowTo = Math.floor(scale.to + 0.5) + 1;
-		}
-		rowFrom = Math.max(rowFrom, scale.first);
-		rowTo = Math.min(rowTo, scale.end);
-		if (scale.isEmpty || rowTo < rowFrom) {
-			rowTo = rowFrom;
-		}
-		const source = cache.source(level, rowFrom, rowTo, scale.first, scale.end);
-		cache.retain(level, source === null ? level : source.level);
-		this._drawn = source;
-		this._times.setWindow(cache.held(0));
-		geometry.origin = origin;
-		geometry.spacing = spacing;
-		geometry.shift = source === null ? 0 : source.shift;
-		if (source === null) {
-			placeElements(geometry, 0, 0, 0);
-		} else {
-			placeElements(
-				geometry,
-				Math.max(rowFrom, source.rowsFrom(scale.first)),
-				Math.min(rowTo, source.rowsTo(scale.end)),
-				scale.first,
-			);
-		}
-
-		const axes = this._axes.list;
-		for (let i = 0; i < axes.length; i++) {
-			axes[i]!.beginFrame();
-		}
-		const size = 2 ** geometry.shift;
-		for (const series of this._series) {
-			const visible = series.seriesOptions.visible;
-			const axis = visible ? this._axes.of(series) : null;
-			if (axis !== null) {
-				axis.count++;
-				if (axis.first === null) {
-					axis.first = series;
-				}
-			}
-			series.scaled = visible;
-			series.base = Number.NaN;
-			if (source === null) {
-				series.bind(undefined, 0, -1, 0);
-				series.view.reset();
-				continue;
-			}
-			series.bind(source.blocks.get(series.engineId), source.capacity, source.version, source.level);
-			const view = series.view;
-			// A hidden series keeps no items, so it is rebuilt in full once it is shown again.
-			if (series.open.length === 0 || axis === null) {
-				view.reset();
-				continue;
-			}
-			view.update(
-				geometry,
-				series.open,
-				series.high,
-				series.low,
-				series.close,
-				source.start,
-				source.version,
-				source.dirtyLo,
-				source.dirtyHi,
-			);
-			this._includeSeries(axis, series, geometry.from - source.start, geometry.to - source.start);
-			const lastRow = Math.floor((scale.end - 1) / size) - source.start;
-			if (lastRow >= 0 && lastRow < source.count) {
-				const close = series.close[lastRow]!;
-				if (close === close) {
-					series.lastValue = close;
-					series.lastUp = close >= series.open[lastRow]!;
-				}
-			}
-		}
-
-		for (let i = 0; i < axes.length; i++) {
-			axes[i]!.fit();
-		}
-		for (const series of this._series) {
-			const axis = series.axis;
-			if (axis === null || !series.scaled) {
-				continue;
-			}
-			series.setProjection(axis.scale, ratio);
-			if (series.view.count > 0) {
-				series.view.project(series.deviceOffset, series.deviceScale, series.type !== 'line', series.deviceLog);
-			}
-		}
-
-		// Ticks of the visible axes, and of the scale the grid follows: the default one, unless it has
-		// no series and a visible axis has.
-		let grid = axes[0]!;
-		if (grid.count === 0) {
-			for (const axis of axes) {
-				if (axis.settings.visible && axis.count > 0) {
-					grid = axis;
-					break;
-				}
-			}
-		}
-		this._axes.grid = grid;
-		const fontSize = this._settings.options.layout.fontSize;
-		const tickSpacing = Math.max(32, fontSize * 3.5);
-		for (const axis of axes) {
-			const priceScale = axis.scale;
-			const first = axis.first;
-			if (first !== null) {
-				priceScale.setFormat(first.seriesOptions.minMove, first.seriesOptions.precision);
-			}
-			if (axis !== grid && !axis.settings.visible) {
-				continue;
-			}
-			if (axis.count === 0) {
-				priceScale.clearTicks();
-				continue;
-			}
-			priceScale.updateTicks(tickSpacing);
-			const count = priceScale.tickCount;
-			if (axis.tickYs.length < count) {
-				axis.tickYs = new Float32Array(count * 2);
-			}
-			for (let i = 0; i < count; i++) {
-				axis.tickYs[i] = Math.round(priceScale.valueToY(priceScale.tickValues[i]!) * ratio);
-			}
-		}
-
-		// Time ticks depend only on which bars are visible and how far apart they are.
-		const timeTicks = this._timeTicks;
-		const version = source === null ? -1 : source.version;
-		if (
-			scale.version !== this._ticksScale ||
-			version !== this._ticksCache ||
-			geometry.from !== this._ticksFrom ||
-			geometry.to !== this._ticksTo
-		) {
-			this._ticksScale = scale.version;
-			this._ticksCache = version;
-			this._ticksFrom = geometry.from;
-			this._ticksTo = geometry.to;
-			this._ticksGeneration++;
-			if (source === null) {
-				timeTicks.count = 0;
-				this._time.marks.breakCount = 0;
-				this._time.marks.shadeCount = 0;
-			} else {
-				// At a coarse level the labels sit on buckets, which hold `size` bars each.
-				const time = this._time;
-				const from = geometry.from - source.start;
-				const to = geometry.to - source.start;
-				timeTicks.update(
-					source.time,
-					from,
-					to,
-					Math.max(1, (fontSize * 7) / (scale.barSpacing * size)),
-					time.zone,
-					time.sessions,
-					time.format,
-					size,
-				);
-				const sessions = this._settings.options.sessions;
-				// Breaks and shading are placed while a day is at least 6 CSS pixels wide, and not on
-				// daily bars.
-				time.marks.update(
-					source.time,
-					from,
-					timeTicks.dates ? from : to,
-					time.zone,
-					time.sessions,
-					scale.width / 6,
-					sessions.breaks.visible,
-					sessions.extendedHours.visible,
-				);
-			}
-		}
-		if (this._tickXs.length < timeTicks.count) {
-			this._tickXs = new Float32Array(timeTicks.count * 2);
-		}
-		const tickStart = source === null ? 0 : source.start;
-		for (let i = 0; i < timeTicks.count; i++) {
-			const index = Math.max((tickStart + timeTicks.position[i]!) * size, scale.first);
-			this._tickXs[i] = Math.round(geometry.origin + index * geometry.spacing);
-		}
-		this._time.marks.place(geometry.origin, geometry.spacing, tickStart, size);
-	}
-
-	/**
-	 * Takes the values of a series in view into the range of its scale. On a percentage or indexed
-	 * scale the series' base is its first value in view, from element `from` of its columns on.
-	 */
-	private _includeSeries(axis: PriceAxis, series: Series, from: number, to: number): void {
-		const view = series.view;
-		let low = view.min;
-		let high = view.max;
-		if (!(low <= high)) {
-			return;
-		}
-		const scale = axis.scale;
-		const mode = scale.mode;
-		if (series.type === 'histogram') {
-			// Bars grow from their base, which is always in view where the scale can show it.
-			const base = (series.seriesOptions as HistogramOptions).base;
-			if (mode !== 'logarithmic' || base > 0) {
-				low = Math.min(low, base);
-				high = Math.max(high, base);
-			}
-		}
-		if (mode === 'normal') {
-			axis.include(low, high);
-		} else if (mode === 'logarithmic') {
-			if (high > 0) {
-				axis.include(Math.log10(low > 0 ? low : view.lowestPositive()), Math.log10(high));
-			}
-		} else {
-			const base = firstValue(series.close, from, to);
-			series.base = base;
-			if (base !== 0 && base === base) {
-				if (scale.base !== scale.base) {
-					scale.base = base;
-				}
-				axis.include(scale.toValue(low, base), scale.toValue(high, base));
-			}
-		}
-	}
-
 	/**
 	 * Finds the device columns a frame has to redraw when only data changed, into `_clipLeft` and
 	 * `_clipRight`. Returns `PANE_FULL` when the series layer has to be drawn as a whole, `PANE_KEPT`
@@ -1534,7 +1283,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	 * window, a custom renderer or a primitive below the series fail the test.
 	 */
 	private _dirtyColumns(width: number): number {
-		const geometry = this._geometry;
+		const geometry = this._model.geometry;
 		const drawn = this._paneGeometry;
 		const grid = this._axes.grid;
 		const layers = this._layers;
@@ -1547,8 +1296,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			geometry.to !== drawn.to ||
 			geometry.shift !== drawn.shift ||
 			geometry.firstRow !== drawn.firstRow ||
-			(this._drawn === null ? -1 : this._drawn.version) !== this._paneSource ||
-			!this._paneTickXs.match(this._tickXs, this._timeTicks.count) ||
+			(this._model.drawn === null ? -1 : this._model.drawn.version) !== this._paneSource ||
+			!this._paneTickXs.match(this._model.tickXs, this._model.timeTicks.count) ||
 			!this._paneBreaks.match(marks.breakX, marks.breakCount) ||
 			!this._paneShadeLeft.match(marks.shadeLeft, marks.shadeCount) ||
 			!this._paneShadeRight.match(marks.shadeRight, marks.shadeCount) ||
@@ -1619,7 +1368,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		const ratio = this._layout.pixelRatio;
 		const widths = this._widths;
 		// A bucket drawn as one candle (a coarse level shown wider than a pixel) is as wide as its bars.
-		candleWidths(this._geometry.spacing * 2 ** this._geometry.shift, ratio, widths);
+		candleWidths(this._model.geometry.spacing * 2 ** this._model.geometry.shift, ratio, widths);
 		const mode = this._dirtyColumns(layer.width);
 		const partial = mode === PANE_PARTIAL;
 		if (mode === PANE_KEPT) {
@@ -1650,8 +1399,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			ctx,
 			layer.width,
 			layer.height,
-			this._tickXs,
-			this._timeTicks.count,
+			this._model.tickXs,
+			this._model.timeTicks.count,
 			grid.tickYs,
 			grid.scale.tickCount,
 			options.grid.vertLines,
@@ -1753,7 +1502,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			ctx.restore();
 			return;
 		}
-		const geometry = this._geometry;
+		const geometry = this._model.geometry;
 		const drawn = this._paneGeometry;
 		drawn.origin = geometry.origin;
 		drawn.spacing = geometry.spacing;
@@ -1761,8 +1510,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		drawn.to = geometry.to;
 		drawn.shift = geometry.shift;
 		drawn.firstRow = geometry.firstRow;
-		this._paneSource = this._drawn === null ? -1 : this._drawn.version;
-		this._paneTickXs.take(this._tickXs, this._timeTicks.count);
+		this._paneSource = this._model.drawn === null ? -1 : this._model.drawn.version;
+		this._paneTickXs.take(this._model.tickXs, this._model.timeTicks.count);
 		this._paneBreaks.take(marks.breakX, marks.breakCount);
 		this._paneShadeLeft.take(marks.shadeLeft, marks.shadeCount);
 		this._paneShadeRight.take(marks.shadeRight, marks.shadeCount);
@@ -1825,8 +1574,11 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			axis.drawn = priceScale.ticksGeneration;
 		}
 		const timeOptions = options.timeScale;
-		const origin = this._geometry.origin;
-		if (timeOptions.visible && (this._timeAxisDrawn !== this._ticksGeneration || this._timeAxisOrigin !== origin)) {
+		const origin = this._model.geometry.origin;
+		if (
+			timeOptions.visible &&
+			(this._timeAxisDrawn !== this._model.ticksGeneration || this._timeAxisOrigin !== origin)
+		) {
 			const layer = this._layout.timeAxis;
 			if (layer.ctx !== null) {
 				drawTimeAxis(
@@ -1836,12 +1588,12 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 					style,
 					timeOptions.borderVisible ? timeOptions.borderColor : '',
 					Math.round(this._layout.paneLeft * ratio),
-					this._tickXs,
-					this._timeTicks.labels,
-					this._timeTicks.count,
+					this._model.tickXs,
+					this._model.timeTicks.labels,
+					this._model.timeTicks.count,
 				);
 			}
-			this._timeAxisDrawn = this._ticksGeneration;
+			this._timeAxisDrawn = this._model.ticksGeneration;
 			this._timeAxisOrigin = origin;
 		}
 	}
@@ -1924,10 +1676,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		if (!this._crosshairVisible || scale.isEmpty || crosshair.mode === 'hidden') {
 			return;
 		}
-		const geometry = this._geometry;
+		const geometry = this._model.geometry;
 		const index = Math.min(scale.end - 1, Math.max(scale.first, Math.round(scale.xToLogical(this._crosshairX))));
 		const x = paneLeft + Math.round(geometry.origin + index * geometry.spacing);
-		const drawn = this._drawn;
+		const drawn = this._model.drawn;
 		const row = drawn === null ? -1 : Math.floor(index / 2 ** drawn.shift) - drawn.start;
 		const inCache = drawn !== null && row >= 0 && row < drawn.count;
 		let cssY = this._crosshairY;
@@ -1977,7 +1729,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		if (vertLine.labelVisible && options.timeScale.visible && inCache) {
 			const time = drawn!.time[row]!;
 			// Daily bars are dates, shown as they are (see `TimeTicks.dates`).
-			const label = this._time.format.crosshair(time, this._timeTicks.dates ? time : this._time.zone.wall(time));
+			const label = this._time.format.crosshair(time, this._model.timeTicks.dates ? time : this._time.zone.wall(time));
 			const width = Math.ceil((label.length * this._layout.digitWidth + 2 * AXIS_PADDING) * ratio);
 			const left = Math.min(Math.max(paneLeft, x - (width >> 1)), Math.max(paneLeft, paneLeft + paneWidth - width));
 			const background = vertLine.labelBackgroundColor;
@@ -2121,18 +1873,6 @@ function seriesReach(series: Series, pixelRatio: number, body: number): number {
 
 function thickness(width: number, pixelRatio: number): number {
 	return Math.max(1, Math.floor(width * pixelRatio));
-}
-
-/** The first value in `[from, to)` that is not NaN, or NaN. */
-function firstValue(values: Float64Array, from: number, to: number): number {
-	const end = Math.min(to, values.length);
-	for (let i = Math.max(0, from); i < end; i++) {
-		const value = values[i]!;
-		if (value === value) {
-			return value;
-		}
-	}
-	return Number.NaN;
 }
 
 /**

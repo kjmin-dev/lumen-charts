@@ -296,6 +296,48 @@ export class PriceAxes {
 		return axis;
 	}
 
+	/**
+	 * Computes the ticks of the visible axes and of the scale the grid follows, about `tickSpacing`
+	 * CSS pixels apart, and their rows at the device pixel ratio `ratio`.
+	 */
+	public updateTicks(tickSpacing: number, ratio: number): void {
+		const axes = this.list;
+		// Ticks of the visible axes, and of the scale the grid follows: the default one, unless it has
+		// no series and a visible axis has.
+		let grid = axes[0]!;
+		if (grid.count === 0) {
+			for (const axis of axes) {
+				if (axis.settings.visible && axis.count > 0) {
+					grid = axis;
+					break;
+				}
+			}
+		}
+		this.grid = grid;
+		for (const axis of axes) {
+			const priceScale = axis.scale;
+			const first = axis.first;
+			if (first !== null) {
+				priceScale.setFormat(first.seriesOptions.minMove, first.seriesOptions.precision);
+			}
+			if (axis !== grid && !axis.settings.visible) {
+				continue;
+			}
+			if (axis.count === 0) {
+				priceScale.clearTicks();
+				continue;
+			}
+			priceScale.updateTicks(tickSpacing);
+			const count = priceScale.tickCount;
+			if (axis.tickYs.length < count) {
+				axis.tickYs = new Float32Array(count * 2);
+			}
+			for (let i = 0; i < count; i++) {
+				axis.tickYs[i] = Math.round(priceScale.valueToY(priceScale.tickValues[i]!) * ratio);
+			}
+		}
+	}
+
 	/** The price scale a series is on, following its `priceScaleId`. */
 	public of(series: Series): PriceAxis {
 		// Options are replaced as a whole on every change: while they are the same, so is the scale.
