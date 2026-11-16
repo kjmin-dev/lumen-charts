@@ -108,12 +108,11 @@ export function aggregate(
 				let min = Infinity;
 				for (let i = from; i < to; i++) {
 					const value = source[i]!;
-					// Comparisons with NaN are false, so missing values are skipped.
-					if (value > max) {
-						max = value;
-					}
-					if (value < min) {
-						min = value;
+					// Missing values are skipped. `Math.max` and `Math.min` compile to one instruction
+					// each, where a comparison is a branch that prices mispredict.
+					if (value === value) {
+						max = Math.max(max, value);
+						min = Math.min(min, value);
 					}
 				}
 				out[offset + k] = max === -Infinity ? NaN : max;
@@ -122,8 +121,8 @@ export function aggregate(
 				let max = -Infinity;
 				for (let i = from; i < to; i++) {
 					const value = source[i]!;
-					if (value > max) {
-						max = value;
+					if (value === value) {
+						max = Math.max(max, value);
 					}
 				}
 				out[offset + k] = max === -Infinity ? NaN : max;
@@ -131,8 +130,8 @@ export function aggregate(
 				let min = Infinity;
 				for (let i = from; i < to; i++) {
 					const value = source[i]!;
-					if (value < min) {
-						min = value;
+					if (value === value) {
+						min = Math.min(min, value);
 					}
 				}
 				out[offset + k] = min === Infinity ? NaN : min;

@@ -13,7 +13,32 @@ import {
 import { describe, expect, it } from 'vitest';
 import { line, ohlcv, random, run, ticks } from './helpers';
 
-const same = (a: number, b: number): boolean => (a !== a && b !== b) || a === b;
+/** The same bits (any NaN equals any NaN): +0 and -0 differ. */
+const same = (a: number, b: number): boolean => (a !== a && b !== b) || Object.is(a, b);
+
+/** Zeros of both signs with missing values between them, and now and then another value. */
+function zeroish(next: () => number): number {
+	const roll = next();
+	return roll < 0.4 ? 0 : roll < 0.8 ? -0 : roll < 0.9 ? NaN : roll < 0.95 ? 1 : -1;
+}
+
+/** The four columns of a column-major block, `n` long each. */
+const four = (a: Float64Array, n: number): Float64Array[] => [0, 1, 2, 3].map(c => a.subarray(c * n, (c + 1) * n));
+
+/** Every level of an engine, column by column. */
+function levelsOf(core: EngineCore): number[][] {
+	const extent = run(core, { type: 'window', level: 0, start: 0, count: 0, capacity: 0 });
+	const out: number[][] = [];
+	for (let level = 1; level <= levelCount(extent.end - extent.first); level++) {
+		const window = run(core, { type: 'window', level, start: -1e9, count: 2e9, capacity: 0 }).window!;
+		for (const block of window.series) {
+			for (let at = 0; at < block.data.length; at += window.capacity) {
+				out.push([...block.data.subarray(at, at + window.count)]);
+			}
+		}
+	}
+	return out;
+}
 
 interface Raw {
 	first: number;
@@ -131,6 +156,68 @@ describe('aggregate', () => {
 	});
 });
 
+describe('aggregate', () => {
+	it('takes +0 as the highest and -0 as the lowest of both zeros, wherever they are in the group', () => {
+		for (const group of [
+			[0, -0, NaN, NaN],
+			[-0, 0, NaN, NaN],
+			[NaN, -0, NaN, 0],
+			[0, NaN, -0, -0],
+			[-0, -0, 0, -1],
+			[1, 0, NaN, -0],
+		]) {
+			const values = Float64Array.from(group);
+			const present = group.filter(v => v === v);
+			const highest = Math.max(...present);
+			const lowest = Math.min(...present);
+			// Highest and lowest of one source in one pass, as a line has them.
+			const fused = new Float64Array(4);
+			aggregate([values, values, values, values], [0, 0, 0, 0], 0, 4, 2, [0, MAX, MIN, 3], fused, 1, 0);
+			expect([...fused], `${group}`).toEqual([present[0], highest, lowest, present.at(-1)]);
+			// Each on its own, as the high and the low of a candle are.
+			const alone = new Float64Array(2);
+			aggregate([values, values.slice()], [0, 0], 0, 4, 2, [MAX, MIN], alone, 1, 0);
+			expect([...alone], `${group}`).toEqual([highest, lowest]);
+			const reversed = new Float64Array(2);
+			aggregate([values, values.slice()], [0, 0], 0, 4, 2, [MIN, MAX], reversed, 1, 0);
+			expect([...reversed], `${group}`).toEqual([lowest, highest]);
+		}
+		expect(Object.is(Math.max(-0, 0), 0) && Object.is(Math.min(0, -0), -0)).toBe(true);
+	});
+
+	it('gives a bucket the same bits from its rows as from the buckets below it', () => {
+		const next = random(31);
+		const rows = 4096;
+		const values = Float64Array.from({ length: rows }, () => zeroish(next));
+		const kinds = [0, MAX, MIN, 3];
+		// Rows -1000 to 3096: the first and the last group of every level are partial.
+		const lo = -1000;
+		const hi = lo + rows;
+		const groups = (g: number) => ((hi - 1) >> g) - (lo >> g) + 1;
+		let below = new Float64Array(4 * groups(4));
+		aggregate([values, values, values, values], [lo, lo, lo, lo], lo, hi, 4, kinds, below, groups(4), 0);
+		for (let g = 6; g <= 10; g += 2) {
+			const direct = new Float64Array(4 * groups(g));
+			aggregate([values, values, values, values], [lo, lo, lo, lo], lo, hi, g, kinds, direct, groups(g), 0);
+			const stacked = new Float64Array(4 * groups(g));
+			const base = lo >> (g - 2);
+			aggregate(
+				four(below, groups(g - 2)),
+				[base, base, base, base],
+				base,
+				base + groups(g - 2),
+				2,
+				kinds,
+				stacked,
+				groups(g),
+				0,
+			);
+			expect([...stacked]).toEqual([...direct]);
+			below = stacked;
+		}
+	});
+});
+
 describe('level of detail', () => {
 	it('picks raw rows below 16 bars per pixel and the coarsest level that fits a pixel above', () => {
 		expect(levelCount(15)).toBe(0);
@@ -212,6 +299,95 @@ describe('level of detail', () => {
 			expect(event.end - event.first).toBe(lastTime - firstTime + 1);
 			checkLevels(core);
 		}
+	});
+
+	it('settles the sign of a zero the same way however a bucket came to be built', () => {
+		// Prices that are zeros of both signs, with gaps: every bucket holds both. Its highest value is
+		// then +0 and its lowest -0, whichever came first, so a level built at once, one grown by ticks
+		// and prepends, and the buckets of a level built from the level below all hold the same bits.
+		const next = random(23);
+		const zeros = (count: number, t0: number): Float64Array => {
+			const data = ohlcv(count, t0, 1);
+			for (let at = count; at < 6 * count; at++) {
+				data[at] = zeroish(next);
+			}
+			return data;
+		};
+		const core = new EngineCore();
+		run(core, { type: 'add', series: 1, kind: 'ohlcv' });
+		run(core, { type: 'add', series: 2, kind: 'line' });
+		const count = 3000;
+		let firstTime = 1_000_000;
+		let lastTime = firstTime + count - 1;
+		run(core, { type: 'set', series: 1, count, data: zeros(count, firstTime) });
+		// Several points of the line share a main bar: the bar gets the last of them.
+		const times: number[] = [];
+		for (let t = firstTime; t < firstTime + count; t += 0.25 + Math.floor(next() * 3)) {
+			times.push(t);
+		}
+		const points = times.map(() => zeroish(next));
+		run(core, { type: 'set', series: 2, count: times.length, data: line(times, points) });
+		checkLevels(core);
+		for (let round = 0; round < 8; round++) {
+			const older = 1 + Math.floor(next() * 1500);
+			firstTime -= older;
+			run(core, { type: 'prepend', series: 1, count: older, data: zeros(older, firstTime) });
+			const batch: number[][] = [];
+			for (let k = 0; k < 30; k++) {
+				const roll = next();
+				// A new bar, a change of the last one, or a correction of an old one.
+				const time =
+					roll < 0.3 ? ++lastTime : roll < 0.7 ? lastTime : firstTime + Math.floor(next() * (lastTime - firstTime));
+				batch.push([1, time, zeroish(next), zeroish(next), zeroish(next), zeroish(next), zeroish(next)]);
+			}
+			run(core, ticks(...batch));
+			checkLevels(core);
+		}
+		// The same rows in two steps: the bars from index 0 on, then all the older ones (bucket
+		// boundaries are fixed by the global index, so index 0 has to be the same bar).
+		const raw = rawOf(core);
+		const total = raw.end - raw.first;
+		const main = raw.series.get(1)!;
+		const slice = (from: number, to: number): Float64Array => {
+			const data = new Float64Array(6 * (to - from));
+			data.set(raw.time.slice(from, to), 0);
+			main.forEach((column, c) => data.set(column.slice(from, to), (c + 1) * (to - from)));
+			return data;
+		};
+		const fresh = new EngineCore();
+		run(fresh, { type: 'add', series: 1, kind: 'ohlcv' });
+		run(fresh, { type: 'add', series: 2, kind: 'line' });
+		run(fresh, { type: 'set', series: 1, count: raw.end, data: slice(-raw.first, total) });
+		run(fresh, { type: 'set', series: 2, count: times.length, data: line(times, points) });
+		run(fresh, { type: 'prepend', series: 1, count: -raw.first, data: slice(0, -raw.first) });
+		const grown = levelsOf(core);
+		const atOnce = levelsOf(fresh);
+		expect(grown.length).toBeGreaterThan(8);
+		expect(atOnce).toEqual(grown);
+		// Both zeros are there to be told apart.
+		const flat = grown.flat();
+		expect(flat.some(v => Object.is(v, 0)) && flat.some(v => Object.is(v, -0))).toBe(true);
+	});
+
+	it('merges the bars of a secondary series that share a main bar by the same rule', () => {
+		const core = new EngineCore();
+		run(core, { type: 'add', series: 1, kind: 'ohlcv' });
+		run(core, { type: 'add', series: 2, kind: 'ohlcv' });
+		run(core, { type: 'set', series: 1, count: 3, data: ohlcv(3, 0, 10) });
+		// Two bars in each of the first two main bars, with the zeros in either order; one in the third.
+		const bars = [
+			[0, 0, -0, 0, 0, 1],
+			[5, 0, 0, -0, 0, 1],
+			[10, 0, 0, -0, 0, 1],
+			[15, 0, -0, 0, 0, 1],
+			[20, 0, -0, -0, 0, 1],
+		];
+		const data = new Float64Array(6 * bars.length);
+		bars.forEach((bar, i) => bar.forEach((value, c) => (data[c * bars.length + i] = value)));
+		run(core, { type: 'set', series: 2, count: bars.length, data });
+		const values = rawOf(core).series.get(2)!;
+		expect(values[1]).toEqual([0, 0, -0]);
+		expect(values[2]).toEqual([-0, -0, -0]);
 	});
 
 	it('changes only the first bucket of each level when a prepend is not a multiple of its size', () => {

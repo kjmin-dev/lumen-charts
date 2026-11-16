@@ -410,16 +410,16 @@ function rollingExtreme(
 		let running = -Infinity;
 		for (let j = block; j < end; j++) {
 			const v = sign * buffer[at + j]!;
-			if (v > running) {
-				running = v;
+			if (v === v) {
+				running = Math.max(running, v);
 			}
 			prefix[j] = running;
 		}
 		running = -Infinity;
 		for (let j = end - 1; j >= block; j--) {
 			const v = sign * buffer[at + j]!;
-			if (v > running) {
-				running = v;
+			if (v === v) {
+				running = Math.max(running, v);
 			}
 			suffix[j] = running;
 		}
@@ -428,7 +428,7 @@ function rollingExtreme(
 	for (let i = from - start, k = target, end = to - start; i < end; i++, k++) {
 		const a = suffix[i - lag]!;
 		const b = prefix[i]!;
-		out[k] = sign * (a > b ? a : b);
+		out[k] = sign * Math.max(a, b);
 	}
 }
 

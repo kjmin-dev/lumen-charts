@@ -48,28 +48,36 @@ interface Fixture {
  * a prepend whose size is not a multiple of any bucket, so indexes are negative and the first
  * bucket of every level is partial.
  */
-function fixture(kind: Kind, seed: number): Fixture {
+function fixture(kind: Kind, seed: number, zeros = false): Fixture {
 	const next = random(seed);
+	// With `zeros`, every price is a zero of either sign instead (or, now and then, 1 or -1).
+	const price = (value: number): number => {
+		if (!zeros || value !== value) {
+			return value;
+		}
+		const roll = next();
+		return roll < 0.46 ? 0 : roll < 0.92 ? -0 : roll < 0.96 ? 1 : -1;
+	};
 	const count = 90_000;
 	const older = 12_345;
 	const total = count + older;
 	const columns = kind === 'ohlcv' ? 5 : 1;
 	const data = new Float64Array(total * (columns + 1));
-	let price = 100;
+	let last = 100;
 	for (let i = 0; i < total; i++) {
 		data[i] = i * 60_000;
-		const close = price + (next() - 0.5) * 2;
+		const close = last + (next() - 0.5) * 2;
 		const missing = next() < 0.02;
 		if (kind === 'ohlcv') {
-			data[total + i] = missing ? NaN : price;
-			data[2 * total + i] = missing ? NaN : Math.max(price, close) + next() * (next() < 0.001 ? 50 : 1);
-			data[3 * total + i] = missing ? NaN : Math.min(price, close) - next();
-			data[4 * total + i] = missing ? NaN : close;
+			data[total + i] = price(missing ? NaN : last);
+			data[2 * total + i] = price(missing ? NaN : Math.max(last, close) + next() * (next() < 0.001 ? 50 : 1));
+			data[3 * total + i] = price(missing ? NaN : Math.min(last, close) - next());
+			data[4 * total + i] = price(missing ? NaN : close);
 			data[5 * total + i] = next() * 1000;
 		} else {
-			data[total + i] = missing ? NaN : close + (next() < 0.001 ? 50 : 0);
+			data[total + i] = price(missing ? NaN : close + (next() < 0.001 ? 50 : 0));
 		}
-		price = close;
+		last = close;
 	}
 	const slice = (from: number, to: number): Float64Array => {
 		const n = to - from;
@@ -135,6 +143,12 @@ function items(f: Fixture, origin: number, barsPerPixel: number, level: number, 
 		min: view.min,
 		max: view.max,
 		x: [...view.x.subarray(0, n)],
+		prices: [
+			...view.open.subarray(0, n),
+			...view.high.subarray(0, n),
+			...view.low.subarray(0, n),
+			...view.close.subarray(0, n),
+		],
 		y: [
 			...view.yOpen.subarray(0, n),
 			...view.yHigh.subarray(0, n),
@@ -196,6 +210,26 @@ describe('switching between raw rows and levels of detail', () => {
 			const coarse = items(f, 3.5, 16, 1, kind === 'ohlcv');
 			const fine = items(f, 3.5, 16, 0, kind === 'ohlcv');
 			expect(coarse.y).not.toEqual(fine.y);
+		});
+	}
+
+	for (const kind of ['ohlcv', 'line'] as const) {
+		it(`gives the same bits from either side of every switch where columns hold both zeros (${kind})`, () => {
+			// Pixels cannot tell +0 from -0, so the item prices are compared: a column merged from raw
+			// rows, from buckets, and from the buckets of buckets takes +0 as its highest and -0 as
+			// its lowest value alike, whatever the order of its rows.
+			const f = fixture(kind, kind === 'ohlcv' ? 13 : 14, true);
+			for (let level = 1; level <= 4; level++) {
+				const barsPerPixel = 2 ** levelShift(level);
+				for (const origin of [-37, 0, 517, 771 + Math.floor(f.first / barsPerPixel)]) {
+					const coarse = items(f, origin, barsPerPixel, level, false);
+					const fine = items(f, origin, barsPerPixel, level - 1, false);
+					expect(coarse.count).toBeGreaterThan(0);
+					expect(coarse.prices).toEqual(fine.prices);
+					expect([coarse.min, coarse.max]).toEqual([fine.min, fine.max]);
+					expect(coarse.prices.some(v => Object.is(v, 0)) && coarse.prices.some(v => Object.is(v, -0))).toBe(true);
+				}
+			}
 		});
 	}
 

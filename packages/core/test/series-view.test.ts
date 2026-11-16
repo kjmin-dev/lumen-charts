@@ -116,6 +116,72 @@ describe('SeriesView', () => {
 		expect(view.max).toBe(9);
 	});
 
+	it('takes +0 as the highest and -0 as the lowest of both zeros, in a column and in the range', () => {
+		const view = new SeriesView();
+		const geometry: Geometry = { origin: 0, spacing: 0.25, from: 0, to: 16, shift: 0, firstRow: 0 };
+		// Four rows per column, the zeros in either order and with gaps between them.
+		const value = Float64Array.of(0, -0, NaN, NaN, -0, NaN, 0, 0, NaN, -0, -0, NaN, NaN, NaN, NaN, NaN);
+		view.update(geometry, value, value, value, value, 0, 1, Infinity, -Infinity);
+		expect(view.merged).toBe(true);
+		expect([...view.high.subarray(0, 4)]).toEqual([0, 0, -0, NaN]);
+		expect([...view.low.subarray(0, 4)]).toEqual([-0, -0, -0, NaN]);
+		expect([...view.open.subarray(0, 4)]).toEqual([0, -0, -0, NaN]);
+		expect([...view.close.subarray(0, 4)]).toEqual([-0, 0, -0, NaN]);
+		expect([view.min, view.max]).toEqual([-0, 0]);
+
+		// Candles: highs and lows from columns of their own.
+		const high = Float64Array.of(-0, 0, NaN, -0, 0, NaN, -0, -0);
+		const low = Float64Array.of(0, NaN, -0, 0, -0, 0, NaN, 0);
+		const candles = new SeriesView();
+		const half: Geometry = { origin: 0, spacing: 0.25, from: 0, to: 8, shift: 0, firstRow: 0 };
+		candles.update(half, low, high, low, high, 0, 1, Infinity, -Infinity);
+		expect([...candles.high.subarray(0, 2)]).toEqual([0, 0]);
+		expect([...candles.low.subarray(0, 2)]).toEqual([-0, -0]);
+		expect([candles.min, candles.max]).toEqual([-0, 0]);
+
+		// One item per row: the range of the items follows the same rule, in either order.
+		for (const rows of [
+			[0, NaN, -0],
+			[-0, NaN, 0],
+		]) {
+			const raw = new SeriesView();
+			const wide: Geometry = { origin: 0, spacing: 4, from: 0, to: 3, shift: 0, firstRow: 0 };
+			const column = Float64Array.from(rows);
+			raw.update(wide, column, column, column, column, 0, 1, Infinity, -Infinity);
+			expect(raw.merged).toBe(false);
+			expect([raw.min, raw.max]).toEqual([-0, 0]);
+		}
+	});
+
+	it('gives a tick the bits of a full rebuild where columns hold zeros of both signs', () => {
+		let state = 7;
+		const next = (): number => {
+			state = (state * 1664525 + 1013904223) >>> 0;
+			return state / 4294967296;
+		};
+		const pick = (): number => {
+			const roll = next();
+			return roll < 0.45 ? 0 : roll < 0.9 ? -0 : roll < 0.95 ? NaN : 1;
+		};
+		const count = 4000;
+		const columns = [0, 1, 2, 3].map(() => Float64Array.from({ length: count }, pick));
+		const [open, high, low, close] = columns as [Float64Array, Float64Array, Float64Array, Float64Array];
+		const geometry: Geometry = { origin: 3, spacing: 0.21, from: 0, to: count, shift: 0, firstRow: 0 };
+		const view = new SeriesView();
+		view.update(geometry, open, high, low, close, 0, 1, Infinity, -Infinity);
+		for (let round = 0; round < 200; round++) {
+			const row = round % 3 === 0 ? count - 1 : Math.floor(next() * count);
+			for (const column of columns) {
+				column[row] = pick();
+			}
+			view.update(geometry, open, high, low, close, 0, 1, row, row + 1);
+			const fresh = new SeriesView();
+			fresh.update(geometry, open, high, low, close, 0, 1, Infinity, -Infinity);
+			expect(items(view)).toEqual(items(fresh));
+			expect([view.min, view.max]).toEqual([fresh.min, fresh.max]);
+		}
+	});
+
 	it('rebuilds only the items touched by a tick, with the same result as a full rebuild', () => {
 		for (const spacing of [4, 0.013]) {
 			const count = 50_000;

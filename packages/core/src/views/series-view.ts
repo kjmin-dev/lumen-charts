@@ -194,23 +194,22 @@ export class SeriesView {
 				if (single) {
 					for (let row = rowFrom; row < rowTo; row++) {
 						const value = high[row]!;
-						// Comparisons with NaN are false, so rows without a value are skipped.
-						if (value > max) {
-							max = value;
-						}
-						if (value < min) {
-							min = value;
+						// Rows without a value are skipped. `Math.max` and `Math.min` compile to one
+						// instruction each, where a comparison is a branch that prices mispredict.
+						if (value === value) {
+							max = Math.max(max, value);
+							min = Math.min(min, value);
 						}
 					}
 				} else {
 					for (let row = rowFrom; row < rowTo; row++) {
 						const h = high[row]!;
 						const l = low[row]!;
-						if (h > max) {
-							max = h;
+						if (h === h) {
+							max = Math.max(max, h);
 						}
-						if (l < min) {
-							min = l;
+						if (l === l) {
+							min = Math.min(min, l);
 						}
 					}
 				}
@@ -255,11 +254,11 @@ export class SeriesView {
 		for (let k = 0; k < count; k++) {
 			const h = itemHigh[k]!;
 			const l = itemLow[k]!;
-			if (h > max) {
-				max = h;
+			if (h === h) {
+				max = Math.max(max, h);
 			}
-			if (l < min) {
-				min = l;
+			if (l === l) {
+				min = Math.min(min, l);
 			}
 		}
 		this.min = min;

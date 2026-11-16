@@ -2973,11 +2973,11 @@ export class EngineCore {
 					if (open !== open) {
 						open = o;
 					}
-					if (h > high) {
-						high = h;
+					if (h === h) {
+						high = Math.max(high, h);
 					}
-					if (l < low) {
-						low = l;
+					if (l === l) {
+						low = Math.min(low, l);
 					}
 					if (c === c) {
 						close = c;
