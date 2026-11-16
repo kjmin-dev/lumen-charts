@@ -1,5 +1,5 @@
 import { type ChartApi, type ChartOptions, type DeepPartial, createChart } from '@lumen-charts/core';
-import { type CSSProperties, createElement, forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { type CSSProperties, createElement, forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 export interface LumenChartProps {
 	options?: DeepPartial<ChartOptions>;
@@ -13,30 +13,39 @@ export interface LumenChartProps {
  */
 export const LumenChart = forwardRef<ChartApi | null, LumenChartProps>(function LumenChart(props, ref) {
 	const container = useRef<HTMLDivElement>(null);
-	const chart = useRef<ChartApi | null>(null);
+	// Held in state so that creating the chart renders again and the ref is handed the instance.
+	const [chart, setChart] = useState<ChartApi | null>(null);
 	const { options, className, style } = props;
-	// The chart is created once with the first options; later changes go through applyOptions below.
-	const initialOptions = useRef(options);
+	// The latest options, read when the chart is created; changes after that go through applyOptions.
+	const latestOptions = useRef(options);
+	latestOptions.current = options;
+	// The options the current chart was created with, so they are not applied to it a second time.
+	const createdWith = useRef<DeepPartial<ChartOptions> | undefined>(undefined);
 
 	useEffect(() => {
 		if (container.current === null) {
 			return;
 		}
-		const instance = createChart(container.current, initialOptions.current);
-		chart.current = instance;
+		createdWith.current = latestOptions.current;
+		const instance = createChart(container.current, createdWith.current);
+		setChart(instance);
 		return () => {
-			chart.current = null;
+			setChart(null);
 			instance.destroy();
 		};
 	}, []);
 
 	useEffect(() => {
-		if (options !== undefined) {
-			chart.current?.applyOptions(options);
+		if (chart === null) {
+			return;
 		}
-	}, [options]);
+		if (options !== undefined && options !== createdWith.current) {
+			chart.applyOptions(options);
+		}
+		createdWith.current = undefined;
+	}, [chart, options]);
 
-	useImperativeHandle<ChartApi | null, ChartApi | null>(ref, () => chart.current, []);
+	useImperativeHandle<ChartApi | null, ChartApi | null>(ref, () => chart, [chart]);
 
 	return createElement('div', { ref: container, className, style });
 });
