@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PriceScale, decimalsOf, niceStep } from '../src/model/price-scale';
-import type { PriceScaleMode } from '../src/options';
+import { BASE_OPTIONS, type PriceScaleMode } from '../src/options';
+import { PriceAxis } from '../src/price-axes';
 
 /** A scale 500 pixels high in `mode`, fitted to the values of prices 50 to 200 with base 100. */
 function scaleFor(mode: PriceScaleMode, inverted = false): PriceScale {
@@ -388,5 +389,28 @@ describe('PriceScale formats', () => {
 		expect(ps.formatVersion).toBe(version + 1);
 		ps.setMode('percentage');
 		expect(ps.formatVersion).toBe(version + 2);
+	});
+});
+
+describe('PriceAxis range', () => {
+	it('takes the range of its series whatever their order, zeros of both signs and missing bounds included', () => {
+		const host = { applyPriceScaleOptions: () => {}, invalidate: () => {} };
+		const ranges: [number, number][] = [
+			[0, -0],
+			[-0, 0],
+			[NaN, NaN],
+			[-0, -0],
+		];
+		for (const order of [ranges, ranges.map((_, i) => ranges[ranges.length - 1 - i]!)]) {
+			const axis = new PriceAxis('test', host, BASE_OPTIONS.priceScale);
+			axis.beginFrame();
+			for (const [low, high] of order) {
+				axis.include(low, high);
+			}
+			expect([axis.low, axis.high]).toEqual([-0, 0]);
+			axis.include(-3, Infinity);
+			axis.include(Infinity, 7);
+			expect([axis.low, axis.high]).toEqual([-3, Infinity]);
+		}
 	});
 });

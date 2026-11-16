@@ -418,6 +418,52 @@ describe('indicator kernels against brute force', () => {
 		}
 	});
 
+	it('takes +0 as the highest and -0 as the lowest of both zeros, wherever the window is cut', () => {
+		// Zeros of both signs with gaps and a few other values. The rolling extremes cut the rows into
+		// blocks from where a slice starts, so a rule that kept the first zero met would give bits
+		// that depend on the slicing.
+		const r = random(17);
+		const pick = (): number => {
+			const roll = r();
+			return roll < 0.42 ? 0 : roll < 0.84 ? -0 : roll < 0.87 ? NaN : roll < 0.94 ? 1 : -1;
+		};
+		const count = CHUNK_ROWS + 4000;
+		const zeros = { h: Array.from({ length: count }, pick), l: Array.from({ length: count }, pick) };
+		const closes = Array.from({ length: count }, pick);
+		for (const period of [2, 3, 20, 300]) {
+			for (const first of [0, FIRST, 7]) {
+				const high = run(highest, { period }, [zeros.h], first)[0]!;
+				const low = run(lowest, { period }, [zeros.l], first)[0]!;
+				expect([...high]).toEqual(extremeRef(zeros.h, period, true));
+				expect([...low]).toEqual(extremeRef(zeros.l, period, false));
+			}
+		}
+		const whole = run(highest, { period: 3 }, [zeros.h])[0]!;
+		expect(whole.some(v => Object.is(v, 0)) && whole.some(v => Object.is(v, -0))).toBe(true);
+		// The same rows on their own, from every offset within a block and more: the same bits once
+		// the window lies inside both.
+		const stochasticWhole = run(stochastic, { kPeriod: 5, kSmooth: 1, dPeriod: 2 }, [zeros.h, zeros.l, closes]);
+		const lowWhole = run(lowest, { period: 3 }, [zeros.l])[0]!;
+		for (const offset of [1, 2, 3, 7, 19, 20, 21, 333]) {
+			const from = offset + 40;
+			const tail = <T>(list: T[]): T[] => list.slice(offset);
+			expect([...run(highest, { period: 3 }, [tail(zeros.h)], offset)[0]!.subarray(40)]).toEqual([
+				...whole.subarray(from),
+			]);
+			expect([...run(lowest, { period: 3 }, [tail(zeros.l)], offset)[0]!.subarray(40)]).toEqual([
+				...lowWhole.subarray(from),
+			]);
+			const part = run(
+				stochastic,
+				{ kPeriod: 5, kSmooth: 1, dPeriod: 2 },
+				[tail(zeros.h), tail(zeros.l), tail(closes)],
+				offset,
+			);
+			expect([...part[0]!.subarray(40)]).toEqual([...stochasticWhole[0]!.subarray(from)]);
+			expect([...part[1]!.subarray(40)]).toEqual([...stochasticWhole[1]!.subarray(from)]);
+		}
+	});
+
 	it('rejects parameters out of range', () => {
 		expect(() => resolveParams(sma.params, { period: 0 })).toThrow(RangeError);
 		expect(() => resolveParams(sma.params, { period: 2.5 })).toThrow(RangeError);

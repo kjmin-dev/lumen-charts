@@ -141,9 +141,11 @@ function lineBuckets(
 		let min = Infinity;
 		for (let i = from; i < stop; i++) {
 			const v = source[i]!;
-			// Comparisons with NaN are false, so missing values are skipped.
-			max = v > max ? v : max;
-			min = v < min ? v : min;
+			// Missing values are skipped, as in `aggregate`, and by the same arithmetic.
+			if (v === v) {
+				max = Math.max(max, v);
+				min = Math.min(min, v);
+			}
 		}
 		block[k] = first;
 		block[k + stride] = max === -Infinity ? NaN : max;

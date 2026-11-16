@@ -106,6 +106,8 @@ interface Added {
 const MAIN = 1;
 let nextId = 100;
 
+const definition = (name: string): IndicatorDefinition => BUILTIN_INDICATORS.find(d => d.name === name)!;
+
 function add(core: EngineCore, list: Spec[]): Added[] {
 	const added: Added[] = [];
 	for (const spec of list) {
@@ -310,6 +312,79 @@ describe('indicator engine', () => {
 		expect(checkRaw(core, model, added)).toBeNull();
 		expect(checkLevel(core, model, added, 1)).toBeNull();
 		expect(checkLevel(core, model, added, 2)).toBeNull();
+	});
+
+	it('keeps the bits of values and buckets that hold zeros of both signs, through ticks and a prepend', () => {
+		// The highest of +0 and -0 is +0 and the lowest -0, wherever they are: rolling extremes and
+		// buckets then have the same bits computed row by row on ticks, in slices after a prepend, and
+		// from scratch.
+		const r = random(41);
+		const pick = (): number => {
+			const roll = r();
+			return roll < 0.42 ? 0 : roll < 0.84 ? -0 : roll < 0.87 ? NaN : roll < 0.94 ? 1 : -1;
+		};
+		const zeros = (count: number, t0: number): Float64Array => {
+			const data = new Float64Array(count * 6);
+			for (let i = 0; i < count; i++) {
+				data[i] = t0 + i * MIN;
+			}
+			for (let at = count; at < 6 * count; at++) {
+				data[at] = pick();
+			}
+			return data;
+		};
+		const list: Spec[] = [
+			{ definition: definition('highest'), values: { period: 3 }, inputs: ['high'] },
+			{ definition: definition('lowest'), values: { period: 3 }, inputs: ['low'] },
+			{ definition: definition('highest'), values: { period: 40 }, inputs: ['close'] },
+			{
+				definition: definition('stochastic'),
+				values: { kPeriod: 5, kSmooth: 1, dPeriod: 2 },
+				inputs: ['high', 'low', 'close'],
+			},
+			{ definition: definition('lowest'), values: { period: 2 }, inputs: [0] },
+		];
+		const core = new EngineCore();
+		const model = new Model();
+		run(core, { type: 'add', series: MAIN, kind: 'ohlcv' });
+		const count = CHUNK_ROWS - 30;
+		const data = zeros(count, 0);
+		model.set(data, count);
+		run(core, { type: 'set', series: MAIN, count, data: data.slice() });
+		const added = add(core, list);
+		drain(core);
+		const check = (): (string | null)[] => [
+			checkRaw(core, model, added),
+			checkLevel(core, model, added, 1),
+			checkLevel(core, model, added, 2),
+		];
+		const checks = [check()];
+		// Ticks across a chunk boundary: new bars and changes of the last one.
+		for (let batch = 0; batch < 40; batch++) {
+			const rows: number[][] = [];
+			for (let k = 0, n = 1 + Math.floor(r() * 4); k < n; k++) {
+				const last = model.columns[0]!.at(-1)!;
+				const row = [r() < 0.5 ? last + MIN : last, pick(), pick(), pick(), pick(), pick()];
+				model.tick(row);
+				rows.push(row);
+			}
+			run(core, tickCommand(rows));
+			if (batch % 10 === 9) {
+				checks.push(check());
+			}
+		}
+		// A prepend that is not a multiple of any bucket or block.
+		const older = 2 * CHUNK_ROWS + 1237;
+		const history = zeros(older, -older * MIN);
+		model.prepend(history, older);
+		run(core, { type: 'prepend', series: MAIN, count: older, data: history.slice() });
+		drain(core);
+		checks.push(check());
+		expect(checks).toEqual(Array.from({ length: 6 }, () => [null, null, null]));
+		// Both zeros are among the values compared.
+		const event = run(core, { type: 'window', level: 1, start: 0, count: 200, capacity: 200 });
+		const buckets = Array.from(block(event, added[0]!.outputs[0]!));
+		expect(buckets.some(v => Object.is(v, 0)) && buckets.some(v => Object.is(v, -0))).toBe(true);
 	});
 
 	it('recomputes after a correction of an older bar', () => {

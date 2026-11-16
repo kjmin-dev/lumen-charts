@@ -110,11 +110,13 @@ export class PriceAxis implements PriceScaleApi, AxisTarget {
 
 	/** Takes values `[low, high]` of a series into the range. */
 	public include(low: number, high: number): void {
-		if (low < this.low) {
-			this.low = low;
+		// As everywhere an extreme is taken: a bound that is not a number is skipped, and of zeros of
+		// both signs the lower is -0 and the higher +0, whatever the order of the series.
+		if (low === low) {
+			this.low = Math.min(this.low, low);
 		}
-		if (high > this.high) {
-			this.high = high;
+		if (high === high) {
+			this.high = Math.max(this.high, high);
 		}
 	}
 
