@@ -299,7 +299,7 @@ function crosshairLine(): CrosshairLineOptions {
 }
 
 /** Defaults without colors; `resolveOptions` lays a theme over them. */
-const BASE_OPTIONS: ChartOptions = {
+export const BASE_OPTIONS: ChartOptions = {
 	width: 600,
 	height: 300,
 	autoSize: true,

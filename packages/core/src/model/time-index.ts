@@ -279,6 +279,74 @@ export class TimeIndex {
 	}
 
 	/**
+	 * Time at a logical position without asking the engine, for saving a view: `timeAt`, and where
+	 * that has no answer at or beyond an end of the timeline (its ends are known only while something
+	 * uses positions), the time the rows or buckets held at that end give: beyond the raw rows at
+	 * their median spacing, as the engine places times there; from buckets, at the spacing of the
+	 * bucket at the end. NaN when nothing held reaches that far.
+	 */
+	public estimateTime(position: number, coarse: LevelWindow | null): number {
+		const known = this.timeAt(position, coarse);
+		const first = this._first;
+		const last = this._end - 1;
+		if (known === known || position !== position || last < first) {
+			return known;
+		}
+		const window = this._window;
+		if (window !== null) {
+			const count = window.count;
+			const times = window.time;
+			if (position >= last && window.start + count - 1 === last) {
+				return times[count - 1]! + (position - last) * medianGap(times, Math.max(0, count - SPACING_ROWS), count);
+			}
+			if (position <= first && window.start === first) {
+				return times[0]! - (first - position) * medianGap(times, 0, Math.min(count, SPACING_ROWS));
+			}
+		}
+		if (coarse !== null && coarse.count > 1) {
+			const size = 2 ** coarse.shift;
+			const times = coarse.time;
+			const k = coarse.count - 1;
+			// Rows a bucket starts at; the first bucket of the timeline starts at its first row.
+			const lastStart = Math.max((coarse.start + k) * size, first);
+			if (position >= lastStart && coarse.start + k === Math.floor(last / size)) {
+				const before = Math.max((coarse.start + k - 1) * size, first);
+				return times[k]! + ((position - lastStart) / (lastStart - before)) * (times[k]! - times[k - 1]!);
+			}
+			if (position <= first && coarse.start === Math.floor(first / size)) {
+				const next = (coarse.start + 1) * size;
+				return times[0]! - ((first - position) / (next - first)) * (times[1]! - times[0]!);
+			}
+		}
+		return NaN;
+	}
+
+	/**
+	 * Logical position of `time` from what is held, without asking the engine or remembering the
+	 * time: inside the raw rows, beyond the known ends, or beyond an end the raw rows reach with the
+	 * 65 rows the engine takes the spacing there from, which gives the engine's answer. NaN otherwise.
+	 */
+	public locate(time: number): number {
+		const local = this._local(time);
+		const window = this._window;
+		if (local === local || window === null || time !== time) {
+			return local;
+		}
+		const first = this._first;
+		const last = this._end - 1;
+		const count = window.count;
+		const times = window.time;
+		const start = window.start;
+		if (time > times[count - 1]! && start + count - 1 === last && start <= Math.max(first, last - SPACING_ROWS + 1)) {
+			return last + (time - times[count - 1]!) / medianGap(times, Math.max(0, count - SPACING_ROWS), count);
+		}
+		if (time < times[0]! && start === first && start + count - 1 >= Math.min(last, first + SPACING_ROWS - 1)) {
+			return first - (times[0]! - time) / medianGap(times, 0, Math.min(count, SPACING_ROWS));
+		}
+		return NaN;
+	}
+
+	/**
 	 * Sends what waits to be asked for, and asks for the ends of the timeline when they are not known
 	 * and something uses positions. Called once per frame.
 	 */
@@ -374,4 +442,21 @@ export class TimeIndex {
 		this._slots.set(time, slot);
 		return slot;
 	}
+}
+
+/** Median of the gaps between times `[from, to)`, as the engine takes the spacing at an end; 1 without a gap. */
+function medianGap(times: Float64Array, from: number, to: number): number {
+	const gaps: number[] = [];
+	for (let row = from + 1; row < to; row++) {
+		const gap = times[row]! - times[row - 1]!;
+		if (gap === gap) {
+			gaps.push(gap);
+		}
+	}
+	if (gaps.length === 0) {
+		return 1;
+	}
+	gaps.sort((a, b) => a - b);
+	const gap = gaps[gaps.length >> 1]!;
+	return gap > 0 ? gap : 1;
 }

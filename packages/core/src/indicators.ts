@@ -9,16 +9,10 @@ import {
 	resolveParams,
 } from '@lumen-charts/engine';
 import { INVALIDATE_LIGHT } from './model/invalidation';
-import {
-	type DeepPartial,
-	type HistogramOptions,
-	type LineOptions,
-	definedOnly,
-	optionsEqual,
-	shallowEqual,
-} from './options';
+import { type DeepPartial, type HistogramOptions, type LineOptions, definedOnly, shallowEqual } from './options';
 import type { SeriesRenderer } from './primitives';
-import { type AnySeriesOptions, Series, type SeriesApi, type SeriesHost } from './series';
+import { type AnySeriesOptions, Series, type SeriesApi, type SeriesHost, defaultSeriesOptions } from './series';
+import type { IndicatorInputState, IndicatorPlan, IndicatorState, SeriesReference } from './state';
 
 /** A column of a series an indicator input can read. On a line or histogram, every price name reads its value. */
 export type SourceColumn = 'time' | 'open' | 'high' | 'low' | 'close' | 'volume' | 'value';
@@ -33,6 +27,12 @@ export type IndicatorInput = SourceColumn | { series: SeriesApi; column?: Source
 export type IndicatorOutputOptions = Partial<LineOptions> | Partial<HistogramOptions>;
 
 export interface IndicatorOptions {
+	/**
+	 * Name of the indicator in saved state (see `ChartApi.saveState`), unique among the chart's
+	 * indicators. Set when the indicator is added and kept from then on; without one it is named
+	 * `indicator-1`, `indicator-2`, ... in the order indicators are added.
+	 */
+	id: string;
 	/** Parameters by name. Omitted ones take the definition's defaults. */
 	params: Record<string, number>;
 	/**
@@ -72,6 +72,8 @@ export interface IndicatorOutputApi {
  * the price pane and included in autoscale; they update with every tick of their inputs.
  */
 export interface IndicatorApi {
+	/** Name of the indicator in saved state: the `id` option it was added with, or the one it was given. */
+	readonly id: string;
 	readonly name: string;
 	/** The definition: inputs, outputs and parameters with their defaults and bounds. */
 	info(): IndicatorInfo;
@@ -92,6 +94,15 @@ export interface IndicatorApi {
 /** What indicators need from the chart. */
 export interface IndicatorHost extends SeriesHost {
 	removeIndicator(indicator: IndicatorApi): void;
+}
+
+/** Every option an output's series starts with. */
+export function outputSeriesDefaults(info: IndicatorInfo, output: number): LineOptions | HistogramOptions {
+	const definition = info.outputs[output]!;
+	return {
+		...defaultSeriesOptions(definition.style === 'histogram' ? 'histogram' : 'line'),
+		...outputDefaults(definition),
+	} as LineOptions | HistogramOptions;
 }
 
 /** Defaults of the options of an output, from its definition. */
@@ -155,8 +166,9 @@ class IndicatorOutput implements IndicatorOutputApi {
 export class Indicator implements IndicatorApi {
 	public readonly definition: IndicatorInfo;
 	public readonly host: IndicatorHost;
+	public readonly id: string;
 	/** Engine id of the instance. */
-	public readonly id: number;
+	public readonly engineId: number;
 	/** The series (or derived output series) the indicator was added to. */
 	public readonly source: Series;
 	public readonly outputList: IndicatorOutput[] = [];
@@ -175,8 +187,10 @@ export class Indicator implements IndicatorApi {
 		source: Series,
 		options: DeepPartial<IndicatorOptions>,
 		resolve: (input: IndicatorInput, index: number) => IndicatorInputRef,
+		id: string,
 	) {
 		this.host = host;
+		this.id = id;
 		this.definition = info;
 		this.source = source;
 		this._resolve = resolve;
@@ -186,7 +200,7 @@ export class Indicator implements IndicatorApi {
 		this._priceScaleId = options.priceScaleId ?? '';
 		this._sourceScaleId = source.seriesOptions.priceScaleId;
 		const created = engine?.addIndicator(info.name, Array.from(this._params), this._refs, info.outputs.length);
-		this.id = created?.id ?? -1;
+		this.engineId = created?.id ?? -1;
 		info.outputs.forEach((output, i) => {
 			const style = (options.outputs?.[output.name] ?? {}) as IndicatorOutputOptions;
 			const series = new Series(
@@ -229,7 +243,7 @@ export class Indicator implements IndicatorApi {
 				...current,
 				...definedOnly(options.params as Record<string, number>),
 			});
-			if (!optionsEqual(Array.from(params), Array.from(this._params))) {
+			if (params.some((value, i) => value !== this._params[i])) {
 				this._params = params;
 				changed = true;
 			}
@@ -264,11 +278,11 @@ export class Indicator implements IndicatorApi {
 		}
 		if (changed) {
 			this.host.engine()?.updateIndicator(
-				this.id,
+				this.engineId,
 				info.name,
 				Array.from(this._params),
 				this._refs,
-				this.outputList.map(output => output.series.id),
+				this.outputList.map(output => output.series.engineId),
 			);
 		}
 		if (changed || restyled) {
@@ -285,7 +299,7 @@ export class Indicator implements IndicatorApi {
 		for (const output of this.outputList) {
 			outputs[output.name] = output.options();
 		}
-		return { params, inputs: [...this._inputs], outputs, priceScaleId: this._priceScaleId };
+		return { id: this.id, params, inputs: [...this._inputs], outputs, priceScaleId: this._priceScaleId };
 	}
 
 	public output(name?: string): IndicatorOutputApi {
@@ -359,6 +373,8 @@ export class ChartIndicators {
 	private readonly _host: ChartIndicatorsHost;
 	private readonly _list: Indicator[] = [];
 	private readonly _definitions = builtinInfos();
+	/** Indicators named by the chart so far (see `IndicatorOptions.id`). */
+	private _named = 0;
 	private readonly _plugins = new Map<
 		string,
 		{ resolve: (infos: IndicatorInfo[]) => void; reject: (error: Error) => void }[]
@@ -377,10 +393,20 @@ export class ChartIndicators {
 		if (series === null || !this._host.seriesList.includes(series)) {
 			throw new Error('The source of an indicator must be a series or an indicator output of this chart');
 		}
+		let id = options.id;
+		if (id === undefined || id === '') {
+			do {
+				id = `indicator-${++this._named}`;
+			} while (this._byId(id) !== undefined);
+		} else if (typeof id !== 'string') {
+			throw new Error('lumen-charts: the id of an indicator must be a string');
+		} else if (this._byId(id) !== undefined) {
+			throw new Error(`lumen-charts: an indicator with id "${id}" exists already`);
+		}
 		let self: Indicator | null = null;
 		const resolve = (input: IndicatorInput, index: number): IndicatorInputRef =>
 			this._resolve(self, series, input, info.inputs[index]!);
-		const indicator = new Indicator(this._host, this._host.ensureEngine(), info, series, options, resolve);
+		const indicator = new Indicator(this._host, this._host.ensureEngine(), info, series, options, resolve, id);
 		self = indicator;
 		this._list.push(indicator);
 		for (const output of indicator.outputList) {
@@ -390,6 +416,111 @@ export class ChartIndicators {
 		return indicator;
 	}
 
+	/** The indicators in the order they were added. */
+	public get list(): readonly Indicator[] {
+		return this._list;
+	}
+
+	/** The definition with this name, if it is a built-in or was registered. */
+	public definition(name: string): IndicatorInfo | undefined {
+		return this._definitions.get(name);
+	}
+
+	/** The state of every indicator (see `IndicatorState`); `order` gives each its place among the series. */
+	public save(order: (indicator: Indicator) => number): IndicatorState[] {
+		const reference = (series: Series): SeriesReference => {
+			const owner = series.derived ? this._ownerOf(series) : undefined;
+			return owner === undefined
+				? { series: series.id }
+				: { indicator: owner.id, output: owner.outputList.find(output => output.series === series)!.name };
+		};
+		return this._list.map(indicator => {
+			const options = indicator.options();
+			const outputs: IndicatorState['outputs'] = {};
+			for (const output of indicator.outputList) {
+				outputs[output.name] = { ...output.options() };
+			}
+			return {
+				id: indicator.id,
+				name: indicator.name,
+				source: reference(indicator.source),
+				params: options.params,
+				inputs: options.inputs.map((input, i): IndicatorInputState => {
+					if (typeof input === 'string') {
+						return input;
+					}
+					const output = outputSeries(input);
+					if (output !== null) {
+						return reference(output) as IndicatorInputState;
+					}
+					const read = (input as { series: Series; column?: SourceColumn }).series;
+					const column =
+						(input as { column?: SourceColumn }).column ?? (indicator.definition.inputs[i] as SourceColumn);
+					return read.derived ? (reference(read) as IndicatorInputState) : { series: read.id, column };
+				}),
+				outputs,
+				priceScaleId: options.priceScaleId,
+				order: order(indicator),
+			};
+		});
+	}
+
+	/**
+	 * Makes the indicators those of a checked state (see `planRestore`), in its order. Indicators are
+	 * kept, and only take the state's options, as far as both lists start with the same ones (same id,
+	 * definition and source); the others are removed and those of the state added. `seriesById` finds
+	 * the chart's series.
+	 */
+	public restore(
+		plans: readonly IndicatorPlan[],
+		seriesById: (id: string) => Series | undefined,
+	): Map<string, Indicator> {
+		const restored = new Map<string, Indicator>();
+		const seriesOf = (reference: SeriesReference): Series | undefined =>
+			'indicator' in reference
+				? restored.get(reference.indicator)?.outputList.find(output => output.name === reference.output)?.series
+				: seriesById(reference.series);
+		let kept = 0;
+		for (; kept < plans.length && kept < this._list.length; kept++) {
+			const plan = plans[kept]!;
+			const existing = this._list[kept]!;
+			if (existing.id !== plan.id || existing.definition !== plan.info || existing.source !== seriesOf(plan.source)) {
+				break;
+			}
+			restored.set(plan.id, existing);
+		}
+		// From the last one back, so each is gone before the ones it reads.
+		const stale = this._list.slice(kept);
+		for (let i = stale.length - 1; i >= 0; i--) {
+			this.remove(stale[i]!);
+		}
+		plans.forEach((plan, i) => {
+			const options: DeepPartial<IndicatorOptions> = {
+				params: plan.params,
+				inputs: plan.inputs.map(input => {
+					if (input === undefined || typeof input === 'string') {
+						return input;
+					}
+					if ('indicator' in input) {
+						return restored.get(input.indicator)!.output(input.output);
+					}
+					return { series: seriesById(input.series)!, column: input.column };
+				}) as IndicatorInput[],
+				outputs: plan.outputs,
+				priceScaleId: plan.priceScaleId,
+			};
+			if (i < kept) {
+				restored.get(plan.id)!.applyOptions(options);
+			} else {
+				restored.set(
+					plan.id,
+					this.add(seriesOf(plan.source), plan.info.name, { ...options, id: plan.id }) as Indicator,
+				);
+			}
+		});
+		return restored;
+	}
+
 	/** Removes an indicator, after every indicator that reads its outputs. */
 	public remove(indicator: IndicatorApi): void {
 		const index = this._list.indexOf(indicator as Indicator);
@@ -397,9 +528,9 @@ export class ChartIndicators {
 			return;
 		}
 		const removed = this._list[index]!;
-		const outputs = new Set(removed.outputList.map(output => output.series.id));
+		const outputs = new Set(removed.outputList.map(output => output.series.engineId));
 		for (const reader of this._list.slice(index + 1)) {
-			if (reader.refs.some(ref => outputs.has(ref.series)) || outputs.has(reader.source.id)) {
+			if (reader.refs.some(ref => outputs.has(ref.series)) || outputs.has(reader.source.engineId)) {
 				this.remove(reader);
 			}
 		}
@@ -410,17 +541,17 @@ export class ChartIndicators {
 			if (at >= 0) {
 				list.splice(at, 1);
 			}
-			this._host.forget(output.series.id);
+			this._host.forget(output.series.engineId);
 			this._host.seriesRemoved(output.series);
 		}
-		this._host.engine()?.removeIndicator(removed.id);
+		this._host.engine()?.removeIndicator(removed.engineId);
 		this._host.invalidate(INVALIDATE_LIGHT);
 	}
 
 	/** Removes every indicator that reads series `id` or was added to it. */
 	public removeReadersOf(id: number): void {
 		for (const indicator of this._list.slice()) {
-			if (indicator.refs.some(ref => ref.series === id) || indicator.source.id === id) {
+			if (indicator.refs.some(ref => ref.series === id) || indicator.source.engineId === id) {
 				this.remove(indicator);
 			}
 		}
@@ -493,9 +624,15 @@ export class ChartIndicators {
 				throw new Error('An indicator can only read the outputs of indicators added before it');
 			}
 			// Times come from the series at the root of the chain; every other column reads the output.
-			return name === 'time' ? { series: this._rootOf(read).id, column: 0 } : { series: read.id, column: 0 };
+			return name === 'time'
+				? { series: this._rootOf(read).engineId, column: 0 }
+				: { series: read.engineId, column: 0 };
 		}
-		return { series: read.id, column: columnOf(read.kind, name as SourceColumn) };
+		return { series: read.engineId, column: columnOf(read.kind, name as SourceColumn) };
+	}
+
+	private _byId(id: string): Indicator | undefined {
+		return this._list.find(entry => entry.id === id);
 	}
 
 	private _ownerOf(series: Series): Indicator | undefined {

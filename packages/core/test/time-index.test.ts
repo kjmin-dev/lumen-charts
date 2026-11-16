@@ -163,4 +163,53 @@ describe('time index', () => {
 		expect(index.timeAt(100, null)).toBeNaN();
 		expect(index.timeAt(100, coarse)).toBe(100 * MIN);
 	});
+
+	it('estimates times and positions beyond an end from the rows held there, without the engine', () => {
+		const index = new TimeIndex();
+		const engine = new FakeEngine();
+		index.setTimeline(1, 0, 1000);
+		index.setWindow(window(800, 200));
+		// The ends are not known, so the exact answers have nothing to say past the last bar.
+		expect(index.timeAt(1003.5, null)).toBeNaN();
+		expect(index.estimateTime(1003.5, null)).toBe(1003.5 * MIN);
+		expect(index.estimateTime(999.5, null)).toBe(999.5 * MIN);
+		expect(index.estimateTime(900.25, null)).toBe(900.25 * MIN);
+		expect(index.locate(1003.5 * MIN)).toBe(1003.5);
+		expect(index.locate(900.25 * MIN)).toBeCloseTo(900.25);
+		// Neither the rows before the window nor the first bar are held.
+		expect(index.estimateTime(-3, null)).toBeNaN();
+		expect(index.locate(-3 * MIN)).toBeNaN();
+		expect(index.locate(700 * MIN)).toBeNaN();
+		index.flush(engine);
+		expect(engine.asked.length).toBe(0);
+
+		index.setWindow(window(0, 200));
+		expect(index.estimateTime(-3, null)).toBe(-3 * MIN);
+		expect(index.locate(-3 * MIN)).toBe(-3);
+		expect(index.estimateTime(1003, null)).toBeNaN();
+		// Fewer rows at the end than the engine takes the spacing from: only the engine can say.
+		index.setWindow(window(980, 20));
+		expect(index.locate(1003 * MIN)).toBeNaN();
+		expect(index.estimateTime(1003, null)).toBe(1003 * MIN);
+	});
+
+	it('estimates times beyond an end from buckets where no raw rows are held', () => {
+		const index = new TimeIndex();
+		index.setTimeline(1, 5, 1000);
+		// Buckets of 16 bars over the whole timeline; the first starts at bar 5, the last at bar 992.
+		const coarse = new LevelWindow(1);
+		coarse.start = 0;
+		coarse.count = 63;
+		coarse.capacity = 63;
+		coarse.time = Float64Array.from({ length: 63 }, (_, k) => Math.max(5, k * 16) * MIN);
+		expect(index.estimateTime(500, coarse)).toBe(500 * MIN);
+		expect(index.estimateTime(996, coarse)).toBe(996 * MIN);
+		expect(index.estimateTime(999.5, coarse)).toBe(999.5 * MIN);
+		expect(index.estimateTime(1010, coarse)).toBe(1010 * MIN);
+		expect(index.estimateTime(4.5, coarse)).toBe(4.5 * MIN);
+		expect(index.estimateTime(0, coarse)).toBe(0);
+		// Buckets that do not reach an end say nothing beyond it.
+		coarse.count = 40;
+		expect(index.estimateTime(1010, coarse)).toBeNaN();
+	});
 });

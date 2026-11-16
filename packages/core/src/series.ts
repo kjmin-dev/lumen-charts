@@ -70,6 +70,11 @@ export interface Datafeed<T extends SeriesType = SeriesType> {
 /** Options `addSeries` takes: the series options, and a datafeed to fetch its history from again. */
 export type SeriesCreateOptions<T extends SeriesType> = Partial<SeriesTypes[T]['options']> & {
 	datafeed?: Datafeed<T>;
+	/**
+	 * Name of the series in saved state (see `ChartApi.saveState`), unique among the chart's series.
+	 * Without one the series is named `series-1`, `series-2`, ... in the order series are added.
+	 */
+	id?: string;
 };
 
 /** Options of `SeriesApi.setData`. */
@@ -101,6 +106,8 @@ export type SeriesType = keyof SeriesTypes;
 export type AnySeriesOptions = CandlestickOptions | LineOptions | HistogramOptions;
 
 export interface SeriesApi<T extends SeriesType = SeriesType> {
+	/** Name of the series in saved state: the `id` it was added with, or the one it was given. */
+	readonly id: string;
 	readonly type: T;
 	/**
 	 * Replaces the history. Times are UTC milliseconds and must be strictly increasing. This is also
@@ -173,7 +180,7 @@ function sameNumber(a: number, b: number): boolean {
 	return a === b || (a !== a && b !== b);
 }
 
-function defaultOptions(type: SeriesType): AnySeriesOptions {
+export function defaultSeriesOptions(type: SeriesType): AnySeriesOptions {
 	return type === 'candlestick'
 		? DEFAULT_CANDLESTICK_OPTIONS
 		: type === 'histogram'
@@ -186,7 +193,10 @@ const EMPTY: Float64Array = new Float64Array(0);
 export class Series implements SeriesApi {
 	public readonly type: SeriesType;
 	public readonly kind: SeriesKind;
-	public readonly id: number;
+	/** Name in saved state; empty for an indicator output, which its indicator names. */
+	public readonly id: string;
+	/** Id of the series in the data engine. */
+	public readonly engineId: number;
 	public readonly view = new SeriesView();
 	public seriesOptions: AnySeriesOptions;
 	/** True for an indicator output: its values come from the engine, not from the application. */
@@ -245,13 +255,15 @@ export class Series implements SeriesApi {
 		type: SeriesType,
 		options: Partial<AnySeriesOptions>,
 		derived = false,
+		name = '',
 	) {
 		this._host = host;
-		this.id = id;
+		this.engineId = id;
+		this.id = name;
 		this.type = type;
 		this.kind = type === 'candlestick' ? 'ohlcv' : 'line';
 		this.derived = derived;
-		this.seriesOptions = { ...defaultOptions(type), ...definedOnly(options) } as AnySeriesOptions;
+		this.seriesOptions = { ...defaultSeriesOptions(type), ...definedOnly(options) } as AnySeriesOptions;
 	}
 
 	public setData(data: SeriesTypes[SeriesType]['data'], options?: SetDataOptions): void {
@@ -264,7 +276,7 @@ export class Series implements SeriesApi {
 		}
 		const engine = this._host.engine();
 		if (engine !== null) {
-			this._host.reloaded(this, engine.setData(this.id, packed.data, packed.count, fetchable));
+			this._host.reloaded(this, engine.setData(this.engineId, packed.data, packed.count, fetchable));
 		}
 	}
 
@@ -275,13 +287,13 @@ export class Series implements SeriesApi {
 		}
 		// Bars removed at the source explain answers there that did not match: no need to pause.
 		this.failures = this.failures.filter(failure => failure.to < from || failure.from > to);
-		this._host.engine()?.deleteBars(this.id, from, to);
+		this._host.engine()?.deleteBars(this.engineId, from, to);
 	}
 
 	public prepend(data: SeriesTypes[SeriesType]['data']): void {
 		const packed = this._pack(data);
 		if (packed.count > 0) {
-			this._host.engine()?.prepend(this.id, packed.data, packed.count);
+			this._host.engine()?.prepend(this.engineId, packed.data, packed.count);
 		}
 	}
 
@@ -292,9 +304,9 @@ export class Series implements SeriesApi {
 		}
 		if (this.kind === 'ohlcv') {
 			const candle = bar as OhlcBar;
-			engine.tick(this.id, candle.time, candle.open, candle.high, candle.low, candle.close, candle.volume ?? NaN);
+			engine.tick(this.engineId, candle.time, candle.open, candle.high, candle.low, candle.close, candle.volume ?? NaN);
 		} else {
-			engine.tick(this.id, bar.time, (bar as LinePoint).value);
+			engine.tick(this.engineId, bar.time, (bar as LinePoint).value);
 		}
 	}
 

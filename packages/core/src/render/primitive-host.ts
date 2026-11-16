@@ -266,7 +266,8 @@ export class PrimitiveLayer {
 	}
 
 	public remove(entry: PrimitiveEntry): boolean {
-		const index = this.entries.indexOf(entry);
+		// From the end: the entries added last are the ones removed most (a clear goes from the top).
+		const index = this.entries.lastIndexOf(entry);
 		if (index < 0) {
 			return false;
 		}
