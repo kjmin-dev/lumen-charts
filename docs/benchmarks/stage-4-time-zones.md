@@ -1,7 +1,7 @@
 # Stage 4: time zones and sessions
 
 One part of stage 4 of the [design](../design.md): time zones, daylight saving and trading sessions
-in the display layer (section 4.3; its "As built in stage 4" note describes what was built). Stage
+in the display layer (section 4.3; its ["As built in stage 4" note](../design/stage-4-time-zones.md) describes what was built). Stage
 4's gate in section 9 is about drawings, so this part has no gate of its own. What it has to show:
 converting bar times to wall-clock time costs no `Intl` call per bar per frame, a change of time zone
 costs little, and pan and zoom frames at 1M bars cost what they did.

@@ -1,5 +1,5 @@
 // Checks that a frame which redraws only the columns a tick changed leaves the same pixels as a full
-// redraw of the same state (design section 6.2). Run by `pnpm bench:pixels` in headless Chromium.
+// redraw of the same state (design section 6.2, docs/design/stage-5.md). Run by `pnpm bench:pixels` in headless Chromium.
 //
 // A case builds a chart and then changes its data step by step. After every step the canvases are
 // read, the chart is made to draw everything again, and the canvases are read once more: both

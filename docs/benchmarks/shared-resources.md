@@ -3,7 +3,7 @@
 Every chart used to take its own worker, animation-frame callback, `ResizeObserver` and media query
 lists, measured itself with a forced layout, and kept drawing when it was scrolled out of view.
 The charts of a page now share those resources (see "Several charts on one page" in the
-[README](../../README.md) and section 3 of the [design](../design.md)). This document gives what
+[guide](../guide/several-charts.md) and section 3 of the [design](../design.md)). This document gives what
 that changed, measured before and after, and what it did not change.
 
 The short version, for 16 charts with 100k candles each, 8 of them in view:

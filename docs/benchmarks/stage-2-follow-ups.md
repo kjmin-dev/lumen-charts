@@ -5,7 +5,7 @@ Stage 2 left five things open ([stage-2.md](stage-2.md)): the rest of the datafe
 series, a memory floor held up by the time column, history that came back two frames after the
 view changed, and a 55.8 ms outlier among the 1M-candle prepends. This document gives what changed,
 measured against `main` before, and what it costs. The design choices are in section 8 of the
-[design](../design.md); the API is in the README ("History on demand").
+[design](../design.md), [as built](../design/stage-2-follow-ups.md); the API is in the [guide](../guide/datafeed.md) ("History on demand").
 
 The work was measured on `main` at `591934d` and then rebased onto stage 3 (indicators, `cab3cc9`),
 where corrections, deletions and rows let go now also reach the indicators. The section "Stacked on
@@ -183,7 +183,7 @@ resolution change on the main thread (19.4 ms, 13.4–25.4).
   rebuilt, and the chart takes new windows: about 90 ms, up to 133 ms, for 1.5M to 5M moved bars,
   after fetching the rows let go on that side. Bars at either end are cut off without moving anything (not timed here). A
   tombstone instead would have cost nothing to move but left a slot on the ordinal scale; design
-  section 8 gives the reasons.
+  [section 8](../design/stage-2-follow-ups.md#8-external-contract-and-scope) gives the reasons.
 - **A change of resolution** drops the series' requests (aborting them), waiting operations,
   windows and levels, and loads the new history. No request reached the old datafeed afterwards.
 

@@ -1,7 +1,7 @@
 # Stage 4: save and restore
 
 The last part of stage 4 of the [design](../design.md): the state of a chart saved and restored in a
-versioned format (section 7.2 describes what was built). Stage 4's gate in section 9 is about
+versioned format ([section 7.2](../design/stage-4-save-restore.md) describes what was built). Stage 4's gate in section 9 is about
 drawings, so this part has no gate of its own. What it has to show: saving does not touch the frame
 path, and restoring a state with 1,000 drawings, a series and several indicators costs one frame,
 not one per item.
@@ -145,4 +145,4 @@ base → branch, round 1, round 2.
 - **A logarithmic scale's range goes through `10 ** log10(x)`**, so its saved ends can differ from
   the restored ones in the last digit.
 - **Not saved:** bars, datafeeds, custom renderers, primitives, formatter functions, the chart's
-  size, `worker` and `memoryLimit` (design section 7.2).
+  size, `worker` and `memoryLimit` (design [section 7.2](../design/stage-4-save-restore.md)).

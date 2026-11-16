@@ -62,7 +62,7 @@ The rule depends on neither order nor grouping, which the comparisons did not ma
   where a slice starts, take prefix extremes forwards and suffix extremes backwards, and combine
   the two. With "first met", a window of both zeros gave +0 or −0 depending on where the blocks
   fell: on rows of random zeros, 2,978 of 7,800 values of a rolling highest of 3 differed between a
-  computation from row 0 and ones started 1, 2, 3 and 7 rows later. Design section 5.1 promises the
+  computation from row 0 and ones started 1, 2, 3 and 7 rows later. Design [section 5.1](../design/stage-3-indicators.md) promises the
   same bits whatever row a windowed computation started from; with the rule it holds for zeros as
   well (0 of 7,800).
 

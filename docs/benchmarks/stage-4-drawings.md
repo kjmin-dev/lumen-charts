@@ -1,7 +1,7 @@
 # Stage 4: drawings, primitives and custom renderers
 
 Part of stage 4 of the [design](../design.md) (section 9): drawings, pane primitives and custom
-series renderers (sections 6.1, 7.1 and 8 describe what was built). The gate: **with 1,000
+series renderers ([sections 6.1, 7.1 and 8](../design/stage-4-drawings.md) describe what was built). The gate: **with 1,000
 drawings, hover p99 1 ms.**
 
 The harness gained a `drawings` scenario (see Scenario). Numbers come from these files, all headless
