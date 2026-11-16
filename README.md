@@ -606,7 +606,9 @@ are in [docs/benchmarks/stage-4-drawings.md](docs/benchmarks/stage-4-drawings.md
 (switching time zones at run time) are in
 [docs/benchmarks/stage-4-time-zones.md](docs/benchmarks/stage-4-time-zones.md). The `state`
 scenario saves and restores a chart with 5 indicators and 1,000 drawings; results are in
-[docs/benchmarks/stage-4-save-restore.md](docs/benchmarks/stage-4-save-restore.md).
+[docs/benchmarks/stage-4-save-restore.md](docs/benchmarks/stage-4-save-restore.md). Where frame,
+tick and load time goes, from traces of these scenarios, and what that decides about the optional
+steps of stage 5 is in [docs/benchmarks/stage-5-profile.md](docs/benchmarks/stage-5-profile.md).
 
 Runs are headless by default (Chromium's new headless mode, rasterizing on the GPU), so no window
 takes the focus; `--headed` opens a window. Stage 0 and stage 1 were measured headed. Frame
@@ -623,6 +625,8 @@ pnpm bench --case frames/line-10m,prepend --lib lumen-worker,lumen-main --repeat
 pnpm bench --scenario multi --lib lumen-worker --max-workers 1,4,default
 pnpm bench --packages ../other-checkout/packages --lib lumen-worker   # measure another checkout
 pnpm bench --help                       # all options (headed, Chrome channel, viewport, DPR, ...)
+pnpm bench --case ind-frames/candles-1m/pan-all --profile benchmarks/results/traces   # trace the runs: CPU by category, frames, GC
+pnpm bench:profile benchmarks/results/traces    # the breakdowns again from the traces of a directory
 pnpm bench:report <results.json>        # Markdown tables from a results file
 pnpm bench:merge <out.json> <a.json> <b.json>   # join runs of the same cases into one file
 pnpm bench:serve                        # production build of the harness page, to run by hand
