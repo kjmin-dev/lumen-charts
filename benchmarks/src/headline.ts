@@ -68,6 +68,15 @@ export function headline(result: CaseResult): string {
 					: `; correct let go p50 ${ms(m('operations.correctLetGoMs.p50'))}, remove p50 ${ms(m('operations.removeMs.p50'))}, ` +
 						`resolution ${ms(m('operations.resolutionMs'))}`)
 			);
+		case 'drawings':
+			return (
+				`frame JS p50 ${ms(m('frameJs.p50'))} p99 ${ms(m('frameJs.p99'))} max ${ms(m('frameJs.max'))}` +
+				(m('hitTest.p99') === undefined
+					? ''
+					: `; hit test mean ${ms(m('hitTestMean'))} p99 ${ms(m('hitTest.p99'))}; ` +
+						`redraw p50 ${ms(m('redraw.p50'))} p99 ${ms(m('redraw.p99'))}; hits ${m('hits') ?? '–'}`) +
+				`; frames ${m('frames') ?? '–'}`
+			);
 		case 'multi':
 			return (
 				`${m('charts') ?? '–'} charts in ${m('workers') ?? '–'} workers; shown ${ms(m('shownMs'))} ` +

@@ -17,6 +17,7 @@ export type ScenarioName =
 	| 'ind-frames'
 	| 'ind-prepend'
 	| 'axes-frames'
+	| 'drawings'
 	| 'tz-frames'
 	| 'tz-change';
 export const SCENARIOS: readonly ScenarioName[] = [
@@ -31,11 +32,14 @@ export const SCENARIOS: readonly ScenarioName[] = [
 	'ind-frames',
 	'ind-prepend',
 	'axes-frames',
+	'drawings',
 	'tz-frames',
 	'tz-change',
 ];
 /** The stage 3 scenarios: the ones above with indicators on the series. */
 export const INDICATOR_SCENARIOS: readonly ScenarioName[] = ['ind-load', 'ind-apply', 'ind-frames', 'ind-prepend'];
+/** The stage 4 scenarios: drawings on the chart. */
+export const DRAWING_SCENARIOS: readonly ScenarioName[] = ['drawings'];
 /** The stage 4 scenarios of time zones and sessions. */
 export const TIME_ZONE_SCENARIOS: readonly ScenarioName[] = ['tz-frames', 'tz-change'];
 
@@ -254,6 +258,31 @@ export interface AxesFramesJob extends Omit<FramesJob, 'scenario'> {
 }
 
 /**
+ * What a drawings case does, one step per frame with `drawings` drawings on the chart (see
+ * `generateDrawings`): `hover` moves the pointer over the pane along a fixed path, `drag` drags one
+ * drawing in view along the same path, `pan` pans as the frames scenario does.
+ */
+export type DrawingsVariant = 'hover' | 'drag' | 'pan';
+
+/**
+ * The stage 4 gate: with 1,000 drawings, hover handling p99 within 1 ms (design section 9). Half the
+ * drawings are in view and half in older history; the pointer moves once per frame.
+ */
+export interface DrawingsJob extends JobBase {
+	readonly scenario: 'drawings';
+	readonly variant: DrawingsVariant;
+	readonly drawings: number;
+	/** Bars in view: the last ones of the data set. */
+	readonly visibleBars: number;
+	/** Measured frames: the most a run measures. */
+	readonly frames: number;
+	readonly minFrames: number;
+	readonly budgetMs: number;
+	readonly warmupFrames: number;
+	readonly warmupBudgetMs: number;
+}
+
+/**
  * The frames scenario with the chart in a time zone and with a session schedule (stage 4): the
  * time axis follows the wall clock of `timeZone`, and with `sessions` the chart has the extended
  * hours of a New York equity exchange (pre-market from 04:00, regular hours 09:30 to 16:00,
@@ -290,6 +319,7 @@ export type Job =
 	| IndicatorPrependJob
 	| AxesFramesJob
 	| MultiJob
+	| DrawingsJob
 	| TimeZoneFramesJob
 	| ZoneChangeJob;
 
@@ -606,6 +636,37 @@ export interface ApplyRun {
 	warmupTicks: number;
 }
 
+export interface DrawingsRun {
+	/**
+	 * JavaScript time of each frame: the pointer event (`hover`, `drag`) or the view change (`pan`),
+	 * and the chart's work for it in the animation frame: hit testing and the overlay for a hover,
+	 * the edited drawing for a drag, every layer for a pan.
+	 */
+	frameJs: Distribution;
+	/**
+	 * `hover` only: one hit test at each position of the path through the library's public hit test,
+	 * timed alone after the frames, on the same drawings and view. This is the hit test the hover
+	 * does.
+	 */
+	hitTest: Distribution | null;
+	/** `hover` only: mean of a hit test over 20 passes of the whole path, which timer resolution does not limit. */
+	hitTestMean: number | null;
+	/**
+	 * `hover` only: the frame's time minus the hit test at its position: the overlay redraw and the
+	 * rest of the frame (pointer event, layout read).
+	 */
+	redraw: Distribution | null;
+	/** `hover` only: positions of the path where a drawing was hit. */
+	hits: number | null;
+	interval: Distribution;
+	frames: number;
+	warmupFrames: number;
+	drawings: number;
+	/** Drawings whose time range overlaps the view at the start. */
+	drawingsInView: number;
+	visibleBars: number;
+}
+
 /** Each change timed from the `applyOptions` call until `settle()` resolves with it drawn. */
 export interface ZoneChangeTimings {
 	/** The synchronous call. */
@@ -628,7 +689,16 @@ export interface ZoneChangeRun {
 	visibleBars: number;
 }
 
-export type RunResult = LoadRun | TickRun | FramesRun | PrependRun | RefetchRun | ApplyRun | MultiRun | ZoneChangeRun;
+export type RunResult =
+	| LoadRun
+	| TickRun
+	| FramesRun
+	| PrependRun
+	| RefetchRun
+	| ApplyRun
+	| MultiRun
+	| DrawingsRun
+	| ZoneChangeRun;
 
 export type FailureReason = 'error' | 'timeout' | 'crash';
 
@@ -716,6 +786,8 @@ export function caseId(job: Job): string {
 			return `${base}/${job.motion}-${job.zoom === 'all' ? 'all' : sizeLabel(job.zoom)}/${job.axes}`;
 		case 'multi':
 			return `${base}/${job.charts}-charts${job.maxWorkers === null ? '' : `/max-workers-${job.maxWorkers}`}`;
+		case 'drawings':
+			return `${base}/${job.drawings}/${job.variant}`;
 		case 'tz-frames':
 			return `${base}/${job.motion}-${job.zoom === 'all' ? 'all' : sizeLabel(job.zoom)}`;
 		case 'tz-change':
@@ -904,6 +976,25 @@ const MULTI_CASES: readonly MultiCase[] = [
 ];
 const QUICK_MULTI_CASES: readonly MultiCase[] = [
 	{ dataset: { kind: 'candles', size: 10 * K }, charts: 4, visibleCharts: 2, columns: 2 },
+];
+
+interface DrawingsCase {
+	readonly drawings: number;
+	readonly variant: DrawingsVariant;
+}
+
+// 1,000 drawings is the gate; hovering a chart without drawings is the crosshair alone, for scale.
+const DRAWINGS_DATASET: DatasetSpec = { kind: 'candles', size: M };
+const DRAWINGS_CASES: readonly DrawingsCase[] = [
+	{ drawings: 1000, variant: 'hover' },
+	{ drawings: 0, variant: 'hover' },
+	{ drawings: 1000, variant: 'drag' },
+	{ drawings: 1000, variant: 'pan' },
+];
+const QUICK_DRAWINGS_DATASET: DatasetSpec = { kind: 'candles', size: 10 * K };
+const QUICK_DRAWINGS_CASES: readonly DrawingsCase[] = [
+	{ drawings: 100, variant: 'hover' },
+	{ drawings: 100, variant: 'drag' },
 ];
 
 const QUICK_LOAD_DATASETS: readonly DatasetSpec[] = [
@@ -1140,6 +1231,28 @@ export function planJobs(options: PlanOptions): Plan {
 					warmupBudgetMs,
 					newBarEvery: 10,
 					maxWorkers,
+				});
+			}
+		}
+	}
+
+	if (options.scenarios.includes('drawings')) {
+		const dataset = quick ? QUICK_DRAWINGS_DATASET : DRAWINGS_DATASET;
+		if (keep(dataset)) {
+			for (const { drawings, variant } of quick ? QUICK_DRAWINGS_CASES : DRAWINGS_CASES) {
+				cases.push({
+					scenario: 'drawings',
+					dataset,
+					seed,
+					chart,
+					variant,
+					drawings,
+					visibleBars: 300,
+					frames: quick ? 60 : 600,
+					minFrames: quick ? 20 : 120,
+					budgetMs,
+					warmupFrames: quick ? 10 : 60,
+					warmupBudgetMs,
 				});
 			}
 		}

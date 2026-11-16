@@ -1,5 +1,6 @@
 import type { CandleColumns, LineColumns, SeriesColumns, SeriesKind, TickColumns } from './data.ts';
 import type { PriceAxesLayout } from './jobs.ts';
+import type { BenchDrawing } from './drawings.ts';
 
 /** Size of the chart in CSS pixels. */
 export interface ChartSize {
@@ -96,6 +97,18 @@ export interface ChartAdapter<TPrepared = unknown> {
 	/** Shows the given range of bars, as a scripted pan or zoom would. */
 	setVisibleLogicalRange(range: LogicalRange): void;
 	/**
+	 * Adds drawings to the chart. Only libraries with `drawings` set in their registry entry
+	 * implement it, together with `pointerTarget` and `hitTestDrawing`.
+	 */
+	addDrawings?(drawings: readonly BenchDrawing[]): void;
+	/** The element pointer events go to, to hover and drag drawings. */
+	pointerTarget?(): HTMLElement;
+	/**
+	 * The library's public hit test of drawings at `(x, y)`, CSS pixels from the top left corner of
+	 * `pointerTarget`: whether a drawing is there.
+	 */
+	hitTestDrawing?(x: number, y: number): boolean;
+	/**
 	 * Resolves once everything submitted so far has been applied and the main thread has finished
 	 * rendering the frame that shows it. GPU rasterization and display are not awaited.
 	 */
@@ -150,6 +163,8 @@ export interface AdapterEntry {
 	readonly indicators?: boolean;
 	/** The adapter can lay out price axes (`withPriceAxes`), for the stage 4 price axes scenario. */
 	readonly priceAxes?: boolean;
+	/** The library has drawings (`addDrawings`, `pointerTarget`, `hitTestDrawing`), for the stage 4 scenarios. */
+	readonly drawings?: boolean;
 	/** The library shows time zones and sessions (`setTimeZone`, `repaint`), for the stage 4 scenarios. */
 	readonly timeZones?: boolean;
 	load(): Promise<AdapterFactory>;

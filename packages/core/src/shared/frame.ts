@@ -25,7 +25,7 @@ let handle: number | null = null;
  * Reports an error without unwinding the caller, as an uncaught error of the page: one chart that
  * throws must not keep the charts after it from drawing.
  */
-function report(error: unknown): void {
+export function report(error: unknown): void {
 	if (typeof reportError === 'function') {
 		reportError(error);
 	} else {

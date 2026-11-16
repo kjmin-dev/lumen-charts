@@ -1,3 +1,5 @@
+import { trackCanvas } from '../shared/canvas-budget';
+
 /** One canvas of the chart, positioned in CSS pixels and backed by a bitmap in device pixels. */
 export class Layer {
 	public readonly canvas: HTMLCanvasElement;
@@ -40,6 +42,7 @@ export class Layer {
 		if (bitmapWidth === this.width && bitmapHeight === this.height) {
 			return false;
 		}
+		trackCanvas(this.width * this.height, bitmapWidth * bitmapHeight);
 		this.width = bitmapWidth;
 		this.height = bitmapHeight;
 		this.canvas.width = bitmapWidth;
@@ -55,6 +58,11 @@ export class Layer {
 		}
 	}
 
+	/** Device pixels of the bitmap. */
+	public get pixels(): number {
+		return this.width * this.height;
+	}
+
 	public get visible(): boolean {
 		return this._visible;
 	}
@@ -63,6 +71,7 @@ export class Layer {
 		// Shrinking the bitmap releases canvas memory right away on iOS Safari.
 		this.canvas.width = 1;
 		this.canvas.height = 1;
+		trackCanvas(this.width * this.height, 0);
 		this.width = 0;
 		this.height = 0;
 	}

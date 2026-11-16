@@ -111,7 +111,33 @@ export type Command =
 	  }
 	| { type: 'removeIndicator'; seq: number; id: number }
 	/** Loads a plugin module of indicators; the outcome comes with a later event's `plugins`. */
-	| { type: 'plugin'; seq: number; url: string };
+	| { type: 'plugin'; seq: number; url: string }
+	/**
+	 * Logical positions of `times` on the main timeline, answered in the event's `resolved`. Reads
+	 * only: it changes nothing and waits for no rows.
+	 */
+	| { type: 'resolve'; seq: number; times: Float64Array };
+
+/**
+ * Where times fall on the main timeline, as of the event that carries it.
+ *
+ * A bar's time maps to its index. A time between two bars maps to the fraction of the way between
+ * their indexes that it is between their times. A time before the first bar or after the last maps
+ * beyond them at the typical spacing of the bars there (`headInterval`, `tailInterval`: the median
+ * of the last 64 gaps), so an anchor in the future stays put while bars arrive at that spacing.
+ * Inside history the memory limit let go, only every 16th time is known, and a time between two of
+ * them is interpolated the same way.
+ */
+export interface TimelineResolution {
+	/** One logical position per time asked for; NaN for a time that is NaN or when there are no bars. */
+	positions: Float64Array;
+	/** Time of the first and last bar, NaN without bars. */
+	firstTime: number;
+	lastTime: number;
+	/** Typical gap between bars at the start and the end of the timeline, in milliseconds. */
+	headInterval: number;
+	tailInterval: number;
+}
 
 /**
  * Where an indicator input reads from: column `column` of series `series` (column 0 is the main
@@ -267,6 +293,8 @@ export interface EngineEvent {
 	applied?: number[];
 	/** Operations that waited and were refused in this event (a correction of a bar that is gone), as in `applied`. */
 	refused?: number[];
+	/** Answer to a `resolve` command. */
+	resolved?: TimelineResolution;
 }
 
 /** First message a worker host sends, before any event. */
@@ -294,6 +322,9 @@ export function transferables(event: EngineEvent): ArrayBuffer[] {
 		for (const patch of event.patches) {
 			add(patch.data.buffer as ArrayBuffer);
 		}
+	}
+	if (event.resolved !== undefined) {
+		add(event.resolved.positions.buffer as ArrayBuffer);
 	}
 	return list;
 }

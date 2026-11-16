@@ -61,6 +61,7 @@ export {
 	type SeriesKind,
 	TICK_STRIDE,
 	TIME_PATCH,
+	type TimelineResolution,
 	MAX_LEVEL,
 	type WindowSnapshot,
 	columnCount,

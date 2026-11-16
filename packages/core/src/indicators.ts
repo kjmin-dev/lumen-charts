@@ -17,6 +17,7 @@ import {
 	optionsEqual,
 	shallowEqual,
 } from './options';
+import type { SeriesRenderer } from './primitives';
 import { type AnySeriesOptions, Series, type SeriesApi, type SeriesHost } from './series';
 
 /** A column of a series an indicator input can read. On a line or histogram, every price name reads its value. */
@@ -62,6 +63,8 @@ export interface IndicatorOutputApi {
 	lastValue(): number;
 	/** Adds an indicator computed from this output's values. */
 	addIndicator(name: string, options?: DeepPartial<IndicatorOptions>): IndicatorApi;
+	/** Draws the output with `renderer` instead of a line or histogram; null goes back to that. */
+	setRenderer(renderer: SeriesRenderer | null): void;
 }
 
 /**
@@ -138,6 +141,10 @@ class IndicatorOutput implements IndicatorOutputApi {
 
 	public addIndicator(name: string, options?: DeepPartial<IndicatorOptions>): IndicatorApi {
 		return this.indicator.host.addIndicator(this.series, name, options);
+	}
+
+	public setRenderer(renderer: SeriesRenderer | null): void {
+		this.series.setRenderer(renderer);
 	}
 }
 
@@ -336,6 +343,8 @@ export interface ChartIndicatorsHost extends IndicatorHost {
 	ensureEngine(): EngineClient | null;
 	/** Forgets what the window cache holds of a series. */
 	forget(series: number): void;
+	/** An output series is gone: its primitives are detached. */
+	seriesRemoved(series: Series): void;
 	/** URL relative module URLs are resolved against. */
 	baseUrl(): string;
 }
@@ -402,6 +411,7 @@ export class ChartIndicators {
 				list.splice(at, 1);
 			}
 			this._host.forget(output.series.id);
+			this._host.seriesRemoved(output.series);
 		}
 		this._host.engine()?.removeIndicator(removed.id);
 		this._host.invalidate(INVALIDATE_LIGHT);

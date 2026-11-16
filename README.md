@@ -5,7 +5,8 @@ High-performance financial charting engine for the web.
 > Status: stage 3 of the [design](docs/design.md). Candlestick, line and histogram series on an
 > ordinal time scale, with the data engine in a worker, panning, zooming, live updates, level of
 > detail, a memory limit backed by a datafeed that also takes corrections, deletions and resolution
-> changes, and indicators (built-in and custom) computed in the engine. Drawings are the next stage.
+> changes, and indicators (built-in and custom) computed in the engine. Of stage 4, several price
+> axes with their scale modes, drawings and primitives are in.
 
 ## Usage
 
@@ -236,7 +237,130 @@ kernel (the default) keeps its running values in `state`, which is zeros on a fr
 recompute only the rows near a prepend. The page's content security policy must allow the module
 (`script-src`, and `blob:` for a module made from a Blob). Bundlers must leave it as a separate file
 with a stable URL, for example in `public/`; the engine's `import()` is marked to be ignored by
-Vite and webpack. Custom renderers and pane primitives are planned with drawings (stage 4).
+Vite and webpack. To draw an output other than as a line or histogram, give it a custom renderer
+(see Primitives below).
+
+### Drawings
+
+```ts
+const drawings = chart.drawings();
+
+// Let the user draw: clicks (or press, drag and release) place the points.
+drawings.startTool('trendLine', { color: '#f5b83d', lineWidth: 2 });
+
+// Or add them in code. Points are times (UTC ms) and prices.
+const zone = drawings.add({
+	type: 'rectangle',
+	points: [
+		{ time: t1, price: 101.5 },
+		{ time: t2, price: 99.2 },
+	],
+	options: { fillColor: 'rgba(38, 166, 154, 0.15)', locked: true },
+});
+zone.applyOptions({ text: 'Supply' });
+zone.bringToFront();
+
+drawings.subscribe('changed', drawing => save(drawing.toJSON()));
+drawings.subscribe('selected', drawing => showToolbar(drawing));
+
+// Plain JSON, with a version; `add` takes it back, in this chart or another.
+const saved = JSON.stringify(drawings.toJSON());
+for (const state of JSON.parse(saved)) {
+	otherChart.drawings().add(state);
+}
+```
+
+A drawing is on a price scale, the default one unless `add` names another (`priceScaleId`), and
+stays at its prices in any mode: straight on screen between its points on a logarithmic scale, and
+mapped with the scale's base on a percentage or indexed one, as the crosshair reads prices there.
+
+Tools: `trendLine`, `ray`, `extendedLine`, `horizontalLine`, `verticalLine`, `rectangle`,
+`parallelChannel` (three points: the third sets the width), `fibRetracement` (`levels` option),
+`text` and `priceRange` (change, percentage and bars). Every drawing takes `color`, `lineWidth`,
+`lineStyle`, `fillColor`, `text`, `textColor`, `fontSize`, `visible` and `locked`, and has a
+`zIndex`.
+
+With the pointer: hovering a drawing shows its handles, pressing selects it, dragging moves it by
+whole bars, and dragging a handle moves that point. A locked drawing can be selected but not moved;
+pressing it pans. Escape cancels a drawing being created or dragged, or clears the selection;
+Delete and Backspace remove the selected drawing (the chart takes keys once clicked). With the
+crosshair in `magnet` mode, points snap to the open, high, low or close of their bar. Touch reaches
+lines from further away than a mouse. Events: `created` (also for `add`), `changed` (API changes,
+and once at the end of a drag), `removed`, `selected` and `hovered`.
+
+Points are stored as times, not bar indexes, so a drawing stays where it was through prepends,
+bars removed and a new resolution: a time between two bars sits between them, a time past the last
+bar sits in the future at the spacing of the last bars (and stays there while bars arrive at that
+spacing). The chart holds only the bars around the view, so a point far from it is looked up in
+the data engine; such a drawing appears a frame later.
+
+Drawings have a canvas of their own between the series and the crosshair. Hovering redraws only the
+crosshair's layer, and a drawing being dragged moves to that layer, so the others are not redrawn
+while it moves. Hit testing first filters by the time span of each drawing and then scans; with
+1,000 drawings a hover takes about 0.3 ms of JavaScript (see
+[docs/benchmarks/stage-4-drawings.md](docs/benchmarks/stage-4-drawings.md)). Mobile browsers cap the
+memory of all canvases on a page, so near a budget (`setCanvasBudget(pixels)`, 48M device pixels by
+default) a chart draws its drawings into the series layer instead of a layer of its own.
+
+### Primitives and custom renderers
+
+The built-in drawings are pane primitives; your own code can draw the same way.
+
+```ts
+import {
+	type DrawTarget,
+	HIT_BODY,
+	HIT_NONE,
+	type PanePrimitive,
+	type PaneView,
+	type PrimitiveBounds,
+	type SeriesItems,
+} from 'lumen-charts';
+
+class SessionBox implements PanePrimitive {
+	readonly zOrder = 'bottom'; // under the series; 'normal' (default) with the drawings; 'top' over all
+	private left = 0;
+	private right = 0;
+
+	constructor(
+		private from: number,
+		private to: number,
+	) {}
+
+	// Called when the view or the primitive changed (`host.requestUpdate()`), not every frame.
+	update(view: PaneView, bounds: PrimitiveBounds) {
+		this.left = view.logicalToX(view.timeToLogical(this.from));
+		this.right = view.logicalToX(view.timeToLogical(this.to));
+		bounds.left = this.left;
+		bounds.right = this.right;
+	}
+
+	draw({ context, pixelRatio, height }: DrawTarget) {
+		context.fillStyle = 'rgba(41, 98, 255, 0.06)';
+		context.fillRect(this.left * pixelRatio, 0, (this.right - this.left) * pixelRatio, height * pixelRatio);
+	}
+
+	hitTest(x: number, y: number, tolerance: number) {
+		return x >= this.left - tolerance && x <= this.right + tolerance ? HIT_BODY : HIT_NONE;
+	}
+}
+
+chart.attachPrimitive(new SessionBox(open, close)); // or series.attachPrimitive(...)
+
+// Draw a series or an indicator output with your own code instead of its built-in style.
+rsi.output().setRenderer({
+	draw({ context }: DrawTarget, items: SeriesItems) {
+		for (let i = 0; i < items.count; i++) {
+			context.fillRect(items.x[i] - 1, items.yClose[i] - 1, 2, 2);
+		}
+	},
+});
+```
+
+A primitive gets the chart's conversions (`logicalToX`, `timeToLogical`, `priceToY`, ...) through
+the `PaneView` it is drawn with, declares its layer, and may answer hit tests, which highlight it on
+hover (`drawHighlight`). The chart calls `update` only when the view or the primitive changed, and
+draws a layer only when something in it changed, so `update` and `draw` should not allocate.
 
 ### Themes and display options
 
@@ -375,7 +499,9 @@ the cost of a round of ticks; its results are in
 in [docs/benchmarks/stage-3.md](docs/benchmarks/stage-3.md). The `axes-frames` scenario pans and
 zooms candles with three moving averages on one axis, on a logarithmic or a percentage scale, and on
 four axes; it and the frame cases of earlier stages against `main` are in
-[docs/benchmarks/stage-4-price-axes.md](docs/benchmarks/stage-4-price-axes.md). The scenarios
+[docs/benchmarks/stage-4-price-axes.md](docs/benchmarks/stage-4-price-axes.md). The `drawings`
+scenario hovers, drags and pans over 1,000 drawings on 1M candles (the stage 4 hover gate); results
+are in [docs/benchmarks/stage-4-drawings.md](docs/benchmarks/stage-4-drawings.md). The scenarios
 `tz-frames` (pan and zoom in New York time with the sessions of an equity exchange) and `tz-change`
 (switching time zones at run time) are in
 [docs/benchmarks/stage-4-time-zones.md](docs/benchmarks/stage-4-time-zones.md).
