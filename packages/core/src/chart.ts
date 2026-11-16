@@ -61,6 +61,7 @@ import {
 } from './render/chrome';
 import type { PanePrimitive, PrimitiveBounds, PrimitiveZOrder } from './primitives';
 import { Layer } from './render/layer';
+import { ChartLayout } from './render/layout';
 import { PaneViewState, PrimitiveLayers, ScaleMapping } from './render/primitive-host';
 import { drawCandles, drawHistogram, drawLine } from './render/series';
 import { drawExtendedHours, drawSessionBreaks } from './render/sessions';
@@ -81,7 +82,7 @@ import { ChartSettings } from './settings';
 import { canvasFits } from './shared/canvas-budget';
 import { type FrameClient, cancelFrame, report, requestFrame } from './shared/frame';
 import { watchPixelRatio } from './shared/media';
-import { observeSize, observeVisibility, unobserveSize, unobserveVisibility } from './shared/observers';
+import { observeVisibility, unobserveVisibility } from './shared/observers';
 import { type Geometry, candleWidths, placeElements } from './views/series-view';
 
 const AXIS_PADDING = 8;
@@ -93,20 +94,12 @@ interface Deferred {
 	action: () => void;
 }
 
-/** The used value of a length, in CSS pixels, or NaN for anything else (`auto`, a percentage). */
-function pixels(value: string): number {
-	return value.endsWith('px') ? Number.parseFloat(value) : Number.NaN;
-}
-
 class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, PriceAxisHost {
 	public readonly scale: TimeScale;
 	/** Whether the chart waits for the shared animation frame (see `FrameClient`). */
 	public frameQueued = false;
-	private readonly _container: HTMLElement;
-	private readonly _root: HTMLDivElement;
-	private readonly _pane: Layer;
-	private readonly _timeAxis: Layer;
-	private readonly _overlay: Layer;
+	/** The root element, its canvases, and the sizes of the chart, the pane and the axes. */
+	private readonly _layout: ChartLayout;
 	private readonly _interaction: Interaction;
 	/**
 	 * Price scales with their axes, in layout order: the default scale, those `priceScales` lists in
@@ -128,18 +121,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	private readonly _settings: ChartSettings;
 	private _engine: EngineClient | null = null;
-	private _width = 0;
-	private _height = 0;
-	private _paneLeft = 0;
-	private _paneWidth = 0;
-	private _paneHeight = 0;
-	private _axisHeight = 0;
-	private _pixelRatio = 1;
-	private _digitWidth = 0;
-	private _font = '';
-	private _watermarkFont = '';
 	private _watermarkLines: string[] = [];
-	private _layersDirty = true;
 
 	private _level: Invalidation = INVALIDATE_NONE;
 	/** While a state is restored, changes only note the level they need: one invalidation at the end. */
@@ -149,10 +131,6 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _pendingView: { from: number; to: number } | null = null;
 	/** Series named by the chart so far (see `SeriesCreateOptions.id`). */
 	private _named = 0;
-	/** Whether the shared resize observer reports the size of the root element. */
-	private _sizeObserved = false;
-	/** With `autoSize`: the size has to be measured before it is used (see `_ensureSize`). */
-	private _sizeStale = false;
 	/**
 	 * Whether any part of the chart is in the viewport. A chart that is not keeps applying data and
 	 * remembers its invalidation level, but draws only once it is visible again.
@@ -239,7 +217,6 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _unwatchPixelRatio: (() => void) | null = null;
 
 	public constructor(container: HTMLElement, options: DeepPartial<ChartOptions>) {
-		this._container = container;
 		const input = mergeOptions({}, options);
 		// Throws a RangeError for an unknown time zone or locale, or a malformed session schedule.
 		this._time.apply(resolveOptions(input, false));
@@ -250,26 +227,22 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		);
 
 		const doc = container.ownerDocument;
-		this._root = doc.createElement('div');
-		this._root.style.position = 'relative';
-		this._root.style.overflow = 'hidden';
-		this._pane = new Layer(doc, true);
+		this._layout = new ChartLayout(container, this._settings, this.scale, {
+			invalidate: level => this.invalidate(level),
+			priceAxes: () => this._axes,
+			resized: () => this._resolveView(),
+		});
 		const main = new PriceAxis(DEFAULT_PRICE_SCALE_ID, this, this._settings.options.priceScale);
-		main.layer = axisLayer(doc);
+		main.layer = this._layout.mainAxis;
 		this._axes.push(main);
 		this._axesById.set(main.id, main);
 		this._gridAxis = main;
-		this._timeAxis = new Layer(doc, true);
-		this._overlay = new Layer(doc, false);
-		this._overlay.canvas.style.pointerEvents = 'none';
-		this._root.append(this._pane.canvas, main.layer.canvas, this._timeAxis.canvas, this._overlay.canvas);
-		container.appendChild(this._root);
-		this._interaction = new Interaction(this._root, this);
+		this._interaction = new Interaction(this._layout.root, this);
 		// The event does not bubble; capturing on the root hears it for every canvas, also later ones.
-		this._root.addEventListener('contextrestored', this._onContextRestored, true);
+		this._layout.root.addEventListener('contextrestored', this._onContextRestored, true);
 
 		this._unwatchPixelRatio = watchPixelRatio(doc.defaultView, this._onPixelRatio);
-		observeVisibility(this._root, this._onVisibility);
+		observeVisibility(this._layout.root, this._onVisibility);
 		this._layers = new PrimitiveLayers({ primitiveChanged: zOrder => this._primitiveChanged(zOrder) });
 		this._view = this._viewFor(DEFAULT_PRICE_SCALE_ID);
 		this._times.listener = () => {
@@ -334,7 +307,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	}
 
 	public element(): HTMLElement {
-		return this._root;
+		return this._layout.root;
 	}
 
 	public addSeries<T extends SeriesType>(type: T, options: SeriesCreateOptions<T> = {}): SeriesApi<T> {
@@ -703,8 +676,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			return;
 		}
 		this._destroyed = true;
-		unobserveSize(this._root);
-		unobserveVisibility(this._root);
+		this._layout.destroy();
+		unobserveVisibility(this._layout.root);
 		cancelFrame(this);
 		this._interaction.destroy();
 		this._unwatchPixelRatio?.();
@@ -718,16 +691,11 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._settleApplied();
 		this._layers.detachAll();
 		this._drawings?.destroy();
-		this._root.removeEventListener('keydown', this._onKey);
-		this._root.removeEventListener('contextrestored', this._onContextRestored, true);
-		this._pane.release();
-		for (const axis of this._axes) {
-			axis.layer?.release();
-		}
-		this._timeAxis.release();
-		this._overlay.release();
+		this._layout.root.removeEventListener('keydown', this._onKey);
+		this._layout.root.removeEventListener('contextrestored', this._onContextRestored, true);
+		this._layout.release();
 		this._drawingsLayer?.release();
-		this._root.remove();
+		this._layout.root.remove();
 		this._settle();
 	}
 
@@ -772,15 +740,15 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	// InteractionHost and SeriesHost
 
 	public paneLeft(): number {
-		return this._paneLeft;
+		return this._layout.paneLeft;
 	}
 
 	public paneWidth(): number {
-		return this._paneWidth;
+		return this._layout.paneWidth;
 	}
 
 	public paneHeight(): number {
-		return this._paneHeight;
+		return this._layout.paneHeight;
 	}
 
 	public setCrosshair(x: number, y: number, visible: boolean): void {
@@ -870,7 +838,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			// The view changed: rows it needs are asked for now rather than in the next frame, so rows
 			// that must be fetched again are usually back by the frame that draws the view. A chart
 			// outside the viewport asks in the frame that draws it once it is back.
-			this._requestWindow(this._container.ownerDocument.defaultView?.devicePixelRatio ?? 1);
+			this._requestWindow(this._layout.devicePixelRatio());
 		}
 		if (level > this._level) {
 			this._level = level;
@@ -890,7 +858,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	 * for it. Called before the view is read or changed outside a frame, so calls apply in order.
 	 */
 	private _syncView(): void {
-		this._ensureSize();
+		this._layout.ensureSize();
 		this._interaction.resolve();
 	}
 
@@ -902,13 +870,13 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			return this._drawings;
 		}
 		const options = this._settings.options;
-		const overlay = this._overlay;
+		const overlay = this._layout.overlay;
 		const drawings = new Drawings(
 			{
 				layers: this._layers,
 				times: this._times,
 				view: id => this._viewFor(id),
-				paneLeft: () => this._paneLeft,
+				paneLeft: () => this._layout.paneLeft,
 				invalidateOverlay: () => this.invalidate(INVALIDATE_CURSOR),
 				snapPrice: (index, y, view) => this._snapPrice(index, y, view),
 				report,
@@ -928,10 +896,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		);
 		this._drawings = drawings;
 		// Focusable by a click, but not in the tab order, so Escape and Delete reach the drawings.
-		if (this._root.tabIndex < 0 && !this._root.hasAttribute('tabindex')) {
-			this._root.tabIndex = -1;
+		if (this._layout.root.tabIndex < 0 && !this._layout.root.hasAttribute('tabindex')) {
+			this._layout.root.tabIndex = -1;
 		}
-		this._root.addEventListener('keydown', this._onKey);
+		this._layout.root.addEventListener('keydown', this._onKey);
 		return drawings;
 	}
 
@@ -983,7 +951,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		if (row < 0 || row >= drawn.count) {
 			return free;
 		}
-		const ratio = this._pixelRatio;
+		const ratio = this._layout.pixelRatio;
 		for (const series of this._series) {
 			const axis = series.axis;
 			if (!series.seriesOptions.visible || axis === null || axis.id !== view.scaleId || row >= series.close.length) {
@@ -1014,7 +982,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		const cursor = this._drawings?.cursor || this._defaultCursor;
 		if (cursor !== this._cursor) {
 			this._cursor = cursor;
-			this._root.style.cursor = cursor;
+			this._layout.root.style.cursor = cursor;
 		}
 	}
 
@@ -1022,7 +990,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _placeDrawingsLayer(ratio: number): void {
 		this._drawingsPlacement = false;
 		const wanted = this._layers.normal.entries.length > 0;
-		const area = Math.round(this._paneWidth * ratio) * Math.round(this._paneHeight * ratio);
+		const area = Math.round(this._layout.paneWidth * ratio) * Math.round(this._layout.paneHeight * ratio);
 		const layer = this._drawingsLayer;
 		const merged = wanted && !canvasFits(area - (layer === null ? 0 : layer.pixels));
 		if (!wanted || merged) {
@@ -1043,13 +1011,13 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._paneStale = true;
 		}
 		if (layer === null) {
-			const created = new Layer(this._root.ownerDocument, false);
+			const created = new Layer(this._layout.root.ownerDocument, false);
 			created.canvas.style.pointerEvents = 'none';
-			this._root.insertBefore(created.canvas, this._overlay.canvas);
+			this._layout.root.insertBefore(created.canvas, this._layout.overlay.canvas);
 			this._drawingsLayer = created;
 			this._layers.normal.changed = true;
 		}
-		if (this._drawingsLayer!.place(this._paneLeft, 0, this._paneWidth, this._paneHeight, ratio)) {
+		if (this._drawingsLayer!.place(this._layout.paneLeft, 0, this._layout.paneWidth, this._layout.paneHeight, ratio)) {
 			this._layers.normal.changed = true;
 		}
 	}
@@ -1073,9 +1041,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			view.sync(
 				geometry.origin,
 				geometry.spacing,
-				this._pixelRatio,
-				this._paneWidth,
-				this._paneHeight,
+				this._layout.pixelRatio,
+				this._layout.paneWidth,
+				this._layout.paneHeight,
 				scale.first,
 				scale.end - 1,
 			);
@@ -1098,9 +1066,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _targetOf(ctx: CanvasRenderingContext2D): typeof this._target {
 		const target = this._target;
 		target.context = ctx;
-		target.pixelRatio = this._pixelRatio;
-		target.width = this._paneWidth;
-		target.height = this._paneHeight;
+		target.pixelRatio = this._layout.pixelRatio;
+		target.width = this._layout.paneWidth;
+		target.height = this._layout.paneHeight;
 		return target;
 	}
 
@@ -1179,7 +1147,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	private readonly _onEvent = (event: EngineEvent): void => {
 		// The window to ask for depends on the pane width.
-		this._ensureSize();
+		this._layout.ensureSize();
 		const scale = this.scale;
 		const wasEmpty = scale.isEmpty;
 		const version = scale.version;
@@ -1233,7 +1201,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		if (changed) {
 			// Requested now rather than in the next draw, the rows usually arrive before that frame,
 			// so new data is drawn in one frame instead of an empty frame followed by the data.
-			this._requestWindow(this._container.ownerDocument.defaultView?.devicePixelRatio ?? 1);
+			this._requestWindow(this._layout.devicePixelRatio());
 			// Data alone: the frame redraws the columns that changed if everything else is as drawn.
 			this._schedule(INVALIDATE_LIGHT);
 		}
@@ -1314,7 +1282,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._syncAxes(options);
 		const watermark = options.watermark;
 		this._watermarkLines = watermark.visible && watermark.text !== '' ? watermark.text.split('\n') : [];
-		this._timeAxis.setVisible(options.timeScale.visible);
+		this._layout.timeAxis.setVisible(options.timeScale.visible);
 		this._defaultCursor = options.crosshair.mode === 'hidden' ? 'default' : 'crosshair';
 		this._cursor = '';
 		this._applyCursor();
@@ -1323,14 +1291,14 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._drawings.style.fontFamily = options.layout.fontFamily;
 			this._primitiveChanged('normal');
 		}
-		this._font = '';
+		this._layout.font = '';
 		this._ticksScale = -1;
 		for (const axis of this._axes) {
 			axis.fitTicks = -1;
 		}
 		this._applyTime(options);
-		this._syncSizing();
-		this._computeLayout();
+		this._layout.syncSizing();
+		this._layout.compute();
 	}
 
 	/**
@@ -1377,7 +1345,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		let axis = this._axesById.get(id);
 		if (axis === undefined) {
 			axis = new PriceAxis(id, this, this._settings.options.priceScales[id] ?? overlayScaleOptions(this.theme()));
-			axis.scale.setHeight(this._paneHeight);
+			axis.scale.setHeight(this._layout.paneHeight);
 			this._axesById.set(id, axis);
 			this._axes.push(axis);
 			this._syncAxisLayer(axis);
@@ -1400,10 +1368,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	/** Makes the canvas of an axis shown for the first time, below the overlay, and shows or hides it. */
 	private _syncAxisLayer(axis: PriceAxis): void {
-		if (axis.layer === null && axis.settings.visible && !this._destroyed) {
-			axis.layer = axisLayer(this._root.ownerDocument);
-			this._root.insertBefore(axis.layer.canvas, this._overlay.canvas);
-			this._layersDirty = true;
+		if (axis.layer === null && axis.settings.visible) {
+			axis.layer = this._layout.addAxisLayer();
 		}
 		axis.layer?.setVisible(axis.settings.visible);
 	}
@@ -1416,118 +1382,6 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	// Sizing and layout
 
-	private _syncSizing(): void {
-		const root = this._root;
-		if (this._settings.options.autoSize) {
-			root.style.width = '100%';
-			root.style.height = '100%';
-			if (!this._sizeObserved) {
-				// The observer reports after a layout, which is after the next frame's draw. That draw
-				// measures instead, in its read phase, so the first paint already has the right size.
-				// Without an observer nothing reports later changes, so every options change measures.
-				this._sizeObserved = observeSize(root, this._onSize);
-				this._sizeStale = true;
-				this.invalidate(INVALIDATE_FULL);
-			}
-		} else {
-			if (this._sizeObserved) {
-				unobserveSize(root);
-				this._sizeObserved = false;
-			}
-			this._sizeStale = false;
-			root.style.width = `${this._settings.options.width}px`;
-			root.style.height = `${this._settings.options.height}px`;
-			this._setSize(this._settings.options.width, this._settings.options.height);
-		}
-	}
-
-	/** Size of the root element's content box, from the shared resize observer. */
-	private readonly _onSize = (width: number, height: number): void => {
-		if (this._destroyed || !this._settings.options.autoSize) {
-			return;
-		}
-		this._sizeStale = false;
-		this._setSize(Math.floor(width), Math.floor(height));
-	};
-
-	/**
-	 * Measures the chart if its size is not known yet. This reads the layout, and so can force one:
-	 * it happens in the read phase of a frame, where every chart reads before any chart writes, or
-	 * earlier when a call or arriving data needs the size, but not when the chart is created: charts
-	 * created in a loop would each lay the page out again.
-	 *
-	 * The size is that of the root element, which fills the content box of the container. The
-	 * container's bounding rectangle would include its padding and borders and follow its CSS
-	 * transforms, and the canvases would no longer fit the root.
-	 */
-	private _ensureSize(): void {
-		if (!this._sizeStale) {
-			return;
-		}
-		this._sizeStale = false;
-		const root = this._root;
-		// The used width and height keep their fractions, like the sizes the observer reports;
-		// `clientWidth` is rounded, and the two would disagree by a pixel.
-		const style = this._container.ownerDocument.defaultView?.getComputedStyle(root);
-		const width = style === undefined ? Number.NaN : pixels(style.width);
-		const height = style === undefined ? Number.NaN : pixels(style.height);
-		this._setSize(
-			Math.floor(width === width ? width : root.clientWidth),
-			Math.floor(height === height ? height : root.clientHeight),
-		);
-	}
-
-	private _setSize(width: number, height: number): void {
-		if (width === this._width && height === this._height) {
-			return;
-		}
-		this._width = width;
-		this._height = height;
-		this._computeLayout();
-		this._resolveView();
-		this.invalidate(INVALIDATE_FULL);
-	}
-
-	/**
-	 * Splits the chart into pane and axes, the price axes of each side laid out from the pane outward.
-	 * Only numbers change here; canvases follow in the next draw.
-	 */
-	private _computeLayout(): void {
-		const { timeScale, layout } = this._settings.options;
-		const axes = this._axes;
-		let left = 0;
-		let right = 0;
-		for (const axis of axes) {
-			if (axis.settings.visible) {
-				if (axis.settings.position === 'left') {
-					left += axis.axisWidth;
-				} else {
-					right += axis.axisWidth;
-				}
-			}
-		}
-		this._axisHeight = timeScale.visible ? Math.round(layout.fontSize + 16) : 0;
-		this._paneLeft = left;
-		this._paneWidth = Math.max(0, this._width - left - right);
-		this._paneHeight = Math.max(0, this._height - this._axisHeight);
-		let leftEdge = left;
-		let rightEdge = left + this._paneWidth;
-		for (const axis of axes) {
-			if (axis.settings.visible) {
-				if (axis.settings.position === 'left') {
-					leftEdge -= axis.axisWidth;
-					axis.axisLeft = leftEdge;
-				} else {
-					axis.axisLeft = rightEdge;
-					rightEdge += axis.axisWidth;
-				}
-			}
-			axis.scale.setHeight(this._paneHeight);
-		}
-		this.scale.setWidth(this._paneWidth);
-		this._layersDirty = true;
-	}
-
 	/** Redraws at the new resolution when the window moves to another screen or the page is zoomed. */
 	private readonly _onPixelRatio = (): void => {
 		this.invalidate(INVALIDATE_FULL);
@@ -1539,7 +1393,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	 * series layer outside the columns a tick changed. So everything is drawn again.
 	 */
 	private readonly _onContextRestored = (): void => {
-		this._layersDirty = true;
+		this._layout.dirty = true;
 		this._layers.normal.changed = true;
 		this.invalidate(INVALIDATE_FULL);
 	};
@@ -1558,41 +1412,15 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 	};
 
+	/** Sizes the canvases to the layout, at the device pixel ratio of the window. */
 	private _placeLayers(): void {
-		this._layersDirty = false;
 		// A canvas that changes size is cleared, and the pixel ratio and fonts may differ.
 		this._paneStale = true;
-		const ratio = this._container.ownerDocument.defaultView?.devicePixelRatio ?? 1;
-		this._pixelRatio = ratio;
-		const { _paneLeft: paneLeft, _paneWidth: paneWidth, _paneHeight: paneHeight } = this;
-		const options = this._settings.options;
-		this._pane.place(paneLeft, 0, paneWidth, paneHeight, ratio);
-		for (const axis of this._axes) {
-			if (axis.settings.visible) {
-				axis.layer?.place(axis.axisLeft, 0, axis.axisWidth, paneHeight, ratio);
-			}
-			// Resizing a canvas clears it, so the axes are drawn again whatever their state.
-			axis.drawn = -1;
-		}
-		if (options.timeScale.visible) {
-			this._timeAxis.place(0, paneHeight, this._width, this._axisHeight, ratio);
-		}
-		this._placeDrawingsLayer(ratio);
-		this._overlay.place(0, 0, this._width, this._height, ratio);
+		const layout = this._layout;
+		layout.placePanes();
+		this._placeDrawingsLayer(layout.pixelRatio);
+		layout.placeOverlay();
 		this._timeAxisDrawn = -1;
-		const { fontSize, fontFamily } = options.layout;
-		const font = `${fontSize * ratio}px ${fontFamily}`;
-		if (font !== this._font) {
-			this._font = font;
-			const ctx = this._overlay.ctx;
-			if (ctx === null) {
-				this._digitWidth = fontSize * 0.6;
-			} else {
-				ctx.font = font;
-				this._digitWidth = ctx.measureText('0').width / ratio;
-			}
-		}
-		this._watermarkFont = `${options.watermark.fontSize * ratio}px ${fontFamily}`;
 	}
 
 	// Frame
@@ -1600,7 +1428,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	/** Write phase of a frame: sizes the canvases and draws whatever the invalidation level asks for. */
 	public frameWrite(now: number): void {
 		if (this._drawingsPlacement) {
-			this._placeDrawingsLayer(this._pixelRatio);
+			this._placeDrawingsLayer(this._layout.pixelRatio);
 		}
 		let level = this._level;
 		this._level = INVALIDATE_NONE;
@@ -1613,7 +1441,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._paneStale = true;
 		}
 		const animating = this._interaction.step(now);
-		if (level === INVALIDATE_FULL || this._font === '') {
+		if (level === INVALIDATE_FULL || this._layout.font === '') {
 			this._placeLayers();
 		}
 		if (level >= INVALIDATE_LIGHT) {
@@ -1623,14 +1451,14 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 				const scale = this.scale;
 				const from = scale.from;
 				const to = scale.to;
-				this._computeLayout();
+				this._layout.compute();
 				scale.setVisibleRange(from, to);
 				this._updateModel();
 			}
-			if (this._layersDirty) {
+			if (this._layout.dirty) {
 				this._placeLayers();
 			}
-			if (this._paneWidth > 0 && this._paneHeight > 0) {
+			if (this._layout.paneWidth > 0 && this._layout.paneHeight > 0) {
 				this._renderPane();
 				this._renderAxes();
 			} else {
@@ -1638,7 +1466,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 				this._paneStale = true;
 			}
 		}
-		if (this._paneWidth > 0 && this._paneHeight > 0) {
+		if (this._layout.paneWidth > 0 && this._layout.paneHeight > 0) {
 			if (this._drawings !== null) {
 				// Tools place points with the view of this frame, also before the first drawing exists.
 				const moved = this._syncPrimitives();
@@ -1707,7 +1535,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _updateModel(): void {
 		const scale = this.scale;
 		const cache = this._cache;
-		const ratio = this._pixelRatio;
+		const ratio = this._layout.pixelRatio;
 		this._requestWindow(ratio);
 
 		const geometry = this._geometry;
@@ -1957,12 +1785,12 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			// Labels change only with the ticks, so most frames have nothing to measure.
 			if (
 				!axis.settings.visible ||
-				(priceScale.ticksGeneration === axis.fitTicks && this._digitWidth === axis.fitDigit)
+				(priceScale.ticksGeneration === axis.fitTicks && this._layout.digitWidth === axis.fitDigit)
 			) {
 				continue;
 			}
 			axis.fitTicks = priceScale.ticksGeneration;
-			axis.fitDigit = this._digitWidth;
+			axis.fitDigit = this._layout.digitWidth;
 			if (axis.count === 0 || !priceScale.hasRange || this.scale.isEmpty) {
 				continue;
 			}
@@ -1976,7 +1804,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 					characters = length;
 				}
 			}
-			const needed = Math.max(MIN_AXIS_WIDTH, Math.ceil((characters * this._digitWidth + 2 * AXIS_PADDING) / 4) * 4);
+			const needed = Math.max(
+				MIN_AXIS_WIDTH,
+				Math.ceil((characters * this._layout.digitWidth + 2 * AXIS_PADDING) / 4) * 4,
+			);
 			if (needed <= axis.axisWidth && needed + AXIS_SHRINK_SLACK >= axis.axisWidth) {
 				continue;
 			}
@@ -2024,7 +1855,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		) {
 			return PANE_FULL;
 		}
-		const ratio = this._pixelRatio;
+		const ratio = this._layout.pixelRatio;
 		const body = this._widths.body;
 		let left = Infinity;
 		let right = -Infinity;
@@ -2075,13 +1906,13 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	 * starts right of them, which leaves every pixel inside with the same shapes over it.
 	 */
 	private _renderPane(): void {
-		const layer = this._pane;
+		const layer = this._layout.pane;
 		const ctx = layer.ctx;
 		if (ctx === null) {
 			return;
 		}
 		const options = this._settings.options;
-		const ratio = this._pixelRatio;
+		const ratio = this._layout.pixelRatio;
 		const widths = this._widths;
 		// A bucket drawn as one candle (a coarse level shown wider than a pixel) is as wide as its bars.
 		candleWidths(this._geometry.spacing * 2 ** this._geometry.shift, ratio, widths);
@@ -2239,7 +2070,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _renderWatermark(ctx: CanvasRenderingContext2D, width: number, height: number): void {
 		const watermark = this._settings.options.watermark;
 		const lines = this._watermarkLines;
-		const ratio = this._pixelRatio;
+		const ratio = this._layout.pixelRatio;
 		const lineHeight = watermark.fontSize * ratio * 1.2;
 		const padding = 2 * AXIS_PADDING * ratio;
 		const block = lineHeight * lines.length;
@@ -2247,7 +2078,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		const x = horzAlign === 'left' ? padding : horzAlign === 'right' ? width - padding : width / 2;
 		let y = vertAlign === 'top' ? padding : vertAlign === 'bottom' ? height - padding - block : (height - block) / 2;
 		y += lineHeight / 2;
-		ctx.font = this._watermarkFont;
+		ctx.font = this._layout.watermarkFont;
 		ctx.fillStyle = watermark.color;
 		ctx.textAlign = horzAlign;
 		ctx.textBaseline = 'middle';
@@ -2259,12 +2090,12 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	/** Axes are redrawn only when their ticks changed: a tick that leaves the scales alone skips them. */
 	private _renderAxes(): void {
-		const ratio = this._pixelRatio;
+		const ratio = this._layout.pixelRatio;
 		const options = this._settings.options;
 		const style = this._axisStyle;
 		style.background = options.layout.background;
 		style.textColor = options.layout.textColor;
-		style.font = this._font;
+		style.font = this._layout.font;
 		style.pixelRatio = ratio;
 		for (const axis of this._axes) {
 			const priceScale = axis.scale;
@@ -2292,7 +2123,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		const timeOptions = options.timeScale;
 		const origin = this._geometry.origin;
 		if (timeOptions.visible && (this._timeAxisDrawn !== this._ticksGeneration || this._timeAxisOrigin !== origin)) {
-			const layer = this._timeAxis;
+			const layer = this._layout.timeAxis;
 			if (layer.ctx !== null) {
 				drawTimeAxis(
 					layer.ctx,
@@ -2300,7 +2131,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 					layer.height,
 					style,
 					timeOptions.borderVisible ? timeOptions.borderColor : '',
-					Math.round(this._paneLeft * ratio),
+					Math.round(this._layout.paneLeft * ratio),
 					this._tickXs,
 					this._timeTicks.labels,
 					this._timeTicks.count,
@@ -2313,19 +2144,19 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	/** Price lines, value labels and the crosshair, on a transparent canvas above everything else. */
 	private _renderOverlay(): void {
-		const layer = this._overlay;
+		const layer = this._layout.overlay;
 		const ctx = layer.ctx;
 		if (ctx === null) {
 			return;
 		}
 		ctx.clearRect(0, 0, layer.width, layer.height);
-		const ratio = this._pixelRatio;
+		const ratio = this._layout.pixelRatio;
 		const options = this._settings.options;
-		const paneLeft = Math.round(this._paneLeft * ratio);
-		const paneWidth = this._pane.width;
-		const paneHeight = this._pane.height;
+		const paneLeft = Math.round(this._layout.paneLeft * ratio);
+		const paneWidth = this._layout.pane.width;
+		const paneHeight = this._layout.pane.height;
 		const tagHeight = Math.round((options.layout.fontSize + 8) * ratio);
-		const font = this._font;
+		const font = this._layout.font;
 		// Value labels of overlays go on the default scale's axis, or on the first visible one.
 		let overlayAxis: PriceAxis | null = null;
 		for (const axis of this._axes) {
@@ -2443,7 +2274,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			const time = drawn!.time[row]!;
 			// Daily bars are dates, shown as they are (see `TimeTicks.dates`).
 			const label = this._time.format.crosshair(time, this._timeTicks.dates ? time : this._time.zone.wall(time));
-			const width = Math.ceil((label.length * this._digitWidth + 2 * AXIS_PADDING) * ratio);
+			const width = Math.ceil((label.length * this._layout.digitWidth + 2 * AXIS_PADDING) * ratio);
 			const left = Math.min(Math.max(paneLeft, x - (width >> 1)), Math.max(paneLeft, paneLeft + paneWidth - width));
 			const background = vertLine.labelBackgroundColor;
 			drawTag(
@@ -2471,7 +2302,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		background: string,
 		text: string,
 	): void {
-		const ratio = this._pixelRatio;
+		const ratio = this._layout.pixelRatio;
 		const left = Math.round(axis.axisLeft * ratio);
 		const width = Math.round((axis.axisLeft + axis.axisWidth) * ratio) - left;
 		const onLeft = axis.settings.position === 'left';
@@ -2487,7 +2318,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			text,
 			onLeft ? left + width - padding : left + padding,
 			onLeft ? 'right' : 'left',
-			this._font,
+			this._layout.font,
 		);
 	}
 
@@ -2506,7 +2337,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	/** Dots where the crosshair crosses line series, ringed in the background color. */
 	private _renderMarkers(ctx: CanvasRenderingContext2D, x: number, row: number): void {
-		const ratio = this._pixelRatio;
+		const ratio = this._layout.pixelRatio;
 		for (const series of this._series) {
 			if (series.type !== 'line' || row >= series.close.length) {
 				continue;
@@ -2586,13 +2417,6 @@ function seriesReach(series: Series, pixelRatio: number, body: number): number {
 
 function thickness(width: number, pixelRatio: number): number {
 	return Math.max(1, Math.floor(width * pixelRatio));
-}
-
-/** The canvas of a price axis; dragging it scales the axis. */
-function axisLayer(doc: Document): Layer {
-	const layer = new Layer(doc, true);
-	layer.canvas.style.cursor = 'ns-resize';
-	return layer;
 }
 
 /** The first value in `[from, to)` that is not NaN, or NaN. */

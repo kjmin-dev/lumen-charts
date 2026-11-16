@@ -15,8 +15,8 @@ describe('pointer input and layout reads', () => {
 	let rectReads = 0;
 
 	const scale = (): TimeScale => (chart as unknown as { scale: TimeScale }).scale;
-	const crosshair = () =>
-		chart as unknown as { _crosshairX: number; _crosshairY: number; _crosshairVisible: boolean; _paneWidth: number };
+	const crosshair = () => chart as unknown as { _crosshairX: number; _crosshairY: number; _crosshairVisible: boolean };
+	const layout = () => (chart as unknown as { _layout: { paneWidth: number } })._layout;
 	const runFrames = (): void => {
 		for (const frame of frames.splice(0)) {
 			now += 16;
@@ -133,7 +133,7 @@ describe('pointer input and layout reads', () => {
 		expect(scale().xToLogical(anchor)).toBeCloseTo(before, 6);
 
 		// Past the right edge of the pane, the anchor is the edge.
-		const paneWidth = crosshair()._paneWidth;
+		const paneWidth = layout().paneWidth;
 		const edge = scale().xToLogical(paneWidth);
 		wheel(left + paneWidth + 30, -100);
 		runFrames();
