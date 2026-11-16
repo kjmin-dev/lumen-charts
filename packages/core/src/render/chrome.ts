@@ -290,3 +290,8 @@ function linear(channel: number): number {
 	const c = channel / 255;
 	return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
 }
+
+/** Device-pixel thickness of a line `width` CSS pixels wide. */
+export function deviceThickness(width: number, pixelRatio: number): number {
+	return Math.max(1, Math.floor(width * pixelRatio));
+}
