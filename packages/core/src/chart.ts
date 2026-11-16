@@ -3,7 +3,7 @@ import type { EngineClient, IndicatorInfo } from '@lumen-charts/engine';
 import { DataFlow } from './data/data-flow';
 import { DatafeedFetches } from './data/datafeed';
 import { WindowCache } from './data/window-cache';
-import { Drawings } from './drawings/manager';
+import { PanePrimitives } from './drawings/pane-primitives';
 import type { DrawingsApi } from './drawings/types';
 import {
 	ChartIndicators,
@@ -21,6 +21,7 @@ import {
 	INVALIDATE_NONE,
 	type Invalidation,
 } from './model/invalidation';
+import { Crosshair } from './model/crosshair';
 import { FrameModel } from './model/frame-model';
 import type { SessionInfo } from './model/sessions';
 import { TimeDisplay } from './model/time-display';
@@ -52,10 +53,8 @@ import {
 	isFaint,
 	textColorOn,
 } from './render/chrome';
-import type { PanePrimitive, PrimitiveBounds, PrimitiveZOrder } from './primitives';
-import { Layer } from './render/layer';
+import type { PanePrimitive } from './primitives';
 import { ChartLayout } from './render/layout';
-import { PaneViewState, PrimitiveLayers, ScaleMapping } from './render/primitive-host';
 import { drawCandles, drawHistogram, drawLine } from './render/series';
 import { drawExtendedHours, drawSessionBreaks } from './render/sessions';
 import { Series, type SeriesApi, type SeriesCreateOptions, type SeriesType } from './series';
@@ -72,8 +71,7 @@ import {
 	planRestore,
 } from './state';
 import { ChartSettings } from './settings';
-import { canvasFits } from './shared/canvas-budget';
-import { type FrameClient, cancelFrame, report, requestFrame } from './shared/frame';
+import { type FrameClient, cancelFrame, requestFrame } from './shared/frame';
 import { watchPixelRatio } from './shared/media';
 import { observeVisibility, unobserveVisibility } from './shared/observers';
 import { type Geometry, candleWidths } from './views/series-view';
@@ -121,36 +119,11 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private readonly _indicators: ChartIndicators;
 	private _applied: (() => void)[] = [];
 
-	private _crosshairVisible = false;
-	private _crosshairX = 0;
-	private _crosshairY = 0;
-	/** The crosshair moved since drawings were last hit-tested for it. */
-	private _hoverDirty = false;
-
+	private readonly _crosshair = new Crosshair();
+	/** The primitives and drawings of the pane, and their layer. */
+	private readonly _primitives: PanePrimitives;
 	/** Logical positions of times, for anchors stored as times. */
 	private readonly _times = new TimeIndex();
-	/** Primitives of the pane in their three layers; the built-in drawings are among them. */
-	private readonly _layers: PrimitiveLayers;
-	/** The views primitives are drawn with, one per price scale they use; the default scale's. */
-	private readonly _views = new Map<string, PaneViewState>();
-	private readonly _view: PaneViewState;
-	/** The drawings layer, created with the first primitive drawn into it; null while merged. */
-	private _drawingsLayer: Layer | null = null;
-	/** Near the canvas budget, drawings go into the series layer instead (see `canvasFits`). */
-	private _drawingsMerged = false;
-	/** The drawings layer has to be created, merged or placed again before it is drawn. */
-	private _drawingsPlacement = false;
-	private _drawings: Drawings | null = null;
-	private readonly _target = {
-		context: null as unknown as CanvasRenderingContext2D,
-		pixelRatio: 1,
-		width: 0,
-		height: 0,
-	};
-	private readonly _bounds: PrimitiveBounds = { left: 0, top: 0, right: 0, bottom: 0 };
-	/** Cursor of the chart's options, and the one shown. */
-	private _defaultCursor = 'crosshair';
-	private _cursor = '';
 
 	/** What the time axis last showed; -1 forces a redraw. */
 	private _timeAxisDrawn = -1;
@@ -204,7 +177,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			invalidate: level => this.invalidate(level),
 			reloaded: (series, seq) => this.reloaded(series, seq),
 			forget: series => this._cache.removeSeries(series),
-			seriesRemoved: series => this._detachSeriesPrimitives(series),
+			seriesRemoved: series => this._primitives.detachSeries(series),
 			attachSeriesPrimitive: (series, primitive) => this.attachSeriesPrimitive(series, primitive),
 			detachSeriesPrimitive: (series, primitive) => this.detachSeriesPrimitive(series, primitive),
 			baseUrl: () => container.ownerDocument.baseURI,
@@ -267,11 +240,19 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 		this._unwatchPixelRatio = watchPixelRatio(doc.defaultView, this._onPixelRatio);
 		observeVisibility(this._layout.root, this._onVisibility);
-		this._layers = new PrimitiveLayers({ primitiveChanged: zOrder => this._primitiveChanged(zOrder) });
-		this._view = this._viewFor(DEFAULT_PRICE_SCALE_ID);
+		this._primitives = new PanePrimitives(
+			this._settings,
+			this._layout,
+			this.scale,
+			this._series,
+			this._axes,
+			this._model,
+			this._times,
+			level => this.invalidate(level),
+		);
 		this._times.listener = () => {
 			this._resolveView();
-			this._primitiveChanged('normal');
+			this._primitives.changed('normal');
 		};
 		this._applyResolved(this._settings.options);
 	}
@@ -346,7 +327,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._indicators.removeReadersOf(this._series[index]!.engineId);
 		// Its indicators' outputs were listed after it, so removing them left it in place.
 		const removed = this._series.splice(index, 1)[0]!;
-		this._detachSeriesPrimitives(removed);
+		this._primitives.detachSeries(removed);
 		this._fetches.abort(removed);
 		this._cache.removeSeries(removed.engineId);
 		this._data.engine?.removeSeries(removed.engineId);
@@ -402,7 +383,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			state.indicators = this._indicators.save(indicator => units.indexOf(indicator));
 		}
 		if (parts === undefined || parts.includes('drawings')) {
-			state.drawings = this._drawings?.toJSON() ?? [];
+			state.drawings = this._primitives.drawings?.toJSON() ?? [];
 		}
 		if (parts === undefined || parts.includes('view')) {
 			state.view = this._saveView();
@@ -468,8 +449,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 				}
 			}
 		}
-		if (plan.drawings !== null && (plan.drawings.length > 0 || this._drawings !== null)) {
-			this._ensureDrawings().restore(plan.drawings);
+		if (plan.drawings !== null && (plan.drawings.length > 0 || this._primitives.drawings !== null)) {
+			this._primitives.ensureDrawings().restore(plan.drawings);
 		}
 		if (plan.view !== null) {
 			for (const id of Object.keys(plan.view.priceRanges)) {
@@ -621,32 +602,27 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	}
 
 	public drawings(): DrawingsApi {
-		return this._ensureDrawings();
+		return this._primitives.ensureDrawings();
 	}
 
 	public attachPrimitive(primitive: PanePrimitive): void {
 		if (!this._destroyed) {
-			this._ensureDrawings();
-			this._layers.attach(primitive, this._view);
+			this._primitives.attach(primitive);
 		}
 	}
 
 	public detachPrimitive(primitive: PanePrimitive): void {
-		this._layers.detach(primitive);
+		this._primitives.layers.detach(primitive);
 	}
 
 	public attachSeriesPrimitive(series: Series, primitive: PanePrimitive): void {
 		if (!this._destroyed && this._series.includes(series)) {
-			this._ensureDrawings();
-			series.primitives.add(primitive);
-			this._layers.attach(primitive, this._viewFor(this._axes.of(series).id));
+			this._primitives.attachToSeries(series, primitive);
 		}
 	}
 
 	public detachSeriesPrimitive(series: Series, primitive: PanePrimitive): void {
-		if (series.primitives.delete(primitive)) {
-			this._layers.detach(primitive);
-		}
+		this._primitives.detachFromSeries(series, primitive);
 	}
 
 	public whenIdle(): Promise<void> {
@@ -688,12 +664,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._data.destroy();
 		this._indicators.destroy();
 		this._settleApplied();
-		this._layers.detachAll();
-		this._drawings?.destroy();
-		this._layout.root.removeEventListener('keydown', this._onKey);
+		this._primitives.destroy();
 		this._layout.root.removeEventListener('contextrestored', this._onContextRestored, true);
 		this._layout.release();
-		this._drawingsLayer?.release();
 		this._layout.root.remove();
 		this._settle();
 	}
@@ -751,18 +724,18 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	}
 
 	public setCrosshair(x: number, y: number, visible: boolean): void {
-		this._crosshairX = x;
-		this._crosshairY = y;
-		this._crosshairVisible = visible;
-		this._hoverDirty = true;
+		this._crosshair.x = x;
+		this._crosshair.y = y;
+		this._crosshair.visible = visible;
+		this._crosshair.hoverDirty = true;
 	}
 
 	public pointerDelegate(): PointerDelegate | null {
-		if (this._drawings !== null) {
+		if (this._primitives.drawings !== null) {
 			// Presses land on what is on screen: the mapping of the last frame.
-			this._syncPaneView();
+			this._primitives.syncPaneView();
 		}
-		return this._drawings;
+		return this._primitives.drawings;
 	}
 
 	public priceAxisAt(target: EventTarget | null): AxisTarget | null {
@@ -847,221 +820,6 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._interaction.resolve();
 	}
 
-	// Drawings and primitives
-
-	/** The drawings, created on first use along with what they need: keys, the time index. */
-	private _ensureDrawings(): Drawings {
-		if (this._drawings !== null) {
-			return this._drawings;
-		}
-		const options = this._settings.options;
-		const overlay = this._layout.overlay;
-		const drawings = new Drawings(
-			{
-				layers: this._layers,
-				times: this._times,
-				view: id => this._viewFor(id),
-				paneLeft: () => this._layout.paneLeft,
-				invalidateOverlay: () => this.invalidate(INVALIDATE_CURSOR),
-				snapPrice: (index, y, view) => this._snapPrice(index, y, view),
-				report,
-			},
-			{
-				handleFill: options.layout.background,
-				fontFamily: options.layout.fontFamily,
-				measure: (text, font) => {
-					const ctx = overlay.ctx;
-					if (ctx === null) {
-						return text.length * Number.parseFloat(font) * 0.6;
-					}
-					ctx.font = font;
-					return ctx.measureText(text).width;
-				},
-			},
-		);
-		this._drawings = drawings;
-		// Focusable by a click, but not in the tab order, so Escape and Delete reach the drawings.
-		if (this._layout.root.tabIndex < 0 && !this._layout.root.hasAttribute('tabindex')) {
-			this._layout.root.tabIndex = -1;
-		}
-		this._layout.root.addEventListener('keydown', this._onKey);
-		return drawings;
-	}
-
-	private readonly _onKey = (event: KeyboardEvent): void => {
-		if (this._drawings?.key(event.key) === true) {
-			event.preventDefault();
-		}
-	};
-
-	/** A primitive or drawing changed: the layer it is drawn into is drawn again. */
-	private _primitiveChanged(zOrder: PrimitiveZOrder): void {
-		if (zOrder === 'bottom' || (zOrder === 'normal' && this._drawingsMerged)) {
-			this.invalidate(INVALIDATE_LIGHT);
-			return;
-		}
-		if (zOrder === 'normal' && this._drawingsLayer === null) {
-			// The first primitive of the drawings layer: the layer is placed in the next frame.
-			this._drawingsPlacement = true;
-		}
-		this.invalidate(INVALIDATE_CURSOR);
-	}
-
-	private _detachSeriesPrimitives(series: Series): void {
-		for (const primitive of series.primitives) {
-			this._layers.detach(primitive);
-		}
-		series.primitives.clear();
-	}
-
-	/**
-	 * Price of a point placed at bar `index` and row `y` on the scale of `view`: in magnet mode, the
-	 * open, high, low or close nearest to `y` of the first visible series on that scale, where the bar
-	 * is held; otherwise the price at `y`. On a percentage or indexed scale a series is drawn with its
-	 * own base, so the price is the one the scale shows where that value is drawn.
-	 */
-	private _snapPrice(index: number, y: number, view: PaneViewState): number {
-		const free = view.yToPrice(y);
-		const drawn = this._model.drawn;
-		if (this._settings.options.crosshair.mode !== 'magnet' || drawn === null) {
-			return free;
-		}
-		const row = Math.floor(index / 2 ** drawn.shift) - drawn.start;
-		if (row < 0 || row >= drawn.count) {
-			return free;
-		}
-		const ratio = this._layout.pixelRatio;
-		for (const series of this._series) {
-			const axis = series.axis;
-			if (!series.seriesOptions.visible || axis === null || axis.id !== view.scaleId || row >= series.close.length) {
-				continue;
-			}
-			let best = NaN;
-			let bestY = NaN;
-			let distance = Infinity;
-			for (let c = 0; c < 4; c++) {
-				const price = (c === 0 ? series.open : c === 1 ? series.high : c === 2 ? series.low : series.close)[row]!;
-				const at = series.deviceY(price) / ratio;
-				const d = Math.abs(at - y);
-				if (d < distance) {
-					distance = d;
-					best = price;
-					bestY = at;
-				}
-			}
-			if (best === best) {
-				// The same price, unless the series has a base of its own (percentage, indexed).
-				return Math.abs(view.priceToY(best) - bestY) < 1e-6 ? best : view.yToPrice(bestY);
-			}
-		}
-		return free;
-	}
-
-	private _applyCursor(): void {
-		const cursor = this._drawings?.cursor || this._defaultCursor;
-		if (cursor !== this._cursor) {
-			this._cursor = cursor;
-			this._layout.root.style.cursor = cursor;
-		}
-	}
-
-	/** Places the drawings layer, or merges it into the series layer when the canvas budget is near. */
-	private _placeDrawingsLayer(ratio: number): void {
-		this._drawingsPlacement = false;
-		const wanted = this._layers.normal.entries.length > 0;
-		const area = Math.round(this._layout.paneWidth * ratio) * Math.round(this._layout.paneHeight * ratio);
-		const layer = this._drawingsLayer;
-		const merged = wanted && !canvasFits(area - (layer === null ? 0 : layer.pixels));
-		if (!wanted || merged) {
-			if (layer !== null) {
-				layer.release();
-				layer.canvas.remove();
-				this._drawingsLayer = null;
-			}
-			if (merged !== this._drawingsMerged) {
-				this._drawingsMerged = merged;
-				this._layers.normal.changed = true;
-				this._paneStale = true;
-			}
-			return;
-		}
-		if (this._drawingsMerged) {
-			this._drawingsMerged = false;
-			this._paneStale = true;
-		}
-		if (layer === null) {
-			const created = new Layer(this._layout.root.ownerDocument, false);
-			created.canvas.style.pointerEvents = 'none';
-			this._layout.root.insertBefore(created.canvas, this._layout.overlay.canvas);
-			this._drawingsLayer = created;
-			this._layers.normal.changed = true;
-		}
-		if (this._drawingsLayer!.place(this._layout.paneLeft, 0, this._layout.paneWidth, this._layout.paneHeight, ratio)) {
-			this._layers.normal.changed = true;
-		}
-	}
-
-	/** The view of primitives and drawings on price scale `id`, made with the scale if need be. */
-	private _viewFor(id: string): PaneViewState {
-		let view = this._views.get(id);
-		if (view === undefined) {
-			const scale = this._axes.get(id).scale;
-			view = new PaneViewState(id, this._times, new ScaleMapping(scale), () => this._model.coarseWindow());
-			this._views.set(id, view);
-		}
-		return view;
-	}
-
-	/** Hands the mapping of the last model update (what is on screen) to the views of primitives. */
-	private _syncPaneView(): void {
-		const geometry = this._model.geometry;
-		const scale = this.scale;
-		for (const view of this._views.values()) {
-			view.sync(
-				geometry.origin,
-				geometry.spacing,
-				this._layout.pixelRatio,
-				this._layout.paneWidth,
-				this._layout.paneHeight,
-				scale.first,
-				scale.end - 1,
-			);
-		}
-	}
-
-	/** Takes over the frame's mapping for primitives, and brings their geometry up to date. */
-	private _syncPrimitives(): boolean {
-		this._syncPaneView();
-		const layers = this._layers;
-		const bounds = this._bounds;
-		let updated = layers.normal.update(bounds);
-		if (layers.top.update(bounds)) {
-			updated = true;
-		}
-		return updated;
-	}
-
-	/** Sets the draw target to a layer's context, with the origin at the pane's top left corner. */
-	private _targetOf(ctx: CanvasRenderingContext2D): typeof this._target {
-		const target = this._target;
-		target.context = ctx;
-		target.pixelRatio = this._layout.pixelRatio;
-		target.width = this._layout.paneWidth;
-		target.height = this._layout.paneHeight;
-		return target;
-	}
-
-	/** Draws the primitives of the drawings layer, the built-in drawings among them. */
-	private _renderDrawings(): void {
-		const layer = this._drawingsLayer;
-		const ctx = layer?.ctx ?? null;
-		if (layer === null || ctx === null) {
-			return;
-		}
-		ctx.clearRect(0, 0, layer.width, layer.height);
-		this._layers.normal.draw(this._targetOf(ctx));
-	}
-
 	// Data flow
 
 	private _isApplied(): boolean {
@@ -1125,14 +883,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		const watermark = options.watermark;
 		this._watermarkLines = watermark.visible && watermark.text !== '' ? watermark.text.split('\n') : [];
 		this._layout.timeAxis.setVisible(options.timeScale.visible);
-		this._defaultCursor = options.crosshair.mode === 'hidden' ? 'default' : 'crosshair';
-		this._cursor = '';
-		this._applyCursor();
-		if (this._drawings !== null) {
-			this._drawings.style.handleFill = options.layout.background;
-			this._drawings.style.fontFamily = options.layout.fontFamily;
-			this._primitiveChanged('normal');
-		}
+		this._primitives.applyOptions(options);
 		this._layout.font = '';
 		this._model.resetTicks();
 		for (const axis of this._axes.list) {
@@ -1175,7 +926,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	 */
 	private readonly _onContextRestored = (): void => {
 		this._layout.dirty = true;
-		this._layers.normal.changed = true;
+		this._primitives.layers.normal.changed = true;
 		this.invalidate(INVALIDATE_FULL);
 	};
 
@@ -1199,7 +950,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._paneStale = true;
 		const layout = this._layout;
 		layout.placePanes();
-		this._placeDrawingsLayer(layout.pixelRatio);
+		if (this._primitives.placeLayer(layout.pixelRatio)) {
+			this._paneStale = true;
+		}
 		layout.placeOverlay();
 		this._timeAxisDrawn = -1;
 	}
@@ -1208,16 +961,16 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	/** Write phase of a frame: sizes the canvases and draws whatever the invalidation level asks for. */
 	public frameWrite(now: number): void {
-		if (this._drawingsPlacement) {
-			this._placeDrawingsLayer(this._layout.pixelRatio);
+		if (this._primitives.placement && this._primitives.placeLayer(this._layout.pixelRatio)) {
+			this._paneStale = true;
 		}
 		let level = this._level;
 		this._level = INVALIDATE_NONE;
-		if (level < INVALIDATE_LIGHT && this._drawingsMerged && this._layers.normal.changed) {
+		if (level < INVALIDATE_LIGHT && this._primitives.merged && this._primitives.layers.normal.changed) {
 			// Merged into the series layer, drawings are drawn with the series.
 			level = INVALIDATE_LIGHT;
 		}
-		if (this._drawingsMerged && this._layers.normal.changed) {
+		if (this._primitives.merged && this._primitives.layers.normal.changed) {
 			// Also when the last merged drawing went away.
 			this._paneStale = true;
 		}
@@ -1248,20 +1001,20 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			}
 		}
 		if (this._layout.paneWidth > 0 && this._layout.paneHeight > 0) {
-			if (this._drawings !== null) {
+			if (this._primitives.drawings !== null) {
 				// Tools place points with the view of this frame, also before the first drawing exists.
-				const moved = this._syncPrimitives();
-				if (this._drawingsLayer !== null && this._layers.normal.changed) {
-					this._renderDrawings();
+				const moved = this._primitives.sync();
+				if (this._primitives.layer !== null && this._primitives.layers.normal.changed) {
+					this._primitives.render();
 				}
-				if (this._drawings !== null && (this._hoverDirty || moved)) {
-					this._hoverDirty = false;
-					this._drawings.hover(this._crosshairX, this._crosshairY, this._crosshairVisible);
+				if (this._primitives.drawings !== null && (this._crosshair.hoverDirty || moved)) {
+					this._crosshair.hoverDirty = false;
+					this._primitives.drawings.hover(this._crosshair.x, this._crosshair.y, this._crosshair.visible);
 				}
 			}
 			this._renderOverlay();
 		}
-		this._applyCursor();
+		this._primitives.applyCursor();
 		this._times.flush(this._data.engine);
 		this._cache.clearDirty();
 		if (animating) {
@@ -1286,7 +1039,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		const geometry = this._model.geometry;
 		const drawn = this._paneGeometry;
 		const grid = this._axes.grid;
-		const layers = this._layers;
+		const layers = this._primitives.layers;
 		const marks = this._time.marks;
 		if (
 			this._paneStale ||
@@ -1304,7 +1057,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			grid !== this._paneGrid ||
 			grid.scale.ticksGeneration !== this._paneGridTicks ||
 			layers.bottom.entries.length > 0 ||
-			(this._drawingsMerged && layers.normal.entries.length > 0)
+			(this._primitives.merged && layers.normal.entries.length > 0)
 		) {
 			return PANE_FULL;
 		}
@@ -1422,13 +1175,13 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		if (this._watermarkLines.length > 0) {
 			this._renderWatermark(ctx, layer.width, layer.height);
 		}
-		const layers = this._layers;
+		const layers = this._primitives.layers;
 		const primitives = layers.size > 0;
 		if (primitives) {
-			this._syncPaneView();
+			this._primitives.syncPaneView();
 			if (layers.bottom.entries.length > 0) {
-				layers.bottom.update(this._bounds);
-				layers.bottom.draw(this._targetOf(ctx));
+				layers.bottom.update(this._primitives.bounds);
+				layers.bottom.draw(this._primitives.targetOf(ctx));
 			}
 		}
 		const border = Math.max(1, Math.floor(ratio));
@@ -1441,7 +1194,11 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			if (series.renderer !== null) {
 				view.barWidth = widths.body;
 				const axis = series.axis;
-				series.renderer.draw(this._targetOf(ctx), view, axis === null ? this._view : this._viewFor(axis.id));
+				series.renderer.draw(
+					this._primitives.targetOf(ctx),
+					view,
+					axis === null ? this._primitives.view : this._primitives.viewFor(axis.id),
+				);
 				continue;
 			}
 			let from = 0;
@@ -1492,11 +1249,11 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 				drawLine(ctx, view, line.color, width, dashPattern(line.lineStyle, width), line.lineType === 'step', from, to);
 			}
 		}
-		if (primitives && this._drawingsMerged) {
-			if (layers.normal.update(this._bounds)) {
-				this._hoverDirty = true;
+		if (primitives && this._primitives.merged) {
+			if (layers.normal.update(this._primitives.bounds)) {
+				this._crosshair.hoverDirty = true;
 			}
-			layers.normal.draw(this._targetOf(ctx));
+			layers.normal.draw(this._primitives.targetOf(ctx));
 		}
 		if (partial) {
 			ctx.restore();
@@ -1657,32 +1414,32 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			}
 		}
 
-		const drawings = this._drawings;
-		if (this._layers.top.entries.length > 0 || (drawings !== null && drawings.overlayInUse)) {
+		const drawings = this._primitives.drawings;
+		if (this._primitives.layers.top.entries.length > 0 || (drawings !== null && drawings.overlayInUse)) {
 			// Pane coordinates, clipped to the pane, like the layers below.
 			ctx.save();
 			ctx.beginPath();
 			ctx.rect(paneLeft, 0, paneWidth, paneHeight);
 			ctx.clip();
 			ctx.translate(paneLeft, 0);
-			const target = this._targetOf(ctx);
-			this._layers.top.draw(target);
+			const target = this._primitives.targetOf(ctx);
+			this._primitives.layers.top.draw(target);
 			drawings?.drawOverlay(target);
 			ctx.restore();
 		}
 
 		const crosshair = options.crosshair;
 		const scale = this.scale;
-		if (!this._crosshairVisible || scale.isEmpty || crosshair.mode === 'hidden') {
+		if (!this._crosshair.visible || scale.isEmpty || crosshair.mode === 'hidden') {
 			return;
 		}
 		const geometry = this._model.geometry;
-		const index = Math.min(scale.end - 1, Math.max(scale.first, Math.round(scale.xToLogical(this._crosshairX))));
+		const index = Math.min(scale.end - 1, Math.max(scale.first, Math.round(scale.xToLogical(this._crosshair.x))));
 		const x = paneLeft + Math.round(geometry.origin + index * geometry.spacing);
 		const drawn = this._model.drawn;
 		const row = drawn === null ? -1 : Math.floor(index / 2 ** drawn.shift) - drawn.start;
 		const inCache = drawn !== null && row >= 0 && row < drawn.count;
-		let cssY = this._crosshairY;
+		let cssY = this._crosshair.y;
 		let magnet: Series | null = null;
 		if (crosshair.mode === 'magnet' && inCache) {
 			magnet = this._magnetSeries(row);

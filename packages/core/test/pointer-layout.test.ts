@@ -15,7 +15,10 @@ describe('pointer input and layout reads', () => {
 	let rectReads = 0;
 
 	const scale = (): TimeScale => (chart as unknown as { scale: TimeScale }).scale;
-	const crosshair = () => chart as unknown as { _crosshairX: number; _crosshairY: number; _crosshairVisible: boolean };
+	const crosshair = () => {
+		const state = (chart as unknown as { _crosshair: { x: number; y: number; visible: boolean } })._crosshair;
+		return { _crosshairX: state.x, _crosshairY: state.y, _crosshairVisible: state.visible };
+	};
 	const layout = () => (chart as unknown as { _layout: { paneWidth: number } })._layout;
 	const runFrames = (): void => {
 		for (const frame of frames.splice(0)) {
