@@ -14,6 +14,18 @@ type AnySeries = SeriesApi<'candlestick'> | SeriesApi<'line'>;
 
 type Feed = (from: number, to: number) => SeriesColumns;
 
+/** The extended hours of a New York equity exchange (stage 4 scenarios). */
+const EQUITY_HOURS = {
+	timeZone: 'America/New_York',
+	days: [1, 2, 3, 4, 5],
+	hours: [
+		{ start: '04:00', end: '09:30', kind: 'pre' },
+		{ start: '09:30', end: '16:00' },
+		{ start: '16:00', end: '20:00', kind: 'post' },
+	],
+	holidays: [],
+};
+
 /** A datafeed in lumen's shape over a function of the page. */
 function datafeedOf(feed: Feed) {
 	return { getBars: ({ from, to }: { from: number; to: number }) => Promise.resolve(feed(from, to)) } as never;
@@ -27,6 +39,7 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 	private _indicatorCount = 0;
 	private _indicators: IndicatorApi[] = [];
 	private _axes: PriceAxesLayout = 'one';
+	private _repaints = 0;
 
 	public constructor(container: HTMLElement, size: ChartSize | 'auto', worker: boolean) {
 		this._chart = createChart(
@@ -156,6 +169,19 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 		} else {
 			(this._series as SeriesApi<'line'>).update({ time, value: ticks.value[index] ?? 0 });
 		}
+	}
+
+	public setTimeZone(timeZone: string, sessions: boolean): void {
+		// Options a version of lumen without time zones does not know are ignored.
+		this._chart.applyOptions({
+			localization: { timeZone },
+			...(sessions ? { sessions: { schedule: EQUITY_HOURS, breaks: { visible: true } } } : {}),
+		} as never);
+	}
+
+	public repaint(): void {
+		this._repaints++;
+		this._chart.applyOptions({ layout: { textColor: this._repaints % 2 === 0 ? '#4a5160' : '#4a5161' } });
 	}
 
 	public setVisibleLogicalRange(range: LogicalRange): void {

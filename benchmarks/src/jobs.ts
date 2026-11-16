@@ -17,7 +17,9 @@ export type ScenarioName =
 	| 'ind-frames'
 	| 'ind-prepend'
 	| 'axes-frames'
-	| 'drawings';
+	| 'drawings'
+	| 'tz-frames'
+	| 'tz-change';
 export const SCENARIOS: readonly ScenarioName[] = [
 	'load',
 	'tick',
@@ -31,11 +33,15 @@ export const SCENARIOS: readonly ScenarioName[] = [
 	'ind-prepend',
 	'axes-frames',
 	'drawings',
+	'tz-frames',
+	'tz-change',
 ];
 /** The stage 3 scenarios: the ones above with indicators on the series. */
 export const INDICATOR_SCENARIOS: readonly ScenarioName[] = ['ind-load', 'ind-apply', 'ind-frames', 'ind-prepend'];
 /** The stage 4 scenarios: drawings on the chart. */
 export const DRAWING_SCENARIOS: readonly ScenarioName[] = ['drawings'];
+/** The stage 4 scenarios of time zones and sessions. */
+export const TIME_ZONE_SCENARIOS: readonly ScenarioName[] = ['tz-frames', 'tz-change'];
 
 export interface DatasetSpec {
 	readonly kind: SeriesKind;
@@ -276,6 +282,31 @@ export interface DrawingsJob extends JobBase {
 	readonly warmupBudgetMs: number;
 }
 
+/**
+ * The frames scenario with the chart in a time zone and with a session schedule (stage 4): the
+ * time axis follows the wall clock of `timeZone`, and with `sessions` the chart has the extended
+ * hours of a New York equity exchange (pre-market from 04:00, regular hours 09:30 to 16:00,
+ * post-market to 20:00, Monday to Friday) with breaks drawn and extended hours shaded.
+ */
+export interface TimeZoneFramesJob extends Omit<FramesJob, 'scenario'> {
+	readonly scenario: 'tz-frames';
+	readonly timeZone: string;
+	readonly sessions: boolean;
+}
+
+/**
+ * Changes of the time zone at run time, with the data set loaded and `zoom` bars in view: first to
+ * each of `zones` once (the first change to a zone in a page builds its table of offsets), then
+ * `changes` more through all of them, then `changes` changes of an option that has nothing to do
+ * with time (the text color), which cost a redraw like any change of options.
+ */
+export interface ZoneChangeJob extends JobBase {
+	readonly scenario: 'tz-change';
+	readonly zoom: ZoomLevel;
+	readonly zones: readonly string[];
+	readonly changes: number;
+}
+
 export type Job =
 	| LoadJob
 	| TickJob
@@ -288,7 +319,9 @@ export type Job =
 	| IndicatorPrependJob
 	| AxesFramesJob
 	| MultiJob
-	| DrawingsJob;
+	| DrawingsJob
+	| TimeZoneFramesJob
+	| ZoneChangeJob;
 
 /** All times start when `setData` is called, except `convertMs` and the `*WithConversionMs` sums. */
 export interface LoadTimings {
@@ -634,7 +667,38 @@ export interface DrawingsRun {
 	visibleBars: number;
 }
 
-export type RunResult = LoadRun | TickRun | FramesRun | PrependRun | RefetchRun | ApplyRun | MultiRun | DrawingsRun;
+/** Each change timed from the `applyOptions` call until `settle()` resolves with it drawn. */
+export interface ZoneChangeTimings {
+	/** The synchronous call. */
+	callMs: Distribution;
+	/** JavaScript in animation-frame callbacks until settled: the redraw. */
+	frameJsMs: Distribution;
+	/** callMs + frameJsMs: the main thread's work for the change. */
+	workMs: Distribution;
+	/** Wall time until settled, which includes waiting for the next frame. */
+	shownMs: Distribution;
+}
+
+export interface ZoneChangeRun {
+	/** The first change to each zone in the page, which builds its table. */
+	cold: ZoneChangeTimings;
+	/** Later changes, between zones whose tables exist. */
+	warm: ZoneChangeTimings;
+	/** Changes of the text color: what any change of options costs. */
+	baseline: ZoneChangeTimings;
+	visibleBars: number;
+}
+
+export type RunResult =
+	| LoadRun
+	| TickRun
+	| FramesRun
+	| PrependRun
+	| RefetchRun
+	| ApplyRun
+	| MultiRun
+	| DrawingsRun
+	| ZoneChangeRun;
 
 export type FailureReason = 'error' | 'timeout' | 'crash';
 
@@ -724,6 +788,10 @@ export function caseId(job: Job): string {
 			return `${base}/${job.charts}-charts${job.maxWorkers === null ? '' : `/max-workers-${job.maxWorkers}`}`;
 		case 'drawings':
 			return `${base}/${job.drawings}/${job.variant}`;
+		case 'tz-frames':
+			return `${base}/${job.motion}-${job.zoom === 'all' ? 'all' : sizeLabel(job.zoom)}`;
+		case 'tz-change':
+			return `${base}/${job.zoom === 'all' ? 'all' : sizeLabel(job.zoom)}`;
 	}
 }
 
@@ -876,6 +944,22 @@ const QUICK_INDICATOR_DATASETS: readonly DatasetSpec[] = [{ kind: 'candles', siz
 const AXES_DATASETS: readonly DatasetSpec[] = [{ kind: 'candles', size: M }];
 const AXES_ZOOMS: readonly ZoomLevel[] = [200, 'all'];
 const AXES_INDICATORS = 3;
+
+// Stage 4: 1M one-minute candles (almost two years, so two changes to and from summer time a year)
+// in New York time with the extended hours of an equity exchange.
+const TIME_ZONE_DATASETS: readonly DatasetSpec[] = [{ kind: 'candles', size: M }];
+const QUICK_TIME_ZONE_DATASETS: readonly DatasetSpec[] = [{ kind: 'candles', size: 10 * K }];
+const TIME_ZONE_FRAME_ZOOMS: readonly ZoomLevel[] = [200, 2_000, 20_000, 200_000, 'all'];
+const ZONE_CHANGE_ZOOMS: readonly ZoomLevel[] = [200, 20_000, 'all'];
+/** Zones a change cycles through: summer time north and south, half-hour offsets, none. */
+const CHANGE_ZONES: readonly string[] = [
+	'America/New_York',
+	'Europe/London',
+	'Asia/Kolkata',
+	'Australia/Lord_Howe',
+	'Asia/Tokyo',
+	'UTC',
+];
 interface MultiCase {
 	readonly dataset: DatasetSpec;
 	readonly charts: number;
@@ -1169,6 +1253,52 @@ export function planJobs(options: PlanOptions): Plan {
 					budgetMs,
 					warmupFrames: quick ? 10 : 60,
 					warmupBudgetMs,
+				});
+			}
+		}
+	}
+
+	const timeZoneDatasets = (quick ? QUICK_TIME_ZONE_DATASETS : TIME_ZONE_DATASETS).filter(keep);
+	if (options.scenarios.includes('tz-frames')) {
+		for (const dataset of timeZoneDatasets) {
+			for (const zoom of quick ? QUICK_FRAME_ZOOMS : TIME_ZONE_FRAME_ZOOMS) {
+				if (zoom !== 'all' && zoom >= dataset.size) {
+					continue;
+				}
+				for (const motion of MOTIONS) {
+					cases.push({
+						scenario: 'tz-frames',
+						dataset,
+						seed,
+						chart,
+						timeZone: 'America/New_York',
+						sessions: true,
+						zoom,
+						motion,
+						frames: quick ? 60 : 300,
+						minFrames: quick ? 20 : 30,
+						budgetMs,
+						warmupFrames: quick ? 10 : 30,
+						warmupBudgetMs,
+					});
+				}
+			}
+		}
+	}
+	if (options.scenarios.includes('tz-change')) {
+		for (const dataset of timeZoneDatasets) {
+			for (const zoom of quick ? QUICK_FRAME_ZOOMS : ZONE_CHANGE_ZOOMS) {
+				if (zoom !== 'all' && zoom >= dataset.size) {
+					continue;
+				}
+				cases.push({
+					scenario: 'tz-change',
+					dataset,
+					seed,
+					chart,
+					zoom,
+					zones: CHANGE_ZONES,
+					changes: quick ? 12 : 60,
 				});
 			}
 		}

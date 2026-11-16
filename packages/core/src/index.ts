@@ -35,9 +35,12 @@ export {
 	type LayoutOptions,
 	type LineOptions,
 	type LineStyle,
+	type LocalizationOptions,
 	type PriceScaleMode,
 	type PriceScaleOptions,
 	type SeriesOptionsCommon,
+	type SessionBreakOptions,
+	type SessionOptions,
 	type ThemeColors,
 	type ThemeName,
 	type TimeScaleOptions,
@@ -68,6 +71,8 @@ export {
 	type SeriesRenderer,
 } from './primitives';
 export { getCanvasBudget, setCanvasBudget } from './shared/canvas-budget';
+export type { SessionInfo, SessionKind, SessionSchedule, TradingSession } from './model/sessions';
+export type { TickMarkFormatter, TickMarkKind, TimeFormatter } from './model/time-format';
 export type { BarIndex, Coordinate, Logical, Nominal } from './types';
 export {
 	type IndicatorDefinition,
