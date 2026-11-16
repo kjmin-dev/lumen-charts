@@ -566,6 +566,77 @@ function zoneChanges(): string {
 	);
 }
 
+function state(): string {
+	const list = cases.filter(c => c.job.scenario === 'state');
+	const rows: string[][] = [];
+	for (const id of caseIds('state')) {
+		for (const adapter of adaptersOf(list)) {
+			const c = find(id, adapter);
+			if (c === undefined || c.job.scenario !== 'state') {
+				continue;
+			}
+			const label = `${c.job.drawings} drawings, ${c.job.indicators} indicators, ${datasetLabel(c.job.dataset)}`;
+			const length = median(c, 'jsonLength');
+			rows.push(
+				[
+					label,
+					adapter,
+					'save',
+					cell(c, 'saveMs.p50', MS),
+					'–',
+					cell(c, 'saveMs.p50', MS),
+					cell(c, 'saveMs.max', MS),
+					'–',
+					'–',
+				],
+				[
+					label,
+					adapter,
+					`JSON.stringify (${length === undefined ? '–' : number(length / 1000)} k characters)`,
+					cell(c, 'stringifyMs.p50', MS),
+					'–',
+					cell(c, 'stringifyMs.p50', MS),
+					cell(c, 'stringifyMs.max', MS),
+					'–',
+					'–',
+				],
+				[
+					label,
+					adapter,
+					'JSON.parse',
+					cell(c, 'parseMs.p50', MS),
+					'–',
+					cell(c, 'parseMs.p50', MS),
+					cell(c, 'parseMs.max', MS),
+					'–',
+					'–',
+				],
+			);
+			for (const kind of ['restore', 'restoreEmpty'] as const) {
+				rows.push([
+					label,
+					adapter,
+					kind === 'restore' ? 'restore into the chart saved from' : 'restore into the chart emptied',
+					cell(c, `${kind}.callMs.p50`, MS),
+					cell(c, `${kind}.frameJsMs.p50`, MS),
+					cell(c, `${kind}.workMs.p50`, MS),
+					cell(c, `${kind}.workMs.max`, MS),
+					cell(c, `${kind}.shownMs.p50`, MS),
+					kind === 'restore' ? cell(c, 'restoreFrames.max') : '–',
+				]);
+			}
+		}
+	}
+	return (
+		table(
+			['Case', 'Adapter', 'Step', 'Call p50', 'Frame JS p50', 'Work p50', 'Work max', 'Shown p50', 'Frames max'],
+			rows,
+		) +
+		'\nAll times in ms. Work is the call plus the JavaScript of the frames until drawn; Frames is how many frames ' +
+		`the chart drew for one restore. ${runsNote(list)}\n`
+	);
+}
+
 function failures(): string {
 	const lines: string[] = [];
 	for (const c of cases) {
@@ -820,6 +891,7 @@ const sections: [string, () => string, string?][] = [
 	['Several charts on one page', multi, 'multi'],
 	['Operations on history let go', refetchOperations, 'refetch'],
 	['Drawings: hover, drag and pan with drawings on the chart', drawings, 'drawings'],
+	['Chart state: save and restore', state, 'state'],
 	['Time zone and sessions: pan and zoom frames', () => frames('tz-frames'), 'tz-frames'],
 	['Time zone changes', zoneChanges, 'tz-change'],
 	['Failed runs', failures],

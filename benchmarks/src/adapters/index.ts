@@ -3,6 +3,7 @@ import {
 	DRAWING_SCENARIOS,
 	type DatasetSpec,
 	INDICATOR_SCENARIOS,
+	STATE_SCENARIOS,
 	type ScenarioName,
 	TIME_ZONE_SCENARIOS,
 } from '../jobs.ts';
@@ -41,6 +42,7 @@ export const adapters: readonly AdapterEntry[] = [
 		indicators: true,
 		priceAxes: true,
 		drawings: true,
+		state: true,
 		timeZones: true,
 		load: async () => (await import('./lumen.ts')).lumenWorker,
 	},
@@ -51,6 +53,7 @@ export const adapters: readonly AdapterEntry[] = [
 		indicators: true,
 		priceAxes: true,
 		drawings: true,
+		state: true,
 		timeZones: true,
 		load: async () => (await import('./lumen.ts')).lumenMain,
 	},
@@ -82,6 +85,9 @@ export function knownFailure(adapter: string, dataset: DatasetSpec, scenario?: S
 
 	if (scenario !== undefined && DRAWING_SCENARIOS.includes(scenario) && entry?.drawings !== true) {
 		return 'the library has no drawings';
+	}
+	if (scenario !== undefined && STATE_SCENARIOS.includes(scenario) && entry?.state !== true) {
+		return 'the library saves no chart state';
 	}
 	if (scenario !== undefined && TIME_ZONE_SCENARIOS.includes(scenario) && entry?.timeZones !== true) {
 		return 'the library shows no time zones or sessions';

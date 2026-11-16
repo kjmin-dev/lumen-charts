@@ -1,5 +1,13 @@
 import * as lumen from '@lumen-charts/core';
-import { type ChartApi, type IndicatorApi, type IndicatorInput, type SeriesApi, createChart } from '@lumen-charts/core';
+import {
+	CHART_STATE_VERSION,
+	type ChartApi,
+	type ChartState,
+	type IndicatorApi,
+	type IndicatorInput,
+	type SeriesApi,
+	createChart,
+} from '@lumen-charts/core';
 import type { AdapterFactory, ChartAdapter, ChartSize, LogicalRange } from '../adapter.ts';
 import type { CandleColumns, LineColumns, SeriesColumns, TickColumns } from '../data.ts';
 import type { BenchDrawing } from '../drawings.ts';
@@ -201,6 +209,25 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 				options: drawing.text === undefined ? undefined : { text: drawing.text },
 			});
 		}
+	}
+
+	public saveState(): unknown {
+		const save = (this._chart as Partial<Pick<ChartApi, 'saveState'>>).saveState;
+		// The code of earlier stages, measured with the same harness, saves no state.
+		if (save === undefined) {
+			throw new Error('This version of lumen saves no chart state');
+		}
+		return save.call(this._chart);
+	}
+
+	public restoreState(state: unknown): void {
+		this._chart.restoreState(state as ChartState);
+	}
+
+	public clearState(): void {
+		this._chart.restoreState({ version: CHART_STATE_VERSION, series: [], indicators: [], drawings: [] });
+		this._series = null;
+		this._indicators = [];
 	}
 
 	public pointerTarget(): HTMLElement {

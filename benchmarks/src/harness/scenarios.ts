@@ -38,6 +38,8 @@ import type {
 	RefetchOperations,
 	RefetchRun,
 	RunResult,
+	StateJob,
+	StateRun,
 	TickJob,
 	TickRun,
 	TimeZoneFramesJob,
@@ -126,6 +128,8 @@ function runScenario(job: Job, factory: AdapterFactory, container: HTMLElement, 
 			return runMulti(job, factory, container, probes);
 		case 'drawings':
 			return runDrawings(job, factory, container);
+		case 'state':
+			return runState(job, factory, container);
 		case 'tz-frames':
 			return runFrames(job, factory, container);
 		case 'tz-change':
@@ -493,6 +497,106 @@ async function runZoneChange(
 		adapter.destroy();
 	}
 }
+
+/**
+ * Saving and restoring the state of a 1M-candle chart with indicators and drawings. Saving, and the
+ * trip through JSON, are timed alone; a restore from the call until the frame that shows it is
+ * drawn, like any change (`timeChange`), with the frames the library drew for it counted.
+ */
+async function runState(job: StateJob, factory: AdapterFactory, container: HTMLElement): Promise<StateRun> {
+	const data = generateSeries('candles', { seed: job.seed, count: job.dataset.size }) as CandleColumns;
+	const adapter = await createSettled(factory, container, job.chart);
+	const { addDrawings, saveState, restoreState, clearState } = adapter;
+	if (addDrawings === undefined || saveState === undefined || restoreState === undefined || clearState === undefined) {
+		throw new Error('This adapter saves no chart state');
+	}
+	try {
+		adapter.withIndicators?.(job.indicators);
+		adapter.setData(prepare(adapter, data));
+		await adapter.settle();
+		const n = data.length;
+		const visibleBars = Math.min(job.visibleBars, n);
+		const view = { from: n - visibleBars, to: n - 1 };
+		adapter.setVisibleLogicalRange(view);
+		await adapter.settle();
+		addDrawings.call(adapter, generateDrawings(data, job.drawings, view.from, view.to, job.seed + 3));
+		await adapter.settle();
+
+		// A call takes a fraction of a millisecond, which the page's clock resolves poorly: ten a sample.
+		const batch = 10;
+		const time = (action: () => void): number => {
+			const t0 = performance.now();
+			for (let i = 0; i < batch; i++) {
+				action();
+			}
+			return (performance.now() - t0) / batch;
+		};
+		let state = saveState.call(adapter);
+		let json = JSON.stringify(state);
+		const saveMs: number[] = [];
+		const stringifyMs: number[] = [];
+		const parseMs: number[] = [];
+		for (let round = 0; round < job.rounds + STATE_WARMUP_ROUNDS; round++) {
+			const save = time(() => {
+				state = saveState.call(adapter);
+			});
+			const stringify = time(() => {
+				json = JSON.stringify(state);
+			});
+			const parse = time(() => {
+				JSON.parse(json);
+			});
+			if (round >= STATE_WARMUP_ROUNDS) {
+				saveMs.push(save);
+				stringifyMs.push(stringify);
+				parseMs.push(parse);
+			}
+		}
+
+		const restore: [number, number, number][] = [];
+		const restoreFrames: number[] = [];
+		for (let round = 0; round < job.rounds + STATE_WARMUP_ROUNDS; round++) {
+			// As an application gets it from storage: objects the chart has never seen.
+			const parsed: unknown = JSON.parse(json);
+			const runs = libraryFrameRuns();
+			const sample = await timeChange(adapter, () => restoreState.call(adapter, parsed));
+			if (round >= STATE_WARMUP_ROUNDS) {
+				restore.push(sample);
+				restoreFrames.push(libraryFrameRuns() - runs);
+			}
+		}
+		if (JSON.stringify(saveState.call(adapter)) !== json) {
+			throw new Error('The state saved after a restore differs from the state restored');
+		}
+		const restoreEmpty: [number, number, number][] = [];
+		for (let round = 0; round < job.rounds + STATE_WARMUP_ROUNDS; round++) {
+			clearState.call(adapter);
+			await adapter.settle();
+			const parsed: unknown = JSON.parse(json);
+			const sample = await timeChange(adapter, () => restoreState.call(adapter, parsed));
+			if (round >= STATE_WARMUP_ROUNDS) {
+				restoreEmpty.push(sample);
+			}
+		}
+		return {
+			saveMs: summarize(saveMs),
+			stringifyMs: summarize(stringifyMs),
+			parseMs: summarize(parseMs),
+			jsonLength: json.length,
+			restore: changeTimings(restore),
+			restoreEmpty: changeTimings(restoreEmpty),
+			restoreFrames: summarize(restoreFrames),
+			drawings: job.drawings,
+			indicators: job.indicators,
+			visibleBars,
+		};
+	} finally {
+		adapter.destroy();
+	}
+}
+
+/** Rounds of the state scenario before the measured ones, which let the engine compile the code. */
+const STATE_WARMUP_ROUNDS = 3;
 
 /**
  * Counts the Canvas 2D calls of one redraw at `range`, untimed. The first move makes sure the
