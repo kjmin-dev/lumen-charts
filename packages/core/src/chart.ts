@@ -2,12 +2,12 @@ import type { ChartApi, LogicalRange, TimeScaleApi } from './api';
 import {
 	type EngineClient,
 	type EngineEvent,
-	type FetchRequest,
 	type IndicatorInfo,
 	columnCount,
 	createEngine,
 	levelFor,
 } from '@lumen-charts/engine';
+import { DatafeedFetches } from './data/datafeed';
 import { type LevelWindow, WindowCache } from './data/window-cache';
 import { Drawings } from './drawings/manager';
 import type { DrawingsApi } from './drawings/types';
@@ -98,17 +98,6 @@ function pixels(value: string): number {
 	return value.endsWith('px') ? Number.parseFloat(value) : Number.NaN;
 }
 
-/** A datafeed request: in flight, or waiting out the pause after a failure (`timer`). */
-interface Fetch {
-	series: Series;
-	controller: AbortController;
-	timer: ReturnType<typeof setTimeout> | null;
-}
-
-/** Pause before asking a datafeed again after the first failure, and the longest one, in milliseconds. */
-const RETRY_MIN_MS = 1000;
-const RETRY_MAX_MS = 30_000;
-
 class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, PriceAxisHost {
 	public readonly scale: TimeScale;
 	/** Whether the chart waits for the shared animation frame (see `FrameClient`). */
@@ -174,12 +163,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _idle: (() => void)[] = [];
 	/** Limit last sent to the engine. */
 	private _memoryLimit = Infinity;
-	/** Datafeed requests, by request id. */
-	private readonly _fetches = new Map<number, Fetch>();
-	/** Of those, the ones in flight (not waiting out a pause). */
-	private _fetching = 0;
-	/** Bars handed back to the engine, by request id, until it says whether it took them. */
-	private readonly _answered = new Map<number, { series: Series; from: number; to: number }>();
+	/** Requests to the datafeeds of series for rows the engine needs again. */
+	private readonly _fetches: DatafeedFetches;
 	/** Indicators, their definitions and the modules being loaded. */
 	private readonly _indicators: ChartIndicators;
 	private _applied: (() => void)[] = [];
@@ -292,6 +277,15 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._primitiveChanged('normal');
 		};
 		this._applyResolved(this._settings.options);
+		this._fetches = new DatafeedFetches(
+			this._series,
+			this._cache,
+			() => this._engine,
+			() => {
+				this._settle();
+				this._settleApplied();
+			},
+		);
 		this._indicators = new ChartIndicators({
 			seriesList: this._series,
 			engine: () => this._engine,
@@ -380,7 +374,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		// Its indicators' outputs were listed after it, so removing them left it in place.
 		const removed = this._series.splice(index, 1)[0]!;
 		this._detachSeriesPrimitives(removed);
-		this._abortFetches(removed);
+		this._fetches.abort(removed);
 		this._cache.removeSeries(removed.engineId);
 		this._engine?.removeSeries(removed.engineId);
 		this.invalidate(INVALIDATE_LIGHT);
@@ -716,8 +710,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._unwatchPixelRatio?.();
 		this._unwatchPixelRatio = null;
 		this._settings.release();
-		this._abortFetches(null);
-		this._answered.clear();
+		this._fetches.destroy();
 		this._engine?.destroy();
 		this._engine = null;
 		this._deferred = [];
@@ -843,7 +836,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	public reloaded(series: Series, seq: number): void {
 		// The engine drops requests for the old history once it gets there; their answers would be ignored.
-		this._abortFetches(series);
+		this._fetches.abort(series);
 		series.reloadSeq = seq;
 		series.fetchBackoff = 0;
 		series.failures.length = 0;
@@ -1142,7 +1135,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		return (
 			this._destroyed ||
 			engine === null ||
-			(engine.pending === 0 && this._indicators.computing === 0 && this._fetching === 0)
+			(engine.pending === 0 && this._indicators.computing === 0 && this._fetches.fetching === 0)
 		);
 	}
 
@@ -1219,7 +1212,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			event.restored !== undefined ||
 			event.window?.incomplete === true
 		) {
-			this._handleFetches(event);
+			this._fetches.handle(event);
 		}
 		// A failed command changes nothing on screen, and redrawing for it would only repeat the request.
 		let changed =
@@ -1282,165 +1275,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		return (
 			this._destroyed ||
 			(!this.frameQueued &&
-				this._fetching === 0 &&
+				this._fetches.fetching === 0 &&
 				this._indicators.computing === 0 &&
 				(this._engine === null || this._engine.pending === 0))
 		);
-	}
-
-	/**
-	 * Fetches rows the engine let go and needs again from the series' datafeed, and hands them back.
-	 * The engine checks them against the rows it let go; a raw window waits for them meanwhile, and the
-	 * chart draws a coarse level where it has nothing else. Requests the engine no longer needs are
-	 * aborted through the signal `getBars` got.
-	 */
-	private _handleFetches(event: EngineEvent): void {
-		const restored = event.restored;
-		if (restored !== undefined) {
-			const answered = this._answered.get(restored.request);
-			this._answered.delete(restored.request);
-			if (restored.outcome === 'restored' && answered !== undefined) {
-				answered.series.fetchBackoff = 0;
-			} else if (restored.outcome === 'mismatch' && answered !== undefined) {
-				console.warn(
-					`lumen-charts: the datafeed returned ${restored.received} bars where ${restored.expected} were expected; ` +
-						'they do not match the bars they replace and were ignored.',
-				);
-				failed(answered.series, answered.from, answered.to);
-			}
-		}
-		const window = event.window;
-		if (window?.incomplete === true) {
-			// The rows could not be fetched: draw what the levels show and ask again after a pause.
-			let backoff = RETRY_MIN_MS;
-			for (const series of this._series) {
-				backoff = Math.max(backoff, series.fetchBackoff);
-			}
-			this._cache.level(window.level).holdOff(performance.now() + backoff);
-		}
-		for (const id of event.cancel ?? []) {
-			this._abortFetch(id);
-		}
-		const engine = this._engine;
-		for (const request of event.fetch ?? []) {
-			const series = this._seriesById(request.series);
-			if (engine === null || this._fetches.has(request.id) || series === undefined) {
-				// A removed series: the engine forgot its requests when it removed it.
-				continue;
-			}
-			if (event.ack < series.reloadSeq) {
-				// Asked for before the series got a new history: the engine drops it once it gets there.
-				continue;
-			}
-			if (series.datafeed === null) {
-				engine.restoreRows(request.id, null, 0);
-				continue;
-			}
-			this._fetch(series, request);
-		}
-	}
-
-	/** Calls the series' datafeed for a request, after the pause that follows a failure if one is running. */
-	private _fetch(series: Series, request: FetchRequest): void {
-		const datafeed = series.datafeed!;
-		const { id, from, to, start, end } = request;
-		const controller = new AbortController();
-		const entry: Fetch = { series, controller, timer: null };
-		this._fetches.set(id, entry);
-		const done = (data: Float64Array | null, count: number): void => {
-			if (controller.signal.aborted) {
-				return;
-			}
-			this._fetches.delete(id);
-			this._fetching--;
-			const engine = this._engine;
-			if (data === null) {
-				failed(series, from, to);
-			} else if (engine !== null) {
-				this._answered.set(id, { series, from, to });
-			}
-			// After destroy the engine is gone, and nothing waits for the rows.
-			engine?.restoreRows(id, data, count);
-			this._settle();
-			this._settleApplied();
-		};
-		const call = (): void => {
-			entry.timer = null;
-			this._fetching++;
-			let pending: Promise<unknown>;
-			try {
-				pending = datafeed.getBars({ from, to, countBack: end - start, signal: controller.signal });
-			} catch (error) {
-				pending = Promise.reject(error);
-			}
-			pending.then(
-				bars => {
-					let packed: { data: Float64Array; count: number };
-					try {
-						packed = series.packFetched(bars as never, from, to);
-					} catch {
-						done(null, 0);
-						return;
-					}
-					done(packed.data, packed.count);
-				},
-				() => {
-					done(null, 0);
-				},
-			);
-		};
-		// Bars whose request failed a moment ago are asked for again only after the pause.
-		const now = performance.now();
-		let wait = 0;
-		const failures = series.failures;
-		for (let i = failures.length - 1; i >= 0; i--) {
-			const failure = failures[i]!;
-			if (failure.until <= now) {
-				failures.splice(i, 1);
-			} else if (failure.from <= to && failure.to >= from) {
-				wait = Math.max(wait, failure.until - now);
-			}
-		}
-		if (wait > 0) {
-			entry.timer = setTimeout(call, wait);
-		} else {
-			call();
-		}
-	}
-
-	/** Aborts a datafeed request; its answer, if one still comes, is ignored. */
-	private _abortFetch(id: number): void {
-		const entry = this._fetches.get(id);
-		if (entry === undefined) {
-			return;
-		}
-		this._fetches.delete(id);
-		if (entry.timer === null) {
-			this._fetching--;
-		} else {
-			clearTimeout(entry.timer);
-		}
-		entry.controller.abort();
-		this._settle();
-		this._settleApplied();
-	}
-
-	/** Aborts the datafeed requests of a series, or of every series. */
-	private _abortFetches(series: Series | null): void {
-		for (const [id, entry] of this._fetches) {
-			if (series === null || entry.series === series) {
-				this._abortFetch(id);
-			}
-		}
-	}
-
-	private _seriesById(id: number): Series | undefined {
-		for (const series of this._series) {
-			if (series.engineId === id) {
-				return series;
-			}
-		}
-		return undefined;
 	}
 
 	private _settle(): void {
@@ -2789,12 +2627,6 @@ function seriesColor(ctx: CanvasRenderingContext2D, series: Series): string {
 		return series.lastUp ? candle.borderUpColor : candle.borderDownColor;
 	}
 	return body;
-}
-
-/** Notes a failed datafeed request: the pause doubles (1 s to 30 s) and those bars wait it out. */
-function failed(series: Series, from: number, to: number): void {
-	series.fetchBackoff = Math.min(RETRY_MAX_MS, Math.max(RETRY_MIN_MS, series.fetchBackoff * 2));
-	series.failures.push({ from, to, until: performance.now() + series.fetchBackoff });
 }
 
 /** Creates a chart inside `container`. */

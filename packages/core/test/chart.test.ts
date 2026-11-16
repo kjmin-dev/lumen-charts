@@ -690,7 +690,7 @@ describe('chart with series', () => {
 			await settle();
 			expect(internals()._drawn!.level).toBe(0);
 			expect(rawRows(150_000, 150_200)).toEqual([...data.close.subarray(150_000, 150_200)]);
-			expect((chart as unknown as { _fetches: Map<number, unknown> })._fetches.size).toBe(0);
+			expect((chart as unknown as { _fetches: { _requests: Map<number, unknown> } })._fetches._requests.size).toBe(0);
 		});
 
 		it('aborts every request when the history is replaced, the series removed or the chart destroyed', async () => {
