@@ -77,9 +77,10 @@ import {
 	chartStateOptions,
 	planRestore,
 } from './state';
+import { ChartSettings } from './settings';
 import { canvasFits } from './shared/canvas-budget';
 import { type FrameClient, cancelFrame, report, requestFrame } from './shared/frame';
-import { type ColorSchemeWatch, watchColorScheme, watchPixelRatio } from './shared/media';
+import { watchPixelRatio } from './shared/media';
 import { observeSize, observeVisibility, unobserveSize, unobserveVisibility } from './shared/observers';
 import { type Geometry, candleWidths, placeElements } from './views/series-view';
 
@@ -136,11 +137,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _drawn: LevelWindow | null = null;
 	private readonly _widths = { body: 1, wick: 1 };
 
-	/** Everything applied so far, merged; the theme is laid under it whenever it changes. */
-	private _input: DeepPartial<ChartOptions>;
-	private _options: ChartOptions;
-	/** The system color scheme, watched while the theme is `auto`. */
-	private _scheme: ColorSchemeWatch | null = null;
+	private readonly _settings: ChartSettings;
 	private _engine: EngineClient | null = null;
 	private _width = 0;
 	private _height = 0;
@@ -258,19 +255,21 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	public constructor(container: HTMLElement, options: DeepPartial<ChartOptions>) {
 		this._container = container;
-		this._input = mergeOptions({}, options);
+		const input = mergeOptions({}, options);
 		// Throws a RangeError for an unknown time zone or locale, or a malformed session schedule.
-		this._time.apply(resolveOptions(this._input, false));
-		this._watchScheme();
-		this._options = this._resolve();
-		this.scale = new TimeScale(this._options.timeScale.barSpacing, this._options.timeScale.rightOffset);
+		this._time.apply(resolveOptions(input, false));
+		this._settings = new ChartSettings(container, input, this._onScheme);
+		this.scale = new TimeScale(
+			this._settings.options.timeScale.barSpacing,
+			this._settings.options.timeScale.rightOffset,
+		);
 
 		const doc = container.ownerDocument;
 		this._root = doc.createElement('div');
 		this._root.style.position = 'relative';
 		this._root.style.overflow = 'hidden';
 		this._pane = new Layer(doc, true);
-		const main = new PriceAxis(DEFAULT_PRICE_SCALE_ID, this, this._options.priceScale);
+		const main = new PriceAxis(DEFAULT_PRICE_SCALE_ID, this, this._settings.options.priceScale);
 		main.layer = axisLayer(doc);
 		this._axes.push(main);
 		this._axesById.set(main.id, main);
@@ -292,7 +291,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._resolveView();
 			this._primitiveChanged('normal');
 		};
-		this._applyResolved(this._options);
+		this._applyResolved(this._settings.options);
 		this._indicators = new ChartIndicators({
 			seriesList: this._series,
 			engine: () => this._engine,
@@ -316,28 +315,25 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		if (this._destroyed) {
 			return;
 		}
-		const input = mergeOptions(this._input, options);
+		const input = mergeOptions(this._settings.input, options);
 		if (options.localization !== undefined || options.sessions !== undefined) {
 			// Throws before anything changes.
 			this._applyTime(resolveOptions(input, false));
 		}
-		this._input = input;
-		this._watchScheme();
+		this._settings.apply(input);
 		this._update();
 	}
 
 	public options(): Readonly<ChartOptions> {
-		return this._options;
+		return this._settings.options;
 	}
 
 	public theme(): 'light' | 'dark' {
-		const theme = this._options.theme;
-		const dark = theme === 'auto' ? this._scheme?.dark === true : theme === 'dark';
-		return dark ? 'dark' : 'light';
+		return this._settings.theme();
 	}
 
 	public resize(width: number, height: number): void {
-		if (this._destroyed || this._options.autoSize) {
+		if (this._destroyed || this._settings.options.autoSize) {
 			return;
 		}
 		this.applyOptions({ width, height });
@@ -424,7 +420,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		const parts = selection.parts;
 		const state: ChartState = { version: CHART_STATE_VERSION };
 		if (parts === undefined || parts.includes('options')) {
-			state.options = chartStateOptions(this._input, false);
+			state.options = chartStateOptions(this._settings.input, false);
 		}
 		const units = this._units();
 		if (parts === undefined || parts.includes('series')) {
@@ -475,8 +471,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	private _restore(plan: RestorePlan, input: DeepPartial<ChartOptions> | null): void {
 		if (input !== null) {
-			this._input = input;
-			this._watchScheme();
+			this._settings.apply(input);
 			this._update();
 		}
 		const order = new Map<Series | Indicator, number>();
@@ -520,14 +515,14 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	/** The options a restore applies: those of the state, and what a state does not hold as it is now. */
 	private _restoredInput(saved: ChartStateOptions): DeepPartial<ChartOptions> {
-		const current = this._input as Record<string, unknown>;
+		const current = this._settings.input as Record<string, unknown>;
 		const next = mergeOptions<Record<string, unknown>>({}, saved);
 		for (const key of ENVIRONMENT_OPTIONS) {
 			if (current[key] !== undefined) {
 				next[key] = current[key];
 			}
 		}
-		const { tickMarkFormatter, timeFormatter } = this._input.localization ?? {};
+		const { tickMarkFormatter, timeFormatter } = this._settings.input.localization ?? {};
 		if (tickMarkFormatter !== undefined || timeFormatter !== undefined) {
 			next.localization = {
 				...(next.localization as object | undefined),
@@ -720,8 +715,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._interaction.destroy();
 		this._unwatchPixelRatio?.();
 		this._unwatchPixelRatio = null;
-		this._scheme?.release();
-		this._scheme = null;
+		this._settings.release();
 		this._abortFetches(null);
 		this._answered.clear();
 		this._engine?.destroy();
@@ -914,7 +908,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		if (this._drawings !== null) {
 			return this._drawings;
 		}
-		const options = this._options;
+		const options = this._settings.options;
 		const overlay = this._overlay;
 		const drawings = new Drawings(
 			{
@@ -989,7 +983,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _snapPrice(index: number, y: number, view: PaneViewState): number {
 		const free = view.yToPrice(y);
 		const drawn = this._drawn;
-		if (this._options.crosshair.mode !== 'magnet' || drawn === null) {
+		if (this._settings.options.crosshair.mode !== 'magnet' || drawn === null) {
 			return free;
 		}
 		const row = Math.floor(index / 2 ** drawn.shift) - drawn.start;
@@ -1133,9 +1127,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	/** The data engine, created with the first series (or plugin module). */
 	private _ensureEngine(): EngineClient | null {
 		if (this._engine === null && !this._destroyed) {
-			this._engine = createEngine({ worker: this._options.worker });
+			this._engine = createEngine({ worker: this._settings.options.worker });
 			this._engine.onevent = this._onEvent;
-			this._memoryLimit = this._options.memoryLimit;
+			this._memoryLimit = this._settings.options.memoryLimit;
 			if (this._memoryLimit !== Infinity) {
 				this._engine.setMemoryLimit(this._memoryLimit);
 			}
@@ -1212,7 +1206,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			times.cancel(event.ack);
 		}
 		if (wasEmpty && !scale.isEmpty) {
-			scale.reset(this._options.timeScale.barSpacing, this._options.timeScale.rightOffset);
+			scale.reset(this._settings.options.timeScale.barSpacing, this._settings.options.timeScale.rightOffset);
 		}
 		this._trackLastValues(event);
 		this._indicators.computing = event.computing ?? 0;
@@ -1462,17 +1456,13 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	// Options
 
-	private _resolve(): ChartOptions {
-		return resolveOptions(this._input, this._scheme?.dark === true);
-	}
-
 	/** Re-resolves the options, for example after the system color scheme changed. */
 	private _update(): void {
-		const next = this._resolve();
-		if (optionsEqual(next, this._options)) {
+		const next = this._settings.resolve();
+		if (optionsEqual(next, this._settings.options)) {
 			return;
 		}
-		this._options = next;
+		this._settings.options = next;
 		this._applyResolved(next);
 		if (this._engine !== null && next.memoryLimit !== this._memoryLimit) {
 			this._memoryLimit = next.memoryLimit;
@@ -1548,7 +1538,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _axisFor(id: string): PriceAxis {
 		let axis = this._axesById.get(id);
 		if (axis === undefined) {
-			axis = new PriceAxis(id, this, this._options.priceScales[id] ?? overlayScaleOptions(this.theme()));
+			axis = new PriceAxis(id, this, this._settings.options.priceScales[id] ?? overlayScaleOptions(this.theme()));
 			axis.scale.setHeight(this._paneHeight);
 			this._axesById.set(id, axis);
 			this._axes.push(axis);
@@ -1580,20 +1570,6 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		axis.layer?.setVisible(axis.settings.visible);
 	}
 
-	/** Listens to the system color scheme while the theme is `auto`. */
-	private _watchScheme(): void {
-		const auto = this._input.theme === 'auto';
-		if (auto === (this._scheme !== null)) {
-			return;
-		}
-		if (!auto) {
-			this._scheme!.release();
-			this._scheme = null;
-			return;
-		}
-		this._scheme = watchColorScheme(this._container.ownerDocument.defaultView, this._onScheme);
-	}
-
 	private readonly _onScheme = (): void => {
 		if (!this._destroyed) {
 			this._update();
@@ -1604,7 +1580,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	private _syncSizing(): void {
 		const root = this._root;
-		if (this._options.autoSize) {
+		if (this._settings.options.autoSize) {
 			root.style.width = '100%';
 			root.style.height = '100%';
 			if (!this._sizeObserved) {
@@ -1621,15 +1597,15 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 				this._sizeObserved = false;
 			}
 			this._sizeStale = false;
-			root.style.width = `${this._options.width}px`;
-			root.style.height = `${this._options.height}px`;
-			this._setSize(this._options.width, this._options.height);
+			root.style.width = `${this._settings.options.width}px`;
+			root.style.height = `${this._settings.options.height}px`;
+			this._setSize(this._settings.options.width, this._settings.options.height);
 		}
 	}
 
 	/** Size of the root element's content box, from the shared resize observer. */
 	private readonly _onSize = (width: number, height: number): void => {
-		if (this._destroyed || !this._options.autoSize) {
+		if (this._destroyed || !this._settings.options.autoSize) {
 			return;
 		}
 		this._sizeStale = false;
@@ -1679,7 +1655,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	 * Only numbers change here; canvases follow in the next draw.
 	 */
 	private _computeLayout(): void {
-		const { timeScale, layout } = this._options;
+		const { timeScale, layout } = this._settings.options;
 		const axes = this._axes;
 		let left = 0;
 		let right = 0;
@@ -1751,7 +1727,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		const ratio = this._container.ownerDocument.defaultView?.devicePixelRatio ?? 1;
 		this._pixelRatio = ratio;
 		const { _paneLeft: paneLeft, _paneWidth: paneWidth, _paneHeight: paneHeight } = this;
-		const options = this._options;
+		const options = this._settings.options;
 		this._pane.place(paneLeft, 0, paneWidth, paneHeight, ratio);
 		for (const axis of this._axes) {
 			if (axis.settings.visible) {
@@ -2012,7 +1988,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			}
 		}
 		this._gridAxis = grid;
-		const fontSize = this._options.layout.fontSize;
+		const fontSize = this._settings.options.layout.fontSize;
 		const tickSpacing = Math.max(32, fontSize * 3.5);
 		for (const axis of axes) {
 			const priceScale = axis.scale;
@@ -2070,7 +2046,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 					time.format,
 					size,
 				);
-				const sessions = this._options.sessions;
+				const sessions = this._settings.options.sessions;
 				// Breaks and shading are placed while a day is at least 6 CSS pixels wide, and not on
 				// daily bars.
 				time.marks.update(
@@ -2266,7 +2242,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		if (ctx === null) {
 			return;
 		}
-		const options = this._options;
+		const options = this._settings.options;
 		const ratio = this._pixelRatio;
 		const widths = this._widths;
 		// A bucket drawn as one candle (a coarse level shown wider than a pixel) is as wide as its bars.
@@ -2423,7 +2399,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	}
 
 	private _renderWatermark(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-		const watermark = this._options.watermark;
+		const watermark = this._settings.options.watermark;
 		const lines = this._watermarkLines;
 		const ratio = this._pixelRatio;
 		const lineHeight = watermark.fontSize * ratio * 1.2;
@@ -2446,7 +2422,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	/** Axes are redrawn only when their ticks changed: a tick that leaves the scales alone skips them. */
 	private _renderAxes(): void {
 		const ratio = this._pixelRatio;
-		const options = this._options;
+		const options = this._settings.options;
 		const style = this._axisStyle;
 		style.background = options.layout.background;
 		style.textColor = options.layout.textColor;
@@ -2506,7 +2482,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 		ctx.clearRect(0, 0, layer.width, layer.height);
 		const ratio = this._pixelRatio;
-		const options = this._options;
+		const options = this._settings.options;
 		const paneLeft = Math.round(this._paneLeft * ratio);
 		const paneWidth = this._pane.width;
 		const paneHeight = this._pane.height;
@@ -2707,7 +2683,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 				continue;
 			}
 			const radius = line.crosshairMarkerRadius * ratio;
-			ctx.fillStyle = this._options.layout.background;
+			ctx.fillStyle = this._settings.options.layout.background;
 			ctx.beginPath();
 			ctx.arc(x, y, radius + ratio, 0, 2 * Math.PI);
 			ctx.fill();
