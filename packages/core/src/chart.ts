@@ -5,22 +5,9 @@ import { DatafeedFetches } from './data/datafeed';
 import { WindowCache } from './data/window-cache';
 import { PanePrimitives } from './drawings/pane-primitives';
 import type { DrawingsApi } from './drawings/types';
-import {
-	ChartIndicators,
-	type Indicator,
-	type IndicatorApi,
-	type IndicatorOptions,
-	type IndicatorOutputApi,
-	outputSeriesDefaults,
-} from './indicators';
+import { ChartIndicators, type IndicatorApi, type IndicatorOptions, type IndicatorOutputApi } from './indicators';
 import { type AxisTarget, Interaction, type InteractionHost, type PointerDelegate } from './input/interaction';
-import {
-	INVALIDATE_CURSOR,
-	INVALIDATE_FULL,
-	INVALIDATE_LIGHT,
-	INVALIDATE_NONE,
-	type Invalidation,
-} from './model/invalidation';
+import { INVALIDATE_FULL, INVALIDATE_LIGHT, INVALIDATE_NONE, type Invalidation } from './model/invalidation';
 import { Crosshair } from './model/crosshair';
 import { FrameModel } from './model/frame-model';
 import type { SessionInfo } from './model/sessions';
@@ -37,7 +24,6 @@ import {
 	mergeOptions,
 	optionsEqual,
 	resolveOptions,
-	shallowEqual,
 } from './options';
 import { type PriceAxis, PriceAxes, type PriceAxisHost, type PriceScaleApi } from './price-axes';
 import type { PanePrimitive } from './primitives';
@@ -46,19 +32,9 @@ import { ChartLayout } from './render/layout';
 import { OverlayRenderer } from './render/overlay';
 import { PaneRenderer } from './render/pane';
 import { Series, type SeriesApi, type SeriesCreateOptions, type SeriesType } from './series';
-import {
-	CHART_STATE_VERSION,
-	type ChartState,
-	type ChartStateOptions,
-	type ChartStateSelection,
-	ENVIRONMENT_OPTIONS,
-	type RestorePlan,
-	type SeriesPlan,
-	type ViewState,
-	chartStateOptions,
-	planRestore,
-} from './state';
+import { type ChartState, type ChartStateSelection } from './state';
 import { ChartSettings } from './settings';
+import { StateIo } from './state-io';
 import { type FrameClient, cancelFrame, requestFrame } from './shared/frame';
 import { watchPixelRatio } from './shared/media';
 import { observeVisibility, unobserveVisibility } from './shared/observers';
@@ -85,8 +61,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	/** While a state is restored, changes only note the level they need: one invalidation at the end. */
 	private _batching = false;
 	private _batchLevel: Invalidation = INVALIDATE_NONE;
-	/** Times a restored view shows, until the timeline can place them (see `_resolveView`). */
-	private _pendingView: { from: number; to: number } | null = null;
+	/** Saves and restores the state of the chart, and holds a restored view until it can be shown. */
+	private readonly _stateIo: StateIo;
 	/** Series named by the chart so far (see `SeriesCreateOptions.id`). */
 	private _named = 0;
 	/**
@@ -130,7 +106,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._layout = new ChartLayout(container, this._settings, this.scale, {
 			invalidate: level => this.invalidate(level),
 			priceAxes: () => this._axes.list,
-			resized: () => this._resolveView(),
+			resized: () => this._stateIo.resolveView(),
 		});
 		this._axes = new PriceAxes(this, this._settings, this._layout);
 		this._indicators = new ChartIndicators({
@@ -166,11 +142,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 				callApplied: () => {
 					this._paneRenderer.stale = true;
 				},
-				resolveView: () => {
-					if (this._pendingView !== null) {
-						this._resolveView();
-					}
-				},
+				resolveView: () => this._stateIo.resolveView(),
 				settled: () => {
 					this._settle();
 					this._settleApplied();
@@ -213,6 +185,28 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._times,
 			level => this.invalidate(level),
 		);
+		this._stateIo = new StateIo(
+			{
+				addSeries: (type, seriesOptions) => this.addSeries(type, seriesOptions),
+				removeSeries: series => this.removeSeries(series),
+				seriesNamed: id => this._seriesNamed(id),
+				replaceOptions: replaced => {
+					this._settings.apply(replaced);
+					this._update();
+				},
+				batch: changes => this._batch(changes),
+				syncView: () => this._syncView(),
+				invalidate: level => this.invalidate(level),
+			},
+			this._settings,
+			this.scale,
+			this._series,
+			this._indicators,
+			this._axes,
+			this._model,
+			this._times,
+			this._primitives,
+		);
 		this._paneRenderer = new PaneRenderer(
 			this._settings,
 			this._layout,
@@ -236,7 +230,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._crosshair,
 		);
 		this._times.listener = () => {
-			this._resolveView();
+			this._stateIo.resolveView();
 			this._primitives.changed('normal');
 		};
 		this._applyResolved(this._settings.options);
@@ -347,167 +341,6 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		return this;
 	}
 
-	// State
-
-	public saveState(selection: ChartStateSelection = {}): ChartState {
-		const parts = selection.parts;
-		const state: ChartState = { version: CHART_STATE_VERSION };
-		if (parts === undefined || parts.includes('options')) {
-			state.options = chartStateOptions(this._settings.input, false);
-		}
-		const units = this._units();
-		if (parts === undefined || parts.includes('series')) {
-			state.series = [];
-			units.forEach((unit, order) => {
-				if (unit instanceof Series) {
-					state.series!.push({ id: unit.id, type: unit.type, options: { ...unit.seriesOptions }, pane: 0, order });
-				}
-			});
-		}
-		if (parts === undefined || parts.includes('indicators')) {
-			state.indicators = this._indicators.save(indicator => units.indexOf(indicator));
-		}
-		if (parts === undefined || parts.includes('drawings')) {
-			state.drawings = this._primitives.drawings?.toJSON() ?? [];
-		}
-		if (parts === undefined || parts.includes('view')) {
-			state.view = this._saveView();
-		}
-		return state;
-	}
-
-	public restoreState(state: ChartState, selection: ChartStateSelection = {}): void {
-		if (this._destroyed) {
-			return;
-		}
-		// Everything that can refuse the state comes before the first change.
-		const plan = planRestore(state, selection.parts, {
-			definition: name => this._indicators.definition(name),
-			seriesIds: () => this._series.filter(series => !series.derived).map(series => series.id),
-			outputDefaults: outputSeriesDefaults,
-		});
-		let input: DeepPartial<ChartOptions> | null = null;
-		if (plan.options !== null) {
-			input = this._restoredInput(plan.options);
-			// Throws a RangeError for an unknown time zone or locale, or a malformed session schedule.
-			new TimeDisplay().apply(resolveOptions(input, false));
-		}
-		this._batching = true;
-		this._batchLevel = INVALIDATE_LIGHT;
-		try {
-			this._restore(plan, input);
-		} finally {
-			this._batching = false;
-			this.invalidate(this._batchLevel);
-		}
-	}
-
-	private _restore(plan: RestorePlan, input: DeepPartial<ChartOptions> | null): void {
-		if (input !== null) {
-			this._settings.apply(input);
-			this._update();
-		}
-		const order = new Map<Series | Indicator, number>();
-		if (plan.series !== null) {
-			this._restoreSeries(plan.series, order);
-		}
-		if (plan.indicators !== null) {
-			const restored = this._indicators.restore(plan.indicators, id => this._seriesNamed(id));
-			for (const entry of plan.indicators) {
-				order.set(restored.get(entry.id)!, entry.order);
-			}
-		}
-		if (order.size > 0) {
-			// Drawing order: what was restored by its place in the state, the rest by where it is now.
-			const units = this._units();
-			const keys = new Map(units.map((unit, i) => [unit, order.get(unit) ?? i]));
-			units.sort((a, b) => keys.get(a)! - keys.get(b)!);
-			const list = this._series;
-			list.length = 0;
-			for (const unit of units) {
-				if (unit instanceof Series) {
-					list.push(unit);
-				} else {
-					for (const output of unit.outputList) {
-						list.push(output.series);
-					}
-				}
-			}
-		}
-		if (plan.drawings !== null && (plan.drawings.length > 0 || this._primitives.drawings !== null)) {
-			this._primitives.ensureDrawings().restore(plan.drawings);
-		}
-		if (plan.view !== null) {
-			for (const id of Object.keys(plan.view.priceRanges)) {
-				this._axes.get(id).setVisibleRange(plan.view.priceRanges[id]!);
-			}
-			this._pendingView = plan.view.timeRange;
-			this._resolveView();
-		}
-	}
-
-	/** The options a restore applies: those of the state, and what a state does not hold as it is now. */
-	private _restoredInput(saved: ChartStateOptions): DeepPartial<ChartOptions> {
-		const current = this._settings.input as Record<string, unknown>;
-		const next = mergeOptions<Record<string, unknown>>({}, saved);
-		for (const key of ENVIRONMENT_OPTIONS) {
-			if (current[key] !== undefined) {
-				next[key] = current[key];
-			}
-		}
-		const { tickMarkFormatter, timeFormatter } = this._settings.input.localization ?? {};
-		if (tickMarkFormatter !== undefined || timeFormatter !== undefined) {
-			next.localization = {
-				...(next.localization as object | undefined),
-				...(tickMarkFormatter !== undefined && { tickMarkFormatter }),
-				...(timeFormatter !== undefined && { timeFormatter }),
-			};
-		}
-		return next as DeepPartial<ChartOptions>;
-	}
-
-	/** Makes the series those of a checked state: kept by id and type, added, or removed. */
-	private _restoreSeries(plans: readonly SeriesPlan[], order: Map<Series | Indicator, number>): void {
-		const wanted = new Map(plans.map(plan => [plan.id, plan]));
-		for (const series of this._series.slice()) {
-			if (!series.derived && wanted.get(series.id)?.type !== series.type) {
-				this.removeSeries(series);
-			}
-		}
-		for (const plan of plans) {
-			let series = this._seriesNamed(plan.id);
-			if (series === undefined) {
-				this.addSeries(plan.type, { ...plan.options, id: plan.id } as SeriesCreateOptions<SeriesType>);
-				series = this._series[this._series.length - 1]!;
-			} else if (!shallowEqual(series.seriesOptions, plan.options)) {
-				series.seriesOptions = plan.options;
-			}
-			order.set(series, plan.order);
-		}
-	}
-
-	/** Series and indicators in drawing order; the outputs of an indicator are drawn together. */
-	private _units(): (Series | Indicator)[] {
-		const owners = new Map<Series, Indicator>();
-		for (const indicator of this._indicators.list) {
-			for (const output of indicator.outputList) {
-				owners.set(output.series, indicator);
-			}
-		}
-		const units: (Series | Indicator)[] = [];
-		const listed = new Set<Indicator>();
-		for (const series of this._series) {
-			const owner = owners.get(series);
-			if (owner === undefined) {
-				units.push(series);
-			} else if (!listed.has(owner)) {
-				listed.add(owner);
-				units.push(owner);
-			}
-		}
-		return units;
-	}
-
 	private _seriesNamed(id: string): Series | undefined {
 		for (const series of this._series) {
 			if (!series.derived && series.id === id) {
@@ -517,69 +350,26 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		return undefined;
 	}
 
-	/**
-	 * The view as a state holds it. Times are whole milliseconds, so a view saved, restored and saved
-	 * again gives the same numbers.
-	 */
-	private _saveView(): ViewState {
-		this._syncView();
-		const priceRanges: ViewState['priceRanges'] = {};
-		for (const axis of this._axes.list) {
-			const range = axis.settings.autoScale ? null : axis.getVisibleRange();
-			if (range !== null) {
-				priceRanges[axis.id] = range;
-			}
-		}
-		const pending = this._pendingView;
-		if (pending !== null) {
-			// Restored and not shown yet: still the view of the chart.
-			return { timeRange: { from: pending.from, to: pending.to }, priceRanges };
-		}
-		const scale = this.scale;
-		let timeRange: ViewState['timeRange'] = null;
-		if (!scale.isEmpty && scale.width > 0) {
-			const coarse = this._model.coarseWindow();
-			const from = Math.round(this._times.estimateTime(scale.from, coarse));
-			const to = Math.round(this._times.estimateTime(scale.to, coarse));
-			if (from < to) {
-				timeRange = { from, to };
-			}
-		}
-		return { timeRange, priceRanges };
+	public saveState(selection: ChartStateSelection = {}): ChartState {
+		return this._stateIo.save(selection);
 	}
 
-	/** The application set the view of a chart with bars: a restored view still waiting gives way. */
-	private _viewSet(): void {
-		if (!this.scale.isEmpty) {
-			this._pendingView = null;
+	public restoreState(state: ChartState, selection: ChartStateSelection = {}): void {
+		if (!this._destroyed) {
+			this._stateIo.restore(state, selection);
 		}
 	}
 
-	/**
-	 * Shows the times of a restored view as soon as the timeline can place them: at once when the
-	 * bars around them are held, otherwise when the engine's answer is in, or when there are bars.
-	 */
-	private _resolveView(): void {
-		const view = this._pendingView;
-		const scale = this.scale;
-		if (view === null || scale.isEmpty || scale.width <= 0) {
-			return;
+	/** Runs `changes` with one invalidation at the end: while they run, they only note the level they need. */
+	private _batch(changes: () => void): void {
+		this._batching = true;
+		this._batchLevel = INVALIDATE_LIGHT;
+		try {
+			changes();
+		} finally {
+			this._batching = false;
+			this.invalidate(this._batchLevel);
 		}
-		const times = this._times;
-		let from = times.locate(view.from);
-		let to = times.locate(view.to);
-		if (from !== from || to !== to) {
-			from = times.lookup(view.from);
-			to = times.lookup(view.to);
-		}
-		if (from !== from || to !== to) {
-			// Asked for: the next frame sends the question, and the answer comes back here.
-			this.invalidate(INVALIDATE_CURSOR);
-			return;
-		}
-		this._pendingView = null;
-		scale.setVisibleRange(from, to);
-		this.invalidate(INVALIDATE_LIGHT);
 	}
 
 	public priceScale(id: string = DEFAULT_PRICE_SCALE_ID): PriceScaleApi {
@@ -660,14 +450,14 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	public fitContent(): void {
 		this._data.afterData(() => {
-			this._viewSet();
+			this._stateIo.viewSet();
 			this.scale.fitContent();
 		});
 	}
 
 	public scrollToRealTime(): void {
 		this._data.afterData(() => {
-			this._viewSet();
+			this._stateIo.viewSet();
 			this.scale.scrollToRealTime();
 		});
 	}
@@ -675,7 +465,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	public setVisibleLogicalRange(range: LogicalRange): void {
 		const { from, to } = range;
 		this._data.afterData(() => {
-			this._viewSet();
+			this._stateIo.viewSet();
 			this.scale.setVisibleRange(from, to);
 		});
 	}
