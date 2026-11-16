@@ -52,6 +52,7 @@ import { memoryResult } from '../memory.ts';
 import { motionRanges } from '../motion.ts';
 import { summarize } from '../stats.ts';
 import { countDrawCalls } from './draw-calls.ts';
+import { markMeasured } from './marks.ts';
 import {
 	afterLibraryFrame,
 	afterNextFrame,
@@ -173,6 +174,7 @@ async function loadOnce(
 ): Promise<{ adapter: ChartAdapter; timings: LoadTimings }> {
 	const adapter = await createSettled(factory, container, size);
 	withIndicators(adapter, indicators);
+	markMeasured('start');
 	const t0 = performance.now();
 	const prepared = prepare(adapter, data);
 	const t1 = performance.now();
@@ -184,6 +186,7 @@ async function loadOnce(
 	const t3 = performance.now();
 	await adapter.settle();
 	const t4 = performance.now();
+	markMeasured('end');
 	return {
 		adapter,
 		timings: {
@@ -260,6 +263,7 @@ async function runTick(job: TickJob, factory: AdapterFactory, container: HTMLEle
 		const settle = new Float64Array(maxRounds);
 		const settleJs = new Float64Array(maxRounds);
 		const mainThreadPerTick = new Float64Array(maxRounds);
+		markMeasured('start');
 		const measureStart = performance.now();
 		let count = 0;
 		let rounds = 0;
@@ -288,6 +292,7 @@ async function runTick(job: TickJob, factory: AdapterFactory, container: HTMLEle
 				break;
 			}
 		}
+		markMeasured('end');
 
 		const update: number[] = [];
 		const newBar: number[] = [];
@@ -367,6 +372,7 @@ async function runFrames(
 						if (warmedUp) {
 							first = frame + 1;
 							measureStart = now;
+							markMeasured('start');
 						}
 					} else if (last === 0) {
 						// The library has drawn in this frame already: its callbacks were requested first.
@@ -375,6 +381,7 @@ async function runFrames(
 							last = frame + 1;
 						}
 					} else if (frame === last) {
+						markMeasured('end');
 						resolve();
 						return;
 					}
@@ -693,6 +700,7 @@ async function runPrepend(
 
 		const cold = await prependNext(0);
 		const samples: PrependTimings[] = [];
+		markMeasured('start');
 		const measureStart = performance.now();
 		while (samples.length < job.prepends) {
 			samples.push(await prependNext(samples.length + 1));
@@ -700,6 +708,7 @@ async function runPrepend(
 				break;
 			}
 		}
+		markMeasured('end');
 
 		// Untimed: the view of the last prepend, whose left half now holds the last batch, and the view
 		// at the new first bar, whose left half is empty.
@@ -780,6 +789,7 @@ async function runApply(job: ApplyJob, factory: AdapterFactory, container: HTMLE
 		const applied = new Float64Array(job.ticks);
 		const sync = new Float64Array(job.ticks);
 		const gaps = new Random(job.seed + 2);
+		markMeasured('start');
 		const measureStart = performance.now();
 		let count = 0;
 		while (count < job.ticks) {
@@ -796,6 +806,7 @@ async function runApply(job: ApplyJob, factory: AdapterFactory, container: HTMLE
 				break;
 			}
 		}
+		markMeasured('end');
 		await adapter.settle();
 
 		const update: number[] = [];
@@ -991,6 +1002,7 @@ async function runMulti(
 		const frameCallbacks = new Float64Array(job.rounds);
 		const mainThreadPerTick = new Float64Array(job.rounds);
 		const mainBeforeTicks = await probes.mainThread();
+		markMeasured('start');
 		const measureStart = performance.now();
 		let rounds = 0;
 		while (rounds < job.rounds) {
@@ -1014,6 +1026,7 @@ async function runMulti(
 				break;
 			}
 		}
+		markMeasured('end');
 		const tickMainThread = mainThreadBetween(mainBeforeTicks, await probes.mainThread(), rounds);
 
 		// The charts below the fold come into view: a library that put their draws off draws them now.
@@ -1384,6 +1397,7 @@ async function runDrawings(job: DrawingsJob, factory: AdapterFactory, container:
 						if (warmedUp) {
 							first = frame + 1;
 							measureStart = now;
+							markMeasured('start');
 						}
 					} else if (last === 0) {
 						const measured = frame + 1 - first;
@@ -1391,6 +1405,7 @@ async function runDrawings(job: DrawingsJob, factory: AdapterFactory, container:
 							last = frame + 1;
 						}
 					} else if (frame === last) {
+						markMeasured('end');
 						resolve();
 						return;
 					}

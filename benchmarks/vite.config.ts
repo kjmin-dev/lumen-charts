@@ -37,5 +37,7 @@ export default defineConfig({
 	build: {
 		target: 'es2022',
 		sourcemap: true,
+		// A profiled run (`pnpm bench --profile`) keeps function names, so CPU samples can be read.
+		...(process.env['LUMEN_BENCH_PROFILE'] === undefined ? {} : { minify: false }),
 	},
 });

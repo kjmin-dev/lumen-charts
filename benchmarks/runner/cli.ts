@@ -15,6 +15,7 @@ import { adapters, knownFailure } from '../src/adapters/index.ts';
 import type { SeriesKind } from '../src/data.ts';
 import type { PageEnvironment } from '../src/harness/environment.ts';
 import { headline } from '../src/headline.ts';
+import { TRACE_CATEGORIES } from '../src/profile.ts';
 import { redactLocalPaths } from '../src/redact.ts';
 import {
 	type AdapterInfo,
@@ -33,6 +34,7 @@ import {
 } from '../src/jobs.ts';
 import { type CdpHeapUsage, cdpHeapUsage, memorySample, sumWorkers } from '../src/memory.ts';
 import { type CompletedJob, RESULTS_SCHEMA_VERSION, type ResultsFile, aggregate } from '../src/results.ts';
+import { type RunProfile, sourceResolver, writeProfile, writeSummary } from './profile.ts';
 
 const benchDir = fileURLToPath(new URL('..', import.meta.url));
 const repoDir = resolve(benchDir, '..');
@@ -73,6 +75,13 @@ Browser
   --viewport <WxH>     page viewport in CSS pixels (default: 1280x720)
   --dpr <n>            device pixel ratio (default: 2)
   --chart <WxH>        chart size in CSS pixels (default: 1200x600)
+
+Profiling
+  --profile <dir>      trace every run (CPU samples of every thread, frames, tasks, GC) and write
+                       <dir>/<run>.trace.json, a breakdown per run in <dir>/<run>.json and all of
+                       them in <dir>/summary.json. The page is built without minification, so
+                       samples carry function names. Tracing slows the runs: use the timings of a
+                       run without it, and the breakdown for shares
 
 Output
   --timeout <s>        per-run timeout in seconds (default: 900)
@@ -129,6 +138,7 @@ const { values: args } = parseArgs({
 		chart: { type: 'string', default: '1200x600' },
 		timeout: { type: 'string', default: '900' },
 		out: { type: 'string' },
+		profile: { type: 'string' },
 		help: { type: 'boolean', default: false },
 	},
 	allowPositionals: false,
@@ -159,6 +169,11 @@ const maxWorkers = list(args['max-workers']).map(value => {
 });
 // pnpm runs package scripts in the package directory; resolve paths against where they were typed.
 const invokedFrom = process.env['INIT_CWD'] ?? process.cwd();
+const profileDir = args.profile !== undefined ? resolve(invokedFrom, args.profile) : null;
+if (profileDir !== null) {
+	// Read by the Vite configuration, which runs in this process.
+	process.env['LUMEN_BENCH_PROFILE'] = '1';
+}
 if (args.packages !== undefined) {
 	// Read by the Vite configuration, which runs in this process.
 	process.env['LUMEN_BENCH_PACKAGES'] = resolve(invokedFrom, args.packages);
@@ -482,6 +497,9 @@ function hostLoad(since: { idle: number; total: number }): HostLoad {
 	return { cpuIdle: total > 0 ? (now.idle - since.idle) / total : 0, loadAverage: os.loadavg()[0] ?? 0 };
 }
 
+const profiles: RunProfile[] = [];
+const resolveSource = sourceResolver();
+
 async function runOne(session: Session, planned: PlannedJob): Promise<CompletedJob> {
 	const started = performance.now();
 	const cpuStart = cpuTimes();
@@ -497,11 +515,23 @@ async function runOne(session: Session, planned: PlannedJob): Promise<CompletedJ
 	try {
 		const crashed = new Promise<'crash'>(resolveCrash => page.once('crash', () => resolveCrash('crash')));
 		const timer = delay(timeoutMs, 'timeout' as const);
+		if (profileDir !== null) {
+			// A run that failed may have left its trace recording.
+			await session.browser.stopTracing().catch(() => undefined);
+			await session.browser.startTracing(page, { categories: TRACE_CATEGORIES });
+		}
 		const run = page
 			.evaluate(job => window.bench?.run(job) ?? Promise.reject(new Error('bench API missing')), planned.job)
 			.catch((error: unknown) => (/crash/i.test(String(error)) ? ('crash' as const) : Promise.reject(error)));
 		const result: PageRunResult | 'crash' | 'timeout' = await Promise.race([run, crashed, timer.promise]);
 		timer.cancel();
+		if (profileDir !== null && typeof result !== 'string') {
+			try {
+				profiles.push(writeProfile(profileDir, planned.id, await session.browser.stopTracing(), resolveSource));
+			} catch (error) {
+				process.stdout.write(`  no profile: ${error instanceof Error ? error.message : String(error)}\n`);
+			}
+		}
 		const durationMs = performance.now() - started;
 		if (result === 'crash') {
 			outcome = {
@@ -632,6 +662,10 @@ async function main(): Promise<void> {
 		};
 		mkdirSync(dirname(out), { recursive: true });
 		writeFileSync(out, `${JSON.stringify(file, null, '\t')}\n`);
+
+		if (profileDir !== null) {
+			writeSummary(profileDir, profiles);
+		}
 
 		process.stdout.write('\nMedian over runs:\n');
 		for (const c of file.cases) {

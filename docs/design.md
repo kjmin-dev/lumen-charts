@@ -140,6 +140,11 @@ Main thread                              Data engine (worker; time-sliced on mai
 - The kernel signature is `(buffer, offset, length, state, carry)`. State holds running values such as the previous EMA; carry holds the tail of the previous chunk, sized to the moving window.
 - Determinism: with the same starting point and algorithm, JavaScript and WASM results must match bit for bit [review: zero mismatches]. Results are compared with the server within a tolerance, because a different starting point changes the bits [review].
 - WASM is adopted for a kernel only when profiling shows the kernel takes a meaningful share of frame or load time, an equivalence test against the JavaScript version passes, and the engine falls back to JavaScript when CSP blocks WASM. SIMD is used only for order-independent min/max and aggregation.
+- As decided in stage 5 ([measured](benchmarks/stage-5-profile.md)): no WASM kernels for now.
+  - Share: kernels take 56% of the engine's time in a load of 1M bars with 20 indicators, 2% of its time in a tick, and none of a frame.
+  - Speed: Rust ports of eight kernels gave the same bits over 1M rows. The recursive ones (SMA, EMA, WMA, RSI, MACD, Bollinger) ran at 0.95–1.24 times JavaScript. Only the loops that take a minimum and a maximum gained: rolling extremes 10 times, Stochastic 3.9 times, level-of-detail buckets 7 times (20 with SIMD).
+  - Those loops are slow in JavaScript because V8 compiles their comparisons to branches that prices mispredict. With `Math.max` and `Math.min` (after a test for NaN) they run 1.5–4.8 times faster, at the speed of scalar WASM for the buckets. That change is adopted instead (section 6.2); what WASM would add after it is under a tenth of a load that has no budget to meet.
+  - Reconsidered when a kernel V8 compiles badly cannot be fixed in JavaScript, or when loads get a gate the JavaScript kernels miss.
 
 ### 5.1 As built in stage 3
 
@@ -339,6 +344,46 @@ and pane or series primitives were deferred to stage 4, which defined them toget
   overlay alone, and a tick redraws the drawings with the series.
 - Charts out of view still draw nothing; a drawing changed meanwhile keeps its layer marked and is
   drawn when the chart comes back. All drawing still runs in the write phase of the shared frame.
+
+### 6.2 As decided in stage 5
+
+Stage 5 profiled `main` after stage 4 and decided each optional step against the criteria above
+([stage 5 profile](benchmarks/stage-5-profile.md)). Nothing of it is built yet.
+
+- **Partial redraw: adopted for tick frames.** Light invalidation exceeds its budget in one place:
+  with 20 indicators and all 1M bars in view, a tick's frame takes 4.1 ms of JavaScript (p99
+  4.7 ms) inside the 4 ms the stage 3 gate gives the whole tick, 80% of it drawing lines that did
+  not change, and the GPU process rasterizes them again for 5.2 ms. In a prototype, redrawing only
+  the last device columns takes 0.06 ms instead of 3.5 ms, and 0.5 ms instead of 3.0 ms in the GPU
+  process. The breakers decide when a frame falls back to a full redraw:
+  - A tick changed a price scale in 0–3% of the frames measured; 94–99% of tick frames keep
+    geometry and scales and can take the tail path.
+  - The dirty range is the items each view rebuilt, not "the last bar", so an output drawn shifted
+    dirties the columns it is drawn in.
+  - The clip is widened by a join and half the widest line, and each path starts two items before
+    the first changed one, so the pixels inside the clip are those of a full redraw.
+  - A custom series renderer, a `bottom` primitive or drawings merged into the series layer keep
+    the full redraw: the chart cannot bound what they draw.
+- **Cheaper wide-view frames: the min/max loops.** `SeriesView.update`, which merges rows into
+  pixel columns, is 20–41% of a pan frame with 20 indicators; the level-of-detail builds and the
+  rolling extremes are 38% of the engine's time in a load. All take a running minimum and maximum
+  by comparison. With `Math.max` and `Math.min` they run 1.5–4.8 times faster, more on noisy series
+  than on smooth ones. The one difference is the sign of a zero where a bucket holds both zeros,
+  which the change has to settle in one rule for every place a value can be computed two ways.
+- **`OffscreenCanvas`: deferred.** Drawing costs the same in a worker (3.4 against 3.5 ms a
+  frame), and no frame misses its budget for being on the main thread (p95 0.3–6.7 ms against
+  8 ms). It keeps 60 frames a second under a host page that blocks the main thread 91% of the
+  time, where the main thread presents 21; pointer input waits for that thread either way. It would
+  move the model, views and window cache into the worker and keep a main-thread path beside it
+  (principle 4). Reconsidered when displaying under a busy host page becomes a requirement.
+- **GPU layer: deferred until the series it serves exist.** Canvas 2D drawn rectangle by rectangle
+  breaks at 100,000 scatter points (17.8 ms of JavaScript a frame) and between 14,400 and 240,000
+  heatmap cells. Drawn through a pixel buffer (`putImageData`, or a small image scaled by one
+  `drawImage`) it takes 5.8 ms for 1M points and 3.0 ms for 1.44M cells. Heatmap and scatter
+  series start on that path, as custom renderers; the WebGL2 module follows for more than about a
+  million marks changing every frame, or for marks that blend.
+- **Candles in one path** (the assumption above) was not pursued: without indicators a frame takes
+  0.3–0.5 ms, of which the candle loops are 0.06–0.13 ms.
 
 ## 7. Interaction
 
@@ -592,6 +637,11 @@ Stage 4, save and restore (measured, [stage 4 save and restore](benchmarks/stage
 with 1,000 drawings and 5 indicators on 1M candles, `saveState` takes 0.07 ms and `restoreState`
 3.0–3.1 ms of JavaScript in all, in one frame. Stage 4 has no gate for it.
 
+Stage 5, the evidence (measured, [stage 5 profile](benchmarks/stage-5-profile.md)): partial redraw
+of tick frames and branch-free min/max loops are adopted, WASM kernels are rejected for now,
+`OffscreenCanvas` and the GPU layer are deferred (sections 5 and 6.2). Each adopted step is
+measured again on the gate cases when it is built.
+
 ## 10. Open questions
 
 - Settled by stage 0: the cost per tick in Lightweight Charts is O(N). One `update()` takes 76.7–82.7 µs at 10,000 candles and 9,061–11,103 µs at 1 million [measured: [stage 0 baseline](benchmarks/stage-0-baseline.md)].
@@ -600,5 +650,10 @@ with 1,000 drawings and 5 indicators on 1M candles, `saveState` takes 0.07 ms an
   waits for the frame in progress, so its p99 is the frame time, 3.9–4.5 ms against the gate's 4 ms
   [measured: [stage 3](benchmarks/stage-3.md)]. Cheaper wide-view frames or partial redraw (stage 5)
   would lower it; the main-thread engine's p99 is 0.22–0.33 ms.
+  - As decided in stage 5: partial redraw of tick frames takes the frame out of that p99
+    (section 6.2). What then remains is what the 200-bar view has, 3.0–3.3 ms, and the trace shows
+    that part is not frames (they take 0.4 ms there) but garbage collection on the main thread:
+    about 20 tasks of 2–16 ms in 3 s of ticks. Whose garbage it is, the patch objects of the
+    library or the benchmark's own pause loop, is open [measured: [stage 5 profile](benchmarks/stage-5-profile.md)].
 - Benchmarks ran on one Apple M1. x86, Firefox and Android are unmeasured.
 - The review's experiments ran on a heavily loaded machine. Their direction holds; their absolute numbers need re-measuring.
