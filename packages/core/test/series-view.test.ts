@@ -302,6 +302,165 @@ describe('SeriesView', () => {
 	});
 });
 
+/** `up` is written for snapped items only (candles and bars). */
+function coordinates(view: SeriesView, snap = true) {
+	return {
+		x: [...view.x.subarray(0, view.count)],
+		yOpen: [...view.yOpen.subarray(0, view.count)],
+		yHigh: [...view.yHigh.subarray(0, view.count)],
+		yLow: [...view.yLow.subarray(0, view.count)],
+		yClose: [...view.yClose.subarray(0, view.count)],
+		up: snap ? [...view.up.subarray(0, view.count)] : [],
+	};
+}
+
+describe('SeriesView between frames', () => {
+	const geometries: [string, Geometry][] = [
+		['a bar per item', { origin: 2.5 - 200 * 3, spacing: 3, from: 200, to: 500, shift: 0, firstRow: 200 }],
+		['merged columns', { origin: 0, spacing: 0.02, from: 0, to: 40_000, shift: 0, firstRow: 0 }],
+	];
+
+	it.each(geometries)('tells which items a tick rebuilt, until they are drawn (%s)', (_, geometry) => {
+		const data = randomWalk(40_000);
+		const view = new SeriesView();
+		view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
+		const generation = view.generation;
+		view.drawn();
+		expect(view.dirtyTo).toBeLessThanOrEqual(view.dirtyFrom);
+
+		// Nothing changed: nothing dirty.
+		view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
+		expect(view.dirtyTo).toBeLessThanOrEqual(view.dirtyFrom);
+		// A change outside the elements in view.
+		view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, geometry.to, geometry.to + 5);
+		expect(view.dirtyTo).toBeLessThanOrEqual(view.dirtyFrom);
+
+		const row = geometry.to - 1;
+		data.close[row] = data.close[row]! + 0.25;
+		view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, row, row + 1);
+		expect(view.generation).toBe(generation);
+		expect(view.dirtyFrom).toBeLessThan(view.dirtyTo);
+		expect(view.dirtyTo).toBe(view.count);
+		// The dirty items hold every item that differs from before.
+		expect(view.dirtyFrom).toBeGreaterThanOrEqual(view.count - 3);
+		const last = view.dirtyFrom;
+
+		// A second change before the frame: the range grows to hold both.
+		const earlier = geometry.from + Math.floor((geometry.to - geometry.from) / 2);
+		data.high[earlier] = data.high[earlier]! + 0.5;
+		view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, earlier, earlier + 1);
+		expect(view.dirtyFrom).toBeLessThan(last);
+		expect(view.dirtyFrom).toBeGreaterThan(0);
+		expect(view.dirtyTo).toBe(view.count);
+		const fresh = new SeriesView();
+		fresh.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
+		expect(items(view)).toEqual(items(fresh));
+
+		view.drawn();
+		expect(view.dirtyTo).toBeLessThanOrEqual(view.dirtyFrom);
+	});
+
+	it('counts a generation when the items are replaced as a whole, not while it stays empty', () => {
+		const data = randomWalk(1000);
+		const view = new SeriesView();
+		const geometry: Geometry = { origin: 0, spacing: 4, from: 100, to: 200, shift: 0, firstRow: 100 };
+		const empty = view.generation;
+		view.reset();
+		view.update({ ...geometry, to: 100 }, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
+		expect(view.generation).toBe(empty);
+
+		view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
+		const first = view.generation;
+		expect(first).not.toBe(empty);
+		view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, 150, 151);
+		expect(view.generation).toBe(first);
+		// Another window, another geometry, no elements, a reset: each replaces the items.
+		view.update(geometry, data.open, data.high, data.low, data.close, 0, 2, Infinity, -Infinity);
+		const second = view.generation;
+		expect(second).not.toBe(first);
+		view.update({ ...geometry, origin: 1 }, data.open, data.high, data.low, data.close, 0, 2, Infinity, -Infinity);
+		const third = view.generation;
+		expect(third).not.toBe(second);
+		view.update({ ...geometry, to: 100 }, data.open, data.high, data.low, data.close, 0, 2, Infinity, -Infinity);
+		const fourth = view.generation;
+		expect(fourth).not.toBe(third);
+		view.update(geometry, data.open, data.high, data.low, data.close, 0, 2, Infinity, -Infinity);
+		view.reset();
+		expect(view.generation).not.toBe(fourth + 1);
+		expect(view.count).toBe(0);
+	});
+
+	it.each(geometries)('projects only rebuilt items, to the coordinates of a full projection (%s)', (_, geometry) => {
+		const data = randomWalk(40_000, 5);
+		const view = new SeriesView();
+		const check = (offset: number, scale: number, snap: boolean, log: boolean): void => {
+			view.project(offset, scale, snap, log);
+			const fresh = new SeriesView();
+			fresh.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
+			fresh.project(offset, scale, snap, log);
+			expect(coordinates(view, snap)).toEqual(coordinates(fresh, snap));
+		};
+		const tick = (row: number, move: number): void => {
+			data.close[row] = data.close[row]! + move;
+			data.high[row] = Math.max(data.high[row]!, data.close[row]!);
+			data.low[row] = Math.min(data.low[row]!, data.close[row]!);
+			view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, row, row + 1);
+		};
+		view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
+		check(300, 2, true, false);
+		for (const [snap, log] of [
+			[true, false],
+			[false, false],
+			[true, true],
+			[false, true],
+		] as const) {
+			// The first projection of a kind covers every item, later ones the rebuilt items.
+			check(300, 2, snap, log);
+			tick(geometry.to - 1, 0.5);
+			check(300, 2, snap, log);
+			// Two ticks before one projection, one of them far from the last bar.
+			tick(geometry.from + 7, -0.75);
+			tick(geometry.to - 1, -1.5);
+			check(300, 2, snap, log);
+			// Projected without a change, then with another mapping: every item moves.
+			check(300, 2, snap, log);
+			tick(geometry.to - 2, 0.25);
+			check(310, 2, snap, log);
+			tick(geometry.to - 2, 0.25);
+			check(310, -2.5, snap, log);
+		}
+		// The window is replaced between a tick and the projection.
+		tick(geometry.to - 1, 0.5);
+		view.update(geometry, data.open, data.high, data.low, data.close, 0, 2, Infinity, -Infinity);
+		view.project(310, -2.5, false, true);
+		const fresh = new SeriesView();
+		fresh.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
+		fresh.project(310, -2.5, false, true);
+		expect(coordinates(view, false)).toEqual(coordinates(fresh, false));
+	});
+
+	it('finds the first item right of a column', () => {
+		const data = randomWalk(1000);
+		const view = new SeriesView();
+		expect(view.firstAfter(10)).toBe(0);
+		// Items at x = 4, 8, ..., 400.
+		const geometry: Geometry = { origin: 3.5 - 100 * 4, spacing: 4, from: 100, to: 200, shift: 0, firstRow: 100 };
+		view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
+		expect(view.firstAfter(-5)).toBe(0);
+		expect(view.firstAfter(3.9)).toBe(0);
+		expect(view.firstAfter(4)).toBe(1);
+		expect(view.firstAfter(9)).toBe(2);
+		expect(view.firstAfter(399)).toBe(99);
+		expect(view.firstAfter(400)).toBe(100);
+		expect(view.firstAfter(1e9)).toBe(100);
+		for (let limit = -2; limit < 410; limit += 0.5) {
+			const k = view.firstAfter(limit);
+			expect(k === 100 || view.x[k]! > limit).toBe(true);
+			expect(k === 0 || view.x[k - 1]! <= limit).toBe(true);
+		}
+	});
+});
+
 describe('candleWidths', () => {
 	it('keeps body and wick centered on the same pixel and leaves a gap', () => {
 		const out = { body: 0, wick: 0 };

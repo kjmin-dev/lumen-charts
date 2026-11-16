@@ -354,7 +354,10 @@ describe('chart with series', () => {
 		const close = data.open[999]! - 0.5;
 		series.update({ time: last, open: data.open[999]!, high: data.high[999]!, low: data.low[999]!, close });
 		await settle();
-		expect(candleRects().length).toBe(before);
+		// Only the columns around the last bar are drawn again, through a clip.
+		expect(pane().calls.filter(call => call.name === 'clip')).toHaveLength(1);
+		expect(candleRects().length).toBeGreaterThan(0);
+		expect(candleRects().length).toBeLessThan(before / 10);
 		expect(priceAxis().calls.length).toBe(0);
 		const tags = overlay().calls.filter(call => call.name === 'fillText');
 		expect(tags.map(call => call.args[0])).toContain(close.toFixed(2));

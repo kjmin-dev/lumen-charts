@@ -334,7 +334,7 @@ and pane or series primitives were deferred to stage 4, which defined them toget
 
 - Canvas 2D with three layers per pane: series (grid, series, indicators), drawings (placed drawings) and overlay (crosshair, last-price line, drawing being edited).
 - Four invalidation levels: None, Cursor (overlay only), Light (series layer) and Full (including layout). Changes merge into one draw per `requestAnimationFrame`, which all charts of the page share (section 3).
-- Partial redraw (redrawing only the last bar) is left out of the baseline. It breaks when autoscale changes, when an indicator is drawn shifted into the future, and at line joins. It is reconsidered only if Light invalidation exceeds its budget.
+- Partial redraw (redrawing only the last bar) is left out of the baseline. It breaks when autoscale changes, when an indicator is drawn shifted into the future, and at line joins. It is reconsidered only if Light invalidation exceeds its budget. (It did, for ticks with many indicators in a wide view: section 6.2 has what was built.)
 - Views write coordinates into reused `Float32Array`s and allocate no objects on the frame path.
 - Candles start with `fillRect` and one pass per color. Whether batching into one path is faster is an [assumption].
 - The number and size of canvases are capped. Split layouts times three layers times device pixel ratio can exceed mobile canvas memory, so near the cap the drawing and overlay layers merge.
@@ -356,7 +356,7 @@ and pane or series primitives were deferred to stage 4, which defined them toget
   | Dragging one drawing                                        | –            | when it starts, ends | every move |
   | Selecting a drawing                                         | –            | –                    | yes        |
   | A drawing added, changed or removed through the API         | –            | yes                  | yes        |
-  | A tick that leaves both scales as they were                 | yes          | –                    | yes        |
+  | A tick that leaves both scales as they were                 | its columns  | –                    | yes        |
   | Pan, zoom, resize, a new price range, a bar while following | yes          | yes                  | yes        |
   | The engine answers time lookups (below, section 7.1)        | –            | yes                  | yes        |
 
@@ -375,26 +375,52 @@ and pane or series primitives were deferred to stage 4, which defined them toget
 - Charts out of view still draw nothing; a drawing changed meanwhile keeps its layer marked and is
   drawn when the chart comes back. All drawing still runs in the write phase of the shared frame.
 
-### 6.2 As decided in stage 5
+### 6.2 Stage 5: as decided, and as built
 
 Stage 5 profiled `main` after stage 4 and decided each optional step against the criteria above
-([stage 5 profile](benchmarks/stage-5-profile.md)). Of the two steps adopted, the min/max loops
-are built; partial redraw is not yet.
+([stage 5 profile](benchmarks/stage-5-profile.md)). The two steps adopted are built: partial
+redraw and the min/max loops.
 
-- **Partial redraw: adopted for tick frames.** Light invalidation exceeds its budget in one place:
-  with 20 indicators and all 1M bars in view, a tick's frame takes 4.1 ms of JavaScript (p99
-  4.7 ms) inside the 4 ms the stage 3 gate gives the whole tick, 80% of it drawing lines that did
-  not change, and the GPU process rasterizes them again for 5.2 ms. In a prototype, redrawing only
-  the last device columns takes 0.06 ms instead of 3.5 ms, and 0.5 ms instead of 3.0 ms in the GPU
-  process. The breakers decide when a frame falls back to a full redraw:
-  - A tick changed a price scale in 0–3% of the frames measured; 94–99% of tick frames keep
-    geometry and scales and can take the tail path.
-  - The dirty range is the items each view rebuilt, not "the last bar", so an output drawn shifted
-    dirties the columns it is drawn in.
-  - The clip is widened by a join and half the widest line, and each path starts two items before
-    the first changed one, so the pixels inside the clip are those of a full redraw.
-  - A custom series renderer, a `bottom` primitive or drawings merged into the series layer keep
-    the full redraw: the chart cannot bound what they draw.
+- **Partial redraw of tick frames: built** ([stage 5 partial redraw](benchmarks/stage-5-partial-redraw.md)).
+  Light invalidation exceeded its budget in one place: with 20 indicators and all 1M bars in view,
+  a tick's frame took 4.1 ms of JavaScript inside the 4 ms the stage 3 gate gives the whole tick,
+  80% of it drawing lines that did not change. Such a frame now clears and redraws only the device
+  columns in which something changed, through a clip: 0.50 ms of JavaScript instead of 4.13 ms in that case, and 1.0 ms instead of 4.3 ms in the GPU process.
+  - **When.** A frame asked for by data alone (an engine event; every other change marks the layer
+    stale) keeps the series layer if it was drawn with the same geometry, window (`version`), vertical
+    grid lines and session marks (their positions, since a new bar computes the time ticks again
+    without moving them), grid scale and ticks, and every series with the same items
+    (`SeriesView.generation`) and price mapping (offset, factor, logarithm). The checks are a few
+    comparisons per series; nothing is allocated. Anything else is a full redraw, as before: a tick
+    that moves a price scale, a new bar that adds an item or scrolls the view, a replaced window, a
+    change of options, size or pixel ratio, a canvas the browser restored.
+  - **Which columns.** `SeriesView.update` notes the items it rebuilt in place; the columns are
+    those from the item before the first to the item after the last (a changed point moves the line
+    from both neighbors), widened by what a series draws around an item: half the line width, the
+    half pixel a merged column's path is offset by, and a pixel of antialiasing; the body width
+    for candles and bars. They are the union over the series, so an output that changes anywhere
+    (a correction of an old bar, an output drawn shifted) dirties its own columns. No dirty column
+    in the pane: the layer is left as it is.
+  - **What is drawn.** Inside the clip, the same calls in the same order as a full redraw:
+    background, session shading, grid, session breaks, watermark, then each series over the items
+    that can reach the columns, plus one on either side, so a line's first and last point (a cap
+    where the whole path has a join) lie outside the clip by more than the stroke reaches.
+    Coordinates of items that did not change are not computed again (`SeriesView.project`).
+  - **Dashes** are counted along the path. A dashed or dotted line is drawn from its first item,
+    and its columns reach to the right edge of the pane, since a change moves every dash after it.
+  - **A single segment.** Chromium strokes a path of one segment as another shape than a longer
+    path (its ends are antialiased beyond the cap), which showed as the one pixel difference of the
+    first comparison. `drawLine` widens a range that holds one segment until it holds two or is the
+    whole line.
+  - **Full redraw kept** for a custom series renderer, a `bottom` primitive and drawings merged
+    into the series layer: the chart cannot bound what they draw.
+  - **Tested** by a model of what reaches a range of columns (unit tests, every frame against full
+    redraws of the state before and after) and pixel for pixel in headless Chromium
+    (`pnpm bench:pixels`): 2,025 comparisons over 1,788 partial frames at pixel
+    ratios 1, 1.5 and 2 with no pixel different where the canvas is rasterized on the GPU.
+    Chromium's software rasterizer draws a line slightly differently along its length when its
+    last point moves, so there two full redraws already differ in columns where nothing changed,
+    and a partial frame differs from a full one in a few antialiased pixels.
 - **Cheaper wide-view frames: the min/max loops.** `SeriesView.update`, which merges rows into
   pixel columns, is 20–41% of a pan frame with 20 indicators; the level-of-detail builds and the
   rolling extremes are 38% of the engine's time in a load. All take a running minimum and maximum
@@ -691,6 +717,12 @@ Stage 5, the min/max loops (measured, [stage 5 min and max](benchmarks/stage-5-m
 bars in view and 4.9 instead of 5.6 ms at p95 with all bars in view (gate: p95 8 ms), and the
 indicators of a load settle a fifth sooner.
 
+Stage 5, partial redraw (measured, [stage 5 partial redraw](benchmarks/stage-5-partial-redraw.md)):
+with 20 indicators and all 1M bars in view, a tick's frame takes 0.50 instead of 4.13 ms of
+JavaScript, and tick to applied through the worker has a p99 of 4.02 ms (2.48–4.79 over 7 rounds)
+instead of 6.12 ms (4.69–9.25), measured alternately on a machine under heavy load from other work
+(gate: 4 ms; `main` measured 3.9–4.5 ms on a quieter machine). Pan and zoom frames are unchanged.
+
 ## 10. Open questions
 
 - Settled by stage 0: the cost per tick in Lightweight Charts is O(N). One `update()` takes 76.7–82.7 µs at 10,000 candles and 9,061–11,103 µs at 1 million [measured: [stage 0 baseline](benchmarks/stage-0-baseline.md)].
@@ -704,5 +736,10 @@ indicators of a load settle a fifth sooner.
     that part is not frames (they take 0.4 ms there) but garbage collection on the main thread:
     about 20 tasks of 2–16 ms in 3 s of ticks. Whose garbage it is, the patch objects of the
     library or the benchmark's own pause loop, is open [measured: [stage 5 profile](benchmarks/stage-5-profile.md)].
+  - As built in stage 5: the frame is out of that p99: a tick's frame takes 0.5 instead of 4.1 ms,
+    and the p99 fell from 6.12 to 4.02 ms on a heavily loaded machine, lower in each of 7
+    alternating rounds and under 4 ms in 3 of them. Whether it holds the gate on a quiet machine,
+    where the 200-bar view's 3.0–3.3 ms is the floor, is still to be measured
+    [measured: [stage 5 partial redraw](benchmarks/stage-5-partial-redraw.md)].
 - Benchmarks ran on one Apple M1. x86, Firefox and Android are unmeasured.
 - The review's experiments ran on a heavily loaded machine. Their direction holds; their absolute numbers need re-measuring.

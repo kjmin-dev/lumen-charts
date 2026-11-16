@@ -7,7 +7,8 @@ High-performance financial charting engine for the web.
 > level of detail, a memory limit backed by a datafeed that also takes corrections, deletions and
 > resolution changes, indicators (built-in and custom) computed in the engine, several price axes
 > with their scale modes, time zones and sessions, drawings and primitives, and save and restore of
-> the chart's state.
+> the chart's state. Of the optional steps of stage 5, the partial redraw of tick frames is built: a
+> tick that leaves the view and the price scales as they are redraws only the columns it changed.
 
 ## Usage
 
@@ -363,6 +364,11 @@ the `PaneView` it is drawn with, declares its layer, and may answer hit tests, w
 hover (`drawHighlight`). The chart calls `update` only when the view or the primitive changed, and
 draws a layer only when something in it changed, so `update` and `draw` should not allocate.
 
+A tick normally redraws only the device columns it changed on the series layer (the last bar's, in
+most frames). The chart cannot tell what a `bottom` primitive or a custom renderer draws there, so
+with either of them every tick redraws the whole layer, as does a chart whose drawings share the
+series layer near the canvas budget.
+
 ### Save and restore
 
 ```ts
@@ -610,7 +616,10 @@ scenario saves and restores a chart with 5 indicators and 1,000 drawings; result
 tick and load time goes, from traces of these scenarios, and what that decides about the optional
 steps of stage 5 is in [docs/benchmarks/stage-5-profile.md](docs/benchmarks/stage-5-profile.md). The
 first of them, the min/max loops, is measured before and after in
-[docs/benchmarks/stage-5-min-max.md](docs/benchmarks/stage-5-min-max.md).
+[docs/benchmarks/stage-5-min-max.md](docs/benchmarks/stage-5-min-max.md), and the second, the
+partial redraw of tick frames, in
+[docs/benchmarks/stage-5-partial-redraw.md](docs/benchmarks/stage-5-partial-redraw.md); `pnpm bench:pixels`
+checks in headless Chromium that such a frame leaves the pixels of a full redraw.
 
 Runs are headless by default (Chromium's new headless mode, rasterizing on the GPU), so no window
 takes the focus; `--headed` opens a window. Stage 0 and stage 1 were measured headed. Frame
@@ -631,6 +640,7 @@ pnpm bench --case ind-frames/candles-1m/pan-all --profile benchmarks/results/tra
 pnpm bench:profile benchmarks/results/traces    # the breakdowns again from the traces of a directory
 pnpm bench:report <results.json>        # Markdown tables from a results file
 pnpm bench:merge <out.json> <a.json> <b.json>   # join runs of the same cases into one file
+pnpm bench:pixels                       # partial redraws against full redraws, pixel for pixel (--dpr, --raster, --case)
 pnpm bench:serve                        # production build of the harness page, to run by hand
 ```
 

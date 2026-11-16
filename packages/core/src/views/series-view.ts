@@ -54,7 +54,8 @@ export function placeElements(geometry: Geometry, from: number, to: number, firs
  * boundaries fall on bucket boundaries and both sources give exactly the same items. A merged
  * column always holds whole elements, so the price range of the items is exact for the rows drawn.
  *
- * Items are kept between frames. A tick only re-merges the columns it touched.
+ * Items are kept between frames. A tick only re-merges the columns it touched, and the view tells
+ * which items those were (`dirtyFrom`, `dirtyTo`), so the frame can redraw their columns alone.
  */
 export class SeriesView {
 	public count = 0;
@@ -82,6 +83,24 @@ export class SeriesView {
 	/** Price range of the items, or an empty range (`min > max`) when there is nothing to show. */
 	public min = Infinity;
 	public max = -Infinity;
+
+	/** Changes when the items are replaced as a whole: nothing drawn from the earlier ones is valid. */
+	public generation = 0;
+	/**
+	 * Items rebuilt in place since `drawn` was last called, `[dirtyFrom, dirtyTo)`; empty when
+	 * `dirtyTo <= dirtyFrom`. Every other item is what it was then, as long as `generation` is.
+	 */
+	public dirtyFrom = 0;
+	public dirtyTo = 0;
+
+	/** Items rebuilt since the last `project`, and what that projected with. */
+	private _staleFrom = 0;
+	private _staleTo = 0;
+	private _projectedGeneration = -1;
+	private _projectedOffset = NaN;
+	private _projectedScale = NaN;
+	private _projectedSnap = false;
+	private _projectedLog = false;
 
 	private _version = -1;
 	private _origin = NaN;
@@ -113,10 +132,7 @@ export class SeriesView {
 	): void {
 		const { origin, spacing, from, to, shift, firstRow } = geometry;
 		if (to <= from) {
-			this.count = 0;
-			this._version = -1;
-			this.min = Infinity;
-			this.max = -Infinity;
+			this.reset();
 			return;
 		}
 		const size = 2 ** shift;
@@ -152,6 +168,7 @@ export class SeriesView {
 				itemFrom = lo - from;
 				itemTo = hi - from;
 			}
+			this._touch(itemFrom, itemTo);
 		} else {
 			this._ensure(count);
 			this._version = version;
@@ -164,6 +181,7 @@ export class SeriesView {
 			this._firstColumn = firstColumn;
 			this.count = count;
 			this.merged = merged;
+			this.generation++;
 		}
 
 		const itemOpen = this.open;
@@ -275,12 +293,27 @@ export class SeriesView {
 	 * of the prices.
 	 */
 	public project(offset: number, scale: number, snap: boolean, log = false): void {
-		const count = this.count;
+		// With the mapping of the last call, only the items rebuilt since then have other coordinates.
+		const same =
+			this.generation === this._projectedGeneration &&
+			offset === this._projectedOffset &&
+			scale === this._projectedScale &&
+			snap === this._projectedSnap &&
+			log === this._projectedLog;
+		const from = same ? this._staleFrom : 0;
+		const count = same ? this._staleTo : this.count;
+		this._staleFrom = 0;
+		this._staleTo = 0;
+		this._projectedGeneration = this.generation;
+		this._projectedOffset = offset;
+		this._projectedScale = scale;
+		this._projectedSnap = snap;
+		this._projectedLog = log;
 		const { open, high, low, close, yOpen, yClose, up } = this;
 		const yHigh = scale < 0 ? this.yLow : this.yHigh;
 		const yLow = scale < 0 ? this.yHigh : this.yLow;
 		if (log) {
-			for (let k = 0; k < count; k++) {
+			for (let k = from; k < count; k++) {
 				const o = open[k]!;
 				const h = high[k]!;
 				const l = low[k]!;
@@ -303,7 +336,7 @@ export class SeriesView {
 				}
 			}
 		} else if (snap) {
-			for (let k = 0; k < count; k++) {
+			for (let k = from; k < count; k++) {
 				const o = open[k]!;
 				const c = close[k]!;
 				yOpen[k] = Math.round(offset - o * scale);
@@ -313,7 +346,7 @@ export class SeriesView {
 				up[k] = c >= o ? 1 : 0;
 			}
 		} else {
-			for (let k = 0; k < count; k++) {
+			for (let k = from; k < count; k++) {
 				yOpen[k] = offset - open[k]! * scale;
 				yHigh[k] = offset - high[k]! * scale;
 				yLow[k] = offset - low[k]! * scale;
@@ -356,10 +389,61 @@ export class SeriesView {
 
 	/** Forgets the kept items, for example after the source columns were swapped. */
 	public reset(): void {
+		if (this.count > 0) {
+			// Items that were drawn are gone. A view that stays empty keeps its generation, so a
+			// series without data does not look changed in every frame.
+			this.generation++;
+		}
 		this._version = -1;
 		this.count = 0;
 		this.min = Infinity;
 		this.max = -Infinity;
+	}
+
+	/** The frame has drawn the items as they are: from here on `dirtyFrom` and `dirtyTo` collect anew. */
+	public drawn(): void {
+		this.dirtyFrom = 0;
+		this.dirtyTo = 0;
+	}
+
+	/**
+	 * First item right of device x `limit` (`count` if there is none). Items are in ascending x, so
+	 * this bounds the items that can reach into a range of columns.
+	 */
+	public firstAfter(limit: number): number {
+		const x = this.x;
+		let lo = 0;
+		let hi = this.count;
+		while (lo < hi) {
+			const mid = (lo + hi) >>> 1;
+			if (x[mid]! > limit) {
+				hi = mid;
+			} else {
+				lo = mid + 1;
+			}
+		}
+		return lo;
+	}
+
+	/** Notes items `[from, to)` as rebuilt in place, for the next projection and the next draw. */
+	private _touch(from: number, to: number): void {
+		if (to <= from) {
+			return;
+		}
+		if (this.dirtyTo <= this.dirtyFrom) {
+			this.dirtyFrom = from;
+			this.dirtyTo = to;
+		} else {
+			this.dirtyFrom = Math.min(this.dirtyFrom, from);
+			this.dirtyTo = Math.max(this.dirtyTo, to);
+		}
+		if (this._staleTo <= this._staleFrom) {
+			this._staleFrom = from;
+			this._staleTo = to;
+		} else {
+			this._staleFrom = Math.min(this._staleFrom, from);
+			this._staleTo = Math.max(this._staleTo, to);
+		}
 	}
 
 	private _ensure(count: number): void {
