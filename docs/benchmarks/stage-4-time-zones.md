@@ -23,6 +23,9 @@ rasterization) on an Apple M1 on AC power, viewport 1280 × 720, DPR 2, chart 12
   differ only in where the first change to a zone builds its table (in the next frame, or in the
   `applyOptions` call); the total is the same. `2866f1f` (no table for daily bars) came after and
   changes nothing measured here.
+- All of it was measured on `0ed57f4`. The branch was then rebased onto the price axes work
+  (`2107937`), which reworked the chart's frame path; the commits named here are those before the
+  rebase, and the numbers were not measured again on the new base.
 - Other agents were building and testing on the machine: the load average went from 18 to 459, far
   above the 2.6 to 8.8 of stage 3. Frame JavaScript time is the metric least disturbed by it (the
   harness times the library's animation-frame callbacks), and runs of the same code still spread by
