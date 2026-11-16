@@ -18,6 +18,7 @@ export type ScenarioName =
 	| 'ind-prepend'
 	| 'axes-frames'
 	| 'drawings'
+	| 'state'
 	| 'tz-frames'
 	| 'tz-change';
 export const SCENARIOS: readonly ScenarioName[] = [
@@ -33,6 +34,7 @@ export const SCENARIOS: readonly ScenarioName[] = [
 	'ind-prepend',
 	'axes-frames',
 	'drawings',
+	'state',
 	'tz-frames',
 	'tz-change',
 ];
@@ -40,6 +42,8 @@ export const SCENARIOS: readonly ScenarioName[] = [
 export const INDICATOR_SCENARIOS: readonly ScenarioName[] = ['ind-load', 'ind-apply', 'ind-frames', 'ind-prepend'];
 /** The stage 4 scenarios: drawings on the chart. */
 export const DRAWING_SCENARIOS: readonly ScenarioName[] = ['drawings'];
+/** The stage 4 scenario of saving and restoring the state of a chart. */
+export const STATE_SCENARIOS: readonly ScenarioName[] = ['state'];
 /** The stage 4 scenarios of time zones and sessions. */
 export const TIME_ZONE_SCENARIOS: readonly ScenarioName[] = ['tz-frames', 'tz-change'];
 
@@ -295,6 +299,21 @@ export interface TimeZoneFramesJob extends Omit<FramesJob, 'scenario'> {
 }
 
 /**
+ * Saving the state of a chart and restoring it, with the data set loaded, `indicators` indicators
+ * on its series and `drawings` drawings on it (see `generateDrawings`), `rounds` times each: saving,
+ * turning the state into JSON and back, restoring it into the chart it was saved from, and restoring
+ * it into a chart emptied before each round, which has to make the series and indicators again.
+ */
+export interface StateJob extends JobBase {
+	readonly scenario: 'state';
+	readonly drawings: number;
+	readonly indicators: number;
+	/** Bars in view: the last ones of the data set. */
+	readonly visibleBars: number;
+	readonly rounds: number;
+}
+
+/**
  * Changes of the time zone at run time, with the data set loaded and `zoom` bars in view: first to
  * each of `zones` once (the first change to a zone in a page builds its table of offsets), then
  * `changes` more through all of them, then `changes` changes of an option that has nothing to do
@@ -320,6 +339,7 @@ export type Job =
 	| AxesFramesJob
 	| MultiJob
 	| DrawingsJob
+	| StateJob
 	| TimeZoneFramesJob
 	| ZoneChangeJob;
 
@@ -679,6 +699,31 @@ export interface ZoneChangeTimings {
 	shownMs: Distribution;
 }
 
+export interface StateRun {
+	/** One `saveState` call, in milliseconds (each sample is the mean of ten calls). */
+	saveMs: Distribution;
+	/** `JSON.stringify` of the state, and `JSON.parse` of that. */
+	stringifyMs: Distribution;
+	parseMs: Distribution;
+	/** Length of the JSON in characters. */
+	jsonLength: number;
+	/**
+	 * Restoring the parsed state into the chart it was saved from: the series and indicators are
+	 * kept, the drawings replaced. Timed from the call until it is drawn.
+	 */
+	restore: ZoneChangeTimings;
+	/**
+	 * Restoring it into the chart after its series, indicators and drawings were removed: they are
+	 * all made again, the series without bars.
+	 */
+	restoreEmpty: ZoneChangeTimings;
+	/** Frames the library drew for one restore into the chart it was saved from. */
+	restoreFrames: Distribution;
+	drawings: number;
+	indicators: number;
+	visibleBars: number;
+}
+
 export interface ZoneChangeRun {
 	/** The first change to each zone in the page, which builds its table. */
 	cold: ZoneChangeTimings;
@@ -698,6 +743,7 @@ export type RunResult =
 	| ApplyRun
 	| MultiRun
 	| DrawingsRun
+	| StateRun
 	| ZoneChangeRun;
 
 export type FailureReason = 'error' | 'timeout' | 'crash';
@@ -788,6 +834,8 @@ export function caseId(job: Job): string {
 			return `${base}/${job.charts}-charts${job.maxWorkers === null ? '' : `/max-workers-${job.maxWorkers}`}`;
 		case 'drawings':
 			return `${base}/${job.drawings}/${job.variant}`;
+		case 'state':
+			return `${base}/${job.drawings}`;
 		case 'tz-frames':
 			return `${base}/${job.motion}-${job.zoom === 'all' ? 'all' : sizeLabel(job.zoom)}`;
 		case 'tz-change':
@@ -996,6 +1044,10 @@ const QUICK_DRAWINGS_CASES: readonly DrawingsCase[] = [
 	{ drawings: 100, variant: 'hover' },
 	{ drawings: 100, variant: 'drag' },
 ];
+
+// 1,000 drawings is the size of the stage 4 gate; without drawings a restore is the options and series alone.
+const STATE_DRAWINGS: readonly number[] = [1000, 0];
+const QUICK_STATE_DRAWINGS: readonly number[] = [100];
 
 const QUICK_LOAD_DATASETS: readonly DatasetSpec[] = [
 	{ kind: 'candles', size: 10 * K },
@@ -1253,6 +1305,24 @@ export function planJobs(options: PlanOptions): Plan {
 					budgetMs,
 					warmupFrames: quick ? 10 : 60,
 					warmupBudgetMs,
+				});
+			}
+		}
+	}
+
+	if (options.scenarios.includes('state')) {
+		const dataset = quick ? QUICK_DRAWINGS_DATASET : DRAWINGS_DATASET;
+		if (keep(dataset)) {
+			for (const drawings of quick ? QUICK_STATE_DRAWINGS : STATE_DRAWINGS) {
+				cases.push({
+					scenario: 'state',
+					dataset,
+					seed,
+					chart,
+					drawings,
+					indicators: 5,
+					visibleBars: 300,
+					rounds: quick ? 5 : 30,
 				});
 			}
 		}

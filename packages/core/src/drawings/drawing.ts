@@ -59,6 +59,9 @@ const G_C = 14;
 const G_LABEL = 18;
 const G_SIZE = 20;
 
+/** Shared by drawings without Fibonacci levels, which is most of them. */
+const NO_ROWS = new Float64Array(0);
+
 let nextId = 0;
 
 /** A new id, unique enough to tell drawings apart across saves and restores. */
@@ -108,7 +111,7 @@ export class Drawing implements PanePrimitive, DrawingApi {
 	/** Changes with every change of the points, for the label cache. */
 	private _pointsVersion = 0;
 	/** Rows of the Fibonacci levels. */
-	private _levelY = new Float64Array(0);
+	private _levelY = NO_ROWS;
 	/** Labels: of the Fibonacci levels, or the price range's one, and what they were made for. */
 	private _labels: string[] = [];
 	private _labelPoints = -1;
@@ -937,7 +940,8 @@ function insideChannel(x: number, y: number, g: Float64Array): boolean {
 	return y >= Math.min(base, parallel) && y <= Math.max(base, parallel);
 }
 
-function checkPoints(points: readonly DrawingPoint[], count: number, type: DrawingType): void {
+/** Throws unless `points` are `count` points with a finite time and price each. */
+export function checkPoints(points: readonly DrawingPoint[], count: number, type: DrawingType): void {
 	if (!Array.isArray(points) || points.length !== count) {
 		throw new Error(`lumen-charts: a ${type} drawing takes ${count} point${count === 1 ? '' : 's'}`);
 	}

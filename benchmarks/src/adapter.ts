@@ -109,6 +109,15 @@ export interface ChartAdapter<TPrepared = unknown> {
 	 */
 	hitTestDrawing?(x: number, y: number): boolean;
 	/**
+	 * The state of the chart as the library saves it, without bars. Only libraries with `state` set in
+	 * their registry entry implement it, together with `restoreState` and `clearState`.
+	 */
+	saveState?(): unknown;
+	/** Restores a state `saveState` returned, possibly after a trip through JSON. */
+	restoreState?(state: unknown): void;
+	/** Removes the series, indicators and drawings of the chart, as restoring an empty state does. */
+	clearState?(): void;
+	/**
 	 * Resolves once everything submitted so far has been applied and the main thread has finished
 	 * rendering the frame that shows it. GPU rasterization and display are not awaited.
 	 */
@@ -165,6 +174,8 @@ export interface AdapterEntry {
 	readonly priceAxes?: boolean;
 	/** The library has drawings (`addDrawings`, `pointerTarget`, `hitTestDrawing`), for the stage 4 scenarios. */
 	readonly drawings?: boolean;
+	/** The library saves and restores the state of a chart (`saveState`, `restoreState`, `clearState`). */
+	readonly state?: boolean;
 	/** The library shows time zones and sessions (`setTimeZone`, `repaint`), for the stage 4 scenarios. */
 	readonly timeZones?: boolean;
 	load(): Promise<AdapterFactory>;

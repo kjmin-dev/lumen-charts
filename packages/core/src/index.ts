@@ -71,6 +71,18 @@ export {
 	type SeriesRenderer,
 } from './primitives';
 export { getCanvasBudget, setCanvasBudget } from './shared/canvas-budget';
+export {
+	CHART_STATE_VERSION,
+	type ChartState,
+	type ChartStateOptions,
+	type ChartStatePart,
+	type ChartStateSelection,
+	type IndicatorInputState,
+	type IndicatorState,
+	type SeriesReference,
+	type SeriesState,
+	type ViewState,
+} from './state';
 export type { SessionInfo, SessionKind, SessionSchedule, TradingSession } from './model/sessions';
 export type { TickMarkFormatter, TickMarkKind, TimeFormatter } from './model/time-format';
 export type { BarIndex, Coordinate, Logical, Nominal } from './types';

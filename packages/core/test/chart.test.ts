@@ -175,7 +175,7 @@ function candles(count: number, start = 0) {
 	return { time, open, high, low, close };
 }
 
-const idOf = (series: unknown): number => (series as { id: number }).id;
+const idOf = (series: unknown): number => (series as { engineId: number }).engineId;
 const tasks = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
 
 /** Engine and datafeed tasks, a few rounds of them. */

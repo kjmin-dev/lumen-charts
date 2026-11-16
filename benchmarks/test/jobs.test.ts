@@ -114,7 +114,11 @@ describe('planJobs', () => {
 		const { jobs } = planJobs({ ...base, scenarios: ['tick', 'frames'], adapters: ['a'], repeats: 1 });
 		for (const { job } of jobs) {
 			expect(
-				job.scenario !== 'load' && job.scenario !== 'ind-load' && job.scenario !== 'tz-change' && job.budgetMs,
+				job.scenario !== 'load' &&
+					job.scenario !== 'ind-load' &&
+					job.scenario !== 'tz-change' &&
+					job.scenario !== 'state' &&
+					job.budgetMs,
 			).toBe(DEFAULT_BUDGET_MS);
 			expect((job.scenario === 'tick' || job.scenario === 'frames') && job.warmupBudgetMs).toBe(2_000);
 		}
@@ -188,6 +192,13 @@ describe('planJobs', () => {
 		]);
 		expect(knownFailure('lumen-main', { kind: 'candles', size: 1_000_000 }, 'drawings')).toBeNull();
 		expect(knownFailure('lwc-conflation-on', { kind: 'candles', size: 1_000_000 }, 'drawings')).toMatch(/drawings/);
+	});
+
+	it('plans the stage 4 state cases, and skips them for a library that saves no state', () => {
+		const { jobs } = planJobs({ ...base, scenarios: ['state'], adapters: ['a'], repeats: 1 });
+		expect(jobs.map(p => p.caseId)).toEqual(['state/candles-1m/1000', 'state/candles-1m/0']);
+		expect(knownFailure('lumen-main', { kind: 'candles', size: 1_000_000 }, 'state')).toBeNull();
+		expect(knownFailure('lwc-conflation-on', { kind: 'candles', size: 1_000_000 }, 'state')).toMatch(/state/);
 	});
 
 	it('plans the multi-chart scenario once per worker limit', () => {

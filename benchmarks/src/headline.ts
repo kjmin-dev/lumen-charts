@@ -77,6 +77,14 @@ export function headline(result: CaseResult): string {
 						`redraw p50 ${ms(m('redraw.p50'))} p99 ${ms(m('redraw.p99'))}; hits ${m('hits') ?? '–'}`) +
 				`; frames ${m('frames') ?? '–'}`
 			);
+		case 'state':
+			return (
+				`save p50 ${ms(m('saveMs.p50'))} max ${ms(m('saveMs.max'))}; JSON ${m('jsonLength') ?? '–'} characters, ` +
+				`stringify p50 ${ms(m('stringifyMs.p50'))}, parse p50 ${ms(m('parseMs.p50'))}; ` +
+				`restore work p50 ${ms(m('restore.workMs.p50'))} max ${ms(m('restore.workMs.max'))} ` +
+				`(call p50 ${ms(m('restore.callMs.p50'))}, frames p50 ${m('restoreFrames.p50') ?? '–'}); ` +
+				`into an emptied chart work p50 ${ms(m('restoreEmpty.workMs.p50'))}`
+			);
 		case 'multi':
 			return (
 				`${m('charts') ?? '–'} charts in ${m('workers') ?? '–'} workers; shown ${ms(m('shownMs'))} ` +

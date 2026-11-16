@@ -178,8 +178,27 @@ export class Drawings implements DrawingsApi, DrawingOwner {
 
 	public clear(): void {
 		this.cancelTool();
+		// From the top down: the layer finds its last entry at once, so a thousand drawings go in a
+		// thousand steps, not half a million.
+		const drawings = this.list();
+		for (let i = drawings.length - 1; i >= 0; i--) {
+			this.remove(drawings[i]!);
+		}
 		for (const drawing of this._byId.values()) {
 			this.remove(drawing);
+		}
+	}
+
+	/**
+	 * Replaces every drawing with those of checked states (see `Drawing.stateOf`), for a restore.
+	 * `removed` and `created` are emitted as for `clear` and `add`.
+	 */
+	public restore(states: readonly ConstructorParameters<typeof Drawing>[1][]): void {
+		this.clear();
+		for (const state of states) {
+			const drawing = new Drawing(this, state);
+			this._attach(drawing, this._viewOf(state.priceScaleId));
+			this._emit('created', drawing);
 		}
 	}
 
