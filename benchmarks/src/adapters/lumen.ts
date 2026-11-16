@@ -1,6 +1,5 @@
 import * as lumen from '@lumen-charts/core';
 import {
-	CHART_STATE_VERSION,
 	type ChartApi,
 	type ChartState,
 	type IndicatorApi,
@@ -225,7 +224,9 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 	}
 
 	public clearState(): void {
-		this._chart.restoreState({ version: CHART_STATE_VERSION, series: [], indicators: [], drawings: [] });
+		// Read from the namespace, so the harness also builds against sources that save no state.
+		const version = (lumen as { CHART_STATE_VERSION?: ChartState['version'] }).CHART_STATE_VERSION ?? 1;
+		this._chart.restoreState({ version, series: [], indicators: [], drawings: [] });
 		this._series = null;
 		this._indicators = [];
 	}
