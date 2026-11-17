@@ -164,7 +164,9 @@ const CHART_FUNCTIONS: Record<string, string> = {
 };
 
 const SOURCE_CATEGORIES: [RegExp, string][] = [
-	[/packages\/core\/src\/render\/series\.ts$/, 'series layer: drawing'],
+	[/packages\/core\/src\/render\/(series|pane)\.ts$/, 'series layer: drawing'],
+	[/packages\/core\/src\/render\/overlay\.ts$/, 'overlay'],
+	[/packages\/core\/src\/render\/axes\.ts$/, 'grid, axes and labels'],
 	[/packages\/core\/src\/views\//, 'series layer: items and coordinates'],
 	[/packages\/core\/src\/render\/(chrome|sessions|layer)\.ts$/, 'grid, axes and labels'],
 	[/packages\/core\/src\/(render\/primitive-host|primitives)\.ts$/, 'drawings and primitives'],

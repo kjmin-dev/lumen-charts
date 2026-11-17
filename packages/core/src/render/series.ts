@@ -3,7 +3,7 @@ import { NO_DASH } from './chrome';
 
 /**
  * Every function here draws items `[from, to)` of a view, all of them by default. A frame that
- * redraws a range of columns passes the items that can reach into it (see `Chart._renderPane`):
+ * redraws a range of columns passes the items that can reach into it (see `PaneRenderer.render`):
  * rectangles are drawn per item, and a line drawn from a later item on is the same path from there.
  */
 

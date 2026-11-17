@@ -775,7 +775,8 @@ describe('chart state', () => {
 
 		it('restores the state a chart is in with one frame and without computing an indicator again', async () => {
 			const { t, state } = await configured();
-			const engine = (t.chart as unknown as { _engine: { updateIndicator: (...args: unknown[]) => void } })._engine;
+			const engine = (t.chart as unknown as { _data: { engine: { updateIndicator: (...args: unknown[]) => void } } })
+				._data.engine;
 			let updates = 0;
 			const update = engine.updateIndicator.bind(engine);
 			engine.updateIndicator = (...args) => {

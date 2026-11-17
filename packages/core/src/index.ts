@@ -1,4 +1,5 @@
-export { type ChartApi, type LogicalRange, type TimeScaleApi, createChart } from './chart';
+export type { ChartApi, LogicalRange, TimeScaleApi } from './api';
+export { createChart } from './chart';
 export type { LineColumns, LinePoint, OhlcBar, OhlcColumns } from './data/input';
 export {
 	DRAWING_STATE_VERSION,

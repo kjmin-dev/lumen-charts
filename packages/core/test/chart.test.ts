@@ -453,13 +453,22 @@ describe('chart with series', () => {
 		(chart as unknown as { _cache: { raw: { start: number; count: number; blocks: Map<number, Float64Array> } } })
 			._cache.raw;
 
-	const internals = () =>
-		chart as unknown as {
+	const internals = () => {
+		const parts = chart as unknown as {
 			_cache: { held(level: number): { count: number } | null };
-			_drawn: { level: number } | null;
-			_geometry: { to: number; shift: number; firstRow: number };
-			_axes: { scale: { min: number; max: number } }[];
+			_model: {
+				drawn: { level: number } | null;
+				geometry: { to: number; shift: number; firstRow: number };
+			};
+			_axes: { list: { scale: { min: number; max: number } }[] };
 		};
+		return {
+			_cache: parts._cache,
+			_drawn: parts._model.drawn,
+			_geometry: parts._model.geometry,
+			_axes: parts._axes.list,
+		};
+	};
 
 	it('draws a wide view from a coarse level, exactly scaled, without holding raw rows', async () => {
 		const count = 300_000;
@@ -510,8 +519,11 @@ describe('chart with series', () => {
 	const datafeedBars = 200_000;
 	const datafeedData = candles(datafeedBars);
 	const coreOf = () =>
-		(chart as unknown as { _engine: { _transport: { _core: { memory: { evictable: number; bytes: number } } } } })
-			._engine._transport._core;
+		(
+			chart as unknown as {
+				_data: { engine: { _transport: { _core: { memory: { evictable: number; bytes: number } } } } };
+			}
+		)._data.engine._transport._core;
 	/** Lets the engine finish building levels and letting rows go, between frames. */
 	const idleEngine = async (rounds = 50): Promise<void> => {
 		if (rounds > 0) {
@@ -690,7 +702,7 @@ describe('chart with series', () => {
 			await settle();
 			expect(internals()._drawn!.level).toBe(0);
 			expect(rawRows(150_000, 150_200)).toEqual([...data.close.subarray(150_000, 150_200)]);
-			expect((chart as unknown as { _fetches: Map<number, unknown> })._fetches.size).toBe(0);
+			expect((chart as unknown as { _fetches: { _requests: Map<number, unknown> } })._fetches._requests.size).toBe(0);
 		});
 
 		it('aborts every request when the history is replaced, the series removed or the chart destroyed', async () => {

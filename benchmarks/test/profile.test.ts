@@ -64,6 +64,13 @@ describe('categorize', () => {
 			'series layer: drawing',
 		);
 		expect(categorize(frame('_renderOverlay', 'http://x/a.js'), 'packages/core/src/chart.ts', null)).toBe('overlay');
+		expect(categorize(frame('render', 'http://x/a.js'), 'packages/core/src/render/pane.ts', null)).toBe(
+			'series layer: drawing',
+		);
+		expect(categorize(frame('render', 'http://x/a.js'), 'packages/core/src/render/overlay.ts', null)).toBe('overlay');
+		expect(categorize(frame('render', 'http://x/a.js'), 'packages/core/src/render/axes.ts', null)).toBe(
+			'grid, axes and labels',
+		);
 		expect(categorize(frame('emaKernel', 'http://x/a.js'), 'packages/engine/src/indicators/kernels.ts', null)).toBe(
 			'engine: indicator kernels',
 		);
