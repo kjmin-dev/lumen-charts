@@ -23,6 +23,8 @@ The documents are split so that two pull requests rarely edit the same lines. Ke
 - **New measurements** get a file of their own in `benchmarks/` and one line at the end of the
   [results list](benchmarks/README.md#results). The numbers stay there: the stage file links to
   them and gives only what the design needs.
+- **A new benchmark scenario** is one module in `benchmarks/src/scenarios/` and its tests
+  ([adding a scenario](benchmarks/README.md#adding-a-scenario)); no shared list names it.
 - **A new open question** is one bullet at the end of section 10 of `design.md`. What later settles
   it goes into the stage file, with a one-line sub-bullet that links there.
 - **The status line** of the README changes only when a stage is complete, and so does the

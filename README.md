@@ -95,35 +95,6 @@ How to run it, what it measures and the results of every stage are in
 [docs/README.md](docs/README.md) lists the documents and says where a change to them goes: a
 feature in a guide of its own, what a stage built and measured in files of their own.
 
-### Adding a scenario
-
-A scenario is one module in `benchmarks/src/scenarios/`. The harness finds the modules of that
-directory itself (Vite's `import.meta.glob` for the page and the tests, a directory listing for the
-runner and the reports in Node), so no list, union or `switch` elsewhere names a scenario. The
-module exports what `defineScenario` (`benchmarks/src/scenario.ts`) returns, once per scenario of a
-family:
-
-- `name`: what `--scenario` selects and case ids begin with. `order`: its place in the matrix, the
-  list of scenarios and the report; a new scenario takes a number above the others, and two with
-  the same number go by name.
-- `plan(context)`: its cases, from the options of the run (`quick`, the budgets, the size and kind
-  filters). `caseParts(job)`: the parts of a case id after `<scenario>/<data set>`.
-- `run(job, context)`: the measurement in the page, which returns the result. The steps scenarios
-  share are in `benchmarks/src/harness/`.
-- `headline(metric)`: the line the runner prints per case. `sections`: its tables in
-  `pnpm bench:report`, built with the helpers of `benchmarks/src/report.ts`.
-- `requires`, when it needs something only some libraries can do: the module declares that as an
-  interface of its own and asks for it at run time with `supports`, so `ChartAdapter` stays what
-  every library can do. An adapter that can implements the interface in its own file and lists the
-  capability in its entry in `benchmarks/src/adapters/index.ts`; the others are skipped with the
-  reason given.
-
-The job and result types of a scenario are in its module too, and its tests go in
-`benchmarks/test/scenarios/<name>.test.ts`. `benchmarks/test/scenarios/registry.test.ts` checks
-every scenario found: a name of its own, all parts, cases under its name, and the same list in Node
-as under Vite. A scenario module must not import `scenarios/index.ts` or a module that does
-(`plan.ts`, `headline.ts`, `adapters/index.ts`).
-
 ## Layout
 
 ```
