@@ -86,7 +86,8 @@ export class PaneRenderer {
 	 * the items the views rebuilt are drawn. A changed item moves the line from its neighbor on either
 	 * side, so the columns reach from the item before the first one to the item after the last, plus
 	 * what the stroke or the bar covers around them. A new price range, a scrolled view, a replaced
-	 * window, a custom renderer or a primitive below the series fail the test.
+	 * window, a custom renderer or a primitive below the series fail the test, and so does the option
+	 * that asks for full redraws (`ChartOptions.redraw`).
 	 */
 	private _dirtyColumns(width: number): number {
 		const geometry = this._model.geometry;
@@ -96,6 +97,7 @@ export class PaneRenderer {
 		const marks = this._time.marks;
 		if (
 			this.stale ||
+			this._settings.options.redraw === 'full' ||
 			geometry.origin !== drawn.origin ||
 			geometry.spacing !== drawn.spacing ||
 			geometry.from !== drawn.from ||
@@ -135,7 +137,7 @@ export class PaneRenderer {
 			}
 			const reach = seriesReach(series, ratio, body);
 			const from = view.x[Math.max(0, view.dirtyFrom - 1)]! - reach;
-			// Dashes are counted along the path, so a change moves every dash after it.
+			// Dashes are counted along the path, so a change of its length moves every dash after it.
 			const to = isDashed(series) ? width : view.x[Math.min(count - 1, view.dirtyTo)]! + reach;
 			if (from < left) {
 				left = from;
@@ -259,7 +261,8 @@ export class PaneRenderer {
 			if (partial) {
 				const reach = seriesReach(series, ratio, widths.body);
 				// One item more on either side: where a line starts or ends it has a cap, not a join.
-				from = isDashed(series) ? 0 : Math.max(0, view.firstAfter(this._clipLeft - reach) - 1);
+				// A dashed line too: `drawLine` gives its path the length the whole one has before it.
+				from = Math.max(0, view.firstAfter(this._clipLeft - reach) - 1);
 				to = Math.min(to, view.firstAfter(this._clipRight + reach) + 1);
 				if (to <= from) {
 					continue;

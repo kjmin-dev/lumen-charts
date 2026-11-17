@@ -14,7 +14,9 @@ import { afterEach, assert, describe, expect, it, vi } from 'vitest';
 // that keeps every shape with its style and the clip it was drawn through, and a model of which
 // shapes can color the pixels of a range of columns. Two frames color a range alike when the
 // shapes that can reach it are equal, in order, with equal joins and caps inside it and equal dash
-// phases. The pixels themselves are compared in a browser by `pnpm bench:pixels`.
+// phases: the length of the path before a segment, summed in single precision as a canvas sums it,
+// so a path that starts later has to bring that very sum along. The pixels themselves are compared
+// in a browser by `pnpm bench:pixels`.
 
 type Point = readonly [number, number];
 
@@ -42,6 +44,7 @@ interface State {
 	textBaseline: string;
 	globalAlpha: number;
 	dash: readonly number[];
+	lineDashOffset: number;
 	columns: readonly [number, number] | null;
 }
 
@@ -58,6 +61,7 @@ function modelContext(): { shapes: Shape[]; ctx: CanvasRenderingContext2D } {
 		textBaseline: 'alphabetic',
 		globalAlpha: 1,
 		dash: [],
+		lineDashOffset: 0,
 		columns: null,
 	};
 	const stack: State[] = [];
@@ -104,6 +108,8 @@ function modelContext(): { shapes: Shape[]; ctx: CanvasRenderingContext2D } {
 			// A path of a single segment is stroked as another shape than a longer one (see `drawLine`).
 			const segments = lines.reduce((sum, line) => sum + line.length - 1, 0);
 			const shape = segments === 1 && rects.length === 0 ? 'segment' : 'path';
+			// Dashes are continued by the length of the path, never by an offset (see `dashLead`).
+			assert.equal(state.lineDashOffset, 0);
 			push(
 				'stroke',
 				`${state.strokeStyle}|${state.lineWidth}|${state.lineJoin}|${state.dash.join(',')}|${shape}`,
@@ -136,8 +142,8 @@ function modelContext(): { shapes: Shape[]; ctx: CanvasRenderingContext2D } {
  * What of `shapes` can color a pixel of device columns `[left, right)`, in drawing order. A filled
  * rectangle counts when it overlaps the columns. A stroke reaches half its width from its path, and
  * one pixel more for antialiasing: its segments count when they come that close, each with the
- * neighbor it joins at an end that is itself that close (none: a cap), and with the length of the
- * path before it when the line is dashed. Text counts always.
+ * neighbor it joins at an end that is itself that close (none: a cap), and with the length of its
+ * line before it when the line is dashed. Text counts always.
  */
 function reaching(shapes: readonly Shape[], left: number, right: number): unknown[] {
 	const out: unknown[] = [];
@@ -168,7 +174,7 @@ function reaching(shapes: readonly Shape[], left: number, right: number): unknow
 						const after = near(b[0]) ? (line[i + 2] ?? 'cap') : 'far';
 						out.push(['segment', shape.style, a, b, before, after, shape.dashed ? length : 0]);
 					}
-					length += Math.hypot(b[0] - a[0], b[1] - a[1]);
+					length = Math.fround(length + singleLength(a, b));
 				}
 			}
 		} else {
@@ -176,6 +182,13 @@ function reaching(shapes: readonly Shape[], left: number, right: number): unknow
 		}
 	}
 	return out;
+}
+
+/** The length of a segment as a canvas measures it for dashes: in single precision, step by step. */
+function singleLength(a: Point, b: Point): number {
+	const dx = Math.fround(b[0] - a[0]);
+	const dy = Math.fround(b[1] - a[1]);
+	return Math.fround(Math.sqrt(Math.fround(Math.fround(dx * dx) + Math.fround(dy * dy))));
 }
 
 const MINUTE = 60_000;
@@ -207,6 +220,8 @@ class Harness {
 	private readonly _contexts = new Map<HTMLCanvasElement, ReturnType<typeof modelContext>>();
 	private _frames: ((now: number) => void)[] = [];
 	private _now = 0;
+	/** What the last frame checked by `step` drew on the series layer. */
+	public partial: Shape[] = [];
 	/** The last full redraw of the series layer. */
 	private _full: Shape[] = [];
 
@@ -307,6 +322,7 @@ class Harness {
 		await this.settle();
 		const frame = [...this.pane];
 		const overlay = [...this.overlay];
+		this.partial = frame;
 		const after = await this.redraw();
 		const width = this.paneCanvas.width;
 		const clip = frame[0]?.clip ?? null;
@@ -339,6 +355,15 @@ class Harness {
 
 const COUNT = 2000;
 const LAST = (COUNT - 1) * MINUTE;
+
+const dashedStrokes = (shapes: readonly Shape[]): Shape[] =>
+	shapes.filter(shape => shape.dashed && shape.lines.length > 0);
+const points = (shape: Shape): number => shape.lines.reduce((sum, line) => sum + line.length, 0);
+/** Length of the level segment a stroke's first line starts with; 0 when it starts otherwise. */
+const leadOf = (shape: Shape): number => {
+	const [a, b] = shape.lines[0]!;
+	return a !== undefined && b !== undefined && a[1] === b[1] ? b[0] - a[0] : 0;
+};
 
 /** The closes of `candles(COUNT)` times `factor` as a line, with points left out when `gaps`. */
 function lineData(factor: number, gaps = false) {
@@ -413,8 +438,8 @@ describe.each([1, 2, 1.5])('redrawing the columns a tick changed, at pixel ratio
 			expect(frame.right - frame.left).toBeLessThan(all / 10);
 		}
 
-		// Dashes are counted from the start of the path: a dashed line is redrawn from its first item,
-		// and to the right edge.
+		// Dashes are counted along the path: a dashed line is redrawn to the right edge, from the items
+		// at the columns, after a lead as long as the whole path is before them.
 		const dashed = h.chart.addSeries('line', { color: '#9467bd', lineStyle: 'dashed' });
 		const dotted = h.chart.addSeries('line', { color: '#17becf', lineStyle: 'dotted', lineWidth: 2 });
 		dashed.setData(lineData(0.98));
@@ -430,12 +455,35 @@ describe.each([1, 2, 1.5])('redrawing the columns a tick changed, at pixel ratio
 			});
 			expect(frame.mode).toBe('partial');
 			expect(frame.right).toBe(all);
+			const strokes = dashedStrokes(h.partial);
+			expect(strokes).toHaveLength(2);
+			// The dotted line has gaps: its lead is as long as the piece that reaches the columns.
+			expect(leadOf(strokes[0]!)).toBeGreaterThan(all / 2);
+			for (const stroke of strokes) {
+				expect(leadOf(stroke)).toBeGreaterThan(0);
+				expect(points(stroke)).toBeLessThan(10);
+			}
 		}
 		// A change in the middle of a dashed line moves every dash after it.
 		const row = COUNT - 150;
 		const frame = await h.step(() => dashed.update({ time: row * MINUTE, value: value * 0.99 }));
 		expect(frame.mode).toBe('partial');
 		expect(frame.right).toBe(all);
+		const [corrected] = dashedStrokes(h.partial);
+		expect(leadOf(corrected!)).toBeGreaterThan(all / 2);
+		expect(points(corrected!)).toBeGreaterThan(150);
+		expect(points(corrected!)).toBeLessThan(160);
+
+		// A gap among the items redrawn: the piece before it has the lead, the piece after it starts
+		// its dashes anew, as in the whole path.
+		const gap = await h.step(() => dashed.update({ time: (COUNT - 3) * MINUTE, value: NaN }));
+		expect(gap.mode).toBe('partial');
+		const next = await h.step(() => dashed.update({ time: LAST, value: value * 0.985 }));
+		expect(next.mode).toBe('partial');
+		const [pieces] = dashedStrokes(h.partial);
+		expect(pieces!.lines).toHaveLength(2);
+		expect(leadOf(pieces!)).toBeGreaterThan(all / 2);
+		expect(points(pieces!)).toBeLessThan(10);
 	});
 
 	it('redraws the columns of a point that changed away from the last bar', async () => {
@@ -492,6 +540,8 @@ describe.each([1, 2, 1.5])('redrawing the columns a tick changed, at pixel ratio
 		const open = data.open[count - 1]!;
 		const modes: Mode[] = [];
 		const lefts: number[] = [];
+		const leads: number[] = [];
+		const drawnPoints: number[] = [];
 		for (let i = 0; i < 12; i++) {
 			if (i % 3 === 2) {
 				time += MINUTE;
@@ -506,9 +556,16 @@ describe.each([1, 2, 1.5])('redrawing the columns a tick changed, at pixel ratio
 			});
 			modes.push(frame.mode);
 			lefts.push(frame.mode === 'partial' ? frame.left : all);
+			if (frame.mode === 'partial') {
+				const [stroke] = dashedStrokes(h.partial);
+				leads.push(leadOf(stroke!));
+				drawnPoints.push(points(stroke!));
+			}
 		}
-		// The dashed line is drawn from its first item, but the columns are those of the last bar.
+		// The dashed line is drawn from the columns of the last bar too.
 		expect(Math.min(...lefts)).toBeGreaterThan(all / 2);
+		expect(Math.min(...leads)).toBeGreaterThan(all);
+		expect(Math.max(...drawnPoints)).toBeLessThan(100);
 		// Updates of the last bar never need the whole layer; a new bar does when it adds a column.
 		expect(modes.filter((_, i) => i % 3 !== 2)).not.toContain('full');
 		expect(modes).toContain('partial');
@@ -682,6 +739,36 @@ describe.each([1, 2, 1.5])('redrawing the columns a tick changed, at pixel ratio
 		expect(
 			(await h.step(() => series.update({ time: LAST + MINUTE, open, high: 900, low: open - 1, close: 800 }))).mode,
 		).toBe('partial');
+	});
+
+	it('draws the whole layer for every tick when the option asks for full redraws', async () => {
+		h = new Harness({ redraw: 'full' }, ratio);
+		const data = candles(COUNT);
+		const series = h.chart.addSeries('candlestick');
+		const line = h.chart.addSeries('line', { lineStyle: 'dashed' });
+		series.setData(data);
+		line.setData(lineData(1));
+		await show(200);
+		const open = data.open[COUNT - 1]!;
+		let close = open;
+		const tick = (): void => {
+			close = close === open ? open + 0.5 : open;
+			series.update({ time: LAST, open, high: open + 2, low: open - 2, close });
+			line.update({ time: LAST, value: close });
+		};
+		expect((await h.step(tick)).mode).toBe('full');
+		expect((await h.step(tick)).mode).toBe('full');
+		// A correction left of the view, which changes nothing on the layer, is a full frame as well.
+		expect((await h.step(() => line.update({ time: 100 * MINUTE, value: 101 }))).mode).toBe('full');
+		h.chart.applyOptions({ redraw: 'auto' });
+		await h.settle();
+		await h.redraw();
+		expect((await h.step(tick)).mode).toBe('partial');
+		expect((await h.step(() => line.update({ time: 100 * MINUTE, value: 102 }))).mode).toBe('kept');
+		h.chart.applyOptions({ redraw: 'full' });
+		await h.settle();
+		await h.redraw();
+		expect((await h.step(tick)).mode).toBe('full');
 	});
 
 	it('keeps the full redraw for what the chart cannot bound: a custom renderer, a primitive under the series', async () => {

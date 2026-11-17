@@ -20,6 +20,7 @@ const LUMEN_CAPABILITIES: readonly string[] = [
 	'datafeed', // refetch.ts
 	'drawings', // drawings.ts
 	'indicators', // indicators.ts
+	'lineStyle', // line-ticks.ts
 	'priceAxes', // axes-frames.ts
 	'state', // state.ts
 	'timeZones', // time-zones.ts

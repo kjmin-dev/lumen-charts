@@ -213,9 +213,17 @@ export function drawHistogram(
 
 /**
  * Adds the path of a line over items `[from, to)` to the current path of `ctx` (see `drawLine`).
- * Returns the number of segments added.
+ * Returns the number of segments added. With `leadX`, the path starts at that x with a level
+ * segment to its first point (see `dashLead`); NaN for none.
  */
-function traceLine(ctx: CanvasRenderingContext2D, view: SeriesView, step: boolean, from: number, to: number): number {
+function traceLine(
+	ctx: CanvasRenderingContext2D,
+	view: SeriesView,
+	step: boolean,
+	from: number,
+	to: number,
+	leadX: number,
+): number {
 	const { x, yOpen, yHigh, yLow, yClose, merged } = view;
 	let segments = 0;
 	let drawing = false;
@@ -236,7 +244,14 @@ function traceLine(ctx: CanvasRenderingContext2D, view: SeriesView, step: boolea
 				ctx.lineTo(px, first);
 				segments++;
 			} else {
-				ctx.moveTo(px, first);
+				if (leadX === leadX) {
+					ctx.moveTo(leadX, first);
+					ctx.lineTo(px, first);
+					segments++;
+					leadX = NaN;
+				} else {
+					ctx.moveTo(px, first);
+				}
 				drawing = true;
 			}
 			const top = yHigh[k]!;
@@ -275,13 +290,158 @@ function traceLine(ctx: CanvasRenderingContext2D, view: SeriesView, step: boolea
 				ctx.lineTo(x[k]!, y);
 				segments++;
 			} else {
-				ctx.moveTo(x[k]!, y);
+				if (leadX === leadX) {
+					ctx.moveTo(leadX, y);
+					ctx.lineTo(x[k]!, y);
+					segments++;
+					leadX = NaN;
+				} else {
+					ctx.moveTo(x[k]!, y);
+				}
 				drawing = true;
 			}
 			previous = y;
 		}
 	}
 	return segments;
+}
+
+/**
+ * Length of the segment from `(ax, ay)` to `(bx, by)` as a canvas measures a path to place dashes
+ * along it: in single precision, each product and the sum rounded on their own. Measured against
+ * Chromium, whose dashes a path with a lead of such lengths continues to the pixel (see `dashLead`);
+ * with the squares summed before rounding, 2 of 384 such paths differed in a pixel.
+ */
+function segmentLength(ax: number, ay: number, bx: number, by: number): number {
+	const dx = Math.fround(bx - ax);
+	const dy = Math.fround(by - ay);
+	return Math.fround(Math.sqrt(Math.fround(Math.fround(dx * dx) + Math.fround(dy * dy))));
+}
+
+/**
+ * For each item up to `upTo` (inclusive), the length of the path `traceLine` draws from where the
+ * item's subpath starts (the first item, or the first one after a gap) to where it arrives at the
+ * item: what a path that starts at the item has to have before it to continue the dashes of the
+ * whole one (see `dashLead`). The lengths are kept in the view, and only those from the first item
+ * rebuilt or projected since are computed again, so a tick on the last bar computes none for a path
+ * that starts left of it.
+ *
+ * Lengths are summed in single precision segment by segment, as the rasterizer sums them when it
+ * measures the whole path, so the sum is the one it has there and not a more exact one: the two
+ * are hundredths of a pixel apart at a length of 100,000 pixels and tenths at 500,000.
+ */
+export function lineLengths(view: SeriesView, step: boolean, upTo: number): Float32Array {
+	if (view.pathLength.length < view.x.length) {
+		view.pathLength = new Float32Array(view.x.length);
+		view.pathLengthCount = 0;
+	}
+	if (view.pathLengthStep !== step) {
+		view.pathLengthStep = step;
+		view.pathLengthCount = 0;
+	}
+	const lengths = view.pathLength;
+	const known = view.pathLengthCount;
+	if (known > upTo) {
+		return lengths;
+	}
+	const { x, yOpen, yHigh, yLow, yClose, merged } = view;
+	const entry = merged ? yOpen : yClose;
+	const shift = merged ? 0.5 : 0;
+	// The path through the last item with a known length is walked again, to where it leaves the item.
+	let resumed = known > 0;
+	let drawing = false;
+	let penX = 0;
+	let penY = 0;
+	let previous = 0;
+	let length = 0;
+	for (let k = Math.max(0, known - 1); k <= upTo; k++) {
+		const first = entry[k]!;
+		if (first !== first) {
+			drawing = false;
+			resumed = false;
+			lengths[k] = 0;
+			continue;
+		}
+		const px = x[k]! + shift;
+		if (resumed) {
+			length = lengths[k]!;
+			resumed = false;
+		} else if (!drawing) {
+			length = 0;
+		} else if (step) {
+			length = Math.fround(length + segmentLength(penX, penY, px, previous));
+			length = Math.fround(length + segmentLength(px, previous, px, first));
+		} else {
+			length = Math.fround(length + segmentLength(penX, penY, px, first));
+		}
+		lengths[k] = length;
+		drawing = true;
+		let pen = first;
+		if (merged) {
+			const top = yHigh[k]!;
+			const bottom = yLow[k]!;
+			if (bottom - top >= 1) {
+				const near = first - top <= bottom - first ? top : bottom;
+				const far = near === top ? bottom : top;
+				if (Math.abs(near - pen) >= 0.5) {
+					length = Math.fround(length + segmentLength(px, pen, px, near));
+					pen = near;
+				}
+				length = Math.fround(length + segmentLength(px, pen, px, far));
+				pen = far;
+			}
+			previous = yClose[k]!;
+			if (Math.abs(previous - pen) >= 0.5) {
+				length = Math.fround(length + segmentLength(px, pen, px, previous));
+				pen = previous;
+			}
+		} else {
+			previous = first;
+		}
+		penX = px;
+		penY = pen;
+	}
+	view.pathLengthCount = upTo + 1;
+	return lengths;
+}
+
+/** Returned by `dashLead` when the path needs no lead, and when no lead can give it its dashes. */
+const NO_LEAD = Number.NaN;
+const NO_EXACT_LEAD = Number.NEGATIVE_INFINITY;
+
+/**
+ * Where the path of items `[from, to)` of a dashed line has to start, left of its first point and
+ * level with it, so that its dashes continue those of the whole path: as far left as the whole path
+ * is long before that point, from where its subpath starts (`lineLengths`).
+ *
+ * A dash offset of that length would do the same in exact arithmetic, and does not in a browser.
+ * The rasterizer sums the lengths of the segments in single precision and places each dash by that
+ * sum, so where a dash falls depends on how the sum was rounded on the way; a path that starts later
+ * rounds its sum otherwise, and its dashes land thousandths of a pixel off, which shows in the
+ * antialiasing of hundreds of them. With a lead of exactly the length the rasterizer has summed up to
+ * the first point, it goes on from the same sum to the same dashes, in every pixel. The dashes
+ * along the lead are left of the columns redrawn, like the join at its end.
+ *
+ * `NO_LEAD` when the path starts where its subpath does. `NO_EXACT_LEAD` when no point left of the
+ * first one is exactly that far from it in single precision (a short piece of a line far from the
+ * left edge): then the line has to be drawn from its first item.
+ */
+function dashLead(view: SeriesView, step: boolean, from: number, to: number): number {
+	const entry = view.merged ? view.yOpen : view.yClose;
+	let first = from;
+	while (first < to && entry[first]! !== entry[first]!) {
+		first++;
+	}
+	if (first === to) {
+		return NO_LEAD;
+	}
+	const length = lineLengths(view, step, first)[first]!;
+	if (length === 0) {
+		return NO_LEAD;
+	}
+	const x = view.x[first]! + (view.merged ? 0.5 : 0);
+	const start = Math.fround(x - length);
+	return Math.fround(x - start) === length ? start : NO_EXACT_LEAD;
 }
 
 /**
@@ -294,7 +454,9 @@ function traceLine(ctx: CanvasRenderingContext2D, view: SeriesView, step: boolea
  *
  * From a later item on, the path starts where the whole path arrives at that item, so it covers the
  * same pixels wherever the stroke around its first and last item does not reach. Dashes are counted
- * from the start of a path: a dashed line keeps its pattern only when drawn from its first item.
+ * from the start of each subpath: a dashed line drawn from a later item gets a lead as long as the
+ * whole path before that item (`dashLead`), and is drawn from its first item after all when no lead
+ * has exactly that length.
  *
  * A range that holds a single segment is widened until it holds two, or is the whole line. Browsers
  * stroke a path of one segment as another shape than a longer path (Chromium antialiases the ends
@@ -312,18 +474,25 @@ export function drawLine(
 	to = view.count,
 ): void {
 	const count = view.count;
-	ctx.beginPath();
-	let segments = traceLine(ctx, view, step, from, to);
-	for (let grow = 4; segments === 1 && (from > 0 || to < count); grow *= 4) {
+	const dashed = dash.length > 0;
+	for (let grow = 4; ; grow *= 4) {
+		let lead = dashed && from > 0 ? dashLead(view, step, from, to) : NO_LEAD;
+		if (lead === NO_EXACT_LEAD) {
+			from = 0;
+			lead = NO_LEAD;
+		}
+		ctx.beginPath();
+		const segments = traceLine(ctx, view, step, from, to, lead);
+		if (segments !== 1 || (from === 0 && to === count)) {
+			break;
+		}
 		from = Math.max(0, from - grow);
 		to = Math.min(count, to + grow);
-		ctx.beginPath();
-		segments = traceLine(ctx, view, step, from, to);
 	}
 	ctx.lineWidth = width;
 	ctx.lineJoin = step ? 'miter' : 'round';
 	ctx.strokeStyle = color;
-	if (dash.length > 0) {
+	if (dashed) {
 		ctx.setLineDash(dash as number[]);
 		ctx.stroke();
 		ctx.setLineDash(NO_DASH as number[]);
