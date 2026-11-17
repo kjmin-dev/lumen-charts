@@ -1,16 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { knownFailure } from '../src/adapters/index.ts';
-import { INDICATOR_SET } from '../src/indicators.ts';
-import {
-	DEFAULT_BUDGET_MS,
-	INDICATOR_SCENARIOS,
-	type PlanOptions,
-	caseId,
-	matchesCase,
-	parseSize,
-	planJobs,
-	sizeLabel,
-} from '../src/jobs.ts';
+import { DEFAULT_BUDGET_MS, type PlanOptions, matchesCase, parseSize, sizeLabel } from '../src/jobs.ts';
+import { caseId, planJobs } from '../src/plan.ts';
+import type { FramesJob } from '../src/scenarios/frames.ts';
+import type { TickJob } from '../src/scenarios/tick.ts';
 
 const base: PlanOptions = {
 	scenarios: ['load', 'tick', 'frames', 'prepend'],
@@ -56,22 +48,6 @@ describe('planJobs', () => {
 		expect(cases.has('prepend/candles-1m/10k')).toBe(true);
 	});
 
-	it('plans prepends with the batch in the left half of the view', () => {
-		const { jobs } = planJobs({ ...base, scenarios: ['prepend'], adapters: ['a'], repeats: 1 });
-		const views = jobs.map(p => (p.job.scenario === 'prepend' ? [p.caseId, p.job.batch, p.job.visibleBars] : []));
-		expect(views).toEqual([
-			['prepend/candles-1m/10k', 10_000, 20_000],
-			// Twice the batch would be wider than the 1M bars there are to show.
-			['prepend/candles-1m/1m', 1_000_000, 1_000_000],
-			['prepend/line-10m/10k', 10_000, 20_000],
-			['prepend/line-10m/1m', 1_000_000, 2_000_000],
-		]);
-		for (const { job } of jobs) {
-			expect(job.scenario === 'prepend' && job.budgetMs).toBe(DEFAULT_BUDGET_MS);
-			expect(job.scenario === 'prepend' && job.minPrepends <= job.prepends).toBe(true);
-		}
-	});
-
 	it('skips adapters on data sets they are known to fail on, and lists them', () => {
 		const { jobs, skipped } = planJobs({
 			...base,
@@ -105,127 +81,41 @@ describe('planJobs', () => {
 	it('filters by scenario, size and kind', () => {
 		const { jobs } = planJobs({ ...base, scenarios: ['tick'], sizes: [100_000], adapters: ['a'], repeats: 1 });
 		expect(jobs.map(p => p.caseId)).toEqual(['tick/candles-100k/latest', 'tick/candles-100k/all']);
-		const tick = jobs[0]?.job;
-		expect(tick?.scenario === 'tick' && tick.ticks).toBe(10_000);
+		expect(jobs[0]?.job).toMatchObject({ ticks: 10_000 });
 		expect(planJobs({ ...base, kinds: ['line'], scenarios: ['tick'] }).jobs).toHaveLength(0);
 	});
 
 	it('gives tick and frames runs a time budget unless it is 0', () => {
 		const { jobs } = planJobs({ ...base, scenarios: ['tick', 'frames'], adapters: ['a'], repeats: 1 });
-		for (const { job } of jobs) {
-			expect(
-				job.scenario !== 'load' &&
-					job.scenario !== 'ind-load' &&
-					job.scenario !== 'tz-change' &&
-					job.scenario !== 'state' &&
-					job.budgetMs,
-			).toBe(DEFAULT_BUDGET_MS);
-			expect((job.scenario === 'tick' || job.scenario === 'frames') && job.warmupBudgetMs).toBe(2_000);
+		for (const p of jobs) {
+			const job = p.job as TickJob | FramesJob;
+			expect(job.budgetMs).toBe(DEFAULT_BUDGET_MS);
+			expect(job.warmupBudgetMs).toBe(2_000);
 		}
-		const tick = jobs.find(p => p.job.scenario === 'tick')?.job;
-		expect(tick?.scenario === 'tick' && tick.minTicks).toBe(500);
+		expect(jobs.find(p => p.job.scenario === 'tick')?.job).toMatchObject({ minTicks: 500 });
 		const unlimited = planJobs({ ...base, scenarios: ['tick', 'frames'], adapters: ['a'], repeats: 1, budgetMs: 0 });
-		for (const { job } of unlimited.jobs) {
-			expect((job.scenario === 'tick' || job.scenario === 'frames') && job.budgetMs + job.warmupBudgetMs).toBe(0);
+		for (const p of unlimited.jobs) {
+			const job = p.job as TickJob | FramesJob;
+			expect(job.budgetMs + job.warmupBudgetMs).toBe(0);
 		}
 	});
 
 	it('has a small quick mode', () => {
 		const { jobs } = planJobs({ ...base, quick: true, repeats: 1 });
 		expect(jobs.every(p => p.job.dataset.size <= 10_000)).toBe(true);
-		const frames = jobs.find(p => p.job.scenario === 'frames')?.job;
-		expect(frames?.scenario === 'frames' && frames.frames).toBe(60);
+		expect(jobs.find(p => p.job.scenario === 'frames')?.job).toMatchObject({ frames: 60 });
 		expect(jobs.some(p => p.job.scenario === 'prepend')).toBe(true);
 	});
 
-	it('plans the stage 3 cases with 20 indicators on candles', () => {
-		const { jobs } = planJobs({ ...base, scenarios: [...INDICATOR_SCENARIOS], adapters: ['a'], repeats: 1 });
-		const ids = jobs.map(p => p.caseId);
-		expect(ids).toContain('ind-load/candles-1m/20');
-		expect(ids).toContain('ind-apply/candles-1m/latest/20');
-		expect(ids).toContain('ind-apply/candles-100k/all/20');
-		expect(ids).toContain('ind-frames/candles-1m/zoom-all/20');
-		expect(ids).toContain('ind-prepend/candles-1m/1m/20');
-		// A batch larger than the data set is left out.
-		expect(ids).not.toContain('ind-prepend/candles-100k/1m/20');
-		expect(jobs.every(p => 'indicators' in p.job && p.job.indicators === INDICATOR_SET.length)).toBe(true);
-		// The regression cases of earlier stages keep their ids and selections.
-		expect(planJobs({ ...base, cases: ['prepend'], adapters: ['a'], repeats: 1 }).jobs.length).toBe(4);
+	it('plans the scenarios in their own order, whatever order they are asked for in', () => {
+		const forward = planJobs({ ...base, scenarios: ['load', 'tick'], adapters: ['a'], repeats: 1 });
+		const backward = planJobs({ ...base, scenarios: ['tick', 'load'], adapters: ['a'], repeats: 1 });
+		expect(backward).toEqual(forward);
+		expect(forward.jobs[0]?.job.scenario).toBe('load');
 	});
 
-	it('skips the stage 3 cases for an adapter that cannot put indicators on a series', () => {
-		expect(knownFailure('lumen-worker', { kind: 'candles', size: 1_000_000 }, 'ind-apply')).toBeNull();
-		expect(knownFailure('nope', { kind: 'candles', size: 1_000_000 }, 'ind-apply')).toMatch(/indicators/);
-	});
-
-	it('plans the price axes cases, one per layout, for adapters that can lay out axes', () => {
-		const { jobs } = planJobs({ ...base, scenarios: ['axes-frames'], adapters: ['a'], repeats: 1 });
-		const ids = jobs.map(p => p.caseId);
-		expect(ids).toHaveLength(16);
-		expect(ids).toContain('axes-frames/candles-1m/pan-200/one');
-		expect(ids).toContain('axes-frames/candles-1m/zoom-all/four');
-		expect(jobs.every(p => p.job.scenario === 'axes-frames' && p.job.indicators === 3)).toBe(true);
-		const selected = planJobs({
-			...base,
-			scenarios: ['axes-frames'],
-			cases: ['axes-frames/candles-1m/pan-200'],
-			adapters: ['a'],
-			repeats: 1,
-		});
-		expect(selected.jobs.map(p => p.caseId)).toEqual([
-			'axes-frames/candles-1m/pan-200/one',
-			'axes-frames/candles-1m/pan-200/log',
-			'axes-frames/candles-1m/pan-200/percent',
-			'axes-frames/candles-1m/pan-200/four',
-		]);
-		expect(knownFailure('lumen-main', { kind: 'candles', size: 1_000_000 }, 'axes-frames')).toBeNull();
-		expect(knownFailure('lwc-conflation-on', { kind: 'candles', size: 1_000_000 }, 'axes-frames')).toMatch(/axes/);
-	});
-
-	it('plans the stage 4 drawings cases, and skips them for a library without drawings', () => {
-		const { jobs } = planJobs({ ...base, scenarios: ['drawings'], adapters: ['a'], repeats: 1 });
-		expect(jobs.map(p => p.caseId)).toEqual([
-			'drawings/candles-1m/1000/hover',
-			'drawings/candles-1m/0/hover',
-			'drawings/candles-1m/1000/drag',
-			'drawings/candles-1m/1000/pan',
-		]);
-		expect(knownFailure('lumen-main', { kind: 'candles', size: 1_000_000 }, 'drawings')).toBeNull();
-		expect(knownFailure('lwc-conflation-on', { kind: 'candles', size: 1_000_000 }, 'drawings')).toMatch(/drawings/);
-	});
-
-	it('plans the stage 4 state cases, and skips them for a library that saves no state', () => {
-		const { jobs } = planJobs({ ...base, scenarios: ['state'], adapters: ['a'], repeats: 1 });
-		expect(jobs.map(p => p.caseId)).toEqual(['state/candles-1m/1000', 'state/candles-1m/0']);
-		expect(knownFailure('lumen-main', { kind: 'candles', size: 1_000_000 }, 'state')).toBeNull();
-		expect(knownFailure('lwc-conflation-on', { kind: 'candles', size: 1_000_000 }, 'state')).toMatch(/state/);
-	});
-
-	it('plans the multi-chart scenario once per worker limit', () => {
-		const all: PlanOptions = { ...base, scenarios: ['multi'], adapters: ['a'], repeats: 1 };
-		expect(planJobs(all).jobs.map(p => p.caseId)).toEqual([
-			'multi/candles-100k/16-charts',
-			'multi/candles-1m/4-charts',
-		]);
-		const options: PlanOptions = { ...all, sizes: [100_000] };
-		const [job] = planJobs(options).jobs;
-		expect(job?.caseId).toBe('multi/candles-100k/16-charts');
-		expect(job?.job.scenario === 'multi' && [job.job.charts, job.job.visibleCharts, job.job.maxWorkers]).toEqual([
-			16,
-			8,
-			null,
-		]);
-		const limited = planJobs({ ...options, maxWorkers: [1, null, 4] }).jobs;
-		expect(limited.map(p => p.caseId)).toEqual([
-			'multi/candles-100k/16-charts/max-workers-1',
-			'multi/candles-100k/16-charts',
-			'multi/candles-100k/16-charts/max-workers-4',
-		]);
-		// One pattern selects the scenario with every limit.
-		const selected = planJobs({ ...options, maxWorkers: [1, 4], cases: ['multi/candles-100k/16-charts'] }).jobs;
-		expect(selected).toHaveLength(2);
-		const quick = planJobs({ ...all, quick: true }).jobs[0]?.job;
-		expect(quick?.scenario === 'multi' && quick.charts).toBe(4);
+	it('ignores the name of a scenario there is none of', () => {
+		expect(planJobs({ ...base, scenarios: ['nope'] }).jobs).toEqual([]);
 	});
 
 	it('names cases by scenario, data set and parameters', () => {

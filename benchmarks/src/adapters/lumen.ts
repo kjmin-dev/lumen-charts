@@ -12,7 +12,13 @@ import type { CandleColumns, LineColumns, SeriesColumns, TickColumns } from '../
 import type { BenchDrawing } from '../drawings.ts';
 import { afterNextFrame, nextTask, pendingFrameCallbacks } from '../harness/frames.ts';
 import { INDICATOR_SET } from '../indicators.ts';
-import type { PriceAxesLayout } from '../jobs.ts';
+import type { PriceAxesAdapter, PriceAxesLayout } from '../scenarios/axes-frames.ts';
+import type { DrawingsAdapter } from '../scenarios/drawings.ts';
+import type { AppliedAdapter, IndicatorAdapter } from '../scenarios/indicators.ts';
+import type { IdleAdapter, WorkerLimitFactory } from '../scenarios/multi.ts';
+import type { DatafeedAdapter, HistoryOperationsAdapter, SeveralDatafeedsAdapter } from '../scenarios/refetch.ts';
+import type { StateAdapter } from '../scenarios/state.ts';
+import type { TimeZoneAdapter } from '../scenarios/time-zones.ts';
 
 /** Columns are lumen's own input format, so preparing passes them through unchanged. */
 type Prepared = { kind: 'candles'; columns: CandleColumns } | { kind: 'line'; columns: LineColumns };
@@ -38,7 +44,20 @@ function datafeedOf(feed: Feed) {
 	return { getBars: ({ from, to }: { from: number; to: number }) => Promise.resolve(feed(from, to)) } as never;
 }
 
-class LumenAdapter implements ChartAdapter<Prepared> {
+class LumenAdapter
+	implements
+		ChartAdapter<Prepared>,
+		DatafeedAdapter<Prepared>,
+		SeveralDatafeedsAdapter<Prepared>,
+		HistoryOperationsAdapter<Prepared>,
+		IndicatorAdapter,
+		AppliedAdapter,
+		PriceAxesAdapter,
+		TimeZoneAdapter,
+		DrawingsAdapter,
+		StateAdapter,
+		IdleAdapter
+{
 	private readonly _chart: ChartApi;
 	private _series: AnySeries | null = null;
 	private _kind: Prepared['kind'] | null = null;
@@ -325,7 +344,7 @@ class LumenAdapter implements ChartAdapter<Prepared> {
 	}
 }
 
-function factory(worker: boolean): AdapterFactory {
+function factory(worker: boolean): AdapterFactory & WorkerLimitFactory {
 	return {
 		// The workspace sources at the commit recorded with every results file.
 		library: { name: '@lumen-charts/core', version: 'workspace' },

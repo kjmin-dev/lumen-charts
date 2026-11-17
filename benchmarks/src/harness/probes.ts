@@ -1,6 +1,6 @@
 import type { MemorySample } from '../jobs.ts';
 import { type UserAgentMemory, memorySample, splitUserAgentMemory } from '../memory.ts';
-import type { Probes } from './scenarios.ts';
+import type { Probes } from '../scenario.ts';
 
 interface PerformanceWithMemory extends Performance {
 	measureUserAgentSpecificMemory?: () => Promise<UserAgentMemory>;
