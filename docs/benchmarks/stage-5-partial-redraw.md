@@ -1,7 +1,7 @@
 # Stage 5: partial redraw of tick frames
 
 The [stage 5 profile](stage-5-profile.md) adopted two steps. This is the second: a frame drawn for
-a tick redraws only the device columns the tick changed ([design](../design.md), section 6.2). The
+a tick redraws only the device columns the tick changed ([design](../design.md), [section 6.2](../design/stage-5.md#62-stage-5-as-decided-and-as-built)). The
 first, the [min/max loops](stage-5-min-max.md), is in `main` and on both sides of every comparison
 here.
 

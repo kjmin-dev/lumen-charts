@@ -263,7 +263,7 @@ the frame before, over whole runs of the tick scenarios):
 | 16 charts of 100k candles (set-up included)    | 2,678        | 2,160 (81%)                | 208                 | 294              | 0               |
 
 - **Autoscale change**: applies, and is rare. A tick moved a price scale in 0–3% of the frames.
-  Those frames are redrawn in full, as now; the chart already tells them apart (design section 6.1,
+  Those frames are redrawn in full, as now; the chart already tells them apart (design [section 6.1](../design/stage-4-drawings.md#61-as-built-in-stage-4-drawings),
   "a tick that leaves both scales as they were").
 - **An indicator drawn shifted into the future**: no built-in has an offset today. The dirty
   range would come from the items each view rebuilt (`SeriesView.update` already knows them: at
@@ -340,7 +340,7 @@ Every variant gave the same bits as the comparisons on this data.
 - **Risk**: the bits of a zero. `Math.max(-0, 0)` is `+0` whatever the order, while a comparison
   keeps the first of the two. A bucket or a column that holds both zeros can get the other zero
   than today. Both are correct extremes, but the engine's guarantees are bit for bit (incremental
-  against full computation, design section 5.1), so the PR has to use one rule in every place a
+  against full computation, design [section 5.1](../design/stage-3-indicators.md)), so the PR has to use one rule in every place a
   value can be computed two ways, and its tests need rows with both zeros.
 
 ## WASM kernels: reject for now

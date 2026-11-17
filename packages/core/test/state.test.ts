@@ -572,7 +572,7 @@ describe('chart state', () => {
 		});
 	});
 
-	it('restores the shortened state the README shows', async () => {
+	it('restores the shortened state the save and restore guide shows', async () => {
 		const t = testChart();
 		t.chart.restoreState({
 			version: 1,

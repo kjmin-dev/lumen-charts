@@ -1,6 +1,6 @@
 # Stage 4: price axes
 
-The price axes part of stage 4 of the [design](../design.md) (section 8, "Price axes"; section 8.1
+The price axes part of stage 4 of the [design](../design.md) (section 8, "Price axes"; [section 8.1](../design/stage-4-price-axes.md)
 describes what was built): several price scales per chart, on both sides of the pane or as overlays,
 in normal, logarithmic, percentage and indexed modes, with formatting by tick size. The stage 4 gate
 (1,000 drawings, hover p99 1 ms) belongs to the drawings part and is not measured here. What this

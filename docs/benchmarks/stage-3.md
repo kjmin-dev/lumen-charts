@@ -1,7 +1,7 @@
 # Stage 3: indicators, derived series and plugins
 
 Stage 3 of the [design](../design.md) (section 9): an indicator engine in the data engine, indicator
-outputs as derived series with levels of detail, and plugins (section 5.1 describes what was built).
+outputs as derived series with levels of detail, and plugins ([section 5.1](../design/stage-3-indicators.md) describes what was built).
 The gate: **with 20 indicators, tick to applied patch p99 4 ms; indicators recomputed within 1 s of
 a prepend.**
 
