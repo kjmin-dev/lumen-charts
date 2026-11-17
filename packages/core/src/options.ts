@@ -227,6 +227,16 @@ export interface ChartOptions {
 	 * never let go, and neither are indicator outputs, which count toward the limit. Default: no limit.
 	 */
 	memoryLimit: number;
+	/**
+	 * How a frame drawn for new data alone brings the series layer up to date. `auto` (default)
+	 * redraws only the device columns the data changed whenever nothing else on the layer did, and
+	 * leaves the pixels of a full redraw where the browser rasterizes the canvas on the GPU. `full`
+	 * draws the whole layer in every such frame, as a frame that pans or zooms does: for pages whose
+	 * canvases are rasterized in software (no GPU rasterization, or contexts created with
+	 * `willReadFrequently`), where the antialiasing of a line depends on its whole path and a partial
+	 * frame differs from a full one in a few antialiased pixels.
+	 */
+	redraw: 'auto' | 'full';
 }
 
 /** The colors a theme sets. Everything else is the same in every theme. */
@@ -336,6 +346,7 @@ export const BASE_OPTIONS: ChartOptions = {
 	},
 	worker: true,
 	memoryLimit: Infinity,
+	redraw: 'auto',
 };
 
 /**

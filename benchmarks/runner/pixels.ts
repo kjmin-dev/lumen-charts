@@ -1,9 +1,13 @@
 /// <reference types="node" />
 // Compares frames that redraw only the columns a tick changed with full redraws, pixel for pixel, in
 // headless Chromium (see `benchmarks/src/pixels/main.ts`).
-// Usage: pnpm bench:pixels [--dpr 1,2,1.5] [--raster gpu,cpu] [--case <part of a name>] [--out <file.json>]
+// Usage: pnpm bench:pixels [--dpr 1,2,1.5] [--raster gpu,cpu] [--redraw auto|full] [--case <part of a name>] [--out <file.json>]
 //
 // Exits with 1 when any comparison differs, or when a case took no partial frame at all.
+//
+// `--redraw full` runs the charts with the option that turns partial frames off (`redraw: 'full'`).
+// Then every frame is a full redraw, no comparison may differ on either rasterizer, and a partial
+// frame is a failure.
 //
 // `--raster cpu` has the canvases rasterized in software (as a canvas that is read often is). There
 // the comparison cannot hold for antialiased lines, and its differences are reported without
@@ -25,12 +29,14 @@ const { values: args } = parseArgs({
 	options: {
 		dpr: { type: 'string', default: '1,2,1.5' },
 		raster: { type: 'string', default: 'gpu' },
+		redraw: { type: 'string', default: 'auto' },
 		case: { type: 'string' },
 		out: { type: 'string' },
 	},
 });
 const ratios = args.dpr.split(',').map(Number);
 const rasters = args.raster.split(',');
+const fullOnly = args.redraw === 'full';
 
 async function main(): Promise<void> {
 	const configFile = resolve(benchDir, 'vite.config.ts');
@@ -53,7 +59,7 @@ async function main(): Promise<void> {
 					process.stdout.write(`page error: ${error.message}\n`);
 					failed++;
 				});
-				await page.goto(`${baseUrl}pixels.html?raster=${raster}`);
+				await page.goto(`${baseUrl}pixels.html?raster=${raster}&redraw=${fullOnly ? 'full' : 'auto'}`);
 				await page.waitForFunction(() => window.pixels !== undefined);
 				const cases = (await page.evaluate(() => window.pixels!.cases)) as PixelCase[];
 				for (const entry of cases) {
@@ -62,12 +68,14 @@ async function main(): Promise<void> {
 					}
 					const result = await page.evaluate(name => window.pixels!.run(name), entry.name);
 					results.push({ ...result, dpr, raster });
-					const ok = result.different === 0 && result.partial > 0;
-					if (!ok && raster !== 'cpu') {
+					const ok = result.different === 0 && (fullOnly ? result.partial === 0 : result.partial > 0);
+					// Software rasterization of partial frames is reported only (see above).
+					const noted = raster === 'cpu' && !fullOnly;
+					if (!ok && !noted) {
 						failed++;
 					}
 					process.stdout.write(
-						`${ok ? 'ok  ' : raster === 'cpu' ? 'note' : 'FAIL'} ${raster} dpr ${dpr} ${result.name}: ${result.partial} partial ` +
+						`${ok ? 'ok  ' : noted ? 'note' : 'FAIL'} ${raster} dpr ${dpr} ${result.name}: ${result.partial} partial ` +
 							`(${result.clipMin}-${result.clipMax} px), ${result.full} full, ${result.kept} kept; ` +
 							`${result.compared} compared, ${result.different} differ` +
 							(result.different > 0
@@ -92,7 +100,7 @@ async function main(): Promise<void> {
 		const version = browser.version();
 		writeFileSync(
 			resolve(invokedFrom, args.out),
-			`${JSON.stringify({ createdAt: new Date().toISOString(), chromium: version, results }, null, '\t')}\n`,
+			`${JSON.stringify({ createdAt: new Date().toISOString(), chromium: version, redraw: fullOnly ? 'full' : 'auto', results }, null, '\t')}\n`,
 		);
 	}
 	process.exit(failed > 0 ? 1 : 0);

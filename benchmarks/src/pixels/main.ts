@@ -131,6 +131,14 @@ const LINES: readonly Partial<LineOptions>[] = [
 	{ color: 'rgba(23, 190, 207, 0.6)', lineWidth: 4 },
 ];
 
+const DASHED: readonly Partial<LineOptions>[] = [
+	{ color: 'rgba(214, 39, 40, 0.5)', lineWidth: 3, lineStyle: 'dashed' },
+	{ color: '#8c564b', lineWidth: 2, lineStyle: 'dotted', lineType: 'step' },
+	{ color: '#2ca02c', lineWidth: 2, lineStyle: 'dashed' },
+	{ color: '#1f77b4', lineWidth: 1, lineStyle: 'dashed' },
+	{ color: 'rgba(148, 103, 189, 0.7)', lineWidth: 4, lineStyle: 'dotted' },
+];
+
 const SETUPS: readonly Setup[] = [
 	{
 		name: 'candles',
@@ -189,6 +197,44 @@ const SETUPS: readonly Setup[] = [
 						}
 					}
 					histogram.update({ time, value: (next() - 0.5) * 0.4 });
+				},
+			};
+		},
+	},
+	{
+		// Dashed and dotted lines alone: wide and translucent, stepped, with gaps, and one that swings
+		// by a few percent from bar to bar, whose path through merged columns is many times as long as
+		// the pane is wide. Their dashes have to continue those of the whole path wherever a partial
+		// frame starts drawing them, also after an older point changed the length of the path.
+		name: 'dashes',
+		build(chart, data) {
+			const series = DASHED.map((options, index) => {
+				const line = chart.addSeries('line', options);
+				const value = new Float64Array(COUNT);
+				const swing = index === 3 ? 0.03 : 0;
+				for (let i = 0; i < COUNT; i++) {
+					value[i] = data.close[i]! * (1 + index * 0.01 + Math.sin(i * 2.4) * swing) + Math.sin(i / (3 + index)) * 0.3;
+					if (index === 2 && (i % 97 === 0 || i > COUNT - 3)) {
+						value[i] = NaN;
+					}
+				}
+				line.setData({ time: data.time, value });
+				return { line, value };
+			});
+			let time = data.time[COUNT - 1]!;
+			return {
+				step(i, next) {
+					if (i % 5 === 4) {
+						time += MINUTE;
+					}
+					for (const [index, { line, value }] of series.entries()) {
+						const last = value[COUNT - 4]! * (1 + (next() - 0.5) * (i % 7 === 6 ? 0.3 : 0.002));
+						line.update({ time, value: index === 2 && i % 3 === 0 ? NaN : last });
+						if (i % 3 === 1) {
+							const row = COUNT - 30 - index * 11 - (i % 4) * 500;
+							line.update({ time: data.time[row]!, value: value[row]! * (1 + (next() - 0.5) * 0.004) });
+						}
+					}
 				},
 			};
 		},
@@ -436,7 +482,15 @@ export async function runCase(name: string, container: HTMLElement): Promise<Pix
 		throw new Error(`Unknown case ${name}`);
 	}
 	container.replaceChildren();
-	const chart = createChart(container, { width: 640, height: 360, autoSize: false, worker: false, ...setup.options });
+	const chart = createChart(container, {
+		width: 640,
+		height: 360,
+		autoSize: false,
+		worker: false,
+		...setup.options,
+		// `?redraw=full`: the option that turns partial frames off, with which every frame is a full one.
+		...(REDRAW_FULL ? { redraw: 'full' } : {}),
+	});
 	const data = bars(COUNT, 7);
 	const { step, after } = setup.build(chart, data);
 	const scale = chart.timeScale();
@@ -513,6 +567,8 @@ declare global {
 		pixels?: { cases: readonly PixelCase[]; run: (name: string) => Promise<PixelResult> };
 	}
 }
+
+const REDRAW_FULL = new URLSearchParams(window.location.search).get('redraw') === 'full';
 
 const container = document.getElementById('chart');
 if (container === null) {

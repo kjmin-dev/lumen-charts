@@ -134,3 +134,75 @@ instead of 6.12 ms (4.69–9.25), measured alternately on a machine under heavy 
     alternating rounds and under 4 ms in 3 of them. Whether it holds the gate on a quiet machine,
     where the 200-bar view's 3.0–3.3 ms is the floor, is still to be measured
     [measured: [stage 5 partial redraw](../benchmarks/stage-5-partial-redraw.md)].
+
+## 6.2 Partial redraw: an option to turn it off, and dashed lines from the columns
+
+Two limits of the partial redraw above are closed, and a third is decided
+([measured](../benchmarks/stage-5-partial-redraw-options.md)).
+
+- **`redraw: 'auto' | 'full'`, a chart option.** `auto` (the default) is the behavior above. With
+  `full`, a frame asked for by data alone draws the whole series layer, like any other frame: the
+  test that finds the dirty columns answers "full" first.
+  - It is for canvases rasterized in software, where a partial frame differs from a full redraw in
+    a few antialiased pixels because the rasterizer antialiases a line by its whole path. With the
+    option the pixel check finds no difference on either rasterizer (2,430 comparisons each).
+  - There is no `partial` value: every case that falls back to a full redraw does so because the
+    columns cannot be bounded or the layer is out of date, which no option can waive.
+  - **`auto` does not detect the rasterizer.** Two ways were considered and neither is reliable.
+    The renderer string of a WebGL context (`UNMASKED_RENDERER_WEBGL`: SwiftShader, llvmpipe) costs
+    a WebGL context per page and tells how WebGL is drawn, not a 2D canvas: a canvas made with
+    `willReadFrequently`, or one the browser moved off the GPU after reading it, is rasterized in
+    software on a machine whose WebGL is not. A probe (stroke a line twice on a canvas with its last
+    point moved, compare far columns) has to read the canvas back, and reading back is what makes
+    Chromium rasterize a canvas in software; on a canvas of its own it measures that canvas, not
+    the chart's. So the option is documented and the page decides.
+- **A dashed or dotted line is drawn from the dirty columns**, not from its first item.
+  - Dashes are counted along each subpath from its start, so a path that starts at a later item has
+    to tell the rasterizer how long the whole path is before that item. `SeriesView` keeps those
+    lengths per item for the path `drawLine` traces (`lineLengths`), computed when a dashed line is
+    first drawn in part and afterwards only from the first rebuilt or projected item on: a tick on
+    the last bar computes none.
+  - **A dash offset of that length is not exact.** Skia sums the lengths of a path's segments in
+    single precision and places each dash by that sum. A path that starts later sums from zero,
+    rounds otherwise, and its dashes land thousandths of a pixel off (hundredths at a length of
+    100,000 pixels, tenths at 500,000), which flips antialiasing samples at many dash ends: 51 of
+    64 probe paths differed from the whole path inside the clip, by a quarter of the line's color
+    and more in 99,000 pixels together, and the first version of this change failed 180 of 405
+    pixel comparisons.
+  - **A lead of that length is exact.** The path starts left of its first point, level with it, as
+    far away as the whole path is long before that point, so the rasterizer arrives at the first
+    point with the sum it has there in the whole path and goes on to the same dashes. The length is
+    summed the way Skia sums it: per segment in single precision, each product and the sum rounded
+    on their own (with the squares added before rounding, 2 of 384 probe paths differed in a
+    pixel; with exact lengths 294 did; with this, none). The dashes along the lead and the join at
+    its end are left of the clip, like the cap of a solid line that starts there.
+  - The lead is one horizontal segment, so its length is the difference of two x coordinates in
+    single precision, which the chart can check: where no x gives exactly the length (a short piece
+    after a gap, far from the left edge), the line is drawn from its first item as before. A gap
+    inside the range needs nothing: the piece after it starts its dashes at zero in both paths.
+  - The columns of a dashed line still reach to the right edge of the pane, since a change of the
+    path's length moves every dash after it.
+  - A tick no longer traces the path in JavaScript: with five dashed lines over 1M points in view,
+    215 `lineTo` calls per tick instead of 44,050 and a frame of 0.26 ms of JavaScript instead of
+    1.39 ms. What remains: the rasterizer still makes the dashes of the lead, as many as the whole
+    path had up to there, and clips them away (3.6 ms a frame in the GPU process for those five
+    lines instead of 7.7 ms, against 1.0 ms for solid ones).
+  - Exact where it was measured: Chromium on arm64, GPU rasterization, pixel ratios 1, 1.5 and 2
+    (2,430 comparisons over 2,284 partial frames, 405 of them on a chart of dashed and dotted lines
+    alone, no pixel different). A rasterizer that sums lengths otherwise would place dashes
+    thousandths of a pixel off in a partial frame, as the dash offset does; `redraw: 'full'` is the
+    way out there too.
+- **A new bar on a chart that follows the last bar stays a full redraw.** Shifting the layer by a
+  bar (`drawImage` of the canvas onto itself) and drawing the new columns is exact only when a bar
+  is a whole number of device pixels wide, since items are rounded to pixels one by one. Even then
+  the layer holds what does not move with the bars: the watermark, dashed horizontal grid lines
+  (their dashes start at the left edge), time ticks that are chosen again, the cap where each line
+  enters at the left edge, and the price scale, which a new bar often moves. It would save one
+  frame per bar, not per tick, behind several more conditions on the fast path. Left as it is.
+- **Tested** as above: the model of the unit tests now takes a dashed segment with the length of
+  its line before it summed in single precision, so a partial frame passes only with a lead of
+  exactly the right length (a lead a pixel off, or none, fails 14 tests). The pixel check has a
+  chart of dashed and dotted lines (wide and translucent, stepped, with gaps, and one whose path
+  through merged columns is many times as long as the pane is wide), and `--redraw full` runs every
+  case with the option, where each frame must be a full one and no comparison may differ on either
+  rasterizer.

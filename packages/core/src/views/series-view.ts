@@ -93,6 +93,16 @@ export class SeriesView {
 	public dirtyFrom = 0;
 	public dirtyTo = 0;
 
+	/**
+	 * Lengths along the path of the items as a line, kept for the items before `pathLengthCount` and
+	 * for a path that is stepped or not as `pathLengthStep` says (see `lineLengths` of the renderer,
+	 * which fills them when a dashed line is drawn from one of its later items). Rebuilding or
+	 * projecting an item drops the lengths from that item on.
+	 */
+	public pathLength = new Float32Array(0);
+	public pathLengthCount = 0;
+	public pathLengthStep = false;
+
 	/** Items rebuilt since the last `project`, and what that projected with. */
 	private _staleFrom = 0;
 	private _staleTo = 0;
@@ -182,6 +192,7 @@ export class SeriesView {
 			this.count = count;
 			this.merged = merged;
 			this.generation++;
+			this.pathLengthCount = 0;
 		}
 
 		const itemOpen = this.open;
@@ -302,6 +313,9 @@ export class SeriesView {
 			log === this._projectedLog;
 		const from = same ? this._staleFrom : 0;
 		const count = same ? this._staleTo : this.count;
+		if (!same) {
+			this.pathLengthCount = 0;
+		}
 		this._staleFrom = 0;
 		this._staleTo = 0;
 		this._projectedGeneration = this.generation;
@@ -396,6 +410,7 @@ export class SeriesView {
 		}
 		this._version = -1;
 		this.count = 0;
+		this.pathLengthCount = 0;
 		this.min = Infinity;
 		this.max = -Infinity;
 	}
@@ -429,6 +444,9 @@ export class SeriesView {
 	private _touch(from: number, to: number): void {
 		if (to <= from) {
 			return;
+		}
+		if (from < this.pathLengthCount) {
+			this.pathLengthCount = from;
 		}
 		if (this.dirtyTo <= this.dirtyFrom) {
 			this.dirtyFrom = from;

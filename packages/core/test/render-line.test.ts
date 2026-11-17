@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { drawLine } from '../src/render/series';
+import { drawLine, lineLengths } from '../src/render/series';
 import { SeriesView } from '../src/views/series-view';
 
 /** A context that records path calls as [name, x, y]. */
@@ -187,5 +187,192 @@ describe('drawLine over a range of items', () => {
 				['lineTo', 1.5, 20],
 			],
 		]);
+	});
+});
+
+/** Columns of a noisy line, with gaps at the items of `gaps`. */
+function noisy(count: number, gaps: readonly number[]): [number, number, number, number][] {
+	const columns: [number, number, number, number][] = [];
+	for (let k = 0; k < count; k++) {
+		const first = 100 + Math.sin(k * 0.7) * 40 + Math.sin(k * 3.1) * 7;
+		const last = first + Math.sin(k * 1.3) * 9;
+		const high = Math.min(first, last) - Math.abs(Math.sin(k * 2.3)) * 3;
+		const low = Math.max(first, last) + Math.abs(Math.sin(k * 1.9)) * 3;
+		columns.push(gaps.includes(k) ? [NaN, NaN, NaN, NaN] : [first, high, low, last]);
+	}
+	return columns;
+}
+
+describe('drawLine with dashes over a range of items', () => {
+	type Point = [number, number];
+
+	/** A context that keeps the subpaths of the path stroked last. */
+	function dashes(): { lines: Point[][]; ctx: CanvasRenderingContext2D } {
+		const lines: Point[][] = [];
+		const ctx = {
+			beginPath() {
+				lines.length = 0;
+			},
+			stroke() {},
+			setLineDash() {},
+			moveTo(x: number, y: number) {
+				lines.push([[x, y]]);
+			},
+			lineTo(x: number, y: number) {
+				lines.at(-1)!.push([x, y]);
+			},
+		};
+		return { lines, ctx: ctx as unknown as CanvasRenderingContext2D };
+	}
+
+	/** Lengths as a canvas sums them: in single precision, operation by operation. */
+	function add(length: number, a: Point, b: Point): number {
+		const dx = Math.fround(b[0] - a[0]);
+		const dy = Math.fround(b[1] - a[1]);
+		return Math.fround(length + Math.fround(Math.sqrt(Math.fround(Math.fround(dx * dx) + Math.fround(dy * dy)))));
+	}
+
+	/** Every segment of the lines right of `from` with the length of its line before it, as a text. */
+	function phases(lines: Point[][], from = -Infinity): string[] {
+		const out: string[] = [];
+		for (const line of lines) {
+			let length = 0;
+			for (let i = 0; i + 1 < line.length; i++) {
+				if (line[i]![0] >= from) {
+					out.push(`${line[i]!.join(',')} ${line[i + 1]!.join(',')} at ${length}`);
+				}
+				length = add(length, line[i]!, line[i + 1]!);
+			}
+		}
+		return out;
+	}
+
+	const single = (columns: [number, number, number, number][]): SeriesView => {
+		const view = merged(columns);
+		view.merged = false;
+		return view;
+	};
+
+	it.each([
+		['merged columns', merged, false],
+		['merged columns, stepped', merged, true],
+		['a point per item', single, false],
+		['a point per item, stepped', single, true],
+	] as const)('continues the dashes of the whole line where its path starts (%s)', (_, make, step) => {
+		const count = 40;
+		const columns = noisy(count, [0, 11, 12, 30]);
+		const whole = dashes();
+		drawLine(whole.ctx, make(columns), '#000', 1, [3, 3], step);
+		const expected = new Set(phases(whole.lines));
+		const starts = new Set(whole.lines.map(line => line[0]!.join(',')));
+		const wrong: string[] = [];
+		let led = 0;
+		for (let from = 0; from < count; from++) {
+			for (let to = from + 1; to <= count; to++) {
+				const part = dashes();
+				// A view of its own for every range, and one that has measured other ranges before.
+				const view = make(columns);
+				if ((from + to) % 3 === 0) {
+					lineLengths(view, step, (from * 7) % count);
+				}
+				drawLine(part.ctx, view, '#000', 1, [3, 3], step, from, to);
+				const [a, b, c] = part.lines[0] ?? [];
+				if (a === undefined) {
+					continue;
+				}
+				// Every segment drawn, the lead aside, is one of the whole line with the same length of
+				// path before it; so the dashes fall on it as they do there.
+				wrong.push(...phases(part.lines, Math.max(a[0], 0)).filter(phase => !expected.has(phase)));
+				if (a[0] >= 0) {
+					// No lead: the path starts where a piece of the whole line starts.
+					wrong.push(...(starts.has(a.join(',')) ? [] : [`${from}-${to} starts at ${a.join(',')}`]));
+					continue;
+				}
+				// A lead: one level segment to where the whole path arrives at the first item drawn, as
+				// long as the whole path is before that point.
+				led++;
+				const next = c === undefined || expected.has(`${b!.join(',')} ${c.join(',')} at ${b![0] - a[0]}`);
+				wrong.push(...(a[1] === b![1] && next ? [] : [`${from}-${to} leads from ${a.join(',')}`]));
+			}
+		}
+		expect(wrong).toEqual([]);
+		expect(led).toBeGreaterThan(400);
+	});
+
+	it('draws the line from its first item when no lead has the exact length', () => {
+		// A short piece after a gap, far from the left edge: the path before item 36 is a few pixels
+		// long, with more digits than the difference of two coordinates near 36 can have.
+		const columns = noisy(40, [30]).map(([first, high, low, last], k): [number, number, number, number] =>
+			k > 30
+				? [100 + (k - 30) * 0.1, 100 + (k - 30) * 0.1, 100 + (k - 30) * 0.1, 100 + (k - 30) * 0.1]
+				: [first, high, low, last],
+		);
+		const whole = dashes();
+		drawLine(whole.ctx, single(columns), '#000', 1, [3, 3], false);
+		const expected = new Set(phases(whole.lines));
+		const wrong: string[] = [];
+		let fromFirst = 0;
+		for (let from = 32; from < 38; from++) {
+			const part = dashes();
+			drawLine(part.ctx, single(columns), '#000', 1, [3, 3], false, from, 40);
+			const [a, b, c] = part.lines[0]!;
+			if (part.lines.length === whole.lines.length) {
+				fromFirst++;
+				wrong.push(
+					...(JSON.stringify(part.lines) === JSON.stringify(whole.lines) ? [] : [`${from}: not the whole line`]),
+				);
+			} else {
+				// Where a lead is drawn, the canvas measures it as long as the path before the item.
+				const led = b![0] === from && expected.has(`${b!.join(',')} ${c!.join(',')} at ${add(0, a!, b!)}`);
+				wrong.push(...(led ? [] : [`${from}: leads from ${a!.join(',')}`]));
+			}
+			// The same range of a solid line starts at its first item.
+			const solid = dashes();
+			drawLine(solid.ctx, single(columns), '#000', 1, [], false, from, 40);
+			wrong.push(...(solid.lines.length === 1 && solid.lines[0]![0]![0] === from ? [] : [`${from}: solid`]));
+		}
+		expect(wrong).toEqual([]);
+		expect(fromFirst).toBeGreaterThan(0);
+		expect(fromFirst).toBeLessThan(6);
+	});
+
+	it('keeps the lengths of the items before a rebuilt one', () => {
+		const view = new SeriesView();
+		const count = 300;
+		const value = Float64Array.from({ length: count }, (_, i) => 100 + Math.sin(i / 9) * 10 + Math.sin(i * 1.7));
+		const geometry = { origin: 0, spacing: 4, from: 0, to: count, shift: 0, firstRow: 0 };
+		const fresh = (): Float32Array => {
+			const other = new SeriesView();
+			other.update(geometry, value, value, value, value, 0, 1, 0, 0);
+			other.project(400, 2, false);
+			return lineLengths(other, false, count - 1).slice(0, count);
+		};
+		view.update(geometry, value, value, value, value, 0, 1, 0, 0);
+		view.project(400, 2, false);
+		expect(view.pathLengthCount).toBe(0);
+		lineLengths(view, false, 250);
+		expect(view.pathLengthCount).toBe(251);
+		expect(lineLengths(view, false, 100)).toBe(view.pathLength);
+		expect(view.pathLengthCount).toBe(251);
+		// A tick on the last bar leaves the lengths before it; a correction drops those after it.
+		value[count - 1] = 95;
+		view.update(geometry, value, value, value, value, 0, 1, count - 1, count);
+		view.project(400, 2, false);
+		expect(view.pathLengthCount).toBe(251);
+		lineLengths(view, false, count - 1);
+		expect(view.pathLengthCount).toBe(count);
+		value[120] = 130;
+		view.update(geometry, value, value, value, value, 0, 1, 120, 121);
+		view.project(400, 2, false);
+		expect(view.pathLengthCount).toBe(120);
+		expect([...lineLengths(view, false, count - 1).subarray(0, count)]).toEqual([...fresh()]);
+		// Another price mapping, a stepped path or other items: all lengths are computed again.
+		view.project(400, 3, false);
+		expect(view.pathLengthCount).toBe(0);
+		lineLengths(view, false, 10);
+		lineLengths(view, true, 5);
+		expect(view.pathLengthCount).toBe(6);
+		view.update({ ...geometry, to: count - 1 }, value, value, value, value, 0, 1, 0, 0);
+		expect(view.pathLengthCount).toBe(0);
 	});
 });

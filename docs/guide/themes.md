@@ -24,3 +24,26 @@ A theme sets only colors. Colors you set yourself take precedence and survive a 
 `applyOptions({ theme: 'dark' })` flips the chart while keeping, say, a custom grid color. The
 presets are exported as `themes` for building your own. Every option and its default is documented
 in `ChartOptions`, `PriceScaleOptions`, `CandlestickOptions`, `LineOptions` and `HistogramOptions`.
+
+## Redrawing on ticks
+
+```ts
+const chart = createChart(element, { redraw: 'full' }); // default: 'auto'
+chart.applyOptions({ redraw: 'auto' });
+```
+
+A frame drawn for new data alone, with the view, the price scales and every option as they were,
+redraws only the pixel columns the data changed (`redraw: 'auto'`). Where the browser rasterizes the
+canvas on the GPU, which is the default, the result is the full redraw's, pixel for pixel, dashed
+and dotted lines included.
+
+Set `redraw: 'full'` on pages whose canvases are rasterized in software: a browser without GPU
+rasterization (a blocklisted driver, a virtual machine, `--disable-gpu`), or a page that creates 2D
+contexts with `willReadFrequently`. A software rasterizer antialiases a line by its whole path, so
+there a frame that redraws some columns differs from a full redraw in a few antialiased pixels
+along the lines; the differences do not add up from frame to frame. With `full` every such frame
+draws the whole series layer,
+as a frame that pans or zooms does, at that cost: with 20 indicators over a million bars in view,
+about 4 ms of JavaScript a frame instead of 0.5 ms. The chart does not detect the rasterizer itself:
+nothing a page can ask tells how its 2D canvases are rasterized without reading one back, and reading
+a canvas back is what makes a browser rasterize it in software.

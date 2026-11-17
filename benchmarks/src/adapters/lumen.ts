@@ -15,6 +15,7 @@ import { INDICATOR_SET } from '../indicators.ts';
 import type { PriceAxesAdapter, PriceAxesLayout } from '../scenarios/axes-frames.ts';
 import type { DrawingsAdapter } from '../scenarios/drawings.ts';
 import type { AppliedAdapter, IndicatorAdapter } from '../scenarios/indicators.ts';
+import type { LineStyleAdapter, LineTickStyle } from '../scenarios/line-ticks.ts';
 import type { IdleAdapter, WorkerLimitFactory } from '../scenarios/multi.ts';
 import type { DatafeedAdapter, HistoryOperationsAdapter, SeveralDatafeedsAdapter } from '../scenarios/refetch.ts';
 import type { StateAdapter } from '../scenarios/state.ts';
@@ -56,7 +57,8 @@ class LumenAdapter
 		TimeZoneAdapter,
 		DrawingsAdapter,
 		StateAdapter,
-		IdleAdapter
+		IdleAdapter,
+		LineStyleAdapter
 {
 	private readonly _chart: ChartApi;
 	private _series: AnySeries | null = null;
@@ -66,6 +68,9 @@ class LumenAdapter
 	private _indicators: IndicatorApi[] = [];
 	private _axes: PriceAxesLayout = 'one';
 	private _repaints = 0;
+	/** Style of the next line series, and how many copies of it `setData` adds (`line-ticks`). */
+	private _lineStyle: LineTickStyle = 'solid';
+	private _lineCopies = 0;
 
 	public constructor(container: HTMLElement, size: ChartSize | 'auto', worker: boolean) {
 		this._chart = createChart(
@@ -90,6 +95,11 @@ class LumenAdapter
 		this._axes = layout;
 	}
 
+	public withLineStyle(style: LineTickStyle, copies: number): void {
+		this._lineStyle = style;
+		this._lineCopies = copies;
+	}
+
 	public applied(): Promise<void> {
 		return this._chart.whenApplied();
 	}
@@ -107,6 +117,10 @@ class LumenAdapter
 		} else {
 			const { time, value } = data.columns;
 			this._line().setData({ time, value });
+			for (let copy = 1; copy <= this._lineCopies; copy++) {
+				const series = this._chart.addSeries('line', { lineStyle: this._lineStyle });
+				series.setData({ time, value: value.map(v => v * (1 + copy * 0.01)) });
+			}
 		}
 	}
 
@@ -296,7 +310,7 @@ class LumenAdapter
 	private _line(): SeriesApi<'line'> {
 		if (this._series === null || this._kind !== 'line') {
 			this._replaceSeries();
-			this._series = this._chart.addSeries('line');
+			this._series = this._chart.addSeries('line', { lineStyle: this._lineStyle });
 			this._kind = 'line';
 		}
 		return this._series as SeriesApi<'line'>;
