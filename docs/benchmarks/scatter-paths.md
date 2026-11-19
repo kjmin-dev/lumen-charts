@@ -44,7 +44,7 @@ Each cell gives the median JS p95 / compositor display-interval p95 in milliseco
 
 ## Applicability
 
-The dense scatter integration trial should include the compute shader and WebGL2 native points. The observed difference belongs to these algorithms, device and workloads. A backend-wide ranking would require more algorithms and hardware.
+For sparser data, a [follow-up](mark-fast-paths.md) measures a source-space tile index and small-update paths. The dense scatter integration trial should include the compute shader and WebGL2 native points. The observed difference belongs to these algorithms, device and workloads. A backend-wide ranking would require more algorithms and hardware.
 
 The column implementation uses the scatter store's stable time ordering, opaque 3 × 3 square markers and last-point-wins semantics. Its workgroup scratch area is sized for the 1,200-device-pixel-high benchmark pane. Source coordinates are already projected and the zoom is horizontal. An end-to-end chart comparison must cover real window changes, time and price projection, point shapes, palette handling and interaction with the other layers. [Scatter store and rendering contract](../design/stage-5-heatmap-scatter.md).
 

@@ -1,12 +1,15 @@
+import { viewBinding, requireImmediates } from './webgpu-view.js';
+import { heatTransfers, patchSurface } from './webgpu-transfer.js';
 import { gpuQueries } from './timers.js';
-import { rows, width } from './scene.js';
+import { height, rows, width, isColumnPatch } from './scene.js';
 
-const uniforms = `
+const uniforms = immediate => `
+${immediate ? 'requires immediate_address_space;' : ''}
 struct View { size: vec2f, origin: vec2f, scale: f32, gain: f32 }
-@group(0) @binding(0) var<uniform> view: View;
+${viewBinding(immediate)}
 `;
 const scatterShader =
-	uniforms +
+	uniforms(false) +
 	`
 struct Vertex {
 	@builtin(position) position: vec4f,
@@ -23,8 +26,8 @@ struct Vertex {
 @fragment fn fs(v: Vertex) -> @location(0) vec4f {
 	return vec4f(select(vec3f(38,166,154), vec3f(239,83,80), v.side != 0u) / 255.0, 1);
 }`;
-const heatShader = rangeControl =>
-	uniforms +
+const heatShader = (rangeControl, immediate) =>
+	uniforms(immediate) +
 	`
 @group(0) @binding(1) var cells: texture_2d<f32>;
 @vertex fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
@@ -40,19 +43,37 @@ const heatShader = rangeControl =>
 	return vec4f(v, 1.0 - v, 128.0/255.0, 1);
 }`;
 
-export async function webgpu(target, scene, timer, useBundle = false) {
+export async function webgpu(
+	target,
+	scene,
+	timer,
+	useBundle = false,
+	{ transfer = false, copyPan = true, immediate = false } = {},
+) {
 	const adapter = await navigator.gpu?.requestAdapter();
 	if (!adapter || adapter.info.isFallbackAdapter) throw new Error('Hardware WebGPU adapter unavailable');
-	const device = await adapter.requestDevice({ requiredFeatures: timer ? ['timestamp-query'] : [] });
+	if (immediate) requireImmediates(adapter, 24);
+	const device = await adapter.requestDevice({
+		requiredFeatures: timer ? ['timestamp-query'] : [],
+		requiredLimits: immediate ? { maxImmediateSize: 24 } : {},
+	});
 	const timestampWrites = timer && gpuQueries(device, timer);
 	device.addEventListener('uncapturederror', e => {
 		throw new Error(e.error.message);
 	});
 	const ctx = target.getContext('webgpu');
 	const format = navigator.gpu.getPreferredCanvasFormat();
-	ctx.configure({ device, format, alphaMode: 'premultiplied' });
+	ctx.configure({
+		device,
+		format,
+		alphaMode: 'premultiplied',
+		usage: GPUTextureUsage.RENDER_ATTACHMENT | (transfer ? GPUTextureUsage.COPY_DST : 0),
+	});
+	const retained = transfer && heatTransfers(device, format);
 	const scatter = scene.type === 'scatter';
-	const module = device.createShaderModule({ code: scatter ? scatterShader : heatShader(scene.rangeControl) });
+	const module = device.createShaderModule({
+		code: scatter ? scatterShader : heatShader(scene.rangeControl, immediate),
+	});
 	const pipeline = await device.createRenderPipelineAsync({
 		layout: 'auto',
 		vertex: {
@@ -72,11 +93,13 @@ export async function webgpu(target, scene, timer, useBundle = false) {
 		primitive: { topology: 'triangle-strip' },
 	});
 	const transform = new Float32Array(8);
-	const uniformsBuffer = device.createBuffer({
-		size: transform.byteLength,
-		usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-	});
-	const entries = [{ binding: 0, resource: { buffer: uniformsBuffer } }];
+	const uniformsBuffer =
+		!immediate &&
+		device.createBuffer({
+			size: transform.byteLength,
+			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+		});
+	const entries = uniformsBuffer ? [{ binding: 0, resource: { buffer: uniformsBuffer } }] : [];
 	let points;
 	let cells;
 	if (scatter) {
@@ -103,31 +126,16 @@ export async function webgpu(target, scene, timer, useBundle = false) {
 		encoder.draw(4);
 		bundles = [encoder.finish()];
 	}
-	return (v, first, count, update) => {
-		transform[0] = v.w;
-		transform[1] = v.h;
-		transform[2] = v.x + v.shift;
-		transform[3] = v.y;
-		transform[4] = v.scale;
-		if (scene.rangeControl) transform[5] = v.gain;
-		device.queue.writeBuffer(uniformsBuffer, 0, transform);
-		if (update && scatter) device.queue.writeBuffer(points, first * 8, scene.points, first * 2, 2);
-		if (update && !scatter)
-			device.queue.writeTexture({ texture: cells, origin: [width - 1, 0] }, scene.column, { bytesPerRow: 1 }, [
-				1,
-				rows,
-			]);
-		const encoder = device.createCommandEncoder();
+	function render(encoder, destination, first, count) {
 		const pass = encoder.beginRenderPass({
 			timestampWrites: timer?.index >= 0 ? timestampWrites(timer.index) : undefined,
-			colorAttachments: [
-				{ view: ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0] },
-			],
+			colorAttachments: [{ view: destination, loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0] }],
 		});
 		if (bundles) {
 			pass.executeBundles(bundles);
 		} else {
 			pass.setPipeline(pipeline);
+			if (immediate) pass.setImmediates(0, transform, 0, 6);
 			pass.setBindGroup(0, group);
 			if (scatter) {
 				pass.setVertexBuffer(0, points);
@@ -137,6 +145,49 @@ export async function webgpu(target, scene, timer, useBundle = false) {
 			}
 		}
 		pass.end();
+	}
+	const draw = (v, first, count, update) => {
+		const copy = retained && copyPan && retained.canCopy(v);
+		transform[0] = v.w;
+		transform[1] = v.h;
+		transform[2] = v.x + v.shift;
+		transform[3] = v.y;
+		transform[4] = v.scale;
+		if (scene.rangeControl) transform[5] = v.gain;
+
+		if (update && scatter) device.queue.writeBuffer(points, first * 8, scene.points, first * 2, 2);
+		if (update && !scatter && !retained)
+			device.queue.writeTexture({ texture: cells, origin: [width - 1, 0] }, scene.column, { bytesPerRow: 1 }, [
+				1,
+				rows,
+			]);
+		if (retained && update && isColumnPatch(v, count)) {
+			retained.writeColumn(ctx.getCurrentTexture(), scene.column, scene.rangeControl ? v.gain : undefined);
+			return;
+		}
+		if (retained && update) retained.deferUpdate();
+		if (retained) retained.sync(cells, scene.column);
+		if (uniformsBuffer && !copy) device.queue.writeBuffer(uniformsBuffer, 0, transform);
+		const encoder = device.createCommandEncoder();
+		if (copy) {
+			retained.pan(encoder, ctx.getCurrentTexture(), v, dest => {
+				transform[2] = 0;
+				transform[3] = 0;
+				if (uniformsBuffer) device.queue.writeBuffer(uniformsBuffer, 0, transform);
+				render(encoder, dest, 0, count);
+			});
+		} else {
+			render(encoder, ctx.getCurrentTexture().createView(), first, count);
+		}
 		device.queue.submit([encoder.finish()]);
 	};
+	if (retained) {
+		draw.deferUpdate = retained.deferUpdate;
+		const surface = patchSurface(device, format, 1, height);
+		draw.nativePatch = (v, _first, n) => {
+			if (!isColumnPatch(v, n)) return null;
+			return surface(texture => retained.writeColumn(texture, scene.column, scene.rangeControl ? v.gain : undefined));
+		};
+	}
+	return draw;
 }

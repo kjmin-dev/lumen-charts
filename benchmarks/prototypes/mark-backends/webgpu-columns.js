@@ -1,10 +1,14 @@
-import { height } from './scene.js';
+import { patchSurface, scatterPatch } from './webgpu-transfer.js';
+import { tileIndex, tileShader } from './webgpu-tiles.js';
+import { viewBinding, requireImmediates } from './webgpu-view.js';
+import { height, isPointPatch } from './scene.js';
 import { gpuQueries } from './timers.js';
 
 // Compute the final colors in a screen column. Each input square covers its center and one
 // neighbor on each side. Later points overwrite earlier points, including across column edges.
-function shader(format) {
+function shader(format, immediate) {
 	return `
+${immediate ? 'requires immediate_address_space;' : ''}
 struct View {
 	size: vec2u,
 	origin: vec2f,
@@ -12,7 +16,7 @@ struct View {
 	first: u32,
 	end: u32,
 }
-@group(0) @binding(0) var<uniform> view: View;
+${viewBinding(immediate)}
 @group(0) @binding(1) var<storage, read> points: array<vec2f>;
 @group(0) @binding(2) var output: texture_storage_2d<${format}, write>;
 
@@ -59,7 +63,7 @@ fn main(@builtin(workgroup_id) group: vec3u, @builtin(local_invocation_index) la
 }`;
 }
 
-export async function webgpuColumns(target, scene, timer) {
+export async function webgpuColumns(target, scene, timer, { tiled = false, transfer = false, immediate = false } = {}) {
 	const adapter = await navigator.gpu?.requestAdapter();
 	if (!adapter || adapter.info.isFallbackAdapter) throw new Error('Hardware WebGPU adapter unavailable');
 	const requiredFeatures = timer ? ['timestamp-query'] : [];
@@ -69,7 +73,11 @@ export async function webgpuColumns(target, scene, timer) {
 	} else {
 		format = 'rgba8unorm';
 	}
-	const device = await adapter.requestDevice({ requiredFeatures });
+	if (immediate) requireImmediates(adapter, 32);
+	const device = await adapter.requestDevice({
+		requiredFeatures,
+		requiredLimits: immediate ? { maxImmediateSize: 32 } : {},
+	});
 	device.addEventListener('uncapturederror', event => {
 		throw new Error(event.error.message);
 	});
@@ -79,13 +87,24 @@ export async function webgpuColumns(target, scene, timer) {
 		device,
 		format,
 		alphaMode: 'premultiplied',
-		usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.STORAGE_BINDING,
+		usage:
+			GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.STORAGE_BINDING | (transfer ? GPUTextureUsage.COPY_DST : 0),
 	});
+	const patch = transfer && scatterPatch(device, format);
 	const pipeline = await device.createComputePipelineAsync({
 		layout: 'auto',
-		compute: { module: device.createShaderModule({ code: shader(format) }), entryPoint: 'main' },
+		compute: {
+			module: device.createShaderModule({ code: tiled ? tileShader(format, immediate) : shader(format, immediate) }),
+			entryPoint: 'main',
+		},
 	});
 	const layout = pipeline.getBindGroupLayout(0);
+	const indexStart = performance.now();
+	const index = tiled ? tileIndex(device, scene) : [];
+	const preparation = tiled && {
+		indexMs: performance.now() - indexStart,
+		indexBytes: index.reduce((total, buffer) => total + buffer.size, 0),
+	};
 	const points = device.createBuffer({
 		size: scene.points.byteLength,
 		usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -93,12 +112,20 @@ export async function webgpuColumns(target, scene, timer) {
 	device.queue.writeBuffer(points, 0, scene.points);
 	const params = new Uint32Array(8);
 	const floats = new Float32Array(params.buffer);
-	const uniform = device.createBuffer({
-		size: params.byteLength,
-		usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-	});
+	const uniform =
+		!immediate &&
+		device.createBuffer({
+			size: params.byteLength,
+			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+		});
 
-	return (v, first, count, update) => {
+	let dirtyFirst = Infinity;
+	let dirtyEnd = 0;
+	function deferUpdate(first, count) {
+		dirtyFirst = Math.min(dirtyFirst, first);
+		dirtyEnd = Math.max(dirtyEnd, first + count);
+	}
+	const draw = (v, first, count, update) => {
 		params[0] = v.w;
 		params[1] = v.h;
 		floats[2] = v.x + v.shift;
@@ -106,14 +133,27 @@ export async function webgpuColumns(target, scene, timer) {
 		floats[4] = v.scale;
 		params[5] = first;
 		params[6] = first + count;
-		device.queue.writeBuffer(uniform, 0, params);
-		if (update) device.queue.writeBuffer(points, first * 8, scene.points, first * 2, 2);
+		params[7] = scene.count;
+		if (update) {
+			deferUpdate(first, count);
+			if (patch && isPointPatch(v, scene.points, first, count)) {
+				patch(ctx.getCurrentTexture(), first);
+				return;
+			}
+		}
+		if (dirtyFirst < dirtyEnd) {
+			device.queue.writeBuffer(points, dirtyFirst * 8, scene.points, dirtyFirst * 2, (dirtyEnd - dirtyFirst) * 2);
+			dirtyFirst = Infinity;
+			dirtyEnd = 0;
+		}
+		if (uniform) device.queue.writeBuffer(uniform, 0, params);
 		const group = device.createBindGroup({
 			layout,
 			entries: [
-				{ binding: 0, resource: { buffer: uniform } },
+				...(uniform ? [{ binding: 0, resource: { buffer: uniform } }] : []),
 				{ binding: 1, resource: { buffer: points } },
 				{ binding: 2, resource: ctx.getCurrentTexture().createView() },
+				...index.map((buffer, i) => ({ binding: 3 + i, resource: { buffer } })),
 			],
 		});
 		const encoder = device.createCommandEncoder();
@@ -121,9 +161,22 @@ export async function webgpuColumns(target, scene, timer) {
 			timestampWrites: timer?.index >= 0 ? timestampWrites(timer.index) : undefined,
 		});
 		pass.setPipeline(pipeline);
+		if (immediate) pass.setImmediates(0, params);
 		pass.setBindGroup(0, group);
-		pass.dispatchWorkgroups(v.w);
+		if (tiled) pass.dispatchWorkgroups(Math.ceil(v.w / 16), Math.ceil(v.h / 16));
+		else pass.dispatchWorkgroups(v.w);
 		pass.end();
 		device.queue.submit([encoder.finish()]);
 	};
+	if (transfer) {
+		const surface = patchSurface(device, format, 3, 3);
+		draw.nativePatch = (v, first, n) => {
+			if (!isPointPatch(v, scene.points, first, n)) return null;
+			deferUpdate(first, n);
+			return surface(texture => patch(texture, first));
+		};
+	}
+	if (preparation) draw.preparation = preparation;
+	draw.deferUpdate = deferUpdate;
+	return draw;
 }

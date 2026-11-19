@@ -4,6 +4,7 @@ import os from 'node:os';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright';
 import { summarize } from '../src/stats.ts';
+import { selectStudy } from '../prototypes/mark-backends/studies.js';
 
 const { values } = parseArgs({
 	options: {
@@ -14,6 +15,7 @@ const { values } = parseArgs({
 		'gpu-timers': { type: 'boolean' },
 		'scatter-paths': { type: 'boolean' },
 		'heat-paths': { type: 'boolean' },
+		study: { type: 'string' },
 	},
 });
 const gpuTimers = values['gpu-timers'] ?? false;
@@ -24,25 +26,23 @@ if (!Number.isSafeInteger(repeats) || repeats < 1 || !Number.isSafeInteger(frame
 
 const scatterPaths = values['scatter-paths'] ?? false;
 const heatPaths = values['heat-paths'] ?? false;
-if (heatPaths && scatterPaths) throw new Error('Choose one path study per run');
-const backends = ['canvas2d', 'webgl2', 'webgpu'];
-if (heatPaths) backends.push('webgpuDirect', 'webgpuDirectBundle');
-if (scatterPaths) backends.push('webgl2Visible', 'webgpuVisible', 'webgpuColumns');
-const scatterCases = [
-	{ type: 'scatter', count: 300000, action: 'zoom' },
-	...['pan', 'zoom', 'tick'].map(action => ({ type: 'scatter', count: 1000000, action })),
-];
-const cases = heatPaths
-	? [false, true].map(varyRange => ({ type: 'heatmap', count: 1440000, action: 'pan', varyRange }))
-	: scatterPaths
-		? [
-				{ type: 'scatter', count: 100000, action: 'zoom' },
-				...scatterCases,
-				{ type: 'scatter', count: 1000000, action: 'zoom', shape: 'burst' },
-			]
-		: [...scatterCases, ...['pan', 'zoom', 'tick'].map(action => ({ type: 'heatmap', count: 1440000, action }))];
+const study = values.study;
+const { backends, cases } = selectStudy(study, scatterPaths, heatPaths, gpuTimers);
 const routes = new Map();
-for (const name of ['run-page', 'scene', 'timers', 'canvas2d', 'webgl2', 'webgpu', 'webgpu-columns']) {
+for (const name of [
+	'run-page',
+	'scene',
+	'timers',
+	'canvas2d',
+	'webgl2',
+	'webgpu',
+	'webgpu-columns',
+	'webgpu-mesh',
+	'webgpu-tiles',
+	'webgpu-transfer',
+	'mark-layer',
+	'webgpu-view',
+]) {
 	routes.set(
 		'/' + name + '.js',
 		await readFile(new URL('../prototypes/mark-backends/' + name + '.js', import.meta.url), 'utf8'),
@@ -105,6 +105,7 @@ try {
 			webgpuVendor: gpu?.info.vendor,
 			webgpuArchitecture: gpu?.info.architecture,
 			softwareWebGPU: gpu?.info.isFallbackAdapter,
+			immediateAddressSpace: navigator.gpu?.wgslLanguageFeatures.has('immediate_address_space'),
 			preferredCanvasFormat: navigator.gpu?.getPreferredCanvasFormat(),
 			bgraStorage: gpu?.features.has('bgra8unorm-storage'),
 			webglRenderer: info && gl.getParameter(info.UNMASKED_RENDERER_WEBGL),
@@ -127,6 +128,7 @@ try {
 		gpuTimers,
 		scatterPaths,
 		heatPaths,
+		study,
 		repeats,
 		frames,
 		loadStart: os.loadavg(),
@@ -142,7 +144,8 @@ try {
 				backend,
 				frames,
 				check: true,
-				checkSequence: scatterPaths || heatPaths,
+				mixedCheck: Boolean(study),
+				checkSequence: Boolean(study) || scatterPaths || heatPaths,
 			});
 			await page.close();
 			if (reference && JSON.stringify(output) !== JSON.stringify(reference))
@@ -170,6 +173,8 @@ try {
 						...entry,
 						backend,
 						setupMs: result.setupMs,
+						...(result.preparation ? { preparation: result.preparation } : {}),
+						...(result.flushJs?.length ? { flushJs: summarize(result.flushJs) } : {}),
 						js,
 						...(result.gpuPass ? { gpuPass: summarize(result.gpuPass) } : {}),
 						rafInterval: summarize(gaps(result.stamps)),

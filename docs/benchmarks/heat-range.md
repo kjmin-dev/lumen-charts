@@ -20,7 +20,7 @@ The one-minute system load average went from 163.8 to 217.9 in the frame runs an
 
 Changing the color range increased the Canvas 2D JS p95 from 0.12 to 3.40 ms. Both texture renderers kept the scalar data on the GPU. With changing gain, removing the intermediate WebGPU-to-2D composition reduced median JS p95 from 0.16 to 0.13 ms. Replaying the single draw in a bundle also measured 0.13 ms. This single-draw workload provides little evidence about the benefit of bundles for many layers or draws.
 
-This is an isolated mark-layer comparison on an M1 through headless Chromium. The display interval comes from Chromium compositor events. It cannot establish physical scanout or the composition cost of a complete chart with interleaved heatmap, price and drawing layers. All backends receive the same pixel-aligned pan. The earlier affine zoom fixture matched at its original checkpoints but differed at some additional fractional zoom positions when checked over 16 frames. Equivalence over every fractional zoom remains open.
+A [follow-up](mark-fast-paths.md) measures translated layer caches and isolated and batched column updates. This is an isolated mark-layer comparison on an M1 through headless Chromium. The display interval comes from Chromium compositor events. It cannot establish physical scanout or the composition cost of a complete chart with interleaved heatmap, price and drawing layers. All backends receive the same pixel-aligned pan. The earlier affine zoom fixture matched at its original checkpoints but differed at some additional fractional zoom positions when checked over 16 frames. Equivalence over every fractional zoom remains open.
 
 ```sh
 node benchmarks/runner/mark-backends.mjs --heat-paths --repeats 5 --out /tmp/heat-range-frames.json

@@ -51,20 +51,30 @@ export function canvas2d(target, scene) {
 	let previousGain = 256;
 	const stripe = bitmapCtx.createImageData(1, rows);
 	const stripePixels = new Uint32Array(stripe.data.buffer);
-	return (v, _first, _count, update) => {
+	let pendingColumn = false;
+	const draw = (v, _first, _count, update) => {
+		if (pendingColumn) {
+			for (let y = 0; y < rows; y++) scene.cells[(y + 1) * width - 1] = scene.column[y];
+		}
 		if (scene.rangeControl && v.gain !== previousGain) {
 			for (let i = 0; i < lut.length; i++) lut[i] = heatColor(Math.min(255, Math.floor((i * v.gain) / 256)));
 			for (let i = 0; i < pixels.length; i++) pixels[i] = lut[scene.cells[i]];
 			bitmapCtx.putImageData(image, 0, 0);
 			previousGain = v.gain;
 		}
-		if (update) {
-			for (let y = 0; y < rows; y++) stripePixels[y] = heatColor(scene.column[y]);
+		if (update || pendingColumn) {
+			for (let y = 0; y < rows; y++)
+				stripePixels[y] = previousGain === 256 ? heatColor(scene.column[y]) : lut[scene.column[y]];
 			bitmapCtx.putImageData(stripe, width - 1, 0);
+			pendingColumn = false;
 		}
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
 		ctx.clearRect(0, 0, v.w, v.h);
 		ctx.imageSmoothingEnabled = false;
 		ctx.drawImage(bitmap, -v.x - v.shift, -v.y, width * v.scale, height);
 	};
+	draw.deferUpdate = () => {
+		pendingColumn = true;
+	};
+	return draw;
 }

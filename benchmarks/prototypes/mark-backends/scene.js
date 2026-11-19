@@ -19,6 +19,9 @@ export function makeScene(type, count, extra, shape = 'cloud') {
 		points[2 * i] = Math.floor((i * (width - 4)) / count) + 1;
 		points[2 * i + 1] = 1 + Math.floor((seed / 0x100000000) * (height - 2));
 	}
+	if (shape === 'fractional') {
+		for (let i = 0; i < count; i++) points[i * 2] = Math.floor((i * (width - 4) * 32) / count) / 32 + 1;
+	}
 	if (shape === 'burst') {
 		// Put the middle 7/8 of the points into 1/32 of the time range. Timestamps
 		// stay sorted and include many ties, as in a burst of trades.
@@ -54,6 +57,23 @@ export function viewFor(action, frame, scene) {
 	const sampleOffset = action === 'zoom' && scene.type === 'heatmap' ? 1 / 32 : 0;
 	const shift = action === 'pan' ? frame % 101 : Math.floor(((scale - 1) * width) / 2) + sampleOffset;
 	return { x: 0, y: 0, w: width, h: height, scale, shift };
+}
+
+// A complete opaque patch can be transferred or composited without running the full renderer.
+export function isPointPatch(v, points, first, count) {
+	return (
+		count === 1 &&
+		v.w === 3 &&
+		v.h === 3 &&
+		points[first * 2] - v.x === 1 &&
+		points[first * 2 + 1] - v.y === 1 &&
+		v.scale === 1 &&
+		v.shift === 0
+	);
+}
+
+export function isColumnPatch(v, count) {
+	return count === 1 && v.w === 1 && v.h === height && v.x === width - 1 && v.y === 0 && v.scale === 1 && v.shift === 0;
 }
 
 export function canvas(w, h) {
