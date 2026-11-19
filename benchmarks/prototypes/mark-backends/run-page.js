@@ -1,0 +1,70 @@
+import { canvas2d } from './canvas2d.js';
+import { webgl2 } from './webgl2.js';
+import { webgpu } from './webgpu.js';
+import { canvas, height, makeScene, updateScene, viewFor, width } from './scene.js';
+
+const backends = { canvas2d, webgl2, webgpu };
+const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+
+async function digest(ctx) {
+	const data = ctx.getImageData(0, 0, width, height).data;
+	const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', data));
+	return Array.from(hash, n => n.toString(16).padStart(2, '0')).join('');
+}
+
+export async function run({ backend, type, count, action, frames, check, gpuTimers }) {
+	const warmup = 12;
+	const scene = makeScene(type, count, warmup + frames + 1);
+	const output = canvas(width, height);
+	output.style.width = width / devicePixelRatio + 'px';
+	output.style.height = height / devicePixelRatio + 'px';
+	document.body.replaceChildren(output);
+	const screen = output.getContext('2d');
+	const target = canvas(width, height);
+	const initStart = performance.now();
+	const timer = gpuTimers ? { frames, index: -1 } : null;
+	const draw = await backends[backend](target, scene, timer);
+	const initial = viewFor('pan', 0, scene);
+	draw(initial, 0, count, false);
+	screen.drawImage(target, 0, 0);
+	const setupMs = performance.now() - initStart;
+	// All backends compose into the same visible 2D canvas. A tick touches only its dirty rectangle.
+	if (action === 'tick') {
+		const v = viewFor(action, 0, scene);
+		target.width = v.w;
+		target.height = v.h;
+	}
+	function render(frame) {
+		const update = action === 'tick';
+		if (update) updateScene(scene, frame);
+		const v = viewFor(action, frame, scene);
+		draw(v, update ? count + frame : 0, update ? 1 : count, update);
+		if (!update) screen.clearRect(0, 0, width, height);
+		screen.drawImage(target, v.x, v.y);
+	}
+	if (check) {
+		const before = await digest(screen);
+		render(1);
+		const middle = await digest(screen);
+		render(8);
+		const after = await digest(screen);
+		if (before === after) throw new Error('Rendered frame did not change');
+		return { before, middle, after };
+	}
+	const js = [];
+	const stamps = [];
+	for (let frame = 0; frame < warmup + frames; frame++) {
+		const stamp = await nextFrame();
+		if (frame === warmup) performance.mark('marks:start');
+		if (timer) timer.index = frame - warmup;
+		const start = performance.now();
+		render(frame);
+		if (frame >= warmup) {
+			js.push(performance.now() - start);
+			stamps.push(stamp);
+		}
+	}
+	stamps.push(await nextFrame());
+	performance.mark('marks:end');
+	return { js, stamps, setupMs, gpuPass: await timer?.read() };
+}
