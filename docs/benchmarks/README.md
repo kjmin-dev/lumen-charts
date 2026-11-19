@@ -91,3 +91,5 @@ The JSON files beside each document are the runs its numbers come from.
 - [Sparse scatter and small updates](mark-fast-paths.md) measures tile indexing, cached pans, direct patch transfers and deferred uploads.
 - [Heatmap color range](heat-range.md) measures fixed and changing color limits and direct WebGPU presentation.
 - [Scatter rendering paths](scatter-paths.md) compares the instanced-quad WebGPU renderer with a compute shader and WebGL2 native points across densities.
+
+- [Integrated mark renderers](integrated-mark-renderers.md) compares complete charts with real engine windows and documents browser coverage.
