@@ -29,6 +29,20 @@ describe('createChart', () => {
 		chart.destroy();
 	});
 
+	it('validates the time zone before watching the theme, mounting or scheduling a frame', () => {
+		const media = vi.spyOn(window, 'matchMedia');
+		try {
+			expect(() => createChart(container, { theme: 'auto', localization: { timeZone: 'Atlantis/Capital' } })).toThrow(
+				RangeError,
+			);
+			expect(media).not.toHaveBeenCalled();
+			expect(container.childElementCount).toBe(0);
+			expect(frames).toHaveLength(0);
+		} finally {
+			media.mockRestore();
+		}
+	});
+
 	it('coalesces several changes into one frame', () => {
 		const chart = createChart(container, { autoSize: false, width: 400, height: 200 });
 		const scheduled = frames.length;
@@ -1205,7 +1219,6 @@ describe('chart with series', () => {
 			expect(() => chart.applyOptions({ localization: { locale: 'not a locale!' } })).toThrow(RangeError);
 			expect(chart.options().localization.timeZone).toBe('Europe/Berlin');
 			expect(chart.options().sessions.schedule.hours).toEqual([]);
-			expect(() => createChart(container, { localization: { timeZone: 'Atlantis/Capital' } })).toThrow(RangeError);
 		});
 
 		it('formats with a locale and the application formatters', async () => {

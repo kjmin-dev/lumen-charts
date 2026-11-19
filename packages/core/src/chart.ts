@@ -136,61 +136,16 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		);
 
 		const doc = container.ownerDocument;
+		// Callbacks look up later parts when invoked. Initial sizing runs once every part is ready.
 		this._layout = new ChartLayout(container, this._settings, this.scale, {
-			invalidate: level => this.invalidate(level),
+			invalidate: this._onInvalidate,
 			priceAxes: () => this._axes.list,
 			resized: () => this._stateIo.resolveView(),
 		});
 		this._axes = new PriceAxes(this, this._settings, this._layout);
-		this._indicators = new ChartIndicators({
-			seriesList: this._series,
-			engine: () => this._data.engine,
-			ensureEngine: () => this._data.ensureEngine(),
-			invalidate: level => this.invalidate(level),
-			reloaded: (series, seq) => this.reloaded(series, seq),
-			forget: series => this._cache.removeSeries(series),
-			seriesRemoved: series => this._primitives.detachSeries(series),
-			attachSeriesPrimitive: (series, primitive) => this.attachSeriesPrimitive(series, primitive),
-			detachSeriesPrimitive: (series, primitive) => this.detachSeriesPrimitive(series, primitive),
-			baseUrl: () => container.ownerDocument.baseURI,
-			addIndicator: (source, name, settings) => this.addIndicator(source, name, settings),
-			removeIndicator: indicator => this.removeIndicator(indicator),
-			priceAxisOf: series => this.priceAxisOf(series),
-		});
-		this._fetches = new DatafeedFetches(
-			this._series,
-			this._cache,
-			() => this._data.engine,
-			() => {
-				this._settle();
-				this._settleApplied();
-			},
-		);
-		this._data = new DataFlow(
-			{
-				syncView: () => this._syncView(),
-				resolveInput: () => this._interaction.resolve(),
-				invalidate: level => this.invalidate(level),
-				dataChanged: () => this._schedule(INVALIDATE_LIGHT),
-				callApplied: () => {
-					this._paneRenderer.stale = true;
-				},
-				resolveView: () => this._stateIo.resolveView(),
-				settled: () => {
-					this._settle();
-					this._settleApplied();
-				},
-			},
-			this._settings,
-			this._layout,
-			this.scale,
-			this._cache,
-			this._series,
-			this._time,
-			this._times,
-			this._indicators,
-			this._fetches,
-		);
+		this._indicators = this._createIndicators(container);
+		this._fetches = new DatafeedFetches(this._series, this._cache, () => this._data.engine, this._onDataSettled);
+		this._data = this._createDataFlow();
 		this._model = new FrameModel(
 			this._settings,
 			this._layout,
@@ -216,55 +171,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._axes,
 			this._model,
 			this._times,
-			level => this.invalidate(level),
+			this._onInvalidate,
 		);
-		this._stateIo = new StateIo(
-			{
-				addSeries: (type, seriesOptions) => this.addSeries(type, seriesOptions),
-				removeSeries: series => this.removeSeries(series),
-				seriesNamed: id => this._seriesNamed(id),
-				replaceOptions: replaced => {
-					this._settings.apply(replaced);
-					this._update();
-				},
-				// Called once the state is found sound, with what a restore changes.
-				batch: changes =>
-					this._batch(() => {
-						const plans = this._markPlans;
-						this._markPlans = null;
-						if (plans !== null) {
-							// First, so the names of those that go are free for the series of the state.
-							this._marks.drop(plans);
-						}
-						changes();
-						if (plans !== null) {
-							this._marks.restore(plans);
-						}
-					}),
-				syncView: () => this._syncView(),
-				invalidate: level => this.invalidate(level),
-			},
-			this._settings,
-			this.scale,
-			this._series,
-			this._indicators,
-			this._axes,
-			this._model,
-			this._times,
-			this._primitives,
-		);
-		this._marks = new ChartMarks(
-			{
-				ensureEngine: () => this._data.ensureEngine(),
-				invalidate: () => this.invalidate(INVALIDATE_LIGHT),
-				dataChanged: () => this._schedule(INVALIDATE_LIGHT),
-			},
-			this._layout,
-			this.scale,
-			this._axes,
-			this._primitives,
-			this._model,
-		);
+		this._stateIo = this._createStateIo();
+		this._marks = this._createMarks();
 		this._model.marks = this._marks;
 		this._paneRenderer = new PaneRenderer(
 			this._settings,
@@ -293,6 +203,89 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._primitives.timelineChanged();
 		};
 		this._applyResolved(this._settings.options);
+	}
+
+	private _createIndicators(container: HTMLElement): ChartIndicators {
+		return new ChartIndicators({
+			seriesList: this._series,
+			engine: () => this._data.engine,
+			ensureEngine: () => this._data.ensureEngine(),
+			invalidate: this._onInvalidate,
+			reloaded: (series, seq) => this.reloaded(series, seq),
+			forget: series => this._cache.removeSeries(series),
+			seriesRemoved: series => this._primitives.detachSeries(series),
+			attachSeriesPrimitive: (series, primitive) => this.attachSeriesPrimitive(series, primitive),
+			detachSeriesPrimitive: (series, primitive) => this.detachSeriesPrimitive(series, primitive),
+			baseUrl: () => container.ownerDocument.baseURI,
+			addIndicator: (source, name, settings) => this.addIndicator(source, name, settings),
+			removeIndicator: indicator => this.removeIndicator(indicator),
+			priceAxisOf: series => this.priceAxisOf(series),
+		});
+	}
+
+	private _createDataFlow(): DataFlow {
+		return new DataFlow(
+			{
+				syncView: () => this._syncView(),
+				resolveInput: () => this._interaction.resolve(),
+				invalidate: this._onInvalidate,
+				dataChanged: this._onDataChanged,
+				callApplied: () => {
+					this._paneRenderer.stale = true;
+				},
+				resolveView: () => this._stateIo.resolveView(),
+				settled: this._onDataSettled,
+			},
+			this._settings,
+			this._layout,
+			this.scale,
+			this._cache,
+			this._series,
+			this._time,
+			this._times,
+			this._indicators,
+			this._fetches,
+		);
+	}
+
+	private _createStateIo(): StateIo {
+		return new StateIo(
+			{
+				addSeries: (type, seriesOptions) => this.addSeries(type, seriesOptions),
+				removeSeries: series => this.removeSeries(series),
+				seriesNamed: id => this._seriesNamed(id),
+				replaceOptions: replaced => {
+					this._settings.apply(replaced);
+					this._update();
+				},
+				batch: changes => this._restoreBatch(changes),
+				syncView: () => this._syncView(),
+				invalidate: this._onInvalidate,
+			},
+			this._settings,
+			this.scale,
+			this._series,
+			this._indicators,
+			this._axes,
+			this._model,
+			this._times,
+			this._primitives,
+		);
+	}
+
+	private _createMarks(): ChartMarks {
+		return new ChartMarks(
+			{
+				ensureEngine: () => this._data.ensureEngine(),
+				invalidate: () => this.invalidate(INVALIDATE_LIGHT),
+				dataChanged: this._onDataChanged,
+			},
+			this._layout,
+			this.scale,
+			this._axes,
+			this._primitives,
+			this._model,
+		);
 	}
 
 	// ChartApi
@@ -475,11 +468,20 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	}
 
 	/** Runs `changes` with one invalidation at the end: while they run, they only note the level they need. */
-	private _batch(changes: () => void): void {
+	private _restoreBatch(changes: () => void): void {
 		this._batching = true;
 		this._batchLevel = INVALIDATE_LIGHT;
 		try {
+			const plans = this._markPlans;
+			this._markPlans = null;
+			if (plans !== null) {
+				// Free the names of removed marks before restoring the other series.
+				this._marks.drop(plans);
+			}
 			changes();
+			if (plans !== null) {
+				this._marks.restore(plans);
+			}
 		} finally {
 			this._batching = false;
 			this.invalidate(this._batchLevel);
@@ -659,6 +661,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		series.failures.length = 0;
 	}
 
+	// Modules can request a redraw, or report data changes that are eligible for a partial redraw.
+	private readonly _onInvalidate = (level: Invalidation): void => this.invalidate(level);
+	private readonly _onDataChanged = (): void => this._schedule(INVALIDATE_LIGHT);
+
 	/** Coalesces any number of changes into one draw per animation frame. */
 	public invalidate(level: Invalidation): void {
 		if (level >= INVALIDATE_LIGHT) {
@@ -721,6 +727,11 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	}
 
 	// Waiting for the chart
+
+	private readonly _onDataSettled = (): void => {
+		this._settle();
+		this._settleApplied();
+	};
 
 	private _isApplied(): boolean {
 		const engine = this._data.engine;
