@@ -1,4 +1,16 @@
-import { type EngineClient, type EngineEvent, columnCount, createEngine, levelFor } from '@lumen-charts/engine';
+import {
+	type EngineClient,
+	type EngineEvent,
+	PATCH_COUNT,
+	PATCH_LEVEL,
+	PATCH_OFFSET,
+	PATCH_SERIES,
+	PATCH_START,
+	PATCH_STRIDE,
+	columnCount,
+	createEngine,
+	levelFor,
+} from '@lumen-charts/engine';
 import type { ChartIndicators } from '../indicators';
 import { INVALIDATE_LIGHT, type Invalidation } from '../model/invalidation';
 import type { TimeDisplay } from '../model/time-display';
@@ -104,7 +116,7 @@ export class DataFlow {
 	/** The data engine, created with the first series (or plugin module). */
 	public ensureEngine(): EngineClient | null {
 		if (this.engine === null && !this._closed) {
-			this.engine = createEngine({ worker: this._settings.options.worker });
+			this.engine = createEngine({ packedPatches: true, worker: this._settings.options.worker });
 			this.engine.onevent = this._onEvent;
 			this._memoryLimit = this._settings.options.memoryLimit;
 			if (this._memoryLimit !== Infinity) {
@@ -181,7 +193,7 @@ export class DataFlow {
 		// A failed command changes nothing on screen, and redrawing for it would only repeat the request.
 		let changed =
 			event.failed !== true &&
-			(scale.version !== version || event.stale || event.window !== undefined || event.patches !== undefined);
+			(scale.version !== version || event.stale || event.window !== undefined || event.packedPatches !== undefined);
 		const deferred = this._deferred;
 		while (deferred.length > 0 && deferred[0]!.seq <= event.ack) {
 			// Pointer input from before the call comes first.
@@ -208,24 +220,27 @@ export class DataFlow {
 	 * the window held by the cache (the user is looking at history), and its value is still shown.
 	 */
 	private _trackLastValues(event: EngineEvent): void {
-		const patches = event.patches;
+		const patches = event.packedPatches;
 		if (patches === undefined) {
 			return;
 		}
-		for (const patch of patches) {
-			if (patch.level !== 0 || patch.start + patch.count !== event.end) {
+		const { index, data } = patches;
+		for (let p = 0; p < index.length; p += PATCH_STRIDE) {
+			const rows = index[p + PATCH_COUNT]!;
+			if (index[p + PATCH_LEVEL] !== 0 || index[p + PATCH_START]! + rows !== event.end) {
 				continue;
 			}
+			const id = index[p + PATCH_SERIES];
 			for (const series of this._series) {
-				if (series.engineId !== patch.series) {
+				if (series.engineId !== id) {
 					continue;
 				}
-				const rows = patch.count;
+				const offset = index[p + PATCH_OFFSET]!;
 				const closeColumn = series.kind === 'ohlcv' ? 3 : 0;
-				const close = patch.data[closeColumn * rows + rows - 1]!;
+				const close = data[offset + closeColumn * rows + rows - 1]!;
 				if (close === close) {
 					series.lastValue = close;
-					series.lastUp = close >= patch.data[rows - 1]!;
+					series.lastUp = close >= data[offset + rows - 1]!;
 				}
 				break;
 			}

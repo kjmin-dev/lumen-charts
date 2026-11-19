@@ -74,7 +74,10 @@ export const TICK_STRIDE = 7;
  *
  * Bulk data is column-major with time first: column `c` occupies `data[c * count, (c + 1) * count)`.
  */
-export type Command =
+/** The first command may request packed buffers for subsequent patch events. */
+export type Command = EngineOperation & { packedPatches?: true };
+
+type EngineOperation =
 	/** `fetchable`: rows of this series can be fetched again, so they may be let go under a memory limit. */
 	| { type: 'add'; seq: number; series: number; kind: SeriesKind; fetchable?: boolean }
 	| { type: 'remove'; seq: number; series: number }
@@ -239,7 +242,7 @@ export interface WindowSnapshot {
 
 /**
  * Rows or buckets of one level that changed. `series` is `TIME_PATCH` for the time column of the
- * main timeline. Patches of one event may share a buffer.
+ * main timeline. `data` is column-major: `data.length / count` columns of `count` values.
  */
 export interface Patch {
 	series: number;
@@ -250,6 +253,114 @@ export interface Patch {
 }
 
 export const TIME_PATCH = -1;
+
+/**
+ * The patches of an event, packed into two buffers. A tick on a series with indicators changes a
+ * few values in every level of every series: hundreds of patches, which as an object and a typed
+ * array each would be allocated on the receiving thread for every tick and collected soon after.
+ *
+ * Patch `p` is the `PATCH_STRIDE` integers from `index[p * PATCH_STRIDE]` on: its series
+ * (`TIME_PATCH` for the time column of the main timeline), level, first row or bucket, number of
+ * them, number of columns, and where its values start in `data`. The values are column-major:
+ * column `c` is `data[offset + c * count, offset + (c + 1) * count)`. `unpackPatches` gives them as
+ * objects.
+ */
+export interface Patches {
+	index: Int32Array;
+	data: Float64Array;
+}
+
+export const PATCH_SERIES = 0;
+export const PATCH_LEVEL = 1;
+export const PATCH_START = 2;
+export const PATCH_COUNT = 3;
+export const PATCH_COLUMNS = 4;
+export const PATCH_OFFSET = 5;
+export const PATCH_STRIDE = 6;
+
+/** Integers per patch in a `PatchSpecs`: series, level, first row or bucket, number of them, columns. */
+export const SPEC_SERIES = 0;
+export const SPEC_LEVEL = 1;
+export const SPEC_START = 2;
+export const SPEC_COUNT = 3;
+export const SPEC_COLUMNS = 4;
+export const SPEC_STRIDE = 5;
+
+/**
+ * The layout of the patches of an event, collected before their buffers are allocated. An engine
+ * keeps one and clears it per event, so collecting allocates nothing once it has grown: an array
+ * emptied with `length = 0` gives its storage back and grows again with every event.
+ */
+export class PatchSpecs {
+	/** `SPEC_STRIDE` integers per patch; only the first `length` are meaningful. */
+	public values = new Int32Array(SPEC_STRIDE * 64);
+	public length = 0;
+
+	public push(series: number, level: number, start: number, count: number, columns: number): void {
+		let values = this.values;
+		const at = this.length;
+		if (at === values.length) {
+			values = new Int32Array(values.length * 2);
+			values.set(this.values);
+			this.values = values;
+		}
+		values[at + SPEC_SERIES] = series;
+		values[at + SPEC_LEVEL] = level;
+		values[at + SPEC_START] = start;
+		values[at + SPEC_COUNT] = count;
+		values[at + SPEC_COLUMNS] = columns;
+		this.length = at + SPEC_STRIDE;
+	}
+
+	public clear(): void {
+		this.length = 0;
+	}
+}
+
+/** Packs patches given as objects, in their order. */
+export function packPatches(list: readonly Patch[]): Patches {
+	let total = 0;
+	for (const patch of list) {
+		total += patch.data.length;
+	}
+	const index = new Int32Array(list.length * PATCH_STRIDE);
+	const data = new Float64Array(total);
+	let offset = 0;
+	for (let i = 0; i < list.length; i++) {
+		const patch = list[i]!;
+		const p = i * PATCH_STRIDE;
+		index[p + PATCH_SERIES] = patch.series;
+		index[p + PATCH_LEVEL] = patch.level;
+		index[p + PATCH_START] = patch.start;
+		index[p + PATCH_COUNT] = patch.count;
+		index[p + PATCH_COLUMNS] = patch.count === 0 ? 0 : patch.data.length / patch.count;
+		index[p + PATCH_OFFSET] = offset;
+		data.set(patch.data, offset);
+		offset += patch.data.length;
+	}
+	return { index, data };
+}
+
+/** The patches of an event as objects, each with a view of its values; none for `undefined`. */
+export function unpackPatches(patches: Patches | undefined): Patch[] {
+	const list: Patch[] = [];
+	if (patches === undefined) {
+		return list;
+	}
+	const { index, data } = patches;
+	for (let p = 0; p < index.length; p += PATCH_STRIDE) {
+		const count = index[p + PATCH_COUNT]!;
+		const offset = index[p + PATCH_OFFSET]!;
+		list.push({
+			series: index[p + PATCH_SERIES]!,
+			level: index[p + PATCH_LEVEL]!,
+			start: index[p + PATCH_START]!,
+			count,
+			data: data.subarray(offset, offset + count * index[p + PATCH_COLUMNS]!),
+		});
+	}
+	return list;
+}
 
 export interface EngineEvent {
 	/** Id of the engine the event comes from, set by a worker host (see `HostMessage`). */
@@ -270,6 +381,8 @@ export interface EngineEvent {
 	window?: WindowSnapshot;
 	/** Changed rows of the raw level and the changed buckets of every coarse level. */
 	patches?: Patch[];
+	/** Packed representation when requested by the client. */
+	packedPatches?: Patches;
 	/**
 	 * Rows the engine needs fetched again: a raw window over them, or an operation that needs them,
 	 * waits until they are back (or fetching failed) and comes with a later event.
@@ -313,7 +426,7 @@ export interface ReadyMessage {
 export function transferables(event: EngineEvent): ArrayBuffer[] {
 	const list: ArrayBuffer[] = [];
 	const add = (buffer: ArrayBuffer): void => {
-		// Patches share buffers, and a buffer listed twice makes `postMessage` throw.
+		// A buffer listed twice makes `postMessage` throw.
 		if (!list.includes(buffer)) {
 			list.push(buffer);
 		}
@@ -324,6 +437,10 @@ export function transferables(event: EngineEvent): ArrayBuffer[] {
 		for (const block of window.series) {
 			add(block.data.buffer as ArrayBuffer);
 		}
+	}
+	if (event.packedPatches !== undefined) {
+		add(event.packedPatches.index.buffer as ArrayBuffer);
+		add(event.packedPatches.data.buffer as ArrayBuffer);
 	}
 	if (event.patches !== undefined) {
 		for (const patch of event.patches) {

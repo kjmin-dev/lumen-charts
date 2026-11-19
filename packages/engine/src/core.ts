@@ -5,7 +5,20 @@ import {
 	type Command,
 	type EngineEvent,
 	type FetchRequest,
-	type Patch,
+	PATCH_COLUMNS,
+	PATCH_COUNT,
+	PATCH_LEVEL,
+	PATCH_OFFSET,
+	PATCH_SERIES,
+	PATCH_START,
+	PATCH_STRIDE,
+	PatchSpecs,
+	SPEC_COLUMNS,
+	SPEC_COUNT,
+	SPEC_LEVEL,
+	SPEC_SERIES,
+	SPEC_START,
+	SPEC_STRIDE,
 	type RestoreResult,
 	type SeriesKind,
 	TICK_STRIDE,
@@ -15,6 +28,7 @@ import {
 	levelColumnCount,
 	levelCount,
 	levelShift,
+	unpackPatches,
 	valueColumnCount,
 } from './protocol';
 import { LINE_AGGREGATES, OHLCV_AGGREGATES, Pyramid, TIME_AGGREGATES, aggregate, storeBuckets } from './pyramid';
@@ -147,14 +161,6 @@ interface Candidate {
 	readonly bytes: number;
 }
 
-/** Patch layout collected before one buffer is allocated for all patches of an event. */
-const SPEC_SERIES = 0;
-const SPEC_LEVEL = 1;
-const SPEC_START = 2;
-const SPEC_COUNT = 3;
-const SPEC_COLUMNS = 4;
-const SPEC_STRIDE = 5;
-
 /**
  * The data engine: the only owner of history.
  *
@@ -195,8 +201,9 @@ export class EngineCore {
 	private _values = new Float64Array(0);
 	private readonly _sources: Float64Array[] = [];
 	private readonly _bases: number[] = [];
-	/** Reused patch bookkeeping. */
-	private readonly _specs: number[] = [];
+	/** Reused patch bookkeeping: the layout of the patches of the event in the making, and ranges being merged. */
+	private _packedPatches = false;
+	private readonly _specs = new PatchSpecs();
 	private readonly _ranges: number[] = [];
 	/** State before a batch of changes, see `_beginChanges`. */
 	private _changeMain: SeriesState | null = null;
@@ -276,6 +283,9 @@ export class EngineCore {
 
 	public *run(command: Command): Generator<undefined, EngineEvent, undefined> {
 		const event: EngineEvent = { ack: command.seq, epoch: 0, first: 0, end: 0, stale: false, rejected: 0 };
+		if (command.packedPatches) {
+			this._packedPatches = true;
+		}
 		this._running = true;
 		try {
 			yield* this._command(command, event);
@@ -459,7 +469,7 @@ export class EngineCore {
 	 * answered.
 	 */
 	public takeNotice(): EngineEvent | null {
-		this._specs.length = 0;
+		this._specs.clear();
 		const swapped = this._indicators.takeNotice(this._specs);
 		const plugins = this._indicators.takePlugins();
 		const { fetch, cancel } = this._background;
@@ -568,6 +578,10 @@ export class EngineCore {
 	/** Fills in the extent of the main timeline and the indicators still computing. */
 	private _finish(event: EngineEvent): void {
 		const main = this._main;
+		if (!this._packedPatches && event.packedPatches !== undefined) {
+			event.patches = unpackPatches(event.packedPatches);
+			delete event.packedPatches;
+		}
 		event.epoch = this._epoch;
 		if (main !== null) {
 			event.first = main.store.first;
@@ -1088,7 +1102,7 @@ export class EngineCore {
 		this._growLevels();
 
 		const specs = this._specs;
-		specs.length = 0;
+		specs.clear();
 		// The main series goes first: its time patches tell the client which rows exist.
 		this._specRuns(main, true);
 		for (const other of series.values()) {
@@ -1130,15 +1144,16 @@ export class EngineCore {
 	 * `[extraFrom, extraTo)`. Ranges that meet in the same bucket become one patch.
 	 */
 	private _specLevel(level: number, series: number, runs: readonly number[], extraFrom: number, extraTo: number): void {
+		// Kept at the length it grew to, with the count beside it: emptied, it would grow again per call.
 		const ranges = this._ranges;
-		ranges.length = 0;
+		let length = 0;
 		for (let r = 0; r < runs.length; r += 2) {
-			insertRange(ranges, runs[r]!, runs[r + 1]!);
+			length = insertRange(ranges, length, runs[r]!, runs[r + 1]!);
 		}
 		if (extraTo > extraFrom) {
-			insertRange(ranges, extraFrom, extraTo);
+			length = insertRange(ranges, length, extraFrom, extraTo);
 		}
-		if (ranges.length === 0) {
+		if (length === 0) {
 			return;
 		}
 		const shift = levelShift(level);
@@ -1146,7 +1161,7 @@ export class EngineCore {
 		const specs = this._specs;
 		let lo = ranges[0]! >> shift;
 		let hi = ((ranges[1]! - 1) >> shift) + 1;
-		for (let r = 2; r < ranges.length; r += 2) {
+		for (let r = 2; r < length; r += 2) {
 			const from = ranges[r]! >> shift;
 			const to = ((ranges[r + 1]! - 1) >> shift) + 1;
 			if (from <= hi) {
@@ -1163,7 +1178,7 @@ export class EngineCore {
 	/** Patches of the first bucket of every level after history was prepended in front of `oldFirst`. */
 	private _boundaryPatches(oldFirst: number, event: EngineEvent): void {
 		const specs = this._specs;
-		specs.length = 0;
+		specs.clear();
 		for (let level = 1; level <= this._levels; level++) {
 			const shift = levelShift(level);
 			// A prepend that is a multiple of the bucket size only adds whole buckets.
@@ -1179,54 +1194,68 @@ export class EngineCore {
 		this._emit(event);
 	}
 
-	/** Turns the collected specs into patches that share one buffer, after any patches the event has. */
+	/** Packs the patches the collected specs describe into the event, after any patches it has. */
 	private _emit(event: EngineEvent): void {
-		const specs = this._specs;
-		if (specs.length === 0) {
+		const length = this._specs.length;
+		if (length === 0) {
 			return;
 		}
+		const specs = this._specs.values;
 		let total = 0;
-		for (let s = 0; s < specs.length; s += SPEC_STRIDE) {
+		for (let s = 0; s < length; s += SPEC_STRIDE) {
 			total += specs[s + SPEC_COUNT]! * specs[s + SPEC_COLUMNS]!;
 		}
-		const buffer = new Float64Array(total);
-		const patches: Patch[] = event.patches ?? [];
+		// Two buffers for the whole event, and no object or view per patch (see `Patches`).
+		const before = event.packedPatches;
+		const indexBefore = before === undefined ? 0 : before.index.length;
+		let offset = before === undefined ? 0 : before.data.length;
+		const index = new Int32Array(indexBefore + (length / SPEC_STRIDE) * PATCH_STRIDE);
+		const data = new Float64Array(offset + total);
+		if (before !== undefined) {
+			index.set(before.index);
+			data.set(before.data);
+		}
 		const main = this._main!;
-		let offset = 0;
-		for (let s = 0; s < specs.length; s += SPEC_STRIDE) {
+		let p = indexBefore;
+		for (let s = 0; s < length; s += SPEC_STRIDE) {
 			const series = specs[s + SPEC_SERIES]!;
 			const level = specs[s + SPEC_LEVEL]!;
 			const start = specs[s + SPEC_START]!;
 			const count = specs[s + SPEC_COUNT]!;
 			const columns = specs[s + SPEC_COLUMNS]!;
-			const data = buffer.subarray(offset, offset + count * columns);
 			if (this._indicators.owns(series)) {
-				this._indicators.copy(series, level, start, count, data);
+				this._indicators.copy(series, level, start, count, data, offset);
 			} else if (level === 0) {
 				if (series === TIME_PATCH) {
-					main.store.copyColumn(TIME, start, start + count, data, 0);
+					main.store.copyColumn(TIME, start, start + count, data, offset);
 				} else {
 					const state = this._series.get(series)!;
 					if (state === main) {
 						for (let c = 0; c < columns; c++) {
-							main.store.copyColumn(c + 1, start, start + count, data, c * count);
+							main.store.copyColumn(c + 1, start, start + count, data, offset + c * count);
 						}
 					} else {
-						this._aligned(state, start, start + count, data, count);
+						this._aligned(state, start, start + count, data.subarray(offset, offset + count * columns), count);
 					}
 				}
 			} else {
 				const pyramid = series === TIME_PATCH ? this._time : this._series.get(series)!.pyramid;
 				const store = pyramid.levels[level - 1]!;
 				for (let c = 0; c < columns; c++) {
-					store.copyColumn(c, start, start + count, data, c * count);
+					store.copyColumn(c, start, start + count, data, offset + c * count);
 				}
 			}
-			patches.push({ series, level, start, count, data });
+			index[p + PATCH_SERIES] = series;
+			index[p + PATCH_LEVEL] = level;
+			index[p + PATCH_START] = start;
+			index[p + PATCH_COUNT] = count;
+			index[p + PATCH_COLUMNS] = columns;
+			index[p + PATCH_OFFSET] = offset;
+			p += PATCH_STRIDE;
 			offset += count * columns;
 		}
-		specs.length = 0;
-		event.patches = patches;
+		this._specs.clear();
+		event.packedPatches = { index, data };
 	}
 
 	/** Index of the main bar a time belongs to: the last bar at or before it. */
@@ -3154,10 +3183,12 @@ function removeWhere<T>(list: T[], match: (entry: T) => boolean): void {
 	list.length = kept;
 }
 
-/** Inserts `[from, to)` into a list of ranges kept sorted by start (lists hold a few entries). */
-function insertRange(ranges: number[], from: number, to: number): void {
-	let i = ranges.length;
-	ranges.push(from, to);
+/**
+ * Inserts `[from, to)` into the first `length` numbers of `ranges`, a list of ranges kept sorted by
+ * start (lists hold a few entries), and returns its new length. `ranges` may be longer than that.
+ */
+function insertRange(ranges: number[], length: number, from: number, to: number): number {
+	let i = length;
 	while (i > 0 && ranges[i - 2]! > from) {
 		ranges[i] = ranges[i - 2]!;
 		ranges[i + 1] = ranges[i - 1]!;
@@ -3165,4 +3196,5 @@ function insertRange(ranges: number[], from: number, to: number): void {
 	}
 	ranges[i] = from;
 	ranges[i + 1] = to;
+	return length + 2;
 }

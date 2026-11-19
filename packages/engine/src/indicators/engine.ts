@@ -1,5 +1,12 @@
 import { CHUNK_ROWS, CHUNK_SHIFT } from '../chunk';
-import { type IndicatorInputRef, type PluginResult, type SeriesBlock, levelCount, levelShift } from '../protocol';
+import {
+	type IndicatorInputRef,
+	type PatchSpecs,
+	type PluginResult,
+	type SeriesBlock,
+	levelCount,
+	levelShift,
+} from '../protocol';
 import { FIRST, LAST, MAX, MIN, Pyramid, aggregate, storeBuckets } from '../pyramid';
 import { ChunkedStore } from '../store';
 import { BUILTIN_INDICATORS } from './builtins';
@@ -476,7 +483,7 @@ export class IndicatorEngine {
 	 * every changed output to `specs` (series, level, start, count, columns). `endBefore` is the end of
 	 * the main timeline before the batch.
 	 */
-	public ticks(endBefore: number, specs: number[]): void {
+	public ticks(endBefore: number, specs: PatchSpecs | number[]): void {
 		const host = this._host;
 		const end = host.end();
 		for (const instance of this._instances) {
@@ -553,7 +560,7 @@ export class IndicatorEngine {
 	 * Specs of a notice after values were swapped in: the latest row of each swapped output, so the
 	 * last-value label follows. Returns false when there is nothing to report.
 	 */
-	public takeNotice(specs: number[]): boolean {
+	public takeNotice(specs: PatchSpecs | number[]): boolean {
 		if (!this._swapped) {
 			return false;
 		}
@@ -585,14 +592,17 @@ export class IndicatorEngine {
 		}
 	}
 
-	/** Copies rows (or buckets) `[start, start + count)` of a derived series at `level` into `data`. */
-	public copy(series: number, level: number, start: number, count: number, data: Float64Array): void {
+	/**
+	 * Copies rows (or buckets) `[start, start + count)` of a derived series at `level` into `data`
+	 * from `offset` on, column after column.
+	 */
+	public copy(series: number, level: number, start: number, count: number, data: Float64Array, offset = 0): void {
 		const entry = this._byOutput.get(series);
 		if (entry === undefined) {
-			data.fill(NaN);
+			data.fill(NaN, offset, offset + count * (level === 0 ? 1 : 4));
 			return;
 		}
-		this._copy(entry.instance, entry.index, level, start, start + count, data, count);
+		this._copy(entry.instance, entry.index, level, start, start + count, data, count, offset);
 	}
 
 	// Internals
@@ -877,7 +887,10 @@ export class IndicatorEngine {
 		}
 	}
 
-	/** Copies output `index` at `level` over `[from, to)` into `data`, whose columns are `stride` long. */
+	/**
+	 * Copies output `index` at `level` over `[from, to)` into `data` from `offset` on, in columns
+	 * `stride` long.
+	 */
 	private _copy(
 		instance: Instance,
 		index: number,
@@ -886,19 +899,20 @@ export class IndicatorEngine {
 		to: number,
 		data: Float64Array,
 		stride: number,
+		offset = 0,
 	): void {
 		if (level === 0) {
-			this._copyRows(instance.store, index, from, to, data, 0);
+			this._copyRows(instance.store, index, from, to, data, offset);
 			return;
 		}
 		const store = instance.pyramid.levels[level - 1] ?? null;
 		for (let c = 0; c < 4; c++) {
-			this._copyRows(store, 4 * index + c, from, to, data, c * stride);
+			this._copyRows(store, 4 * index + c, from, to, data, offset + c * stride);
 		}
 	}
 
 	/** Adds the patch specs of every output of an instance for rows `[from, end)`. */
-	private _specs(instance: Instance, from: number, end: number, specs: number[]): void {
+	private _specs(instance: Instance, from: number, end: number, specs: PatchSpecs | number[]): void {
 		const levels = instance.pyramid.levels.length;
 		for (const series of instance.outputs) {
 			specs.push(series, 0, from, end - from, 1);

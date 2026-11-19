@@ -1,0 +1,5168 @@
+{
+	"before": [
+		{
+			"run": "tick/candles-1m/latest/lumen-worker#1",
+			"summary": {
+				"windowMs": 1661.546,
+				"ticks": 10000,
+				"bytes": 3166608,
+				"bytesPerTick": 317,
+				"ownersPerTick": {
+					"library": 187,
+					"harness": 129,
+					"other scripts": 0,
+					"outside JavaScript": 1
+				},
+				"owners": {
+					"library": 1873172,
+					"harness": 1288136,
+					"other scripts": 0,
+					"outside JavaScript": 5300
+				},
+				"sites": [
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 959380
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 671568
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/engine/src/pool.ts",
+						"owner": "library",
+						"bytes": 294512
+					},
+					{
+						"function": "runTick",
+						"source": "benchmarks/src/scenarios/tick.ts",
+						"owner": "harness",
+						"bytes": 254460
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 138076
+					},
+					{
+						"function": "applyPatches",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 118444
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 88632
+					},
+					{
+						"function": "_trackLastValues",
+						"source": "benchmarks/results/baseline/packages/core/src/data/data-flow.ts",
+						"owner": "library",
+						"bytes": 66204
+					},
+					{
+						"function": "nextChange",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 46356
+					},
+					{
+						"function": "valueToY",
+						"source": "benchmarks/results/baseline/packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 37080
+					},
+					{
+						"function": "updateTicks",
+						"source": "benchmarks/results/baseline/packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 35076
+					},
+					{
+						"function": "typicalInterval",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 35016
+					},
+					{
+						"function": "drawTimeAxis",
+						"source": "benchmarks/results/baseline/packages/core/src/render/chrome.ts",
+						"owner": "library",
+						"bytes": 35016
+					},
+					{
+						"function": "clockLabel",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-format.ts",
+						"owner": "library",
+						"bytes": 22656
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 19812
+					},
+					{
+						"function": "settle",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 18800
+					},
+					{
+						"function": "_flushTicks",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 17804
+					},
+					{
+						"function": "wall",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 17520
+					},
+					{
+						"function": "xToLogical",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 15444
+					},
+					{
+						"function": "apply",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 14484
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 14468
+					},
+					{
+						"function": "nextTask",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 13640
+					},
+					{
+						"function": "whenIdle",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 11596
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 11388
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 10640
+					},
+					{
+						"function": "rowsFrom",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 10296
+					},
+					{
+						"function": "get to",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 10296
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/axes.ts",
+						"owner": "library",
+						"bytes": 9324
+					},
+					{
+						"function": "plan",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 9264
+					},
+					{
+						"function": "requestFrame",
+						"source": "benchmarks/results/baseline/packages/core/src/shared/frame.ts",
+						"owner": "library",
+						"bytes": 8512
+					}
+				],
+				"minor": {
+					"count": 2,
+					"totalMs": 0.5529999999999999,
+					"maxMs": 0.282,
+					"freedBytes": 1504652
+				},
+				"major": {
+					"count": 1,
+					"totalMs": 0.561,
+					"maxMs": 0.561,
+					"freedBytes": 1105008
+				}
+			}
+		},
+		{
+			"run": "tick/candles-1m/latest/lumen-main#1",
+			"summary": {
+				"windowMs": 1663.502,
+				"ticks": 10000,
+				"bytes": 3441820,
+				"bytesPerTick": 344,
+				"ownersPerTick": {
+					"library": 216,
+					"harness": 127,
+					"other scripts": 0,
+					"outside JavaScript": 1
+				},
+				"owners": {
+					"library": 2163476,
+					"harness": 1270072,
+					"other scripts": 0,
+					"outside JavaScript": 8272
+				},
+				"sites": [
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 941460
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 570624
+					},
+					{
+						"function": "runTick",
+						"source": "benchmarks/src/scenarios/tick.ts",
+						"owner": "harness",
+						"bytes": 249272
+					},
+					{
+						"function": "_emit",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 206876
+					},
+					{
+						"function": "_specLevel",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 184508
+					},
+					{
+						"function": "applyPatches",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 131056
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 121596
+					},
+					{
+						"function": "_tick",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 120516
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 89728
+					},
+					{
+						"function": "_trackLastValues",
+						"source": "benchmarks/results/baseline/packages/core/src/data/data-flow.ts",
+						"owner": "library",
+						"bytes": 50676
+					},
+					{
+						"function": "_ticks",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 40400
+					},
+					{
+						"function": "typicalInterval",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 37080
+					},
+					{
+						"function": "_endChanges",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 36180
+					},
+					{
+						"function": "nextChange",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 36048
+					},
+					{
+						"function": "insertRange",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 34104
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 33116
+					},
+					{
+						"function": "valueToY",
+						"source": "benchmarks/results/baseline/packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 27816
+					},
+					{
+						"function": "updateTicks",
+						"source": "benchmarks/results/baseline/packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 25800
+					},
+					{
+						"function": "xToLogical",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 22656
+					},
+					{
+						"function": "drawTimeAxis",
+						"source": "benchmarks/results/baseline/packages/core/src/render/chrome.ts",
+						"owner": "library",
+						"bytes": 21636
+					},
+					{
+						"function": "_flushTicks",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 18900
+					},
+					{
+						"function": "clockLabel",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-format.ts",
+						"owner": "library",
+						"bytes": 18540
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 17588
+					},
+					{
+						"function": "settle",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 15716
+					},
+					{
+						"function": "get to",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 14424
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 13832
+					},
+					{
+						"function": "run",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 13604
+					},
+					{
+						"function": "post",
+						"source": "benchmarks/results/baseline/packages/engine/src/host.ts",
+						"owner": "library",
+						"bytes": 12768
+					},
+					{
+						"function": "get busy",
+						"source": "benchmarks/results/baseline/packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 12408
+					},
+					{
+						"function": "wall",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 12360
+					}
+				],
+				"minor": {
+					"count": 2,
+					"totalMs": 0.681,
+					"maxMs": 0.382,
+					"freedBytes": 3318308
+				},
+				"major": {
+					"count": 1,
+					"totalMs": 0.655,
+					"maxMs": 0.655,
+					"freedBytes": 1228088
+				}
+			}
+		},
+		{
+			"run": "tick/candles-1m/all/lumen-worker#1",
+			"summary": {
+				"windowMs": 1652.967,
+				"ticks": 10000,
+				"bytes": 3082420,
+				"bytesPerTick": 308,
+				"ownersPerTick": {
+					"library": 183,
+					"harness": 124,
+					"other scripts": 0,
+					"outside JavaScript": 1
+				},
+				"owners": {
+					"library": 1834984,
+					"harness": 1235752,
+					"other scripts": 0,
+					"outside JavaScript": 11684
+				},
+				"sites": [
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 938068
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 566508
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/engine/src/pool.ts",
+						"owner": "library",
+						"bytes": 331620
+					},
+					{
+						"function": "runTick",
+						"source": "benchmarks/src/scenarios/tick.ts",
+						"owner": "harness",
+						"bytes": 235880
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 104224
+					},
+					{
+						"function": "applyPatches",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 84792
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 79344
+					},
+					{
+						"function": "firstAtOrAfter",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 44292
+					},
+					{
+						"function": "_trackLastValues",
+						"source": "benchmarks/results/baseline/packages/core/src/data/data-flow.ts",
+						"owner": "library",
+						"bytes": 43416
+					},
+					{
+						"function": "updateTicks",
+						"source": "benchmarks/results/baseline/packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 40220
+					},
+					{
+						"function": "valueToY",
+						"source": "benchmarks/results/baseline/packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 35016
+					},
+					{
+						"function": "typicalInterval",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 33996
+					},
+					{
+						"function": "civil",
+						"source": "benchmarks/results/baseline/packages/core/src/model/calendar.ts",
+						"owner": "library",
+						"bytes": 28848
+					},
+					{
+						"function": "apply",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 24856
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 20816
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 19616
+					},
+					{
+						"function": "xToLogical",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 19572
+					},
+					{
+						"function": "drawTimeAxis",
+						"source": "benchmarks/results/baseline/packages/core/src/render/chrome.ts",
+						"owner": "library",
+						"bytes": 18540
+					},
+					{
+						"function": "wall",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 17508
+					},
+					{
+						"function": "_flushTicks",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 16828
+					},
+					{
+						"function": "daysFromCivil",
+						"source": "benchmarks/results/baseline/packages/core/src/model/calendar.ts",
+						"owner": "library",
+						"bytes": 16488
+					},
+					{
+						"function": "_weigh",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 16476
+					},
+					{
+						"function": "match",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 15456
+					},
+					{
+						"function": "whenIdle",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 14792
+					},
+					{
+						"function": "settle",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 14676
+					},
+					{
+						"function": "floorToStep",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 13392
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 12420
+					},
+					{
+						"function": "clearDirty",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 12404
+					},
+					{
+						"function": "placeElements",
+						"source": "benchmarks/results/baseline/packages/core/src/views/series-view.ts",
+						"owner": "library",
+						"bytes": 12360
+					},
+					{
+						"function": "nextBoundary",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 12360
+					}
+				],
+				"minor": {
+					"count": 3,
+					"totalMs": 1.05,
+					"maxMs": 0.404,
+					"freedBytes": 2998800
+				},
+				"major": {
+					"count": 1,
+					"totalMs": 0.469,
+					"maxMs": 0.469,
+					"freedBytes": 216132
+				}
+			}
+		},
+		{
+			"run": "tick/candles-1m/all/lumen-main#1",
+			"summary": {
+				"windowMs": 1662.491,
+				"ticks": 10000,
+				"bytes": 3628348,
+				"bytesPerTick": 363,
+				"ownersPerTick": {
+					"library": 230,
+					"harness": 132,
+					"other scripts": 0,
+					"outside JavaScript": 1
+				},
+				"owners": {
+					"library": 2304524,
+					"harness": 1317584,
+					"other scripts": 0,
+					"outside JavaScript": 6240
+				},
+				"sites": [
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 984128
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 630372
+					},
+					{
+						"function": "runTick",
+						"source": "benchmarks/src/scenarios/tick.ts",
+						"owner": "harness",
+						"bytes": 241080
+					},
+					{
+						"function": "_emit",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 213252
+					},
+					{
+						"function": "_specLevel",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 169748
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 117632
+					},
+					{
+						"function": "_tick",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 108156
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 106200
+					},
+					{
+						"function": "applyPatches",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 79664
+					},
+					{
+						"function": "_ticks",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 66768
+					},
+					{
+						"function": "_trackLastValues",
+						"source": "benchmarks/results/baseline/packages/core/src/data/data-flow.ts",
+						"owner": "library",
+						"bytes": 51700
+					},
+					{
+						"function": "_endChanges",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 50660
+					},
+					{
+						"function": "insertRange",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 37296
+					},
+					{
+						"function": "updateTicks",
+						"source": "benchmarks/results/baseline/packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 36088
+					},
+					{
+						"function": "typicalInterval",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 33996
+					},
+					{
+						"function": "valueToY",
+						"source": "benchmarks/results/baseline/packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 30900
+					},
+					{
+						"function": "firstAtOrAfter",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 26784
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 26420
+					},
+					{
+						"function": "settle",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 25232
+					},
+					{
+						"function": "wall",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 23700
+					},
+					{
+						"function": "_weigh",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 23688
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 20636
+					},
+					{
+						"function": "civil",
+						"source": "benchmarks/results/baseline/packages/core/src/model/calendar.ts",
+						"owner": "library",
+						"bytes": 20616
+					},
+					{
+						"function": "run",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 18868
+					},
+					{
+						"function": "_flushTicks",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 18868
+					},
+					{
+						"function": "_segment",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 18540
+					},
+					{
+						"function": "xToLogical",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 17520
+					},
+					{
+						"function": "drawTimeAxis",
+						"source": "benchmarks/results/baseline/packages/core/src/render/chrome.ts",
+						"owner": "library",
+						"bytes": 17508
+					},
+					{
+						"function": "nextTask",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 16764
+					},
+					{
+						"function": "get busy",
+						"source": "benchmarks/results/baseline/packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 16576
+					}
+				],
+				"minor": {
+					"count": 2,
+					"totalMs": 0.714,
+					"maxMs": 0.368,
+					"freedBytes": 3136412
+				},
+				"major": {
+					"count": 1,
+					"totalMs": 0.67,
+					"maxMs": 0.67,
+					"freedBytes": 312228
+				}
+			}
+		},
+		{
+			"run": "ind-apply/candles-1m/latest/20/lumen-worker#1",
+			"summary": {
+				"windowMs": 5000.198,
+				"ticks": 3488,
+				"bytes": 269030672,
+				"bytesPerTick": 77130,
+				"ownersPerTick": {
+					"library": 45256,
+					"harness": 30170,
+					"other scripts": 0,
+					"outside JavaScript": 1705
+				},
+				"owners": {
+					"library": 157851452,
+					"harness": 105231576,
+					"other scripts": 0,
+					"outside JavaScript": 5947644
+				},
+				"sites": [
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/engine/src/pool.ts",
+						"owner": "library",
+						"bytes": 152349992
+					},
+					{
+						"function": "runApply",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 61588676
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 42935764
+					},
+					{
+						"function": "(outside JavaScript)",
+						"source": null,
+						"owner": "outside JavaScript",
+						"bytes": 5947644
+					},
+					{
+						"function": "_flushTicks",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 858932
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 595460
+					},
+					{
+						"function": "whenApplied",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 526848
+					},
+					{
+						"function": "applyPatches",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 518700
+					},
+					{
+						"function": "apply",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 441864
+					},
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 429856
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 297520
+					},
+					{
+						"function": "_settleApplied",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 293728
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 275332
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 268888
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 251944
+					},
+					{
+						"function": "_includeSeries",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 191580
+					},
+					{
+						"function": "formatPrice",
+						"source": "benchmarks/results/baseline/packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 177552
+					},
+					{
+						"function": "nextUint32",
+						"source": "benchmarks/src/data.ts",
+						"owner": "harness",
+						"bytes": 151416
+					},
+					{
+						"function": "valueLabel",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 98880
+					},
+					{
+						"function": "nextChange",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 87552
+					},
+					{
+						"function": "tick",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 80392
+					},
+					{
+						"function": "_post",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 55840
+					},
+					{
+						"function": "channel.port1.addEventListener.once",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 50892
+					},
+					{
+						"function": "updateTicks",
+						"source": "benchmarks/results/baseline/packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 46408
+					},
+					{
+						"function": "deviceY",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 39144
+					},
+					{
+						"function": "plan",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 28848
+					},
+					{
+						"function": "drawTimeAxis",
+						"source": "benchmarks/results/baseline/packages/core/src/render/chrome.ts",
+						"owner": "library",
+						"bytes": 25752
+					},
+					{
+						"function": "clearDirty",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 24792
+					},
+					{
+						"function": "fixed",
+						"source": "benchmarks/results/baseline/packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 24752
+					},
+					{
+						"function": "runTimed",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 22656
+					}
+				],
+				"minor": {
+					"count": 5,
+					"totalMs": 14.454,
+					"maxMs": 4.418,
+					"freedBytes": 18070192
+				},
+				"major": {
+					"count": 25,
+					"totalMs": 327.1280000000001,
+					"maxMs": 25.725,
+					"freedBytes": 252183184
+				}
+			}
+		},
+		{
+			"run": "ind-apply/candles-1m/latest/20/lumen-main#1",
+			"summary": {
+				"windowMs": 5000.263,
+				"ticks": 3633,
+				"bytes": 289089164,
+				"bytesPerTick": 79573,
+				"ownersPerTick": {
+					"library": 47795,
+					"harness": 30048,
+					"other scripts": 0,
+					"outside JavaScript": 1729
+				},
+				"owners": {
+					"library": 173640828,
+					"harness": 109165172,
+					"other scripts": 0,
+					"outside JavaScript": 6283164
+				},
+				"sites": [
+					{
+						"function": "_emit",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 94155092
+					},
+					{
+						"function": "runApply",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 63690876
+					},
+					{
+						"function": "ticks",
+						"source": "benchmarks/results/baseline/packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 48610248
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 44811312
+					},
+					{
+						"function": "_specs",
+						"source": "benchmarks/results/baseline/packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 11071880
+					},
+					{
+						"function": "_specLevel",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 7072880
+					},
+					{
+						"function": "(outside JavaScript)",
+						"source": null,
+						"owner": "outside JavaScript",
+						"bytes": 6283164
+					},
+					{
+						"function": "_endChanges",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 2221100
+					},
+					{
+						"function": "get pending",
+						"source": "benchmarks/results/baseline/packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 1032052
+					},
+					{
+						"function": "_flushTicks",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 790772
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 589260
+					},
+					{
+						"function": "run",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 585864
+					},
+					{
+						"function": "applyPatches",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 584100
+					},
+					{
+						"function": "_ticks",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 566636
+					},
+					{
+						"function": "_command",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 555952
+					},
+					{
+						"function": "whenApplied",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 477416
+					},
+					{
+						"function": "apply",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 451176
+					},
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 392300
+					},
+					{
+						"function": "_specRuns",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 366500
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/views/series-view.ts",
+						"owner": "library",
+						"bytes": 321360
+					},
+					{
+						"function": "markDirty",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 302988
+					},
+					{
+						"function": "_settleApplied",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 289612
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 281580
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 273224
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 268572
+					},
+					{
+						"function": "_beginChanges",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 248200
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 231348
+					},
+					{
+						"function": "_post",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 227392
+					},
+					{
+						"function": "_drain",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 225896
+					},
+					{
+						"function": "_busyWaiting",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 210960
+					}
+				],
+				"minor": {
+					"count": 15,
+					"totalMs": 103.643,
+					"maxMs": 13.412,
+					"freedBytes": 225186712
+				},
+				"major": {
+					"count": 2,
+					"totalMs": 459.65999999999997,
+					"maxMs": 373.859,
+					"freedBytes": 64091368
+				}
+			}
+		},
+		{
+			"run": "ind-apply/candles-1m/all/20/lumen-worker#1",
+			"summary": {
+				"windowMs": 5000.525,
+				"ticks": 3374,
+				"bytes": 262606948,
+				"bytesPerTick": 77833,
+				"ownersPerTick": {
+					"library": 45555,
+					"harness": 30553,
+					"other scripts": 0,
+					"outside JavaScript": 1725
+				},
+				"owners": {
+					"library": 153700884,
+					"harness": 103086080,
+					"other scripts": 0,
+					"outside JavaScript": 5819984
+				},
+				"sites": [
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/engine/src/pool.ts",
+						"owner": "library",
+						"bytes": 146613364
+					},
+					{
+						"function": "runApply",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 60060064
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 42360456
+					},
+					{
+						"function": "(outside JavaScript)",
+						"source": null,
+						"owner": "outside JavaScript",
+						"bytes": 5819984
+					},
+					{
+						"function": "applyPatches",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 1257492
+					},
+					{
+						"function": "apply",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 874088
+					},
+					{
+						"function": "_flushTicks",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 803000
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 645296
+					},
+					{
+						"function": "whenApplied",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 473216
+					},
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 389656
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 308616
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 288184
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 269876
+					},
+					{
+						"function": "_settleApplied",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 259652
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 250856
+					},
+					{
+						"function": "formatPrice",
+						"source": "benchmarks/results/baseline/packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 228132
+					},
+					{
+						"function": "_includeSeries",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 174076
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 150824
+					},
+					{
+						"function": "nextUint32",
+						"source": "benchmarks/src/data.ts",
+						"owner": "harness",
+						"bytes": 140076
+					},
+					{
+						"function": "valueLabel",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 90636
+					},
+					{
+						"function": "tick",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 87600
+					},
+					{
+						"function": "xToLogical",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 74172
+					},
+					{
+						"function": "firstAtOrAfter",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 64896
+					},
+					{
+						"function": "channel.port1.addEventListener.once",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 63608
+					},
+					{
+						"function": "requestWindow",
+						"source": "benchmarks/results/baseline/packages/core/src/data/data-flow.ts",
+						"owner": "library",
+						"bytes": 58716
+					},
+					{
+						"function": "_post",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 54992
+					},
+					{
+						"function": "deviceY",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 47376
+					},
+					{
+						"function": "updateTicks",
+						"source": "benchmarks/results/baseline/packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 43336
+					},
+					{
+						"function": "nextBoundary",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 40176
+					},
+					{
+						"function": "clearDirty",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 38276
+					}
+				],
+				"minor": {
+					"count": 3,
+					"totalMs": 7.649,
+					"maxMs": 4.644,
+					"freedBytes": 10218740
+				},
+				"major": {
+					"count": 24,
+					"totalMs": 320.642,
+					"maxMs": 19.806,
+					"freedBytes": 250968660
+				}
+			}
+		},
+		{
+			"run": "ind-apply/candles-1m/all/20/lumen-main#1",
+			"summary": {
+				"windowMs": 5000.396,
+				"ticks": 3893,
+				"bytes": 311751936,
+				"bytesPerTick": 80080,
+				"ownersPerTick": {
+					"library": 48328,
+					"harness": 30016,
+					"other scripts": 0,
+					"outside JavaScript": 1736
+				},
+				"owners": {
+					"library": 188139592,
+					"harness": 116852432,
+					"other scripts": 0,
+					"outside JavaScript": 6759912
+				},
+				"sites": [
+					{
+						"function": "_emit",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 101140476
+					},
+					{
+						"function": "runApply",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 67860628
+					},
+					{
+						"function": "ticks",
+						"source": "benchmarks/results/baseline/packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 53003400
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 48193036
+					},
+					{
+						"function": "_specs",
+						"source": "benchmarks/results/baseline/packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 11084140
+					},
+					{
+						"function": "_specLevel",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 7711120
+					},
+					{
+						"function": "(outside JavaScript)",
+						"source": null,
+						"owner": "outside JavaScript",
+						"bytes": 6759912
+					},
+					{
+						"function": "_endChanges",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 2293500
+					},
+					{
+						"function": "applyPatches",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 1317400
+					},
+					{
+						"function": "get pending",
+						"source": "benchmarks/results/baseline/packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 1091024
+					},
+					{
+						"function": "apply",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 928944
+					},
+					{
+						"function": "_flushTicks",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 864140
+					},
+					{
+						"function": "_command",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 675716
+					},
+					{
+						"function": "run",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 663228
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 646776
+					},
+					{
+						"function": "_ticks",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 609932
+					},
+					{
+						"function": "whenApplied",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 609152
+					},
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 426280
+					},
+					{
+						"function": "_specRuns",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 393400
+					},
+					{
+						"function": "markDirty",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 324324
+					},
+					{
+						"function": "_settleApplied",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 311356
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 308660
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 302784
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 298536
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 295264
+					},
+					{
+						"function": "_post",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 281580
+					},
+					{
+						"function": "_drain",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 258580
+					},
+					{
+						"function": "_beginChanges",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 240940
+					},
+					{
+						"function": "_busyWaiting",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 219220
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 210120
+					}
+				],
+				"minor": {
+					"count": 14,
+					"totalMs": 97.53,
+					"maxMs": 13.605,
+					"freedBytes": 217788120
+				},
+				"major": {
+					"count": 2,
+					"totalMs": 160.582,
+					"maxMs": 87.165,
+					"freedBytes": 64720080
+				}
+			}
+		}
+	],
+	"harness": [
+		{
+			"run": "tick/candles-1m/latest/lumen-worker#1",
+			"summary": {
+				"windowMs": 1661.909,
+				"ticks": 10000,
+				"bytes": 3162756,
+				"bytesPerTick": 316,
+				"ownersPerTick": {
+					"library": 185,
+					"harness": 130,
+					"other scripts": 0,
+					"outside JavaScript": 1
+				},
+				"owners": {
+					"library": 1845120,
+					"harness": 1304120,
+					"other scripts": 0,
+					"outside JavaScript": 13516
+				},
+				"sites": [
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 960536
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 592260
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/engine/src/pool.ts",
+						"owner": "library",
+						"bytes": 355664
+					},
+					{
+						"function": "runTick",
+						"source": "benchmarks/src/scenarios/tick.ts",
+						"owner": "harness",
+						"bytes": 251416
+					},
+					{
+						"function": "applyPatches",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 131064
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 111304
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 80464
+					},
+					{
+						"function": "nextChange",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 48408
+					},
+					{
+						"function": "_trackLastValues",
+						"source": "benchmarks/results/baseline/packages/core/src/data/data-flow.ts",
+						"owner": "library",
+						"bytes": 47580
+					},
+					{
+						"function": "typicalInterval",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 45324
+					},
+					{
+						"function": "updateTicks",
+						"source": "benchmarks/results/baseline/packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 36056
+					},
+					{
+						"function": "drawTimeAxis",
+						"source": "benchmarks/results/baseline/packages/core/src/render/chrome.ts",
+						"owner": "library",
+						"bytes": 33996
+					},
+					{
+						"function": "xToLogical",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 25764
+					},
+					{
+						"function": "settle",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 24036
+					},
+					{
+						"function": "valueToY",
+						"source": "benchmarks/results/baseline/packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 23688
+					},
+					{
+						"function": "clockLabel",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-format.ts",
+						"owner": "library",
+						"bytes": 22656
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 21140
+					},
+					{
+						"function": "nextTask",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 19964
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 17532
+					},
+					{
+						"function": "whenIdle",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 16760
+					},
+					{
+						"function": "_flushTicks",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 14656
+					},
+					{
+						"function": "(outside JavaScript)",
+						"source": null,
+						"owner": "outside JavaScript",
+						"bytes": 13516
+					},
+					{
+						"function": "rowsFrom",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 13392
+					},
+					{
+						"function": "match",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 12360
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 11408
+					},
+					{
+						"function": "apply",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 11396
+					},
+					{
+						"function": "runTimed",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 11328
+					},
+					{
+						"function": "fitWidths",
+						"source": "benchmarks/results/baseline/packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 10340
+					},
+					{
+						"function": "wall",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 10308
+					},
+					{
+						"function": "_settle",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 9316
+					}
+				],
+				"minor": {
+					"count": 3,
+					"totalMs": 0.937,
+					"maxMs": 0.363,
+					"freedBytes": 2854780
+				},
+				"major": {
+					"count": 1,
+					"totalMs": 0.632,
+					"maxMs": 0.632,
+					"freedBytes": 404160
+				}
+			}
+		},
+		{
+			"run": "tick/candles-1m/latest/lumen-main#1",
+			"summary": {
+				"windowMs": 1653.371,
+				"ticks": 10000,
+				"bytes": 3553340,
+				"bytesPerTick": 355,
+				"ownersPerTick": {
+					"library": 227,
+					"harness": 127,
+					"other scripts": 0,
+					"outside JavaScript": 1
+				},
+				"owners": {
+					"library": 2271240,
+					"harness": 1273764,
+					"other scripts": 0,
+					"outside JavaScript": 8336
+				},
+				"sites": [
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 956140
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 582984
+					},
+					{
+						"function": "_emit",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 229800
+					},
+					{
+						"function": "runTick",
+						"source": "benchmarks/src/scenarios/tick.ts",
+						"owner": "harness",
+						"bytes": 225576
+					},
+					{
+						"function": "_specLevel",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 178776
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 136072
+					},
+					{
+						"function": "applyPatches",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 116428
+					},
+					{
+						"function": "_tick",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 115356
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 82460
+					},
+					{
+						"function": "_ticks",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 59356
+					},
+					{
+						"function": "_endChanges",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 55840
+					},
+					{
+						"function": "_trackLastValues",
+						"source": "benchmarks/results/baseline/packages/core/src/data/data-flow.ts",
+						"owner": "library",
+						"bytes": 45516
+					},
+					{
+						"function": "nextChange",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 43260
+					},
+					{
+						"function": "drawTimeAxis",
+						"source": "benchmarks/results/baseline/packages/core/src/render/chrome.ts",
+						"owner": "library",
+						"bytes": 42228
+					},
+					{
+						"function": "updateTicks",
+						"source": "benchmarks/results/baseline/packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 38132
+					},
+					{
+						"function": "clockLabel",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-format.ts",
+						"owner": "library",
+						"bytes": 30900
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 25880
+					},
+					{
+						"function": "xToLogical",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 24720
+					},
+					{
+						"function": "typicalInterval",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 24720
+					},
+					{
+						"function": "valueToY",
+						"source": "benchmarks/results/baseline/packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 24720
+					},
+					{
+						"function": "insertRange",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 24528
+					},
+					{
+						"function": "_command",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 23276
+					},
+					{
+						"function": "run",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 20936
+					},
+					{
+						"function": "settle",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 18884
+					},
+					{
+						"function": "_flushTicks",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 18828
+					},
+					{
+						"function": "whenIdle",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 17996
+					},
+					{
+						"function": "get busy",
+						"source": "benchmarks/results/baseline/packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 16568
+					},
+					{
+						"function": "runTimed",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 15540
+					},
+					{
+						"function": "get to",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 15444
+					},
+					{
+						"function": "apply",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 14484
+					}
+				],
+				"minor": {
+					"count": 1,
+					"totalMs": 0.367,
+					"maxMs": 0.367,
+					"freedBytes": 1606240
+				},
+				"major": {
+					"count": 1,
+					"totalMs": 0.737,
+					"maxMs": 0.737,
+					"freedBytes": 1446664
+				}
+			}
+		},
+		{
+			"run": "tick/candles-1m/all/lumen-worker#1",
+			"summary": {
+				"windowMs": 1662.575,
+				"ticks": 10000,
+				"bytes": 3190100,
+				"bytesPerTick": 319,
+				"ownersPerTick": {
+					"library": 190,
+					"harness": 128,
+					"other scripts": 0,
+					"outside JavaScript": 1
+				},
+				"owners": {
+					"library": 1904312,
+					"harness": 1276372,
+					"other scripts": 0,
+					"outside JavaScript": 9416
+				},
+				"sites": [
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 946564
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 620064
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/engine/src/pool.ts",
+						"owner": "library",
+						"bytes": 318468
+					},
+					{
+						"function": "runTick",
+						"source": "benchmarks/src/scenarios/tick.ts",
+						"owner": "harness",
+						"bytes": 249264
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 116600
+					},
+					{
+						"function": "applyPatches",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 112752
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 88656
+					},
+					{
+						"function": "_trackLastValues",
+						"source": "benchmarks/results/baseline/packages/core/src/data/data-flow.ts",
+						"owner": "library",
+						"bytes": 57908
+					},
+					{
+						"function": "valueToY",
+						"source": "benchmarks/results/baseline/packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 40176
+					},
+					{
+						"function": "typicalInterval",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 31932
+					},
+					{
+						"function": "floorToStep",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 30900
+					},
+					{
+						"function": "updateTicks",
+						"source": "benchmarks/results/baseline/packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 29884
+					},
+					{
+						"function": "firstAtOrAfter",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 29868
+					},
+					{
+						"function": "wall",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 28836
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 23976
+					},
+					{
+						"function": "_weigh",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 21636
+					},
+					{
+						"function": "_flushTicks",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 20956
+					},
+					{
+						"function": "settle",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 18872
+					},
+					{
+						"function": "apply",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 18604
+					},
+					{
+						"function": "nextBoundary",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 18540
+					},
+					{
+						"function": "clearDirty",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 16536
+					},
+					{
+						"function": "civil",
+						"source": "benchmarks/results/baseline/packages/core/src/model/calendar.ts",
+						"owner": "library",
+						"bytes": 16488
+					},
+					{
+						"function": "nextTask",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 15808
+					},
+					{
+						"function": "xToLogical",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 15456
+					},
+					{
+						"function": "drawTimeAxis",
+						"source": "benchmarks/results/baseline/packages/core/src/render/chrome.ts",
+						"owner": "library",
+						"bytes": 15456
+					},
+					{
+						"function": "whenIdle",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 13656
+					},
+					{
+						"function": "match",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 13392
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 12416
+					},
+					{
+						"function": "requestWindow",
+						"source": "benchmarks/results/baseline/packages/core/src/data/data-flow.ts",
+						"owner": "library",
+						"bytes": 12372
+					},
+					{
+						"function": "_settle",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 10356
+					}
+				],
+				"minor": {
+					"count": 3,
+					"totalMs": 0.8879999999999999,
+					"maxMs": 0.412,
+					"freedBytes": 2992340
+				},
+				"major": {
+					"count": 1,
+					"totalMs": 0.663,
+					"maxMs": 0.663,
+					"freedBytes": 198180
+				}
+			}
+		},
+		{
+			"run": "tick/candles-1m/all/lumen-main#1",
+			"summary": {
+				"windowMs": 1662.978,
+				"ticks": 10000,
+				"bytes": 3636856,
+				"bytesPerTick": 364,
+				"ownersPerTick": {
+					"library": 235,
+					"harness": 128,
+					"other scripts": 0,
+					"outside JavaScript": 1
+				},
+				"owners": {
+					"library": 2346044,
+					"harness": 1283408,
+					"other scripts": 0,
+					"outside JavaScript": 7404
+				},
+				"sites": [
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 945788
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 630372
+					},
+					{
+						"function": "runTick",
+						"source": "benchmarks/src/scenarios/tick.ts",
+						"owner": "harness",
+						"bytes": 237968
+					},
+					{
+						"function": "_emit",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 203768
+					},
+					{
+						"function": "_specLevel",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 178544
+					},
+					{
+						"function": "_tick",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 114336
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 108356
+					},
+					{
+						"function": "applyPatches",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 92084
+					},
+					{
+						"function": "_ticks",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 81324
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 76252
+					},
+					{
+						"function": "_trackLastValues",
+						"source": "benchmarks/results/baseline/packages/core/src/data/data-flow.ts",
+						"owner": "library",
+						"bytes": 56912
+					},
+					{
+						"function": "_endChanges",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 50660
+					},
+					{
+						"function": "insertRange",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 37296
+					},
+					{
+						"function": "updateTicks",
+						"source": "benchmarks/results/baseline/packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 35076
+					},
+					{
+						"function": "valueToY",
+						"source": "benchmarks/results/baseline/packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 33996
+					},
+					{
+						"function": "firstAtOrAfter",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 32964
+					},
+					{
+						"function": "typicalInterval",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 30900
+					},
+					{
+						"function": "_flushTicks",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 28264
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 25240
+					},
+					{
+						"function": "whenIdle",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 24180
+					},
+					{
+						"function": "apply",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 22764
+					},
+					{
+						"function": "settle",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 21120
+					},
+					{
+						"function": "_weigh",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 20604
+					},
+					{
+						"function": "nextTask",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 20044
+					},
+					{
+						"function": "civil",
+						"source": "benchmarks/results/baseline/packages/core/src/model/calendar.ts",
+						"owner": "library",
+						"bytes": 19584
+					},
+					{
+						"function": "floorToStep",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 19572
+					},
+					{
+						"function": "_segment",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 18552
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 16540
+					},
+					{
+						"function": "drawTimeAxis",
+						"source": "benchmarks/results/baseline/packages/core/src/render/chrome.ts",
+						"owner": "library",
+						"bytes": 16476
+					},
+					{
+						"function": "_command",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 15864
+					}
+				],
+				"minor": {
+					"count": 2,
+					"totalMs": 0.5509999999999999,
+					"maxMs": 0.309,
+					"freedBytes": 3781628
+				},
+				"major": {
+					"count": 1,
+					"totalMs": 0.624,
+					"maxMs": 0.624,
+					"freedBytes": 1188688
+				}
+			}
+		},
+		{
+			"run": "ind-apply/candles-1m/latest/20/lumen-worker#1",
+			"summary": {
+				"windowMs": 5000.111,
+				"ticks": 3073,
+				"bytes": 140500976,
+				"bytesPerTick": 45721,
+				"ownersPerTick": {
+					"library": 45083,
+					"harness": 604,
+					"other scripts": 0,
+					"outside JavaScript": 34
+				},
+				"owners": {
+					"library": 138539904,
+					"harness": 1855772,
+					"other scripts": 0,
+					"outside JavaScript": 105300
+				},
+				"sites": [
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/engine/src/pool.ts",
+						"owner": "library",
+						"bytes": 133858608
+					},
+					{
+						"function": "_flushTicks",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 712932
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 589436
+					},
+					{
+						"function": "applyPatches",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 484980
+					},
+					{
+						"function": "waitIdle",
+						"source": "benchmarks/src/harness/wait.ts",
+						"owner": "harness",
+						"bytes": 421144
+					},
+					{
+						"function": "applied",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 413844
+					},
+					{
+						"function": "apply",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 410816
+					},
+					{
+						"function": "runApply",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 381972
+					},
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 363560
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 276876
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 259888
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 249660
+					},
+					{
+						"function": "_settleApplied",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 249256
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 208632
+					},
+					{
+						"function": "formatPrice",
+						"source": "benchmarks/results/baseline/packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 207536
+					},
+					{
+						"function": "_includeSeries",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 183348
+					},
+					{
+						"function": "next",
+						"source": "benchmarks/src/data.ts",
+						"owner": "harness",
+						"bytes": 149352
+					},
+					{
+						"function": "(outside JavaScript)",
+						"source": null,
+						"owner": "outside JavaScript",
+						"bytes": 105300
+					},
+					{
+						"function": "valueLabel",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 97848
+					},
+					{
+						"function": "nextChange",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 81372
+					},
+					{
+						"function": "tick",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 79384
+					},
+					{
+						"function": "_post",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 62040
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/wait.ts",
+						"owner": "harness",
+						"bytes": 54752
+					},
+					{
+						"function": "whenApplied",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 48364
+					},
+					{
+						"function": "updateTicks",
+						"source": "benchmarks/results/baseline/packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 45412
+					},
+					{
+						"function": "deviceY",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 40176
+					},
+					{
+						"function": "drawTimeAxis",
+						"source": "benchmarks/results/baseline/packages/core/src/render/chrome.ts",
+						"owner": "library",
+						"bytes": 30900
+					},
+					{
+						"function": "fixed",
+						"source": "benchmarks/results/baseline/packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 29936
+					},
+					{
+						"function": "plan",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 27804
+					},
+					{
+						"function": "typicalInterval",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 26784
+					}
+				],
+				"minor": {
+					"count": 7,
+					"totalMs": 20.409,
+					"maxMs": 4.469,
+					"freedBytes": 42715628
+				},
+				"major": {
+					"count": 6,
+					"totalMs": 6.372,
+					"maxMs": 1.474,
+					"freedBytes": 84259156
+				}
+			}
+		},
+		{
+			"run": "ind-apply/candles-1m/latest/20/lumen-main#1",
+			"summary": {
+				"windowMs": 5001.693,
+				"ticks": 3409,
+				"bytes": 166539352,
+				"bytesPerTick": 48853,
+				"ownersPerTick": {
+					"library": 48186,
+					"harness": 632,
+					"other scripts": 0,
+					"outside JavaScript": 35
+				},
+				"owners": {
+					"library": 164265912,
+					"harness": 2155664,
+					"other scripts": 0,
+					"outside JavaScript": 117776
+				},
+				"sites": [
+					{
+						"function": "_emit",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 89324000
+					},
+					{
+						"function": "ticks",
+						"source": "benchmarks/results/baseline/packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 44930352
+					},
+					{
+						"function": "_specs",
+						"source": "benchmarks/results/baseline/packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 11180196
+					},
+					{
+						"function": "_specLevel",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 6805364
+					},
+					{
+						"function": "_endChanges",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 2087720
+					},
+					{
+						"function": "get pending",
+						"source": "benchmarks/results/baseline/packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 1027948
+					},
+					{
+						"function": "_flushTicks",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 785356
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 605848
+					},
+					{
+						"function": "run",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 542128
+					},
+					{
+						"function": "_command",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 539144
+					},
+					{
+						"function": "waitIdle",
+						"source": "benchmarks/src/harness/wait.ts",
+						"owner": "harness",
+						"bytes": 535532
+					},
+					{
+						"function": "applyPatches",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 520800
+					},
+					{
+						"function": "_ticks",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 499720
+					},
+					{
+						"function": "applied",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 451148
+					},
+					{
+						"function": "apply",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 438736
+					},
+					{
+						"function": "runApply",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 417120
+					},
+					{
+						"function": "_specRuns",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 375100
+					},
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 354676
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/views/series-view.ts",
+						"owner": "library",
+						"bytes": 303852
+					},
+					{
+						"function": "_settleApplied",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 293828
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 283604
+					},
+					{
+						"function": "markDirty",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 279384
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 275196
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 258532
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 257140
+					},
+					{
+						"function": "_post",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 257108
+					},
+					{
+						"function": "_beginChanges",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 226480
+					},
+					{
+						"function": "_drain",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 215228
+					},
+					{
+						"function": "formatPrice",
+						"source": "benchmarks/results/baseline/packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 206504
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 200856
+					}
+				],
+				"minor": {
+					"count": 25,
+					"totalMs": 10.031,
+					"maxMs": 0.552,
+					"freedBytes": 166267952
+				},
+				"major": {
+					"count": 1,
+					"totalMs": 0.864,
+					"maxMs": 0.864,
+					"freedBytes": 4277936
+				}
+			}
+		},
+		{
+			"run": "ind-apply/candles-1m/all/20/lumen-worker#1",
+			"summary": {
+				"windowMs": 5001.679,
+				"ticks": 3053,
+				"bytes": 141745904,
+				"bytesPerTick": 46428,
+				"ownersPerTick": {
+					"library": 45772,
+					"harness": 618,
+					"other scripts": 0,
+					"outside JavaScript": 38
+				},
+				"owners": {
+					"library": 139742640,
+					"harness": 1887636,
+					"other scripts": 0,
+					"outside JavaScript": 115628
+				},
+				"sites": [
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/engine/src/pool.ts",
+						"owner": "library",
+						"bytes": 133426740
+					},
+					{
+						"function": "applyPatches",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 1262620
+					},
+					{
+						"function": "apply",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 738604
+					},
+					{
+						"function": "_flushTicks",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 710652
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 610092
+					},
+					{
+						"function": "waitIdle",
+						"source": "benchmarks/src/harness/wait.ts",
+						"owner": "harness",
+						"bytes": 500660
+					},
+					{
+						"function": "applied",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 384524
+					},
+					{
+						"function": "runApply",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 369672
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 335472
+					},
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 328456
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 263336
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 260076
+					},
+					{
+						"function": "_settleApplied",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 254452
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 238032
+					},
+					{
+						"function": "formatPrice",
+						"source": "benchmarks/results/baseline/packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 203336
+					},
+					{
+						"function": "_includeSeries",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 172008
+					},
+					{
+						"function": "next",
+						"source": "benchmarks/src/data.ts",
+						"owner": "harness",
+						"bytes": 148320
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 141932
+					},
+					{
+						"function": "(outside JavaScript)",
+						"source": null,
+						"owner": "outside JavaScript",
+						"bytes": 115628
+					},
+					{
+						"function": "valueLabel",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 96816
+					},
+					{
+						"function": "tick",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 81456
+					},
+					{
+						"function": "xToLogical",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 74160
+					},
+					{
+						"function": "firstAtOrAfter",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 69012
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/wait.ts",
+						"owner": "harness",
+						"bytes": 51648
+					},
+					{
+						"function": "deviceY",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 51504
+					},
+					{
+						"function": "finish",
+						"source": "benchmarks/src/harness/wait.ts",
+						"owner": "harness",
+						"bytes": 50044
+					},
+					{
+						"function": "_post",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 48600
+					},
+					{
+						"function": "clearDirty",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 46516
+					},
+					{
+						"function": "whenApplied",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 44136
+					},
+					{
+						"function": "nextBoundary",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 42228
+					}
+				],
+				"minor": {
+					"count": 7,
+					"totalMs": 19.835,
+					"maxMs": 4.53,
+					"freedBytes": 43639664
+				},
+				"major": {
+					"count": 6,
+					"totalMs": 5.705,
+					"maxMs": 1.469,
+					"freedBytes": 88158900
+				}
+			}
+		},
+		{
+			"run": "ind-apply/candles-1m/all/20/lumen-main#1",
+			"summary": {
+				"windowMs": 5000.266,
+				"ticks": 3384,
+				"bytes": 166237768,
+				"bytesPerTick": 49125,
+				"ownersPerTick": {
+					"library": 48444,
+					"harness": 647,
+					"other scripts": 0,
+					"outside JavaScript": 34
+				},
+				"owners": {
+					"library": 163935788,
+					"harness": 2188412,
+					"other scripts": 0,
+					"outside JavaScript": 113568
+				},
+				"sites": [
+					{
+						"function": "_emit",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 88147496
+					},
+					{
+						"function": "ticks",
+						"source": "benchmarks/results/baseline/packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 44732608
+					},
+					{
+						"function": "_specs",
+						"source": "benchmarks/results/baseline/packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 11041112
+					},
+					{
+						"function": "_specLevel",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 6614628
+					},
+					{
+						"function": "_endChanges",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 2067020
+					},
+					{
+						"function": "applyPatches",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 1291720
+					},
+					{
+						"function": "get pending",
+						"source": "benchmarks/results/baseline/packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 1078632
+					},
+					{
+						"function": "apply",
+						"source": "benchmarks/results/baseline/packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 821312
+					},
+					{
+						"function": "_flushTicks",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 732736
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 653420
+					},
+					{
+						"function": "_command",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 576636
+					},
+					{
+						"function": "_ticks",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 546916
+					},
+					{
+						"function": "run",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 517040
+					},
+					{
+						"function": "waitIdle",
+						"source": "benchmarks/src/harness/wait.ts",
+						"owner": "harness",
+						"bytes": 513524
+					},
+					{
+						"function": "applied",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 498820
+					},
+					{
+						"function": "runApply",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 389208
+					},
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 379524
+					},
+					{
+						"function": "_specRuns",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 338600
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "benchmarks/results/baseline/packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 330268
+					},
+					{
+						"function": "_settleApplied",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 284452
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 271440
+					},
+					{
+						"function": "render",
+						"source": "benchmarks/results/baseline/packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 268516
+					},
+					{
+						"function": "markDirty",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 263508
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/results/baseline/packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 239096
+					},
+					{
+						"function": "formatPrice",
+						"source": "benchmarks/results/baseline/packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 226120
+					},
+					{
+						"function": "_busyWaiting",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 201640
+					},
+					{
+						"function": "_post",
+						"source": "benchmarks/results/baseline/packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 200792
+					},
+					{
+						"function": "_drain",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 196288
+					},
+					{
+						"function": "update",
+						"source": "benchmarks/results/baseline/packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 195708
+					},
+					{
+						"function": "_beginChanges",
+						"source": "benchmarks/results/baseline/packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 194420
+					}
+				],
+				"minor": {
+					"count": 24,
+					"totalMs": 10.01,
+					"maxMs": 0.514,
+					"freedBytes": 159408740
+				},
+				"major": {
+					"count": 1,
+					"totalMs": 0.986,
+					"maxMs": 0.986,
+					"freedBytes": 5866044
+				}
+			}
+		}
+	],
+	"after": [
+		{
+			"run": "tick/candles-1m/latest/lumen-worker#1",
+			"summary": {
+				"windowMs": 1657.655,
+				"ticks": 10000,
+				"bytes": 2669828,
+				"bytesPerTick": 267,
+				"ownersPerTick": {
+					"library": 143,
+					"harness": 123,
+					"other scripts": 0,
+					"outside JavaScript": 1
+				},
+				"owners": {
+					"library": 1431676,
+					"harness": 1231888,
+					"other scripts": 0,
+					"outside JavaScript": 6264
+				},
+				"sites": [
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 911328
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 592260
+					},
+					{
+						"function": "runTick",
+						"source": "benchmarks/src/scenarios/tick.ts",
+						"owner": "harness",
+						"bytes": 233844
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 120588
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 87664
+					},
+					{
+						"function": "(anonymous)",
+						"source": "packages/engine/src/pool.ts",
+						"owner": "library",
+						"bytes": 70388
+					},
+					{
+						"function": "nextChange",
+						"source": "packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 40176
+					},
+					{
+						"function": "updateTicks",
+						"source": "packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 32988
+					},
+					{
+						"function": "applyPatches",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 31536
+					},
+					{
+						"function": "xToLogical",
+						"source": "packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 28848
+					},
+					{
+						"function": "typicalInterval",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 28836
+					},
+					{
+						"function": "drawTimeAxis",
+						"source": "packages/core/src/render/chrome.ts",
+						"owner": "library",
+						"bytes": 28836
+					},
+					{
+						"function": "clockLabel",
+						"source": "packages/core/src/model/time-format.ts",
+						"owner": "library",
+						"bytes": 24720
+					},
+					{
+						"function": "valueToY",
+						"source": "packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 24720
+					},
+					{
+						"function": "settle",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 24100
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 24064
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 16512
+					},
+					{
+						"function": "match",
+						"source": "packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 16476
+					},
+					{
+						"function": "_trackLastValues",
+						"source": "packages/core/src/data/data-flow.ts",
+						"owner": "library",
+						"bytes": 15528
+					},
+					{
+						"function": "whenIdle",
+						"source": "packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 14716
+					},
+					{
+						"function": "_flushTicks",
+						"source": "packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 14652
+					},
+					{
+						"function": "apply",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 13464
+					},
+					{
+						"function": "fitWidths",
+						"source": "packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 13440
+					},
+					{
+						"function": "rowsTo",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 13404
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/views/series-view.ts",
+						"owner": "library",
+						"bytes": 13392
+					},
+					{
+						"function": "render",
+						"source": "packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 12416
+					},
+					{
+						"function": "_settle",
+						"source": "packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 11384
+					},
+					{
+						"function": "get to",
+						"source": "packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 10308
+					},
+					{
+						"function": "plan",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 10296
+					},
+					{
+						"function": "(anonymous)",
+						"source": "packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 9576
+					}
+				],
+				"minor": {
+					"count": 3,
+					"totalMs": 0.982,
+					"maxMs": 0.474,
+					"freedBytes": 2300324
+				},
+				"major": {
+					"count": 1,
+					"totalMs": 0.463,
+					"maxMs": 0.463,
+					"freedBytes": 369008
+				}
+			}
+		},
+		{
+			"run": "tick/candles-1m/latest/lumen-main#1",
+			"summary": {
+				"windowMs": 1663.329,
+				"ticks": 10000,
+				"bytes": 3122576,
+				"bytesPerTick": 312,
+				"ownersPerTick": {
+					"library": 179,
+					"harness": 133,
+					"other scripts": 0,
+					"outside JavaScript": 1
+				},
+				"owners": {
+					"library": 1790132,
+					"harness": 1326212,
+					"other scripts": 0,
+					"outside JavaScript": 6232
+				},
+				"sites": [
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 980956
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 595344
+					},
+					{
+						"function": "runTick",
+						"source": "benchmarks/src/scenarios/tick.ts",
+						"owner": "harness",
+						"bytes": 227640
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 132928
+					},
+					{
+						"function": "_tick",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 107132
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 93824
+					},
+					{
+						"function": "_endChanges",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 69280
+					},
+					{
+						"function": "_ticks",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 56196
+					},
+					{
+						"function": "nextChange",
+						"source": "packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 45324
+					},
+					{
+						"function": "applyPatches",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 37932
+					},
+					{
+						"function": "drawTimeAxis",
+						"source": "packages/core/src/render/chrome.ts",
+						"owner": "library",
+						"bytes": 37080
+					},
+					{
+						"function": "valueToY",
+						"source": "packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 36048
+					},
+					{
+						"function": "updateTicks",
+						"source": "packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 34052
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 32284
+					},
+					{
+						"function": "settle",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 30408
+					},
+					{
+						"function": "typicalInterval",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 27816
+					},
+					{
+						"function": "_emit",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 27304
+					},
+					{
+						"function": "xToLogical",
+						"source": "packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 22656
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 21688
+					},
+					{
+						"function": "_flushTicks",
+						"source": "packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 19932
+					},
+					{
+						"function": "render",
+						"source": "packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 19672
+					},
+					{
+						"function": "clockLabel",
+						"source": "packages/core/src/model/time-format.ts",
+						"owner": "library",
+						"bytes": 19572
+					},
+					{
+						"function": "nextTask",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 16760
+					},
+					{
+						"function": "plan",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 16476
+					},
+					{
+						"function": "apply",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 15520
+					},
+					{
+						"function": "run",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 13636
+					},
+					{
+						"function": "whenIdle",
+						"source": "packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 13636
+					},
+					{
+						"function": "get busy",
+						"source": "packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 13472
+					},
+					{
+						"function": "_command",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 12852
+					},
+					{
+						"function": "rowsTo",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 12360
+					}
+				],
+				"minor": {
+					"count": 1,
+					"totalMs": 0.371,
+					"maxMs": 0.371,
+					"freedBytes": 1669660
+				},
+				"major": {
+					"count": 1,
+					"totalMs": 0.658,
+					"maxMs": 0.658,
+					"freedBytes": 1326608
+				}
+			}
+		},
+		{
+			"run": "tick/candles-1m/all/lumen-worker#1",
+			"summary": {
+				"windowMs": 1662.459,
+				"ticks": 10000,
+				"bytes": 2818372,
+				"bytesPerTick": 282,
+				"ownersPerTick": {
+					"library": 151,
+					"harness": 130,
+					"other scripts": 0,
+					"outside JavaScript": 1
+				},
+				"owners": {
+					"library": 1514132,
+					"harness": 1295792,
+					"other scripts": 0,
+					"outside JavaScript": 8448
+				},
+				"sites": [
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 960624
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 599472
+					},
+					{
+						"function": "runTick",
+						"source": "benchmarks/src/scenarios/tick.ts",
+						"owner": "harness",
+						"bytes": 245188
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 106316
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 90716
+					},
+					{
+						"function": "(anonymous)",
+						"source": "packages/engine/src/pool.ts",
+						"owner": "library",
+						"bytes": 56744
+					},
+					{
+						"function": "typicalInterval",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 39144
+					},
+					{
+						"function": "firstAtOrAfter",
+						"source": "packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 39144
+					},
+					{
+						"function": "valueToY",
+						"source": "packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 36048
+					},
+					{
+						"function": "updateTicks",
+						"source": "packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 35084
+					},
+					{
+						"function": "apply",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 32080
+					},
+					{
+						"function": "settle",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 30436
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 25784
+					},
+					{
+						"function": "xToLogical",
+						"source": "packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 25752
+					},
+					{
+						"function": "civil",
+						"source": "packages/core/src/model/calendar.ts",
+						"owner": "library",
+						"bytes": 25752
+					},
+					{
+						"function": "_weigh",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 25752
+					},
+					{
+						"function": "daysFromCivil",
+						"source": "packages/core/src/model/calendar.ts",
+						"owner": "library",
+						"bytes": 24732
+					},
+					{
+						"function": "whenIdle",
+						"source": "packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 22112
+					},
+					{
+						"function": "_flushTicks",
+						"source": "packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 20988
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 18744
+					},
+					{
+						"function": "floorToStep",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 18540
+					},
+					{
+						"function": "drawTimeAxis",
+						"source": "packages/core/src/render/chrome.ts",
+						"owner": "library",
+						"bytes": 16476
+					},
+					{
+						"function": "nextTask",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 15820
+					},
+					{
+						"function": "clearDirty",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 15532
+					},
+					{
+						"function": "wall",
+						"source": "packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 14424
+					},
+					{
+						"function": "_segment",
+						"source": "packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 13404
+					},
+					{
+						"function": "requestWindow",
+						"source": "packages/core/src/data/data-flow.ts",
+						"owner": "library",
+						"bytes": 13392
+					},
+					{
+						"function": "nextBoundary",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 13392
+					},
+					{
+						"function": "_trackLastValues",
+						"source": "packages/core/src/data/data-flow.ts",
+						"owner": "library",
+						"bytes": 12412
+					},
+					{
+						"function": "get to",
+						"source": "packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 12360
+					}
+				],
+				"minor": {
+					"count": 3,
+					"totalMs": 0.7110000000000001,
+					"maxMs": 0.274,
+					"freedBytes": 2299548
+				},
+				"major": {
+					"count": 1,
+					"totalMs": 0.556,
+					"maxMs": 0.556,
+					"freedBytes": 157484
+				}
+			}
+		},
+		{
+			"run": "tick/candles-1m/all/lumen-main#1",
+			"summary": {
+				"windowMs": 1661.542,
+				"ticks": 10000,
+				"bytes": 3156596,
+				"bytesPerTick": 316,
+				"ownersPerTick": {
+					"library": 179,
+					"harness": 135,
+					"other scripts": 0,
+					"outside JavaScript": 1
+				},
+				"owners": {
+					"library": 1794468,
+					"harness": 1354896,
+					"other scripts": 0,
+					"outside JavaScript": 7232
+				},
+				"sites": [
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 981204
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 640668
+					},
+					{
+						"function": "runTick",
+						"source": "benchmarks/src/scenarios/tick.ts",
+						"owner": "harness",
+						"bytes": 280200
+					},
+					{
+						"function": "_tick",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 113304
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 108396
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 90716
+					},
+					{
+						"function": "_endChanges",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 61000
+					},
+					{
+						"function": "_ticks",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 42788
+					},
+					{
+						"function": "updateTicks",
+						"source": "packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 37128
+					},
+					{
+						"function": "_emit",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 35716
+					},
+					{
+						"function": "settle",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 32512
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 29352
+					},
+					{
+						"function": "valueToY",
+						"source": "packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 27816
+					},
+					{
+						"function": "apply",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 25872
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 24772
+					},
+					{
+						"function": "civil",
+						"source": "packages/core/src/model/calendar.ts",
+						"owner": "library",
+						"bytes": 24732
+					},
+					{
+						"function": "typicalInterval",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 24720
+					},
+					{
+						"function": "firstAtOrAfter",
+						"source": "packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 23688
+					},
+					{
+						"function": "drawTimeAxis",
+						"source": "packages/core/src/render/chrome.ts",
+						"owner": "library",
+						"bytes": 23688
+					},
+					{
+						"function": "xToLogical",
+						"source": "packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 22656
+					},
+					{
+						"function": "_flushTicks",
+						"source": "packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 22052
+					},
+					{
+						"function": "_weigh",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 20604
+					},
+					{
+						"function": "clearDirty",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 19648
+					},
+					{
+						"function": "wall",
+						"source": "packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 19572
+					},
+					{
+						"function": "floorToStep",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 19572
+					},
+					{
+						"function": "nextBoundary",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 19572
+					},
+					{
+						"function": "daysFromCivil",
+						"source": "packages/core/src/model/calendar.ts",
+						"owner": "library",
+						"bytes": 18540
+					},
+					{
+						"function": "_command",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 16996
+					},
+					{
+						"function": "run",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 16796
+					},
+					{
+						"function": "match",
+						"source": "packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 16476
+					}
+				],
+				"minor": {
+					"count": 2,
+					"totalMs": 0.712,
+					"maxMs": 0.39,
+					"freedBytes": 3129616
+				},
+				"major": {
+					"count": 1,
+					"totalMs": 0.623,
+					"maxMs": 0.623,
+					"freedBytes": 393024
+				}
+			}
+		},
+		{
+			"run": "ind-apply/candles-1m/latest/20/lumen-worker#1",
+			"summary": {
+				"windowMs": 5001.308,
+				"ticks": 3186,
+				"bytes": 8659116,
+				"bytesPerTick": 2718,
+				"ownersPerTick": {
+					"library": 2081,
+					"harness": 600,
+					"other scripts": 0,
+					"outside JavaScript": 37
+				},
+				"owners": {
+					"library": 6631160,
+					"harness": 1910120,
+					"other scripts": 0,
+					"outside JavaScript": 117836
+				},
+				"sites": [
+					{
+						"function": "(anonymous)",
+						"source": "packages/engine/src/pool.ts",
+						"owner": "library",
+						"bytes": 1731692
+					},
+					{
+						"function": "_flushTicks",
+						"source": "packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 778916
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 651432
+					},
+					{
+						"function": "applyPatches",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 509220
+					},
+					{
+						"function": "waitIdle",
+						"source": "benchmarks/src/harness/wait.ts",
+						"owner": "harness",
+						"bytes": 446856
+					},
+					{
+						"function": "applied",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 426428
+					},
+					{
+						"function": "apply",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 422208
+					},
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 366708
+					},
+					{
+						"function": "runApply",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 353016
+					},
+					{
+						"function": "render",
+						"source": "packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 301564
+					},
+					{
+						"function": "_settleApplied",
+						"source": "packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 267888
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 260808
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 247768
+					},
+					{
+						"function": "(anonymous)",
+						"source": "packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 244416
+					},
+					{
+						"function": "formatPrice",
+						"source": "packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 233324
+					},
+					{
+						"function": "_includeSeries",
+						"source": "packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 165828
+					},
+					{
+						"function": "next",
+						"source": "benchmarks/src/data.ts",
+						"owner": "harness",
+						"bytes": 161712
+					},
+					{
+						"function": "(outside JavaScript)",
+						"source": null,
+						"owner": "outside JavaScript",
+						"bytes": 117836
+					},
+					{
+						"function": "valueLabel",
+						"source": "packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 89616
+					},
+					{
+						"function": "tick",
+						"source": "packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 80408
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/wait.ts",
+						"owner": "harness",
+						"bytes": 66128
+					},
+					{
+						"function": "nextChange",
+						"source": "packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 59736
+					},
+					{
+						"function": "updateTicks",
+						"source": "packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 56740
+					},
+					{
+						"function": "_post",
+						"source": "packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 53780
+					},
+					{
+						"function": "deviceY",
+						"source": "packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 48408
+					},
+					{
+						"function": "whenApplied",
+						"source": "packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 43040
+					},
+					{
+						"function": "valueToY",
+						"source": "packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 36048
+					},
+					{
+						"function": "plan",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 32964
+					},
+					{
+						"function": "drawTimeAxis",
+						"source": "packages/core/src/render/chrome.ts",
+						"owner": "library",
+						"bytes": 30900
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/frames.ts",
+						"owner": "harness",
+						"bytes": 28440
+					}
+				],
+				"minor": {
+					"count": 4,
+					"totalMs": 1.7269999999999999,
+					"maxMs": 0.533,
+					"freedBytes": 5494436
+				},
+				"major": {
+					"count": 5,
+					"totalMs": 3.295,
+					"maxMs": 0.803,
+					"freedBytes": 2990440
+				}
+			}
+		},
+		{
+			"run": "ind-apply/candles-1m/latest/20/lumen-main#1",
+			"summary": {
+				"windowMs": 5001.66,
+				"ticks": 3326,
+				"bytes": 14955712,
+				"bytesPerTick": 4497,
+				"ownersPerTick": {
+					"library": 3837,
+					"harness": 627,
+					"other scripts": 0,
+					"outside JavaScript": 32
+				},
+				"owners": {
+					"library": 12762880,
+					"harness": 2086488,
+					"other scripts": 0,
+					"outside JavaScript": 106344
+				},
+				"sites": [
+					{
+						"function": "_endChanges",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 2093900
+					},
+					{
+						"function": "get pending",
+						"source": "packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 1096172
+					},
+					{
+						"function": "_emit",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 920772
+					},
+					{
+						"function": "_flushTicks",
+						"source": "packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 812772
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 606924
+					},
+					{
+						"function": "_command",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 520944
+					},
+					{
+						"function": "_ticks",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 515152
+					},
+					{
+						"function": "run",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 513268
+					},
+					{
+						"function": "applyPatches",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 475500
+					},
+					{
+						"function": "apply",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 439824
+					},
+					{
+						"function": "applied",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 439216
+					},
+					{
+						"function": "waitIdle",
+						"source": "benchmarks/src/harness/wait.ts",
+						"owner": "harness",
+						"bytes": 432556
+					},
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 412584
+					},
+					{
+						"function": "runApply",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 377844
+					},
+					{
+						"function": "ticks",
+						"source": "packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 333016
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/views/series-view.ts",
+						"owner": "library",
+						"bytes": 322392
+					},
+					{
+						"function": "render",
+						"source": "packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 288204
+					},
+					{
+						"function": "(anonymous)",
+						"source": "packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 270864
+					},
+					{
+						"function": "markDirty",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 269808
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 267096
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 261288
+					},
+					{
+						"function": "_settleApplied",
+						"source": "packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 235816
+					},
+					{
+						"function": "_post",
+						"source": "packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 224200
+					},
+					{
+						"function": "_drain",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 205784
+					},
+					{
+						"function": "formatPrice",
+						"source": "packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 199240
+					},
+					{
+						"function": "_beginChanges",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 196500
+					},
+					{
+						"function": "_includeSeries",
+						"source": "packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 188496
+					},
+					{
+						"function": "_busyWaiting",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 186140
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 185400
+					},
+					{
+						"function": "next",
+						"source": "benchmarks/src/data.ts",
+						"owner": "harness",
+						"bytes": 159648
+					}
+				],
+				"minor": {
+					"count": 3,
+					"totalMs": 1.9340000000000002,
+					"maxMs": 0.843,
+					"freedBytes": 9691424
+				},
+				"major": {
+					"count": 1,
+					"totalMs": 1.597,
+					"maxMs": 1.597,
+					"freedBytes": 2871568
+				}
+			}
+		},
+		{
+			"run": "ind-apply/candles-1m/all/20/lumen-worker#1",
+			"summary": {
+				"windowMs": 5000.337,
+				"ticks": 3033,
+				"bytes": 8800796,
+				"bytesPerTick": 2902,
+				"ownersPerTick": {
+					"library": 2216,
+					"harness": 652,
+					"other scripts": 0,
+					"outside JavaScript": 34
+				},
+				"owners": {
+					"library": 6722244,
+					"harness": 1976252,
+					"other scripts": 0,
+					"outside JavaScript": 102300
+				},
+				"sites": [
+					{
+						"function": "(anonymous)",
+						"source": "packages/engine/src/pool.ts",
+						"owner": "library",
+						"bytes": 1619316
+					},
+					{
+						"function": "_flushTicks",
+						"source": "packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 758204
+					},
+					{
+						"function": "apply",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 719980
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 629720
+					},
+					{
+						"function": "waitIdle",
+						"source": "benchmarks/src/harness/wait.ts",
+						"owner": "harness",
+						"bytes": 500408
+					},
+					{
+						"function": "applied",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 434372
+					},
+					{
+						"function": "runApply",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 367608
+					},
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 336820
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 310676
+					},
+					{
+						"function": "render",
+						"source": "packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 301796
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 285928
+					},
+					{
+						"function": "_settleApplied",
+						"source": "packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 269992
+					},
+					{
+						"function": "(anonymous)",
+						"source": "packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 211432
+					},
+					{
+						"function": "formatPrice",
+						"source": "packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 209612
+					},
+					{
+						"function": "_includeSeries",
+						"source": "packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 170976
+					},
+					{
+						"function": "render",
+						"source": "packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 148104
+					},
+					{
+						"function": "next",
+						"source": "benchmarks/src/data.ts",
+						"owner": "harness",
+						"bytes": 130812
+					},
+					{
+						"function": "valueLabel",
+						"source": "packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 112272
+					},
+					{
+						"function": "(outside JavaScript)",
+						"source": null,
+						"owner": "outside JavaScript",
+						"bytes": 102300
+					},
+					{
+						"function": "xToLogical",
+						"source": "packages/core/src/model/time-scale.ts",
+						"owner": "library",
+						"bytes": 74160
+					},
+					{
+						"function": "firstAtOrAfter",
+						"source": "packages/core/src/model/time-zone.ts",
+						"owner": "library",
+						"bytes": 69012
+					},
+					{
+						"function": "tick",
+						"source": "packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 64920
+					},
+					{
+						"function": "finish",
+						"source": "benchmarks/src/harness/wait.ts",
+						"owner": "harness",
+						"bytes": 62788
+					},
+					{
+						"function": "(anonymous)",
+						"source": "benchmarks/src/harness/wait.ts",
+						"owner": "harness",
+						"bytes": 61968
+					},
+					{
+						"function": "_post",
+						"source": "packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 53780
+					},
+					{
+						"function": "whenApplied",
+						"source": "packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 53700
+					},
+					{
+						"function": "updateTicks",
+						"source": "packages/core/src/price-axes.ts",
+						"owner": "library",
+						"bytes": 49568
+					},
+					{
+						"function": "deviceY",
+						"source": "packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 42228
+					},
+					{
+						"function": "plan",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 40176
+					},
+					{
+						"function": "requestWindow",
+						"source": "packages/core/src/data/data-flow.ts",
+						"owner": "library",
+						"bytes": 39144
+					}
+				],
+				"minor": {
+					"count": 5,
+					"totalMs": 3.908,
+					"maxMs": 1.435,
+					"freedBytes": 6939184
+				},
+				"major": {
+					"count": 5,
+					"totalMs": 3.225,
+					"maxMs": 0.891,
+					"freedBytes": 1735428
+				}
+			}
+		},
+		{
+			"run": "ind-apply/candles-1m/all/20/lumen-main#1",
+			"summary": {
+				"windowMs": 5000.314,
+				"ticks": 3267,
+				"bytes": 15126156,
+				"bytesPerTick": 4630,
+				"ownersPerTick": {
+					"library": 3926,
+					"harness": 668,
+					"other scripts": 0,
+					"outside JavaScript": 36
+				},
+				"owners": {
+					"library": 12826244,
+					"harness": 2183068,
+					"other scripts": 0,
+					"outside JavaScript": 116844
+				},
+				"sites": [
+					{
+						"function": "_endChanges",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 1973980
+					},
+					{
+						"function": "get pending",
+						"source": "packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 1088960
+					},
+					{
+						"function": "apply",
+						"source": "packages/core/src/data/window-cache.ts",
+						"owner": "library",
+						"bytes": 814044
+					},
+					{
+						"function": "_emit",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 809324
+					},
+					{
+						"function": "_flushTicks",
+						"source": "packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 779056
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 649264
+					},
+					{
+						"function": "_ticks",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 584776
+					},
+					{
+						"function": "run",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 547396
+					},
+					{
+						"function": "waitIdle",
+						"source": "benchmarks/src/harness/wait.ts",
+						"owner": "harness",
+						"bytes": 513520
+					},
+					{
+						"function": "_command",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 511756
+					},
+					{
+						"function": "applied",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 449204
+					},
+					{
+						"function": "applyTick",
+						"source": "benchmarks/src/adapters/lumen.ts",
+						"owner": "harness",
+						"bytes": 406088
+					},
+					{
+						"function": "runApply",
+						"source": "benchmarks/src/scenarios/indicators.ts",
+						"owner": "harness",
+						"bytes": 389112
+					},
+					{
+						"function": "_dirtyColumns",
+						"source": "packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 312760
+					},
+					{
+						"function": "_settleApplied",
+						"source": "packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 281332
+					},
+					{
+						"function": "markDirty",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 278292
+					},
+					{
+						"function": "ticks",
+						"source": "packages/engine/src/indicators/engine.ts",
+						"owner": "library",
+						"bytes": 277156
+					},
+					{
+						"function": "render",
+						"source": "packages/core/src/render/overlay.ts",
+						"owner": "library",
+						"bytes": 265088
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/model/time-ticks.ts",
+						"owner": "library",
+						"bytes": 262220
+					},
+					{
+						"function": "formatPrice",
+						"source": "packages/core/src/model/price-scale.ts",
+						"owner": "library",
+						"bytes": 240508
+					},
+					{
+						"function": "(anonymous)",
+						"source": "packages/core/src/chart.ts",
+						"owner": "library",
+						"bytes": 236968
+					},
+					{
+						"function": "render",
+						"source": "packages/core/src/render/pane.ts",
+						"owner": "library",
+						"bytes": 219916
+					},
+					{
+						"function": "_drain",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 215228
+					},
+					{
+						"function": "_busyWaiting",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 203720
+					},
+					{
+						"function": "_beginChanges",
+						"source": "packages/engine/src/core.ts",
+						"owner": "library",
+						"bytes": 198540
+					},
+					{
+						"function": "update",
+						"source": "packages/core/src/series.ts",
+						"owner": "library",
+						"bytes": 197760
+					},
+					{
+						"function": "_post",
+						"source": "packages/engine/src/client.ts",
+						"owner": "library",
+						"bytes": 189088
+					},
+					{
+						"function": "_includeSeries",
+						"source": "packages/core/src/model/frame-model.ts",
+						"owner": "library",
+						"bytes": 179220
+					},
+					{
+						"function": "next",
+						"source": "benchmarks/src/data.ts",
+						"owner": "harness",
+						"bytes": 162744
+					},
+					{
+						"function": "_pump",
+						"source": "packages/engine/src/host.ts",
+						"owner": "library",
+						"bytes": 160976
+					}
+				],
+				"minor": {
+					"count": 2,
+					"totalMs": 1.3619999999999999,
+					"maxMs": 1.027,
+					"freedBytes": 13153984
+				},
+				"major": {
+					"count": 1,
+					"totalMs": 1.178,
+					"maxMs": 1.178,
+					"freedBytes": 2669616
+				}
+			}
+		}
+	]
+}

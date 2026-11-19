@@ -206,3 +206,7 @@ Two limits of the partial redraw above are closed, and a third is decided
   through merged columns is many times as long as the pane is wide), and `--redraw full` runs every
   case with the option, where each frame must be a full one and no comparison may differ on either
   rasterizer.
+
+## Allocations between ticks
+
+The indicator benchmark created a message channel for each turn of its wait loop. An idle worker wait removes most of those allocations. Packing the changed rows of all indicators into two transferred buffers further reduces library allocations on the main thread. Charts request packed patches on their first engine command. Direct clients get object patches by default, including clients using an older worker. See the [allocation profiles and gate measurement](../benchmarks/gc-floor.md).

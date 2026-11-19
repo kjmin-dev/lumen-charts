@@ -18,6 +18,8 @@ declare global {
 		__benchMainThread?: () => Promise<MainThreadTimes>;
 		/** Installed by the runner (`ps` on the renderer processes): their resident memory in bytes. */
 		__benchRendererMemory?: () => Promise<number | null>;
+		/** Installed by the runner with `--allocations` (CDP `HeapProfiler` sampling of the main thread). */
+		__benchAllocations?: (edge: 'start' | 'end', ticks: number) => Promise<void>;
 		/** Present when Chromium runs with `--js-flags=--expose-gc`. */
 		gc?: () => void;
 	}

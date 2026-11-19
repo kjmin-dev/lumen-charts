@@ -24,6 +24,7 @@ pnpm bench --packages ../other-checkout/packages --lib lumen-worker   # measure 
 pnpm bench --help                       # all options (headed, Chrome channel, viewport, DPR, ...)
 pnpm bench --case ind-frames/candles-1m/pan-all --profile benchmarks/results/traces   # trace the runs: CPU by category, frames, GC
 pnpm bench:profile benchmarks/results/traces    # the breakdowns again from the traces of a directory
+pnpm bench --case ind-apply,tick --allocations benchmarks/results/allocations   # what the main thread allocates per tick, by call site, and its collections
 pnpm bench:report <results.json>        # Markdown tables from a results file
 pnpm bench:merge <out.json> <a.json> <b.json>   # join runs of the same cases into one file
 pnpm bench:pixels                       # partial redraws against full redraws, pixel for pixel (--dpr, --raster, --redraw, --case)
@@ -81,6 +82,7 @@ The JSON files beside each document are the runs its numbers come from.
 - [stage-4-follow-ups.md](stage-4-follow-ups.md): the `draw-autoscale` scenario pans with 100 and 1,000 drawings that take part in autoscale; hover over 1,000 drawings and a restore of 1,000, matched by id, against `main`.
 - [stage-4-save-restore.md](stage-4-save-restore.md): the `state` scenario saves and restores a chart with 5 indicators and 1,000 drawings.
 - [stage-5-profile.md](stage-5-profile.md): where frame, tick and load time goes, from traces of these scenarios, and what that decides about the optional steps of stage 5.
+- [GC and tick latency](gc-floor.md) attributes the main-thread allocations per tick and checks the stage 3 gate.
 - [stage-5-min-max.md](stage-5-min-max.md): the first of them, the min/max loops, is measured before and after.
 - [stage-5-partial-redraw.md](stage-5-partial-redraw.md): the second, the partial redraw of tick frames; `pnpm bench:pixels` checks in headless Chromium that such a frame leaves the pixels of a full redraw.
 - [stage-5-partial-redraw-options.md](stage-5-partial-redraw-options.md): the option that turns partial frames off (`redraw: 'full'`, checked by `pnpm bench:pixels --redraw full` on both rasterizers) and dashed lines drawn from the changed columns; the `line-ticks` scenario draws a frame per tick on solid, dashed and dotted lines.

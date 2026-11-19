@@ -10,6 +10,7 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { SourceMap } from 'node:module';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { type AllocationSummary, type SamplingNode, summarizeAllocations } from '../src/allocations.ts';
 import {
 	type CallFrame,
 	type SourceResolver,
@@ -77,6 +78,35 @@ export function writeProfile(directory: string, run: string, trace: Buffer, reso
 	const summary = summarize(trace, resolveSource);
 	writeFileSync(resolve(directory, `${fileName(run)}.json`), `${JSON.stringify(summary, null, '\t')}\n`);
 	return { run, summary };
+}
+
+export interface RunAllocations {
+	run: string;
+	summary: AllocationSummary;
+}
+
+/**
+ * Writes what a run allocated (`pnpm bench --allocations`) to `<directory>/<run>.json`. Throws when
+ * the trace has no measure marks.
+ */
+export function writeAllocations(
+	directory: string,
+	run: string,
+	head: SamplingNode,
+	ticks: number,
+	trace: Buffer,
+	resolveSource: SourceResolver,
+): RunAllocations {
+	mkdirSync(directory, { recursive: true });
+	const parsed = JSON.parse(trace.toString('utf8')) as { traceEvents?: TraceEvent[] } | TraceEvent[];
+	const events = Array.isArray(parsed) ? parsed : (parsed.traceEvents ?? []);
+	const summary = summarizeAllocations(head, ticks, events, resolveSource);
+	writeFileSync(resolve(directory, `${fileName(run)}.json`), `${JSON.stringify(summary, null, '\t')}\n`);
+	return { run, summary };
+}
+
+export function writeAllocationsSummary(directory: string, runs: readonly RunAllocations[]): void {
+	writeFileSync(resolve(directory, 'summary.json'), `${JSON.stringify(runs, null, '\t')}\n`);
 }
 
 export function writeSummary(directory: string, profiles: readonly RunProfile[]): void {
