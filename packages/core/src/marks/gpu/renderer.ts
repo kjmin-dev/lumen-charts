@@ -238,10 +238,12 @@ export class GpuMarkBackend implements GpuBackend {
 			this.palette = f.palette;
 			this.lastPath = path;
 		}
-		ctx.save();
-		ctx.globalAlpha *= Math.min(1, f.options.opacity);
-		ctx.drawImage(this.cache!.canvas, 0, 0);
-		ctx.restore();
+		if (f.options.opacity > 0) {
+			ctx.save();
+			ctx.globalAlpha *= Math.min(1, f.options.opacity);
+			ctx.drawImage(this.cache!.canvas, 0, 0);
+			ctx.restore();
+		}
 		return path;
 	}
 	private prepareScatter(f: MarkFrame, path: GpuPath, size: number, full: boolean, change: Upload): Strip {

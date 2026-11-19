@@ -323,6 +323,7 @@ export abstract class MarkSeries {
 
 	/** The picture held is gone (the browser lost the canvas): the next frame draws it again. */
 	public forget(): void {
+		this._gpu.backend?.release();
 		this._drawn.fill(Number.NaN);
 	}
 

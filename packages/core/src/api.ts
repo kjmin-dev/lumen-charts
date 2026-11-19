@@ -133,7 +133,7 @@ export interface ChartApi {
 	engineMode(): 'none' | 'connecting' | 'worker' | 'local';
 	/**
 	 * The state of the chart as plain JSON: what was configured, without bars. It holds the options
-	 * applied (not the size, `worker`, `memoryLimit` or formatter functions), the series and indicators
+	 * applied (not the size, `worker`, `memoryLimit`, `markRenderer` or formatter functions), the series and indicators
 	 * with their ids and options, the drawings, and the view: the times at the edges of the pane and
 	 * the range of every price scale that does not autoscale. Reads only; nothing is drawn for it.
 	 */
@@ -144,7 +144,7 @@ export interface ChartApi {
 	 * chart does not know, a reference to a series that would not be there) throws before anything
 	 * changes.
 	 *
-	 * - Options replace those applied before; the size, `worker`, `memoryLimit` and the formatter
+	 * - Options replace those applied before; the size, `worker`, `memoryLimit`, `markRenderer` and the formatter
 	 *   functions of `localization` stay as they are.
 	 * - Series are matched by `id` and type: one the chart has keeps its bars, datafeed, renderer and
 	 *   primitives and takes the state's options; one it lacks is added without bars (find it with

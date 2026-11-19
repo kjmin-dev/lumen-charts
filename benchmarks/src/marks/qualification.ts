@@ -151,6 +151,8 @@ async function check(mode: 'hardware' | 'unavailable' | 'rejected' | 'native-fal
 			await compare('fractional zoom ' + i, s =>
 				s.chart.timeScale().setVisibleLogicalRange({ from: i / 9 + 0.125, to: 91.7 - i / 2.7 }),
 			);
+		await compare('zero opacity', s => s.heat.applyOptions({ opacity: 0 }));
+		await compare('restore opacity', s => s.heat.applyOptions({ opacity: 0.73 }));
 		await compare('log price scale', s => s.chart.priceScale().applyOptions({ mode: 'logarithmic' }));
 		await compare('resize', s => s.chart.resize(365, 231));
 		await compare('palette and gain', s =>
