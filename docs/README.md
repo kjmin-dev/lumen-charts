@@ -30,6 +30,10 @@ The documents are split so that two pull requests rarely edit the same lines. Ke
 - **The status line** of the README changes only when a stage is complete, and so does the
   paragraph that opens its feature list.
 
+## Planned work
+
+- [Canvas 2D and WebGPU for mark series](design/stage-5-mark-renderers.md) gives the integration sequence and release checks for scatter and heatmap.
+
 ## What each stage built
 
 - [design/stage-2.md](design/stage-2.md): level of detail and the memory limit (sections 4.1, 4.2).

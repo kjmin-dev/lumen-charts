@@ -144,7 +144,7 @@ Moved to [design/stage-3-indicators.md](design/stage-3-indicators.md).
 - Views write coordinates into reused `Float32Array`s and allocate no objects on the frame path.
 - Candles start with `fillRect` and one pass per color. Whether batching into one path is faster is an [assumption].
 - The number and size of canvases are capped. Split layouts times three layers times device pixel ratio can exceed mobile canvas memory, so near the cap the drawing and overlay layers merge.
-- The GPU layer is an optional module for heatmaps and tick scatter plots. It shares one WebGL2 context per page.
+- The original GPU proposal used a shared WebGL2 context. The [Canvas 2D and WebGPU roadmap](design/stage-5-mark-renderers.md) proposes an opt-in WebGPU module for heatmap and scatter, with page-shared GPU resources.
 
 ### 6.1 As built in stage 4 (drawings)
 
