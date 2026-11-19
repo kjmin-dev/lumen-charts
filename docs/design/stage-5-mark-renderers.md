@@ -2,14 +2,14 @@
 
 **Implementation status.** Canvas 2D, explicit WebGPU and opt-in adaptive selection are integrated in the chart. The six steps below record the original delivery plan. Desktop qualification is complete for the configurations in the [chart report](../benchmarks/integrated-mark-renderers.md). Physical Android qualification remains open. The WebGPU measurements come from isolated mark layers on Apple M1 in headless Chromium. Canvas 2D is the default and fallback for both series. Candles, axes, labels, drawings and custom primitives continue through the existing pane compositor. WebGL2 supplies a benchmark control. [Current implementation](stage-5-heatmap-scatter.md) · [Prototype results](../benchmarks/mark-fast-paths.md)
 
-| Delivery step           | Current result                                                                                                                           |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Product baseline     | Captured parent Canvas timings through the public API and a fractional-zoom full-chart pixel reference.                                  |
-| 2. Canvas separation    | Integrated a Canvas backend and shared exact heatmap geometry. Existing state and chart APIs are covered by the unit and browser suites. |
-| 3. Scatter              | Integrated tile and column compute paths, runtime preference changes, device sharing and Canvas recovery.                                |
-| 4. Heatmaps and updates | Integrated scalar palette mapping, exact bin reduction, translated caches and dirty uploads with full-redraw checks.                     |
-| 5. Explicit selection   | Desktop implementation, guide, example and package verification complete. Physical mid-range Android qualification is open.              |
-| 6. Automatic selection  | Opt-in policy implemented and calibrated with complete desktop charts. Mobile crossover and performance claims await device results.     |
+| Delivery step           | Current result                                                                                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Product baseline     | Captured parent Canvas timings through the public API and a fractional-zoom full-chart pixel reference.                                                                   |
+| 2. Canvas separation    | Integrated a Canvas backend and shared exact heatmap geometry. Existing state and chart APIs are covered by the unit and browser suites.                                  |
+| 3. Scatter              | Integrated tile and column compute paths, runtime preference changes, device sharing and Canvas recovery.                                                                 |
+| 4. Heatmaps and updates | Integrated scalar palette mapping, exact bin reduction, translated caches and dirty uploads with full-redraw checks.                                                      |
+| 5. Explicit selection   | Desktop implementation, guide, example and package verification complete. Android emulator fallback passed. Physical mid-range Android performance qualification is open. |
+| 6. Automatic selection  | Opt-in policy implemented and calibrated with complete desktop charts. Mobile crossover and performance claims await device results.                                      |
 
 ## 3. Architecture and public contract
 

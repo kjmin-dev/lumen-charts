@@ -4,12 +4,13 @@ The public chart API renders a candlestick series, a drawing and either a scatte
 
 ## Desktop capability and correctness
 
-| Environment on Apple M1    | Coverage                                                                                                                                             |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Headless Chromium 156      | Hardware WebGPU at DPR 1, 1.5 and 2. Adapter absence and rejected initialization at all three DPRs.                                                  |
-| Playwright WebKit 27.2     | Hardware WebGPU at DPR 1 and 2. WebKit reported its isolation policy blocking the module worker, exercising the chart's main-thread engine fallback. |
-| Headless Firefox 157       | Native adapter request returned no usable adapter on this host. Canvas 2D fallback passed at DPR 1 and 2.                                            |
-| Physical mid-range Android | No physical device was connected during qualification. Mobile performance and an Android-specific crossover remain unmeasured.                       |
+| Environment on Apple M1                                  | Coverage                                                                                                                                             |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Headless Chromium 156                                    | Hardware WebGPU at DPR 1, 1.5 and 2. Adapter absence and rejected initialization at all three DPRs.                                                  |
+| Playwright WebKit 27.2                                   | Hardware WebGPU at DPR 1 and 2. WebKit reported its isolation policy blocking the module worker, exercising the chart's main-thread engine fallback. |
+| Headless Firefox 157                                     | Native adapter request returned no usable adapter on this host. Canvas 2D fallback passed at DPR 1 and 2.                                            |
+| Android 16 API 36.1 headless emulator, mobile Chrome 134 | Native Canvas fallback passed 31 whole-chart comparisons with software graphics. [Functional result](mark-charts-android-emulator.json).             |
+| Physical mid-range Android                               | No physical device was connected during qualification. Mobile performance and an Android-specific crossover remain unmeasured.                       |
 
 The suite compares every byte of each chart canvas against the Canvas 2D reference after each operation. A separate readback canvas avoids changing the production rasterizer. Checks include 16 fractional zoom positions, session gaps, resize, log axes, variable gain and opacity, identical timestamps, a dense scatter, reduced heatmap cells, layering, public data queries, save/restore and live preference changes. Hardware tests destroy the shared device during an update. They also exhaust and restore the page budget, verify shared device ownership across charts, and check rendering-budget accounting after teardown. The first-frame and ready times in these files include fixture setup and settling. Peak bytes sum the two series' observed high-water estimates for mark GPU buffers and backend canvases. [Chromium](mark-charts-chromium.json) · [WebKit](mark-charts-webkit.json) · [Firefox](mark-charts-firefox.json)
 
@@ -31,7 +32,7 @@ Apple M1, hardware Metal, Chromium 156 headless, 1,200 × 600 CSS pixels at DPR 
 
 All nine median frame p95s fit the 8 ms pan/zoom and 4 ms update targets with explicit WebGPU and with adaptive selection on this desktop. The three auto runs had zero backend transitions inside every measured interval after warm-up. In this test, 100k scatter zoom and isolated heatmap column replacement stayed on Canvas 2D. Expensive scatter zooms and heatmap viewport redraws chose WebGPU. The fixed-range Canvas pan also improved against its parent, while dense zoom remains a reason to request acceleration.
 
-Chromium compared 297 whole-chart states, WebKit 74 and Firefox 62. The DPR 2 Chromium paired fixture reached its first settled frame at about 107 ms and its first verified accelerated image at about 193 ms in this run. Its mark renderer high-water estimate was 7.8 MB. These startup numbers include constructing two charts, acquiring their data and scheduling frames.
+Desktop Chromium compared 297 whole-chart states, WebKit 74 and Firefox 62. Mobile Chrome checked another 31 on the emulator, for 464 comparisons in total. The DPR 2 Chromium paired fixture reached its first settled frame at about 107 ms and its first verified accelerated image at about 193 ms in this run. Its mark renderer high-water estimate was 7.8 MB. These startup numbers include constructing two charts, acquiring their data and scheduling frames.
 
 The parent control used the unmodified library at `b86ac7a`. All four product matrices used the same public inputs, drawing and isolated preview build. The prototype tables elsewhere start with preprojected mark coordinates. The product results here include time and price mapping, window replacement, actual uploads and layer composition. The adaptive samples include its own decisions. Transition counts, path counts, held marks, LOD, sample counts, host load and browser cadence are in the run files. Window requests and workers can run between animation callbacks. Physical presentation latency requires an on-device display measurement.
 
