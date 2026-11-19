@@ -81,6 +81,28 @@ export interface PaneView {
 	readonly priceFormatVersion: number;
 }
 
+/**
+ * What `PanePrimitive.autoscale` is asked with and answers in: the part of the timeline in view, and
+ * the prices the primitive wants kept in view there.
+ */
+export interface AutoscaleRange {
+	/** Logical positions at the left and right edge of the pane, in the frame being computed. */
+	readonly from: number;
+	readonly to: number;
+	/** The lowest and the highest price to keep in view, on the primitive's price scale. */
+	low: number;
+	high: number;
+	/**
+	 * Optional, for an answer that does not depend on the view: the logical positions the primitive
+	 * spans (a span of `Infinity` to `-Infinity` for one with nothing to keep in view). The chart then
+	 * keeps the answer, counts it in the frames whose view overlaps the span, and asks again only
+	 * after `host.requestUpdate()` or when the timeline or the chart's options changed. Left as they
+	 * are, the primitive is asked in every frame that computes price ranges.
+	 */
+	spanFrom: number;
+	spanTo: number;
+}
+
 /** What a primitive draws into. */
 export interface DrawTarget {
 	/**
@@ -128,6 +150,23 @@ export interface PanePrimitive {
 	 */
 	update?(view: PaneView, bounds: PrimitiveBounds): void;
 	draw(target: DrawTarget, view: PaneView): void;
+	/**
+	 * Takes part in the autoscale of the primitive's price scale: sets `range.low` and `range.high`
+	 * to the prices to keep in view while the pane shows the logical positions `range.from` to
+	 * `range.to`, and returns true; false for nothing (out of view, say). A primitive without this
+	 * method leaves autoscale alone, which is the default; whether it has it is read when it is
+	 * attached and on `requestUpdate`.
+	 *
+	 * Called in every frame that computes price ranges (a pan, a zoom, new data: not a pointer move),
+	 * before `update` and before the scale has its range of that frame: of `view`, the time
+	 * conversions are current, but `from`, `to`, `priceToY` and `yToPrice` are still those of the
+	 * frame before. It must not allocate. The range is joined with that of the series on the scale,
+	 * and the scale's margins go around the whole; it counts only while the scale autoscales and has
+	 * a visible series. Call `host.requestUpdate()` when the answer changes for another reason than
+	 * the view. An answer that holds whatever the view is can say so (`AutoscaleRange.spanFrom`), and
+	 * the primitive is then not asked again until something changes.
+	 */
+	autoscale?(range: AutoscaleRange, view: PaneView): boolean;
 	/**
 	 * Drawn on the overlay above the layer while the pointer hovers the primitive (`hovered`) or the
 	 * chart has it selected (the built-in drawings only): handles, a highlight.

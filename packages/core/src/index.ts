@@ -60,6 +60,7 @@ export type {
 	TimeRange,
 } from './series';
 export {
+	type AutoscaleRange,
 	type DrawTarget,
 	HIT_BODY,
 	HIT_NONE,

@@ -1,4 +1,5 @@
 import {
+	type AutoscaleRange,
 	type DrawTarget,
 	HIT_BODY,
 	HIT_NONE,
@@ -114,6 +115,8 @@ export class Drawing implements PanePrimitive, DrawingApi {
 	public host: PrimitiveHost | null = null;
 	/** False once removed. */
 	public alive = true;
+	/** `PanePrimitive.autoscale`: there while the `autoscale` option is on, so only then is it asked. */
+	public autoscale: PanePrimitive['autoscale'];
 
 	private _options: DrawingOptions;
 	private readonly _owner: DrawingOwner;
@@ -158,6 +161,7 @@ export class Drawing implements PanePrimitive, DrawingApi {
 		this.prices = new Float64Array(this.count);
 		this.logical = new Float64Array(this.count).fill(NaN);
 		this._options = state.options;
+		this.autoscale = state.options.autoscale ? this._priceRange : undefined;
 		for (let k = 0; k < this.count; k++) {
 			this.times[k] = state.points[k]!.time;
 			this.prices[k] = state.points[k]!.price;
@@ -219,10 +223,7 @@ export class Drawing implements PanePrimitive, DrawingApi {
 	}
 
 	public applyOptions(options: Partial<DrawingOptions>): void {
-		this._options = drawingOptions(this.type, { ...this._options, ...definedOnly(options) });
-		this._labelPoints = -1;
-		this._measuredText = null;
-		this.host?.requestUpdate();
+		this._setOptions(drawingOptions(this.type, { ...this._options, ...definedOnly(options) }));
 		this._owner.changed(this);
 	}
 
@@ -339,15 +340,8 @@ export class Drawing implements PanePrimitive, DrawingApi {
 			return;
 		}
 		const count = this.count;
-		const logical = this.logical;
+		const logical = this._locate(view);
 		const type = this.type;
-		if (this._timeline !== view.timelineVersion || this._pointsChanged) {
-			this._timeline = view.timelineVersion;
-			this._pointsChanged = false;
-			for (let k = 0; k < count; k++) {
-				logical[k] = view.timeToLogical(this.times[k]!);
-			}
-		}
 		this._measureText(options);
 		if (type === 'priceRange' || type === 'fibRetracement') {
 			this._makeLabels(view, options);
@@ -727,6 +721,105 @@ export class Drawing implements PanePrimitive, DrawingApi {
 			}
 		}
 		return HIT_NONE;
+	}
+
+	/** Takes options over, with what follows from them. */
+	private _setOptions(options: DrawingOptions): void {
+		this._options = options;
+		this.autoscale = options.autoscale ? this._priceRange : undefined;
+		this._labelPoints = -1;
+		this._measuredText = null;
+		this.host?.requestUpdate();
+	}
+
+	/** The logical positions of the points, looked up again when the timeline or the points changed. */
+	private _locate(view: PaneView): Float64Array {
+		const logical = this.logical;
+		if (this._timeline !== view.timelineVersion || this._pointsChanged) {
+			this._timeline = view.timelineVersion;
+			this._pointsChanged = false;
+			for (let k = 0; k < this.count; k++) {
+				logical[k] = view.timeToLogical(this.times[k]!);
+			}
+		}
+		return logical;
+	}
+
+	/**
+	 * `PanePrimitive.autoscale` of a drawing with the `autoscale` option: the prices of its points,
+	 * to count while their time span overlaps the view. That does not depend on the view, so it gives
+	 * the span with them and is asked again only when it or the timeline changed; the chart filters by
+	 * the span, like a hit test by the bounds. With the points go what they imply: every Fibonacci
+	 * level and the parallel line of a channel. A horizontal line is in view at any time, and a
+	 * vertical line has no price to show.
+	 */
+	private _priceRange(range: AutoscaleRange, view: PaneView): boolean {
+		const type = this.type;
+		if (!this._options.visible || type === 'verticalLine') {
+			range.spanFrom = Infinity;
+			range.spanTo = -Infinity;
+			return false;
+		}
+		const count = this.count;
+		const prices = this.prices;
+		const logical = this.logical;
+		let lo = -Infinity;
+		let hi = Infinity;
+		if (type !== 'horizontalLine') {
+			this._locate(view);
+			lo = Infinity;
+			hi = -Infinity;
+			for (let k = 0; k < count; k++) {
+				const position = logical[k]!;
+				if (position !== position) {
+					// Not known yet: asked again in the next frame, and when the answer is in.
+					return false;
+				}
+				lo = Math.min(lo, position);
+				hi = Math.max(hi, position);
+			}
+		}
+		let low = prices[0]!;
+		let high = low;
+		for (let k = 1; k < count; k++) {
+			low = Math.min(low, prices[k]!);
+			high = Math.max(high, prices[k]!);
+		}
+		let known = true;
+		if (type === 'fibRetracement') {
+			const levels = this._options.levels;
+			const from = prices[1]!;
+			const span = prices[0]! - from;
+			for (let i = 0; i < levels.length; i++) {
+				const price = from + span * levels[i]!;
+				low = Math.min(low, price);
+				high = Math.max(high, price);
+			}
+		} else if (type === 'parallelChannel') {
+			// As drawn: the parallel line is the base line moved in y. The mapping of the last frame
+			// does for that, since rows are linear in the values of the scale whatever its range is.
+			// Before the scale has a range the points alone count, and it is asked again.
+			const y0 = view.priceToY(prices[0]!);
+			const y1 = view.priceToY(prices[1]!);
+			const run = logical[1]! - logical[0]!;
+			const along = run !== 0 ? y0 + ((y1 - y0) * (logical[2]! - logical[0]!)) / run : y0;
+			const dy = view.priceToY(prices[2]!) - along;
+			const first = view.yToPrice(y0 + dy);
+			const second = view.yToPrice(y1 + dy);
+			known = first === first && second === second;
+			if (known) {
+				low = Math.min(low, first, second);
+				high = Math.max(high, first, second);
+			}
+		}
+		range.low = low;
+		range.high = high;
+		if (known) {
+			range.spanFrom = lo;
+			range.spanTo = hi;
+			return true;
+		}
+		return !(hi < range.from || lo > range.to);
 	}
 
 	// Drawing helpers

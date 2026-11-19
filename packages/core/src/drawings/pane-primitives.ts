@@ -3,8 +3,8 @@ import type { FrameModel } from '../model/frame-model';
 import type { TimeIndex } from '../model/time-index';
 import type { TimeScale } from '../model/time-scale';
 import { type ChartOptions, DEFAULT_PRICE_SCALE_ID } from '../options';
-import type { PriceAxes } from '../price-axes';
-import type { PanePrimitive, PrimitiveBounds, PrimitiveZOrder } from '../primitives';
+import type { PriceAxes, PriceAxis } from '../price-axes';
+import type { AutoscaleRange, PanePrimitive, PrimitiveBounds, PrimitiveZOrder } from '../primitives';
 import { Layer } from '../render/layer';
 import type { ChartLayout } from '../render/layout';
 import { PaneViewState, PrimitiveLayers, ScaleMapping } from '../render/primitive-host';
@@ -32,6 +32,10 @@ export class PanePrimitives {
 	public placement = false;
 	public drawings: Drawings | null = null;
 	public readonly bounds: PrimitiveBounds = { left: 0, top: 0, right: 0, bottom: 0 };
+	/** What primitives answer autoscale in, one after the other. */
+	private readonly _range = { from: 0, to: 0, low: 0, high: 0, spanFrom: NaN, spanTo: NaN } satisfies AutoscaleRange;
+	/** Timeline the spans primitives gave autoscale are for. */
+	private _rangesTimeline = -1;
 	/** The views primitives are drawn with, one per price scale they use. */
 	private readonly _views = new Map<string, PaneViewState>();
 	private readonly _target = {
@@ -71,8 +75,12 @@ export class PanePrimitives {
 		this._model = model;
 		this._times = times;
 		this._invalidate = invalidate;
-		this.layers = new PrimitiveLayers({ primitiveChanged: zOrder => this.changed(zOrder) });
+		this.layers = new PrimitiveLayers({
+			primitiveChanged: zOrder => this.changed(zOrder),
+			rangeChanged: () => this._invalidate(INVALIDATE_LIGHT),
+		});
 		this.view = this.viewFor(DEFAULT_PRICE_SCALE_ID);
+		model.ranges = (from, to) => this.includeRanges(from, to);
 	}
 
 	/** Takes over the options the cursor and the built-in drawings follow. */
@@ -80,6 +88,8 @@ export class PanePrimitives {
 		this._defaultCursor = options.crosshair.mode === 'hidden' ? 'default' : 'crosshair';
 		this._cursor = '';
 		this.applyCursor();
+		// The mode of a scale may differ, and with it what a primitive gives its autoscale.
+		this.layers.forgetRanges();
 		if (this.drawings !== null) {
 			this.drawings.style.handleFill = options.layout.background;
 			this.drawings.style.fontFamily = options.layout.fontFamily;
@@ -170,6 +180,105 @@ export class PanePrimitives {
 			this.placement = true;
 		}
 		this._invalidate(INVALIDATE_CURSOR);
+	}
+
+	/** The time index has new answers: primitives are placed again, and may give autoscale more. */
+	public timelineChanged(): void {
+		this.changed('normal');
+		if (this.layers.autoscaling.length > 0) {
+			this._invalidate(INVALIDATE_LIGHT);
+		}
+	}
+
+	/**
+	 * Takes the prices of the primitives that take part in autoscale into the ranges of their price
+	 * scales, for a view of the logical positions `from` to `to`. Called by the model between
+	 * collecting the ranges of the series and fitting the scales, so only frames that compute ranges
+	 * pay for it, and only for the primitives that opted in. Like a hit test it filters first: the
+	 * span and prices a primitive gave are kept in one array (`PrimitiveLayers.ranges`), a scan of it
+	 * skips those out of view, and a primitive is asked only when it changed, when the timeline did,
+	 * or when it gave no span. A scale takes the prices when it is about to be fitted to its series:
+	 * it autoscales (or has no range yet) and a visible series is on it. Its margins then go around
+	 * series and primitives alike.
+	 */
+	public includeRanges(from: number, to: number): void {
+		const layers = this.layers;
+		const entries = layers.autoscaling;
+		const count = entries.length;
+		if (count === 0) {
+			return;
+		}
+		if (this._times.version !== this._rangesTimeline) {
+			this._rangesTimeline = this._times.version;
+			layers.forgetRanges();
+		}
+		const ranges = layers.ranges;
+		const range = this._range;
+		// Entries on one scale share a view, and mostly follow each other.
+		let view: PaneViewState | null = null;
+		let axis: PriceAxis | null = null;
+		let fitted = false;
+		for (let i = 0; i < count; i++) {
+			const at = i * 4;
+			// Out of view, as last asked. Not so for NaN: an entry that has to be asked.
+			if (ranges[at + 1]! < from || ranges[at]! > to) {
+				continue;
+			}
+			const entry = entries[i]!;
+			if (entry.view !== view) {
+				view = entry.view;
+				axis = this._axes.get(view.scaleId);
+				fitted = axis.count > 0 && (axis.settings.autoScale || !axis.scale.hasRange);
+			}
+			if (!fitted) {
+				continue;
+			}
+			// One edited on the overlay keeps what it gave before: the scale stays put under the pointer.
+			if (ranges[at] !== ranges[at] && !entry.hidden) {
+				range.from = from;
+				range.to = to;
+				range.low = Infinity;
+				range.high = -Infinity;
+				range.spanFrom = NaN;
+				range.spanTo = NaN;
+				const given =
+					entry.primitive.autoscale!(range, view) &&
+					range.low <= range.high &&
+					range.low > -Infinity &&
+					range.high < Infinity;
+				ranges[at + 2] = given ? range.low : NaN;
+				ranges[at + 3] = given ? range.high : NaN;
+				const spanFrom = range.spanFrom;
+				const spanTo = range.spanTo;
+				if (spanFrom === spanFrom && spanTo === spanTo) {
+					ranges[at] = spanFrom;
+					ranges[at + 1] = spanTo;
+					if (spanTo < from || spanFrom > to) {
+						continue;
+					}
+				}
+			}
+			const low = ranges[at + 2]!;
+			const high = ranges[at + 3]!;
+			if (!(low <= high)) {
+				continue;
+			}
+			// In the values of the scale, as the series' ranges are (see `FrameModel._includeSeries`).
+			const scale = axis!.scale;
+			const mode = scale.mode;
+			if (mode === 'normal') {
+				axis!.include(low, high);
+			} else if (mode === 'logarithmic') {
+				if (high > 0) {
+					axis!.include(low > 0 ? Math.log10(low) : NaN, Math.log10(high));
+				}
+			} else {
+				const base = scale.base;
+				if (base === base && base !== 0) {
+					axis!.include(scale.toValue(low, base), scale.toValue(high, base));
+				}
+			}
+		}
 	}
 
 	/** Detaches the primitives of a series that is gone. */
