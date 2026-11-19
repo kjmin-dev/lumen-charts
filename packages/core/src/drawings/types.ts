@@ -70,6 +70,12 @@ export interface DrawingOptions {
 	visible: boolean;
 	/** A locked drawing can be selected but not moved, edited or deleted with the keyboard. */
 	locked: boolean;
+	/**
+	 * Whether the autoscale of its price scale keeps the drawing in view while its points' time span
+	 * overlaps the pane (a horizontal line: always): the prices of its points, with every Fibonacci
+	 * level and both lines of a channel. Default false: drawings leave the scale to the series.
+	 */
+	autoscale: boolean;
 }
 
 /** Version of `DrawingState`. A state of another version is refused by `DrawingsApi.add`. */
@@ -127,6 +133,7 @@ const BASE_OPTIONS: DrawingOptions = {
 	levels: DEFAULT_FIB_LEVELS as number[],
 	visible: true,
 	locked: false,
+	autoscale: false,
 };
 
 const FILLS: Partial<Record<DrawingType, Partial<DrawingOptions>>> = {

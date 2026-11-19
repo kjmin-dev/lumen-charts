@@ -290,7 +290,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		);
 		this._times.listener = () => {
 			this._stateIo.resolveView();
-			this._primitives.changed('normal');
+			this._primitives.timelineChanged();
 		};
 		this._applyResolved(this._settings.options);
 	}

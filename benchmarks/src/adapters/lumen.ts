@@ -13,6 +13,7 @@ import type { BenchDrawing } from '../drawings.ts';
 import { afterNextFrame, nextTask, pendingFrameCallbacks } from '../harness/frames.ts';
 import { INDICATOR_SET } from '../indicators.ts';
 import type { PriceAxesAdapter, PriceAxesLayout } from '../scenarios/axes-frames.ts';
+import type { DrawingAutoscaleAdapter } from '../scenarios/draw-autoscale.ts';
 import type { DrawingsAdapter } from '../scenarios/drawings.ts';
 import type { AppliedAdapter, IndicatorAdapter } from '../scenarios/indicators.ts';
 import type { LineStyleAdapter, LineTickStyle } from '../scenarios/line-ticks.ts';
@@ -56,6 +57,7 @@ class LumenAdapter
 		AppliedAdapter,
 		PriceAxesAdapter,
 		TimeZoneAdapter,
+		DrawingAutoscaleAdapter,
 		DrawingsAdapter,
 		StateAdapter,
 		IdleAdapter,
@@ -254,7 +256,7 @@ class LumenAdapter
 		this._chart.timeScale().setVisibleLogicalRange({ from: range.from, to: range.to });
 	}
 
-	public addDrawings(drawings: readonly BenchDrawing[]): void {
+	public addDrawings(drawings: readonly BenchDrawing[], autoscale = false): void {
 		const api = (this._chart as Partial<Pick<ChartApi, 'drawings'>>).drawings?.();
 		// The code of earlier stages, measured with the same harness, has no drawings.
 		if (api === undefined) {
@@ -264,9 +266,17 @@ class LumenAdapter
 			api.add({
 				type: drawing.type,
 				points: drawing.points,
-				options: drawing.text === undefined ? undefined : { text: drawing.text },
+				// A version of lumen without the option ignores it: its drawings leave autoscale alone.
+				options: {
+					...(drawing.text === undefined ? undefined : { text: drawing.text }),
+					...(autoscale ? { autoscale } : undefined),
+				} as never,
 			});
 		}
+	}
+
+	public priceRange(): { from: number; to: number } | null {
+		return this._chart.priceScale().getVisibleRange();
 	}
 
 	public saveState(): unknown {
