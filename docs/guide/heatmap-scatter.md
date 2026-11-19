@@ -81,3 +81,23 @@ detail and the number of marks the last frame drew from.
 Every option is documented in `ScatterOptions`, `HeatmapOptions` and `MarkSeriesOptionsCommon`; the
 design ([stage 5, heatmap and scatter](../design/stage-5-heatmap-scatter.md)) explains the choices
 and the limits.
+
+## Choosing a renderer
+
+```ts
+const chart = createChart(container, { markRenderer: 'webgpu' });
+const trades = chart.addSeries('scatter', { pointSize: 1.5 });
+const depth = chart.addSeries('heatmap');
+trades.setData(points);
+depth.setData(grid);
+await chart.whenIdle();
+console.log(trades.renderer(), depth.renderer());
+chart.applyOptions({ markRenderer: 'canvas2d' });
+```
+
+- `canvas2d` is the default. `webgpu` requests acceleration for marks. The chart draws with Canvas 2D while the optional module, device and pipelines initialize. `whenIdle()` retains its data/frame semantics. Each series reports `requested`, `effective`, `path`, fallback `reason`, current `bytes` and `peakBytes`. These byte estimates cover its GPU buffers and renderer bitmaps. An opaque scatter append can update the retained layer on the CPU while the effective series backend is WebGPU.
+- `auto` starts on Canvas 2D and samples full draws on the host. Trials require repeated costly draws, enough visible data after LOD and room in the page rendering budget. The chart compares warm GPU submission/composition costs with its Canvas measurements and uses a cooldown for switching back. Small or inexpensive workloads can stay on Canvas 2D. A browser/device combination needs its own performance measurements. [Integrated chart results](../benchmarks/integrated-mark-renderers.md).
+- GPU scatter supports square markers up to nine device pixels. Circles and larger markers use the existing Canvas painter. A sparse held window can use price-band tiles. Larger or time-concentrated windows use a column kernel. Heatmaps share the exact integer edges, missing-value rules and maximum reduction with Canvas, including at fractional zoom and on log scales.
+- Each chart keeps grid, price series, marks, drawings and overlay in their original order. Charts in a document share the GPU device and pipelines. Individual series keep their own resources. Budget pressure, unavailable hardware, failed initialization or device loss fall back to the latest engine window. To explicitly retry initialization after a loss, select `canvas2d` and then `webgpu` again. The renderer preference belongs to the host and survives chart-state restoration.
+
+Run the vanilla example with `?bars=1000&marks=1&markRenderer=webgpu` to switch preferences on the same chart.

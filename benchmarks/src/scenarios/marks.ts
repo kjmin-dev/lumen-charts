@@ -41,6 +41,7 @@ export interface MarksAdapter {
 	updateHeatmap(time: number, values: Float32Array): void;
 	/** The level of detail the series was last drawn from (0: as given) and the marks in view at it. */
 	marksDrawn(): { level: number; marks: number };
+	markBackend?(): { effective: string; path: string; bytes: number; reason: string | null } | undefined;
 }
 
 /**
@@ -48,7 +49,7 @@ export interface MarksAdapter {
  * scenario does; `tick` leaves it and changes the data (a point added to the scatter, the last
  * column of the heatmap replaced).
  */
-export type MarksVariant = 'pan' | 'zoom' | 'tick';
+export type MarksVariant = 'pan' | 'zoom' | 'tick' | 'tick-redraw';
 
 /**
  * How the points of a scatter lie. `cloud`: spread over a band of prices many times the candles'
@@ -85,6 +86,11 @@ export interface HeatmapJob extends MarksJobBase {
 }
 
 export interface MarksRun {
+	backend?: string;
+	gpuPass?: Distribution;
+	rendererPath?: string;
+	rendererBytes?: number;
+	rendererReason?: string | null;
 	/** JavaScript time of each frame: the step (a view change, or an update of the data) and the chart's draw for it. */
 	jsTime: Distribution;
 	interval: Distribution;
@@ -196,11 +202,14 @@ async function runMarks(job: ScatterJob | HeatmapJob, { factory, container }: Ru
 		const n = candles.length;
 		const visibleBars = Math.min(job.visibleBars, n);
 		const interval = (candles.time[1] ?? 60_000) - (candles.time[0] ?? 0);
+		let lastPointTime = 0;
 		let total: number;
 		let heat: HeatmapInput | null = null;
 		if (job.scenario === 'scatter') {
 			total = Math.round((job.points * n) / visibleBars);
-			marks.setScatter(generateScatter(candles, total, job.shape, job.seed + 5), job.pointSize);
+			const points = generateScatter(candles, total, job.shape, job.seed + 5);
+			lastPointTime = points.time[points.time.length - 1]!;
+			marks.setScatter(points, job.pointSize);
 		} else {
 			heat = generateHeatmap(candles, job.rows, job.seed + 5);
 			total = n * job.rows;
@@ -214,18 +223,23 @@ async function runMarks(job: ScatterJob | HeatmapJob, { factory, container }: Ru
 
 		const steps = job.warmupFrames + job.frames + 2;
 		const ranges =
-			job.variant === 'tick' ? [] : motionRanges(job.variant, n, visibleBars, steps, Math.max(1, job.frames / 4));
+			job.variant === 'tick' || job.variant === 'tick-redraw'
+				? []
+				: motionRanges(job.variant, n, visibleBars, steps, Math.max(1, job.frames / 4));
 		const random = new Random(job.seed + 9);
 		const lastTime = candles.time[n - 1] ?? 0;
 		const lastClose = candles.close[n - 1] ?? 0;
 		const column = heat === null ? null : heat.values.slice((n - 1) * heat.rows, n * heat.rows);
 		const step = (k: number): void => {
-			if (job.variant !== 'tick') {
+			if (job.variant === 'tick-redraw' && k % 8 === 0) {
+				const shift = (k / 8) % 2;
+				adapter.setVisibleLogicalRange({ from: start.from - shift, to: start.to - shift });
+			} else if (job.variant === 'pan' || job.variant === 'zoom') {
 				adapter.setVisibleLogicalRange(ranges[k] ?? start);
 			} else if (column === null) {
 				// A trade inside the last bar, after the ones there are.
 				marks.appendScatter(
-					lastTime + interval * Math.min(0.999, 0.5 + k / 20_000),
+					lastPointTime + interval * (k / 20_000),
 					lastClose * (1 + (random.next() - 0.5) * 0.002),
 					1 + Math.floor(random.next() * 500),
 				);
@@ -257,6 +271,7 @@ async function runMarks(job: ScatterJob | HeatmapJob, { factory, container }: Ru
 							first = frame + 1;
 							measureStart = now;
 							markMeasured('start');
+							window.markPassTimer?.start();
 						}
 					} else if (last === 0) {
 						const measured = frame + 1 - first;
@@ -265,6 +280,7 @@ async function runMarks(job: ScatterJob | HeatmapJob, { factory, container }: Ru
 						}
 					} else if (frame === last) {
 						markMeasured('end');
+						window.markPassTimer?.stop();
 						resolve();
 						return;
 					}
@@ -282,7 +298,9 @@ async function runMarks(job: ScatterJob | HeatmapJob, { factory, container }: Ru
 		} finally {
 			recording = stopFrameRecording();
 		}
+		const gpuSamples = await window.markPassTimer?.read();
 		const after = marks.marksDrawn();
+		const backend = marks.markBackend?.();
 		await adapter.settle();
 		if (recording.timestamps.length < last) {
 			throw new Error(`Recorded ${recording.timestamps.length} frames, expected at least ${last}`);
@@ -294,6 +312,15 @@ async function runMarks(job: ScatterJob | HeatmapJob, { factory, container }: Ru
 			intervals.push((recording.timestamps[k] ?? 0) - (recording.timestamps[k - 1] ?? 0));
 		}
 		return {
+			...(backend
+				? {
+						backend: backend.effective,
+						rendererPath: backend.path,
+						rendererBytes: backend.bytes,
+						rendererReason: backend.reason,
+					}
+				: {}),
+			...(gpuSamples?.length ? { gpuPass: summarize(gpuSamples) } : {}),
 			jsTime: summarize(jsTime),
 			interval: summarize(intervals),
 			frames: last - first,
@@ -375,6 +402,7 @@ const SCATTER_CASES: readonly ScatterCase[] = [
 	{ points: 5 * M, shape: 'trades', variant: 'pan' },
 	{ points: 100 * K, shape: 'cloud', variant: 'tick' },
 	{ points: M, shape: 'cloud', variant: 'tick' },
+	{ points: M, shape: 'cloud', variant: 'tick-redraw' },
 ];
 const QUICK_SCATTER_CASES: readonly ScatterCase[] = [
 	{ points: 10 * K, shape: 'cloud', variant: 'pan' },
@@ -446,6 +474,7 @@ const HEATMAP_CASES: readonly HeatmapCase[] = [
 	).flatMap(([columns, rows]) => (['pan', 'zoom'] as const).map(variant => ({ columns, rows, variant }))),
 	{ columns: 1200, rows: 200, variant: 'tick' },
 	{ columns: 2400, rows: 600, variant: 'tick' },
+	{ columns: 2400, rows: 600, variant: 'tick-redraw' },
 ];
 const QUICK_HEATMAP_CASES: readonly HeatmapCase[] = [
 	{ columns: 240, rows: 60, variant: 'pan' },

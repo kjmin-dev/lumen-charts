@@ -1,3 +1,4 @@
+import type { MarkRenderer } from './marks/backend';
 import type { SessionSchedule } from './model/sessions';
 import type { TickMarkFormatter, TimeFormatter } from './model/time-format';
 
@@ -237,6 +238,8 @@ export interface ChartOptions {
 	 * frame differs from a full one in a few antialiased pixels.
 	 */
 	redraw: 'auto' | 'full';
+	/** Runtime preference for scatter and heatmap rendering. */
+	markRenderer: MarkRenderer;
 }
 
 /** The colors a theme sets. Everything else is the same in every theme. */
@@ -347,13 +350,20 @@ export const BASE_OPTIONS: ChartOptions = {
 	worker: true,
 	memoryLimit: Infinity,
 	redraw: 'auto',
+	markRenderer: 'canvas2d',
 };
+
+export function checkMarkRenderer(value: MarkRenderer | undefined): void {
+	if (value !== undefined && value !== 'canvas2d' && value !== 'webgpu' && value !== 'auto')
+		throw new RangeError('lumen-charts: invalid markRenderer');
+}
 
 /**
  * Full options from what the user set: the defaults, then the colors of the theme, then `input`.
  * `dark` tells which theme `auto` stands for. Keys the options do not have are ignored.
  */
 export function resolveOptions(input: DeepPartial<ChartOptions>, dark: boolean): ChartOptions {
+	checkMarkRenderer(input.markRenderer);
 	const theme = input.theme ?? BASE_OPTIONS.theme;
 	const name: ThemeName = theme === 'auto' ? (dark ? 'dark' : 'light') : theme === 'dark' ? 'dark' : 'light';
 	const resolved = mergeKnown<ChartOptions>(

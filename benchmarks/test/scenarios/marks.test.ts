@@ -39,6 +39,7 @@ describe('scatter and heatmap scenarios', () => {
 			'scatter/candles-2k/trades-5m/pan',
 			'scatter/candles-2k/cloud-100k/tick',
 			'scatter/candles-2k/cloud-1m/tick',
+			'scatter/candles-2k/cloud-1m/tick-redraw',
 		]);
 		expect(knownFailure('lumen-worker', { kind: 'candles', size: 2000 }, 'scatter')).toBeNull();
 		expect(knownFailure('lwc-conflation-on', { kind: 'candles', size: 2000 }, 'scatter')).toMatch(/scatter/);
@@ -57,6 +58,7 @@ describe('scatter and heatmap scenarios', () => {
 			'heatmap/candles-9600/4800x1200/zoom',
 			'heatmap/candles-2400/1200x200/tick',
 			'heatmap/candles-4800/2400x600/tick',
+			'heatmap/candles-4800/2400x600/tick-redraw',
 		]);
 		expect(planJobs({ ...base, quick: true, scenarios: ['scatter', 'heatmap'] }).jobs.length).toBe(4);
 	});
