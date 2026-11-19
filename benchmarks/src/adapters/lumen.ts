@@ -108,6 +108,28 @@ class LumenAdapter
 		return this._chart.whenApplied();
 	}
 
+	public setScatter(points: ScatterInput, pointSize: number): void {
+		this._scatter ??= this._chart.addSeries('scatter', { pointSize });
+		this._scatter.setData(points);
+	}
+
+	public appendScatter(time: number, price: number, value: number): void {
+		this._scatter?.update({ time, price, value });
+	}
+
+	public setHeatmap(data: HeatmapInput): void {
+		this._heatmap ??= this._chart.addSeries('heatmap');
+		this._heatmap.setData(data);
+	}
+
+	public updateHeatmap(time: number, values: Float32Array): void {
+		this._heatmap?.update({ time, values });
+	}
+
+	public marksDrawn(): { level: number; marks: number } {
+		return (this._scatter ?? this._heatmap)?.drawn() ?? { level: 0, marks: 0 };
+	}
+
 	public setData(data: Prepared): void {
 		if (data.kind === 'candles') {
 			const { time, open, high, low, close, volume } = data.columns;
@@ -245,28 +267,6 @@ class LumenAdapter
 				options: drawing.text === undefined ? undefined : { text: drawing.text },
 			});
 		}
-	}
-
-	public setScatter(points: ScatterInput, pointSize: number): void {
-		this._scatter ??= this._chart.addSeries('scatter', { pointSize });
-		this._scatter.setData(points);
-	}
-
-	public appendScatter(time: number, price: number, value: number): void {
-		this._scatter?.update({ time, price, value });
-	}
-
-	public setHeatmap(data: HeatmapInput): void {
-		this._heatmap ??= this._chart.addSeries('heatmap');
-		this._heatmap.setData(data);
-	}
-
-	public updateHeatmap(time: number, values: Float32Array): void {
-		this._heatmap?.update({ time, values });
-	}
-
-	public marksDrawn(): { level: number; marks: number } {
-		return (this._scatter ?? this._heatmap)?.drawn() ?? { level: 0, marks: 0 };
 	}
 
 	public saveState(): unknown {

@@ -1,6 +1,6 @@
+import type { MarksChange, MarksKind, MarksRequest, MarksUpdate } from './marks/protocol';
 import { type EngineTransport, LocalTransport } from './host';
 import { connectWorker } from './pool';
-import type { MarksChange, MarksKind, MarksRequest, MarksUpdate } from './marks/protocol';
 import { type Command, type EngineEvent, type IndicatorInputRef, type SeriesKind, TICK_STRIDE } from './protocol';
 
 export interface EngineOptions {

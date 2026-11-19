@@ -167,9 +167,9 @@ export class FrameModel {
 				}
 			}
 		}
-
 		// Heatmap and scatter series: their mapping of times, their rows, their part in the autoscale.
 		this.marks?.frame();
+
 		for (let i = 0; i < axes.length; i++) {
 			axes[i]!.fit();
 		}
