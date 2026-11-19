@@ -71,7 +71,7 @@ const TICK_DATASETS: readonly DatasetSpec[] = [
 export const TICK_VIEWS: readonly TickView[] = ['latest', 'all'];
 const QUICK_TICK_DATASETS: readonly DatasetSpec[] = [{ kind: 'candles', size: 10 * K }];
 
-async function runTick(job: TickJob, { factory, container }: RunContext): Promise<TickRun> {
+async function runTick(job: TickJob, { factory, container, probes }: RunContext): Promise<TickRun> {
 	const data = generateSeries(job.dataset.kind, { seed: job.seed, count: job.dataset.size });
 	const ticks = generateTicks(data, {
 		seed: job.seed + 1,
@@ -108,6 +108,7 @@ async function runTick(job: TickJob, { factory, container }: RunContext): Promis
 		const settle = new Float64Array(maxRounds);
 		const settleJs = new Float64Array(maxRounds);
 		const mainThreadPerTick = new Float64Array(maxRounds);
+		await probes.allocations('start');
 		markMeasured('start');
 		const measureStart = performance.now();
 		let count = 0;
@@ -138,6 +139,7 @@ async function runTick(job: TickJob, { factory, container }: RunContext): Promis
 			}
 		}
 		markMeasured('end');
+		await probes.allocations('end', count);
 
 		const update: number[] = [];
 		const newBar: number[] = [];

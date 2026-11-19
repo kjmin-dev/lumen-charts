@@ -4,9 +4,9 @@
 import { type ChartAdapter, supports } from '../adapter.ts';
 import { Random, TICK_NEW_BAR, generateSeries, generateTicks } from '../data.ts';
 import { ms } from '../format.ts';
-import { nextTask } from '../harness/frames.ts';
 import { markMeasured } from '../harness/marks.ts';
 import { LATEST_VIEW_BARS, createSettled, overBudget, prepare } from '../harness/steps.ts';
+import { waitIdle } from '../harness/wait.ts';
 import { type DatasetSpec, type JobBase, type JobCase, K, M, datasetLabel, sizeLabel } from '../jobs.ts';
 import { MS, type Report, US, casesOf, cell, eachCase, hostIdle, runsNote, table } from '../report.ts';
 import { type PlanContext, type Requirement, type RunContext, defineScenario } from '../scenario.ts';
@@ -147,14 +147,6 @@ export function withIndicators(adapter: ChartAdapter, count: number): void {
 /** Longest pause between two ticks of the tick-to-applied scenario, in milliseconds. */
 const MAX_TICK_GAP_MS = 2;
 
-/** Waits `duration` milliseconds a task at a time, so frames run whenever they are due meanwhile. */
-async function pause(duration: number): Promise<void> {
-	const until = performance.now() + duration;
-	while (performance.now() < until) {
-		await nextTask();
-	}
-}
-
 /**
  * Ticks one at a time, each from the update call until the library has applied it (indicator
  * values included), with the series' indicators computed beforehand. A random pause of up to
@@ -162,7 +154,7 @@ async function pause(duration: number): Promise<void> {
  * a socket would: a tick that arrives during a frame waits for it, and with ticks back to back the
  * share of ticks that do would depend on how fast the library is.
  */
-async function runApply(job: ApplyJob, { factory, container }: RunContext): Promise<ApplyRun> {
+async function runApply(job: ApplyJob, { factory, container, probes }: RunContext): Promise<ApplyRun> {
 	const data = generateSeries(job.dataset.kind, { seed: job.seed, count: job.dataset.size });
 	const ticks = generateTicks(data, {
 		seed: job.seed + 1,
@@ -191,16 +183,19 @@ async function runApply(job: ApplyJob, { factory, container }: RunContext): Prom
 				break;
 			}
 		}
+		// Starts whatever the waits between ticks need, before anything is measured.
+		await waitIdle(1);
 		await adapter.settle();
 
 		const applied = new Float64Array(job.ticks);
 		const sync = new Float64Array(job.ticks);
 		const gaps = new Random(job.seed + 2);
+		await probes.allocations('start');
 		markMeasured('start');
 		const measureStart = performance.now();
 		let count = 0;
 		while (count < job.ticks) {
-			await pause(gaps.next() * MAX_TICK_GAP_MS);
+			await waitIdle(gaps.next() * MAX_TICK_GAP_MS);
 			const t0 = performance.now();
 			adapter.applyTick(ticks, offset + count);
 			const t1 = performance.now();
@@ -214,6 +209,7 @@ async function runApply(job: ApplyJob, { factory, container }: RunContext): Prom
 			}
 		}
 		markMeasured('end');
+		await probes.allocations('end', count);
 		await adapter.settle();
 
 		const update: number[] = [];

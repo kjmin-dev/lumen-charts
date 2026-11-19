@@ -12,6 +12,7 @@ import { parseArgs } from 'node:util';
 import { type Browser, type BrowserContext, type CDPSession, type Page, chromium } from 'playwright';
 import { build, preview } from 'vite';
 import { adapters, knownFailure } from '../src/adapters/index.ts';
+import { ALLOCATION_TRACE_CATEGORIES, type SamplingNode, allocationsHeadline } from '../src/allocations.ts';
 import type { SeriesKind } from '../src/data.ts';
 import type { PageEnvironment } from '../src/harness/environment.ts';
 import { headline } from '../src/headline.ts';
@@ -34,7 +35,15 @@ import {
 import { type CdpHeapUsage, cdpHeapUsage, memorySample, sumWorkers } from '../src/memory.ts';
 import { type CompletedJob, RESULTS_SCHEMA_VERSION, type ResultsFile, aggregate } from '../src/results.ts';
 import { SCENARIOS } from '../src/scenarios/index.ts';
-import { type RunProfile, sourceResolver, writeProfile, writeSummary } from './profile.ts';
+import {
+	type RunAllocations,
+	type RunProfile,
+	sourceResolver,
+	writeAllocations,
+	writeAllocationsSummary,
+	writeProfile,
+	writeSummary,
+} from './profile.ts';
 
 const benchDir = fileURLToPath(new URL('..', import.meta.url));
 const repoDir = resolve(benchDir, '..');
@@ -82,6 +91,11 @@ Profiling
                        them in <dir>/summary.json. The page is built without minification, so
                        samples carry function names. Tracing slows the runs: use the timings of a
                        run without it, and the breakdown for shares
+  --allocations <dir>  record what the page's main thread allocates in the measured part of every
+                       tick run (tick, ind-apply): a sampling heap profile by call site, library
+                       or harness, and the garbage collections, in <dir>/<run>.json and all of
+                       them in <dir>/summary.json. Bytes and counts hold on a busy machine, where
+                       times do not; sampling slows the runs, so take timings from a run without
 
 Output
   --timeout <s>        per-run timeout in seconds (default: 900)
@@ -139,6 +153,7 @@ const { values: args } = parseArgs({
 		timeout: { type: 'string', default: '900' },
 		out: { type: 'string' },
 		profile: { type: 'string' },
+		allocations: { type: 'string' },
 		help: { type: 'boolean', default: false },
 	},
 	allowPositionals: false,
@@ -170,7 +185,11 @@ const maxWorkers = list(args['max-workers']).map(value => {
 // pnpm runs package scripts in the package directory; resolve paths against where they were typed.
 const invokedFrom = process.env['INIT_CWD'] ?? process.cwd();
 const profileDir = args.profile !== undefined ? resolve(invokedFrom, args.profile) : null;
-if (profileDir !== null) {
+const allocationsDir = args.allocations !== undefined ? resolve(invokedFrom, args.allocations) : null;
+if (profileDir !== null && allocationsDir !== null) {
+	throw new Error('--profile and --allocations each record a trace of their own: use one per run');
+}
+if (profileDir !== null || allocationsDir !== null) {
 	// Read by the Vite configuration, which runs in this process.
 	process.env['LUMEN_BENCH_PROFILE'] = '1';
 }
@@ -411,7 +430,23 @@ async function rendererResidentBytes(browser: Browser): Promise<number | null> {
 	}
 }
 
-async function newPage(session: Session): Promise<{ context: BrowserContext; page: Page }> {
+/** Bytes between two samples of the heap profiler: small, so a few megabytes give a steady share per call site. */
+const ALLOCATION_SAMPLING_BYTES = 1024;
+
+/** The sampling heap profile of the measured part of a run and the ticks it applied. */
+interface Sampled {
+	head: SamplingNode;
+	ticks: number;
+}
+
+interface BenchPage {
+	context: BrowserContext;
+	page: Page;
+	/** What the page recorded, once it has stopped the record (`--allocations`). */
+	sampled: () => Sampled | null;
+}
+
+async function newPage(session: Session): Promise<BenchPage> {
 	const context = await session.browser.newContext({ viewport, deviceScaleFactor: dpr });
 	const page = await context.newPage();
 	const cdp = await context.newCDPSession(page);
@@ -448,10 +483,26 @@ async function newPage(session: Session): Promise<{ context: BrowserContext; pag
 		};
 	});
 	await page.exposeFunction('__benchRendererMemory', () => rendererResidentBytes(session.browser));
+	let sampled: Sampled | null = null;
+	if (allocationsDir !== null) {
+		await cdp.send('HeapProfiler.enable');
+		await page.exposeFunction('__benchAllocations', async (edge: 'start' | 'end', ticks: number) => {
+			if (edge === 'start') {
+				// Collected objects stay in the profile: it counts what was allocated, not what is left.
+				await cdp.send('HeapProfiler.startSampling', {
+					samplingInterval: ALLOCATION_SAMPLING_BYTES,
+					includeObjectsCollectedByMajorGC: true,
+					includeObjectsCollectedByMinorGC: true,
+				});
+			} else {
+				sampled = { head: (await cdp.send('HeapProfiler.stopSampling')).profile.head, ticks };
+			}
+		});
+	}
 	const query = new URLSearchParams({ auto: '', width: String(chart.width), height: String(chart.height) });
 	await page.goto(`${session.baseUrl}?${query.toString()}`);
 	await page.waitForFunction(() => window.bench !== undefined);
-	return { context, page };
+	return { context, page, sampled: () => sampled };
 }
 
 function delay<T>(ms: number, value: T): { promise: Promise<T>; cancel: () => void } {
@@ -498,6 +549,7 @@ function hostLoad(since: { idle: number; total: number }): HostLoad {
 }
 
 const profiles: RunProfile[] = [];
+const allocations: RunAllocations[] = [];
 const resolveSource = sourceResolver();
 
 async function runOne(session: Session, planned: PlannedJob): Promise<CompletedJob> {
@@ -509,7 +561,7 @@ async function runOne(session: Session, planned: PlannedJob): Promise<CompletedJ
 		process.stdout.write('  browser disconnected; restarting it\n');
 		session.browser = await launch();
 	}
-	const { context, page } = await newPage(session);
+	const { context, page, sampled } = await newPage(session);
 	let library: AdapterInfo | null = null;
 	let outcome: RunOutcome;
 	try {
@@ -519,6 +571,9 @@ async function runOne(session: Session, planned: PlannedJob): Promise<CompletedJ
 			// A run that failed may have left its trace recording.
 			await session.browser.stopTracing().catch(() => undefined);
 			await session.browser.startTracing(page, { categories: TRACE_CATEGORIES });
+		} else if (allocationsDir !== null) {
+			await session.browser.stopTracing().catch(() => undefined);
+			await session.browser.startTracing(page, { categories: ALLOCATION_TRACE_CATEGORIES });
 		}
 		const run = page
 			.evaluate(job => window.bench?.run(job) ?? Promise.reject(new Error('bench API missing')), planned.job)
@@ -530,6 +585,19 @@ async function runOne(session: Session, planned: PlannedJob): Promise<CompletedJ
 				profiles.push(writeProfile(profileDir, planned.id, await session.browser.stopTracing(), resolveSource));
 			} catch (error) {
 				process.stdout.write(`  no profile: ${error instanceof Error ? error.message : String(error)}\n`);
+			}
+		}
+		if (allocationsDir !== null && typeof result !== 'string') {
+			const trace = await session.browser.stopTracing();
+			const record = sampled();
+			if (record !== null) {
+				try {
+					const written = writeAllocations(allocationsDir, planned.id, record.head, record.ticks, trace, resolveSource);
+					allocations.push(written);
+					process.stdout.write(`  ${allocationsHeadline(written.summary)}\n`);
+				} catch (error) {
+					process.stdout.write(`  no allocations: ${error instanceof Error ? error.message : String(error)}\n`);
+				}
 			}
 		}
 		const durationMs = performance.now() - started;
@@ -665,6 +733,9 @@ async function main(): Promise<void> {
 
 		if (profileDir !== null) {
 			writeSummary(profileDir, profiles);
+		}
+		if (allocationsDir !== null) {
+			writeAllocationsSummary(allocationsDir, allocations);
 		}
 
 		process.stdout.write('\nMedian over runs:\n');

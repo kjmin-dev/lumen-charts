@@ -24,6 +24,7 @@ pnpm bench --packages ../other-checkout/packages --lib lumen-worker   # measure 
 pnpm bench --help                       # all options (headed, Chrome channel, viewport, DPR, ...)
 pnpm bench --case ind-frames/candles-1m/pan-all --profile benchmarks/results/traces   # trace the runs: CPU by category, frames, GC
 pnpm bench:profile benchmarks/results/traces    # the breakdowns again from the traces of a directory
+pnpm bench --case ind-apply,tick --allocations benchmarks/results/allocations   # what the main thread allocates per tick, by call site, and its collections
 pnpm bench:report <results.json>        # Markdown tables from a results file
 pnpm bench:merge <out.json> <a.json> <b.json>   # join runs of the same cases into one file
 pnpm bench:pixels                       # partial redraws against full redraws, pixel for pixel (--dpr, --raster, --redraw, --case)

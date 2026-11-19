@@ -16,6 +16,13 @@ export interface Probes {
 	mainThread(): Promise<MainThreadTimes | null>;
 	/** Resident memory of the browser's renderer processes in bytes, or null if unavailable. */
 	rendererMemory(): Promise<number | null>;
+	/**
+	 * Starts or stops the runner's record of what the main thread allocates (`pnpm bench
+	 * --allocations`); nothing without it. Awaited outside the timed calls, around the measured part.
+	 * `ticks`, given at the end, is the number of ticks the part applied: the record is also given
+	 * per tick.
+	 */
+	allocations(edge: 'start' | 'end', ticks?: number): Promise<void>;
 }
 
 /** What a scenario plans its part of the matrix from: the options of the plan that concern it. */
