@@ -16,6 +16,7 @@ import type { PriceAxesAdapter, PriceAxesLayout } from '../scenarios/axes-frames
 import type { DrawingsAdapter } from '../scenarios/drawings.ts';
 import type { AppliedAdapter, IndicatorAdapter } from '../scenarios/indicators.ts';
 import type { LineStyleAdapter, LineTickStyle } from '../scenarios/line-ticks.ts';
+import type { HeatmapInput, MarksAdapter, ScatterInput } from '../scenarios/marks.ts';
 import type { IdleAdapter, WorkerLimitFactory } from '../scenarios/multi.ts';
 import type { DatafeedAdapter, HistoryOperationsAdapter, SeveralDatafeedsAdapter } from '../scenarios/refetch.ts';
 import type { StateAdapter } from '../scenarios/state.ts';
@@ -58,7 +59,8 @@ class LumenAdapter
 		DrawingsAdapter,
 		StateAdapter,
 		IdleAdapter,
-		LineStyleAdapter
+		LineStyleAdapter,
+		MarksAdapter
 {
 	private readonly _chart: ChartApi;
 	private _series: AnySeries | null = null;
@@ -71,6 +73,8 @@ class LumenAdapter
 	/** Style of the next line series, and how many copies of it `setData` adds (`line-ticks`). */
 	private _lineStyle: LineTickStyle = 'solid';
 	private _lineCopies = 0;
+	private _scatter: lumen.ScatterSeriesApi | null = null;
+	private _heatmap: lumen.HeatmapSeriesApi | null = null;
 
 	public constructor(container: HTMLElement, size: ChartSize | 'auto', worker: boolean) {
 		this._chart = createChart(
@@ -241,6 +245,28 @@ class LumenAdapter
 				options: drawing.text === undefined ? undefined : { text: drawing.text },
 			});
 		}
+	}
+
+	public setScatter(points: ScatterInput, pointSize: number): void {
+		this._scatter ??= this._chart.addSeries('scatter', { pointSize });
+		this._scatter.setData(points);
+	}
+
+	public appendScatter(time: number, price: number, value: number): void {
+		this._scatter?.update({ time, price, value });
+	}
+
+	public setHeatmap(data: HeatmapInput): void {
+		this._heatmap ??= this._chart.addSeries('heatmap');
+		this._heatmap.setData(data);
+	}
+
+	public updateHeatmap(time: number, values: Float32Array): void {
+		this._heatmap?.update({ time, values });
+	}
+
+	public marksDrawn(): { level: number; marks: number } {
+		return (this._scatter ?? this._heatmap)?.drawn() ?? { level: 0, marks: 0 };
 	}
 
 	public saveState(): unknown {

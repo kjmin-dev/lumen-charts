@@ -6,6 +6,10 @@ import { WindowCache } from './data/window-cache';
 import { PanePrimitives } from './drawings/pane-primitives';
 import type { DrawingsApi } from './drawings/types';
 import { ChartIndicators, type IndicatorApi, type IndicatorOptions, type IndicatorOutputApi } from './indicators';
+import { ChartMarks } from './marks/chart-marks';
+import type { AnyMarkOptions, MarkSeriesType } from './marks/options';
+import type { HeatmapSeriesApi, MarkSeriesApi, ScatterSeriesApi } from './marks/series';
+import { type MarkSeriesPlan, isMarkType, planMarkSeries } from './marks/state';
 import { type AxisTarget, Interaction, type InteractionHost, type PointerDelegate } from './input/interaction';
 import { INVALIDATE_FULL, INVALIDATE_LIGHT, INVALIDATE_NONE, type Invalidation } from './model/invalidation';
 import { Crosshair } from './model/crosshair';
@@ -57,6 +61,7 @@ import { observeVisibility, unobserveVisibility } from './shared/observers';
  * - `PanePrimitives` (drawings/pane-primitives.ts): primitives, drawings and their layer.
  * - `PaneRenderer`, `AxisRenderer`, `OverlayRenderer` (render/): the series layer, axes, overlay.
  * - `StateIo` (state-io.ts): save and restore, and the view of a restored state.
+ * - `ChartMarks` (marks/chart-marks.ts): heatmap and scatter series, drawn through pixel buffers.
  *
  * Parts get the parts and callbacks they need rather than the chart, and nothing here runs per
  * item: a frame makes a handful of calls into them.
@@ -94,6 +99,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private readonly _primitives: PanePrimitives;
 	/** Saves and restores the state of the chart, and holds a restored view until it can be shown. */
 	private readonly _stateIo: StateIo;
+	/** Heatmap and scatter series. */
+	private readonly _marks: ChartMarks;
+	/** The heatmap and scatter series of a state being restored, checked, until the restore applies them. */
+	private _markPlans: MarkSeriesPlan[] | null = null;
 	/** What draws the series layer, the axes and the overlay. */
 	private readonly _paneRenderer: PaneRenderer;
 	private readonly _axisRenderer: AxisRenderer;
@@ -218,7 +227,20 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 					this._settings.apply(replaced);
 					this._update();
 				},
-				batch: changes => this._batch(changes),
+				// Called once the state is found sound, with what a restore changes.
+				batch: changes =>
+					this._batch(() => {
+						const plans = this._markPlans;
+						this._markPlans = null;
+						if (plans !== null) {
+							// First, so the names of those that go are free for the series of the state.
+							this._marks.drop(plans);
+						}
+						changes();
+						if (plans !== null) {
+							this._marks.restore(plans);
+						}
+					}),
 				syncView: () => this._syncView(),
 				invalidate: level => this.invalidate(level),
 			},
@@ -231,6 +253,19 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._times,
 			this._primitives,
 		);
+		this._marks = new ChartMarks(
+			{
+				ensureEngine: () => this._data.ensureEngine(),
+				invalidate: () => this.invalidate(INVALIDATE_LIGHT),
+				dataChanged: () => this._schedule(INVALIDATE_LIGHT),
+			},
+			this._layout,
+			this.scale,
+			this._axes,
+			this._primitives,
+			this._model,
+		);
+		this._model.marks = this._marks;
 		this._paneRenderer = new PaneRenderer(
 			this._settings,
 			this._layout,
@@ -294,18 +329,22 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		return this._layout.root;
 	}
 
-	public addSeries<T extends SeriesType>(type: T, options: SeriesCreateOptions<T> = {}): SeriesApi<T> {
-		const { datafeed, id, ...style } = options;
-		let name = id;
-		if (name === undefined || name === '') {
-			do {
-				name = `series-${++this._named}`;
-			} while (this._seriesNamed(name) !== undefined);
-		} else if (typeof name !== 'string') {
-			throw new Error('lumen-charts: the id of a series must be a string');
-		} else if (this._seriesNamed(name) !== undefined) {
-			throw new Error(`lumen-charts: a series with id "${name}" exists already`);
+	public addSeries<T extends SeriesType>(type: T, options?: SeriesCreateOptions<T>): SeriesApi<T>;
+	public addSeries(type: 'heatmap', options?: Partial<AnyMarkOptions> & { id?: string }): HeatmapSeriesApi;
+	public addSeries(type: 'scatter', options?: Partial<AnyMarkOptions> & { id?: string }): ScatterSeriesApi;
+	public addSeries(
+		type: SeriesType | MarkSeriesType,
+		options: SeriesCreateOptions<SeriesType> | (Partial<AnyMarkOptions> & { id?: string }) = {},
+	): SeriesApi | HeatmapSeriesApi | ScatterSeriesApi {
+		if (isMarkType(type)) {
+			const { id: markId, ...markOptions } = options as Partial<AnyMarkOptions> & { id?: string };
+			// Throws for options that cannot be drawn, before the series has a name.
+			return this._marks.add(type, this._nameSeries(markId), markOptions) as unknown as
+				| HeatmapSeriesApi
+				| ScatterSeriesApi;
 		}
+		const { datafeed, id, ...style } = options as SeriesCreateOptions<SeriesType>;
+		const name = this._nameSeries(id);
 		const engine = this._data.ensureEngine();
 		const kind = type === 'candlestick' ? 'ohlcv' : 'line';
 		const engineId = engine?.addSeries(kind, datafeed !== undefined) ?? -1;
@@ -319,10 +358,33 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		);
 		series.datafeed = (datafeed as Series['datafeed'] | undefined) ?? null;
 		this._series.push(series);
-		return series as unknown as SeriesApi<T>;
+		return series as unknown as SeriesApi;
 	}
 
-	public removeSeries(series: SeriesApi): void {
+	/** The name of a new series: `id` if it is free, or the next `series-N` without one. */
+	private _nameSeries(id: unknown): string {
+		const taken = (name: string): boolean =>
+			this._seriesNamed(name) !== undefined || this._marks.named(name) !== undefined;
+		if (id === undefined || id === '') {
+			let name: string;
+			do {
+				name = `series-${++this._named}`;
+			} while (taken(name));
+			return name;
+		}
+		if (typeof id !== 'string') {
+			throw new Error('lumen-charts: the id of a series must be a string');
+		}
+		if (taken(id)) {
+			throw new Error(`lumen-charts: a series with id "${id}" exists already`);
+		}
+		return id;
+	}
+
+	public removeSeries(series: SeriesApi | MarkSeriesApi): void {
+		if (this._marks.remove(series)) {
+			return;
+		}
 		const index = this._series.indexOf(series as unknown as Series);
 		if (index < 0 || this._series[index]!.derived) {
 			return;
@@ -357,6 +419,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		return this._series.filter(series => !series.derived) as unknown as SeriesApi[];
 	}
 
+	public markSeries(): (HeatmapSeriesApi | ScatterSeriesApi)[] {
+		return [...this._marks.list] as unknown as (HeatmapSeriesApi | ScatterSeriesApi)[];
+	}
+
 	public indicators(): IndicatorApi[] {
 		return [...this._indicators.list];
 	}
@@ -366,12 +432,45 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	}
 
 	public saveState(selection: ChartStateSelection = {}): ChartState {
-		return this._stateIo.save(selection);
+		const state = this._stateIo.save(selection);
+		if (state.series !== undefined) {
+			state.series.push(...this._marks.save(state.series.length));
+		}
+		return state;
 	}
 
 	public restoreState(state: ChartState, selection: ChartStateSelection = {}): void {
-		if (!this._destroyed) {
+		if (this._destroyed) {
+			return;
+		}
+		// Heatmap and scatter series are restored by their own part: they are checked first, so a state
+		// that is wrong anywhere still throws before anything changes.
+		const listed: unknown = state?.series;
+		const wanted = selection.parts === undefined || selection.parts.includes('series');
+		if (!wanted || !Array.isArray(listed)) {
 			this._stateIo.restore(state, selection);
+			return;
+		}
+		const marks: { entry: Record<string, unknown>; index: number }[] = [];
+		const others: unknown[] = [];
+		const ids = new Set<string>();
+		listed.forEach((entry: unknown, index) => {
+			if (typeof entry === 'object' && entry !== null && isMarkType((entry as { type?: unknown }).type)) {
+				marks.push({ entry: entry as Record<string, unknown>, index });
+			} else {
+				others.push(entry);
+				const id = (entry as { id?: unknown } | null)?.id;
+				if (typeof id === 'string') {
+					ids.add(id);
+				}
+			}
+		});
+		this._markPlans = planMarkSeries(marks, ids);
+		try {
+			// Checks the rest of the state, then changes the chart in one batch, these series with it.
+			this._stateIo.restore({ ...state, series: others as ChartState['series'] }, selection);
+		} finally {
+			this._markPlans = null;
 		}
 	}
 
@@ -454,6 +553,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._data.destroy();
 		this._indicators.destroy();
 		this._settleApplied();
+		this._marks.destroy();
 		this._primitives.destroy();
 		this._layout.root.removeEventListener('contextrestored', this._onContextRestored, true);
 		this._layout.release();
@@ -724,6 +824,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private readonly _onContextRestored = (): void => {
 		this._layout.dirty = true;
 		this._primitives.layers.normal.changed = true;
+		this._marks.forget();
 		this.invalidate(INVALIDATE_FULL);
 	};
 

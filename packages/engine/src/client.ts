@@ -1,5 +1,6 @@
 import { type EngineTransport, LocalTransport } from './host';
 import { connectWorker } from './pool';
+import type { MarksChange, MarksKind, MarksRequest, MarksUpdate } from './marks/protocol';
 import { type Command, type EngineEvent, type IndicatorInputRef, type SeriesKind, TICK_STRIDE } from './protocol';
 
 export interface EngineOptions {
@@ -43,6 +44,8 @@ function defaultWorker(): Worker {
 export class EngineClient {
 	/** Receives one event per command, in command order, and notices of background work in between. */
 	public onevent: ((event: EngineEvent) => void) | null = null;
+	/** Receives the rows of marks series an event carries, before `onevent` gets the event. */
+	public onmarks: ((updates: MarksUpdate[]) => void) | null = null;
 	private _transport: EngineTransport | null = null;
 	/** Commands issued before the transport is known. Buffers are transferred only once it is. */
 	private _held: Held[] = [];
@@ -252,6 +255,42 @@ export class EngineClient {
 		return this._send({ type: 'resolve', times }, [times.buffer as ArrayBuffer]);
 	}
 
+	/** Adds a marks series (a scatter or a heatmap, see `marks/protocol.ts`) and returns its id. */
+	public addMarks(kind: MarksKind): number {
+		const series = this._nextSeries++;
+		this._send({ type: 'marks', series, change: { op: 'add', kind } }, NO_TRANSFER);
+		return series;
+	}
+
+	/**
+	 * Changes a marks series: `set` or `append` hand their typed arrays over to the engine (do not
+	 * use them afterwards), `remove` lets the series go. Returns the command's `seq`.
+	 */
+	public changeMarks(series: number, change: MarksChange): number {
+		const transfer: ArrayBuffer[] = [];
+		if (change.op === 'set' || change.op === 'append') {
+			const data = change.data;
+			transfer.push(data.time.buffer as ArrayBuffer);
+			if (data.kind === 'heatmap') {
+				transfer.push(data.values.buffer as ArrayBuffer);
+			} else {
+				transfer.push(data.price.buffer as ArrayBuffer);
+				if (data.value !== null) {
+					transfer.push(data.value.buffer as ArrayBuffer);
+				}
+			}
+		}
+		return this._send({ type: 'marks', series, change }, transfer);
+	}
+
+	/**
+	 * Asks for the rows of a marks series a view needs; they come with the `marks` of the answering
+	 * event. Returns the command's `seq`, which the rows carry as `request`.
+	 */
+	public requestMarks(series: number, request: MarksRequest): number {
+		return this._send({ type: 'marksWindow', series, request }, NO_TRANSFER);
+	}
+
 	/** Resolves once every command issued so far has been answered. */
 	public whenIdle(): Promise<void> {
 		if (this.pending === 0) {
@@ -268,6 +307,7 @@ export class EngineClient {
 		}
 		this._destroyed = true;
 		this.onevent = null;
+		this.onmarks = null;
 		this._held = [];
 		this._tickCount = 0;
 		this._abortConnect?.();
@@ -299,7 +339,13 @@ export class EngineClient {
 		this._flushTicks();
 		const seq = ++this._seq;
 		// Windows, limits, fetched rows and time lookups change nothing a later call could depend on.
-		if (body.type !== 'window' && body.type !== 'limit' && body.type !== 'rows' && body.type !== 'resolve') {
+		if (
+			body.type !== 'window' &&
+			body.type !== 'limit' &&
+			body.type !== 'rows' &&
+			body.type !== 'resolve' &&
+			body.type !== 'marksWindow'
+		) {
 			this._dataSeq = seq;
 		}
 		this._post({ ...body, seq } as Command, transfer);
@@ -331,6 +377,9 @@ export class EngineClient {
 
 	private readonly _receive = (event: EngineEvent): void => {
 		this._acked = event.ack;
+		if (event.marks !== undefined) {
+			this.onmarks?.(event.marks);
+		}
 		this.onevent?.(event);
 		if (this.pending === 0) {
 			this._resolveIdle();
