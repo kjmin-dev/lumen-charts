@@ -43,10 +43,10 @@ describe('packed patches', () => {
 
 	it('come from the engine as two buffers an event transfers', () => {
 		const core = new EngineCore();
-		run(core, { type: 'add', series: 1, kind: 'ohlcv' });
+		run(core, { type: 'add', packedPatches: true, series: 1, kind: 'ohlcv' });
 		run(core, { type: 'set', series: 1, count: 100, data: ohlcv(100, 0, MIN) });
 		const event = run(core, ticks([1, 99 * MIN, 1, 2, 0.5, 1.5, 7], [1, 100 * MIN, 2, 3, 1, 2, 8]));
-		const { index, data } = event.patches!;
+		const { index, data } = event.packedPatches!;
 		expect(index).toBeInstanceOf(Int32Array);
 		expect(index.length % PATCH_STRIDE).toBe(0);
 		// Each patch says where its values are, back to back in the order of the index.
@@ -71,14 +71,14 @@ describe('PatchSpecs', () => {
 		const specs = new PatchSpecs();
 		const capacity = specs.values.length;
 		for (let i = 0; i < capacity / SPEC_STRIDE + 1; i++) {
-			specs.add(i, 1, 2, 3, 4);
+			specs.push(i, 1, 2, 3, 4);
 		}
 		expect(specs.length).toBe(capacity + SPEC_STRIDE);
 		expect(specs.values.length).toBe(2 * capacity);
 		expect([...specs.values.subarray(capacity, capacity + SPEC_STRIDE)]).toEqual([capacity / SPEC_STRIDE, 1, 2, 3, 4]);
 		const grown = specs.values;
 		specs.clear();
-		specs.add(TIME_PATCH, 0, -5, 1, 1);
+		specs.push(TIME_PATCH, 0, -5, 1, 1);
 		expect(specs.length).toBe(SPEC_STRIDE);
 		expect(specs.values).toBe(grown);
 		expect([...specs.values.subarray(0, SPEC_STRIDE)]).toEqual([TIME_PATCH, 0, -5, 1, 1]);

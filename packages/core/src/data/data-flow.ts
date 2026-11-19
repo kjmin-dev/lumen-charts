@@ -116,7 +116,7 @@ export class DataFlow {
 	/** The data engine, created with the first series (or plugin module). */
 	public ensureEngine(): EngineClient | null {
 		if (this.engine === null && !this._closed) {
-			this.engine = createEngine({ worker: this._settings.options.worker });
+			this.engine = createEngine({ packedPatches: true, worker: this._settings.options.worker });
 			this.engine.onevent = this._onEvent;
 			this._memoryLimit = this._settings.options.memoryLimit;
 			if (this._memoryLimit !== Infinity) {
@@ -193,7 +193,7 @@ export class DataFlow {
 		// A failed command changes nothing on screen, and redrawing for it would only repeat the request.
 		let changed =
 			event.failed !== true &&
-			(scale.version !== version || event.stale || event.window !== undefined || event.patches !== undefined);
+			(scale.version !== version || event.stale || event.window !== undefined || event.packedPatches !== undefined);
 		const deferred = this._deferred;
 		while (deferred.length > 0 && deferred[0]!.seq <= event.ack) {
 			// Pointer input from before the call comes first.
@@ -220,7 +220,7 @@ export class DataFlow {
 	 * the window held by the cache (the user is looking at history), and its value is still shown.
 	 */
 	private _trackLastValues(event: EngineEvent): void {
-		const patches = event.patches;
+		const patches = event.packedPatches;
 		if (patches === undefined) {
 			return;
 		}

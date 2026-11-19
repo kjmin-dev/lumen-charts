@@ -73,7 +73,10 @@ export const TICK_STRIDE = 7;
  *
  * Bulk data is column-major with time first: column `c` occupies `data[c * count, (c + 1) * count)`.
  */
-export type Command =
+/** The first command may request packed buffers for subsequent patch events. */
+export type Command = EngineOperation & { packedPatches?: true };
+
+type EngineOperation =
 	/** `fetchable`: rows of this series can be fetched again, so they may be let go under a memory limit. */
 	| { type: 'add'; seq: number; series: number; kind: SeriesKind; fetchable?: boolean }
 	| { type: 'remove'; seq: number; series: number }
@@ -288,7 +291,7 @@ export class PatchSpecs {
 	public values = new Int32Array(SPEC_STRIDE * 64);
 	public length = 0;
 
-	public add(series: number, level: number, start: number, count: number, columns: number): void {
+	public push(series: number, level: number, start: number, count: number, columns: number): void {
 		let values = this.values;
 		const at = this.length;
 		if (at === values.length) {
@@ -372,7 +375,9 @@ export interface EngineEvent {
 	failed?: boolean;
 	window?: WindowSnapshot;
 	/** Changed rows of the raw level and the changed buckets of every coarse level. */
-	patches?: Patches;
+	patches?: Patch[];
+	/** Packed representation when requested by the client. */
+	packedPatches?: Patches;
 	/**
 	 * Rows the engine needs fetched again: a raw window over them, or an operation that needs them,
 	 * waits until they are back (or fetching failed) and comes with a later event.
@@ -426,9 +431,14 @@ export function transferables(event: EngineEvent): ArrayBuffer[] {
 			add(block.data.buffer as ArrayBuffer);
 		}
 	}
+	if (event.packedPatches !== undefined) {
+		add(event.packedPatches.index.buffer as ArrayBuffer);
+		add(event.packedPatches.data.buffer as ArrayBuffer);
+	}
 	if (event.patches !== undefined) {
-		add(event.patches.index.buffer as ArrayBuffer);
-		add(event.patches.data.buffer as ArrayBuffer);
+		for (const patch of event.patches) {
+			add(patch.data.buffer as ArrayBuffer);
+		}
 	}
 	if (event.resolved !== undefined) {
 		add(event.resolved.positions.buffer as ArrayBuffer);

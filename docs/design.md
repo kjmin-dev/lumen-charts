@@ -207,5 +207,6 @@ What each stage measured against its gate is in the document of that stage, unde
   [measured: [stage 3](benchmarks/stage-3.md)]. Cheaper wide-view frames or partial redraw (stage 5)
   would lower it; the main-thread engine's p99 is 0.22–0.33 ms.
   - As decided and as built in stage 5: [design/stage-5.md](design/stage-5.md#10-open-questions).
+  - The worker now meets the 4 ms gate on M1 with an idle wait between ticks and packed indicator patches. [GC and tick latency](benchmarks/gc-floor.md).
 - Benchmarks ran on one Apple M1. x86, Firefox and Android are unmeasured.
 - The review's experiments ran on a heavily loaded machine. Their direction holds; their absolute numbers need re-measuring.

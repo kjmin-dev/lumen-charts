@@ -10,6 +10,7 @@ import {
 	PATCH_STRIDE,
 	TIME_PATCH,
 	levelShift,
+	packPatches,
 } from '@lumen-charts/engine';
 
 export interface WindowRequest {
@@ -183,7 +184,7 @@ export class LevelWindow {
 	public applyPatches(event: EngineEvent, columnCount: ColumnCount): void {
 		const level = this.level;
 		const timelineEnd = levelEnd(event.first, event.end, this.shift);
-		const patches = event.patches;
+		const patches = event.packedPatches;
 		if (patches === undefined || this.capacity === 0) {
 			this._atTail = this.capacity > 0 && this.start + this.count === timelineEnd;
 			return;
@@ -334,6 +335,10 @@ export class WindowCache {
 
 	/** Applies an engine event to every window. */
 	public apply(event: EngineEvent, columnCount: ColumnCount): void {
+		// Direct engine consumers can feed the cache object patches as well.
+		if (event.packedPatches === undefined && event.patches !== undefined) {
+			event = { ...event, packedPatches: packPatches(event.patches) };
+		}
 		const windows = this._windows;
 		if (event.epoch !== this.epoch) {
 			// Indexes mean different rows now; nothing held here can be shown.

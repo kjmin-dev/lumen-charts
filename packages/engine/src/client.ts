@@ -1,6 +1,13 @@
 import { type EngineTransport, LocalTransport } from './host';
 import { connectWorker } from './pool';
-import { type Command, type EngineEvent, type IndicatorInputRef, type SeriesKind, TICK_STRIDE } from './protocol';
+import {
+	type Command,
+	type EngineEvent,
+	type IndicatorInputRef,
+	type SeriesKind,
+	TICK_STRIDE,
+	packPatches,
+} from './protocol';
 
 export interface EngineOptions {
 	/**
@@ -20,6 +27,8 @@ export interface EngineOptions {
 	 * what is left of the first engine's timeout.
 	 */
 	workerTimeout?: number;
+	/** Receive changed rows in two typed arrays on `event.packedPatches`. Defaults to object patches. */
+	packedPatches?: boolean;
 }
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -46,6 +55,7 @@ export class EngineClient {
 	private _transport: EngineTransport | null = null;
 	/** Commands issued before the transport is known. Buffers are transferred only once it is. */
 	private _held: Held[] = [];
+	private readonly _packedPatches: boolean;
 	private _seq = 0;
 	private _acked = 0;
 	/** `seq` of the last command that changes data. */
@@ -61,6 +71,7 @@ export class EngineClient {
 	private _abortConnect: (() => void) | null = null;
 
 	public constructor(options: EngineOptions = {}) {
+		this._packedPatches = options.packedPatches ?? false;
 		const worker = options.worker ?? true;
 		if (worker === false || typeof Worker === 'undefined') {
 			this._attach(new LocalTransport(), 'local');
@@ -307,6 +318,9 @@ export class EngineClient {
 	}
 
 	private _post(command: Command, transfer: ArrayBuffer[]): void {
+		if (command.seq === 1 && this._packedPatches) {
+			command.packedPatches = true;
+		}
 		if (this._transport === null) {
 			this._held.push({ command, transfer });
 		} else {
@@ -330,6 +344,10 @@ export class EngineClient {
 	}
 
 	private readonly _receive = (event: EngineEvent): void => {
+		// A worker supplied by the application can still use the older object-patch protocol.
+		if (this._packedPatches && event.packedPatches === undefined && event.patches !== undefined) {
+			event.packedPatches = packPatches(event.patches);
+		}
 		this._acked = event.ack;
 		this.onevent?.(event);
 		if (this.pending === 0) {

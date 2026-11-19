@@ -27,6 +27,7 @@ import {
 	levelColumnCount,
 	levelCount,
 	levelShift,
+	unpackPatches,
 	valueColumnCount,
 } from './protocol';
 import { LINE_AGGREGATES, OHLCV_AGGREGATES, Pyramid, TIME_AGGREGATES, aggregate, storeBuckets } from './pyramid';
@@ -200,6 +201,7 @@ export class EngineCore {
 	private readonly _sources: Float64Array[] = [];
 	private readonly _bases: number[] = [];
 	/** Reused patch bookkeeping: the layout of the patches of the event in the making, and ranges being merged. */
+	private _packedPatches = false;
 	private readonly _specs = new PatchSpecs();
 	private readonly _ranges: number[] = [];
 	/** State before a batch of changes, see `_beginChanges`. */
@@ -278,6 +280,9 @@ export class EngineCore {
 
 	public *run(command: Command): Generator<undefined, EngineEvent, undefined> {
 		const event: EngineEvent = { ack: command.seq, epoch: 0, first: 0, end: 0, stale: false, rejected: 0 };
+		if (command.packedPatches) {
+			this._packedPatches = true;
+		}
 		this._running = true;
 		try {
 			yield* this._command(command, event);
@@ -564,6 +569,10 @@ export class EngineCore {
 	/** Fills in the extent of the main timeline and the indicators still computing. */
 	private _finish(event: EngineEvent): void {
 		const main = this._main;
+		if (!this._packedPatches && event.packedPatches !== undefined) {
+			event.patches = unpackPatches(event.packedPatches);
+			delete event.packedPatches;
+		}
 		event.epoch = this._epoch;
 		if (main !== null) {
 			event.first = main.store.first;
@@ -1115,9 +1124,9 @@ export class EngineCore {
 			const start = runs[r]!;
 			const rows = runs[r + 1]! - start;
 			if (main) {
-				specs.add(TIME_PATCH, 0, start, rows, 1);
+				specs.push(TIME_PATCH, 0, start, rows, 1);
 			}
-			specs.add(state.id, 0, start, rows, state.valueColumns);
+			specs.push(state.id, 0, start, rows, state.valueColumns);
 		}
 	}
 
@@ -1149,12 +1158,12 @@ export class EngineCore {
 			if (from <= hi) {
 				hi = Math.max(hi, to);
 			} else {
-				specs.add(series, level, lo, hi - lo, columns);
+				specs.push(series, level, lo, hi - lo, columns);
 				lo = from;
 				hi = to;
 			}
 		}
-		specs.add(series, level, lo, hi - lo, columns);
+		specs.push(series, level, lo, hi - lo, columns);
 	}
 
 	/** Patches of the first bucket of every level after history was prepended in front of `oldFirst`. */
@@ -1168,9 +1177,9 @@ export class EngineCore {
 				continue;
 			}
 			const bucket = oldFirst >> shift;
-			specs.add(TIME_PATCH, level, bucket, 1, 1);
+			specs.push(TIME_PATCH, level, bucket, 1, 1);
 			for (const state of this._series.values()) {
-				specs.add(state.id, level, bucket, 1, levelColumnCount(state.kind));
+				specs.push(state.id, level, bucket, 1, levelColumnCount(state.kind));
 			}
 		}
 		this._emit(event);
@@ -1188,7 +1197,7 @@ export class EngineCore {
 			total += specs[s + SPEC_COUNT]! * specs[s + SPEC_COLUMNS]!;
 		}
 		// Two buffers for the whole event, and no object or view per patch (see `Patches`).
-		const before = event.patches;
+		const before = event.packedPatches;
 		const indexBefore = before === undefined ? 0 : before.index.length;
 		let offset = before === undefined ? 0 : before.data.length;
 		const index = new Int32Array(indexBefore + (length / SPEC_STRIDE) * PATCH_STRIDE);
@@ -1237,7 +1246,7 @@ export class EngineCore {
 			offset += count * columns;
 		}
 		this._specs.clear();
-		event.patches = { index, data };
+		event.packedPatches = { index, data };
 	}
 
 	/** Index of the main bar a time belongs to: the last bar at or before it. */

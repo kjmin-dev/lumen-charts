@@ -9,7 +9,6 @@ import {
 	levelCount,
 	levelFor,
 	levelShift,
-	unpackPatches,
 } from '@lumen-charts/engine';
 import { describe, expect, it } from 'vitest';
 import { line, ohlcv, random, run, ticks } from './helpers';
@@ -139,7 +138,7 @@ function noisy(count: number, t0: number, next: () => number): Float64Array {
 
 /** High of the level-1 patch of series 1 in an event. */
 function levelHigh(event: EngineEvent): number {
-	const patch = unpackPatches(event.patches).find(entry => entry.level === 1 && entry.series === 1)!;
+	const patch = event.patches!.find(entry => entry.level === 1 && entry.series === 1)!;
 	return patch.data[1]!;
 }
 
@@ -439,7 +438,7 @@ describe('level of detail', () => {
 			[1, k + 1, k === 0 ? -2 : -1, 1, -1e6],
 		]).flat();
 		expect(
-			unpackPatches(more.patches).map(patch => [
+			more.patches!.map(patch => [
 				patch.series,
 				patch.level,
 				patch.start,
@@ -467,7 +466,7 @@ describe('level of detail', () => {
 		const missing = run(core, { type: 'window', level: 1, start: 0, count: 10, capacity: 10 }).window!;
 		expect(missing).toMatchObject({ level: 1, count: 0 });
 		const grown = run(core, ticks([1, 15, 7]));
-		expect(unpackPatches(grown.patches).some(patch => patch.level === 1)).toBe(true);
+		expect(grown.patches!.some(patch => patch.level === 1)).toBe(true);
 		const window = run(core, { type: 'window', level: 1, start: 0, count: 10, capacity: 10 }).window!;
 		expect(window.count).toBe(1);
 		expect(window.series[0]!.data[window.capacity]).toBe(7);

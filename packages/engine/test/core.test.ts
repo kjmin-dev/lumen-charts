@@ -1,4 +1,4 @@
-import { CHUNK_ROWS, EngineCore, type EngineEvent, TIME_PATCH, unpackPatches } from '@lumen-charts/engine';
+import { CHUNK_ROWS, EngineCore, type EngineEvent, TIME_PATCH } from '@lumen-charts/engine';
 import { describe, expect, it } from 'vitest';
 import { line, ohlcv, random, run, ticks } from './helpers';
 
@@ -57,7 +57,7 @@ describe('EngineCore', () => {
 		const update = run(core, ticks([1, 9 * MIN, 1, 2, 0.5, 1.5, 7]));
 		expect(update.end).toBe(10);
 		expect(update.stale).toBe(false);
-		const [time, values] = unpackPatches(update.patches);
+		const [time, values] = update.patches!;
 		expect(time).toMatchObject({ series: TIME_PATCH, start: 9, count: 1 });
 		expect(values).toMatchObject({ series: 1, start: 9, count: 1 });
 		expect([...values!.data]).toEqual([1, 2, 0.5, 1.5, 7]);
@@ -73,16 +73,12 @@ describe('EngineCore', () => {
 			),
 		);
 		expect(batch.end).toBe(12);
-		const patch = unpackPatches(batch.patches).find(entry => entry.series === 1)!;
+		const patch = batch.patches!.find(entry => entry.series === 1)!;
 		expect(patch.start).toBe(9);
 		expect(patch.count).toBe(3);
 		// Column-major: three closes sit after three opens, highs and lows.
 		expect([...patch.data.subarray(9, 12)]).toEqual([2.5, 5, 7]);
-		expect([...unpackPatches(batch.patches).find(entry => entry.series === TIME_PATCH)!.data]).toEqual([
-			9 * MIN,
-			10 * MIN,
-			11 * MIN,
-		]);
+		expect([...batch.patches!.find(entry => entry.series === TIME_PATCH)!.data]).toEqual([9 * MIN, 10 * MIN, 11 * MIN]);
 	});
 
 	it('corrects an older bar and refuses to insert one', () => {
@@ -91,7 +87,7 @@ describe('EngineCore', () => {
 		run(core, { type: 'set', series: 1, count: 10, data: ohlcv(10, 0, MIN) });
 		const fixed = run(core, ticks([1, 4 * MIN, 9, 9, 9, 9, 9]));
 		expect(fixed.rejected).toBe(0);
-		expect(unpackPatches(fixed.patches).find(entry => entry.series === 1)!.start).toBe(4);
+		expect(fixed.patches!.find(entry => entry.series === 1)!.start).toBe(4);
 		const refused = run(core, ticks([1, 4.5 * MIN, 9, 9, 9, 9, 9], [7, 0, 1], [1, NaN, 1]));
 		expect(refused.rejected).toBe(3);
 		expect(refused.patches).toBeUndefined();
@@ -179,17 +175,13 @@ describe('EngineCore', () => {
 		run(core, { type: 'set', series: 2, count: 1, data: line([10], [1]) });
 
 		const inside = run(core, ticks([2, 25, 42]));
-		expect(unpackPatches(inside.patches)).toEqual([
-			{ series: 2, level: 0, start: 1, count: 1, data: new Float64Array([42]) },
-		]);
+		expect(inside.patches).toEqual([{ series: 2, level: 0, start: 1, count: 1, data: new Float64Array([42]) }]);
 		const beyond = run(core, ticks([2, 47, 43]));
-		expect(unpackPatches(beyond.patches)).toEqual([
-			{ series: 2, level: 0, start: 3, count: 1, data: new Float64Array([43]) },
-		]);
+		expect(beyond.patches).toEqual([{ series: 2, level: 0, start: 3, count: 1, data: new Float64Array([43]) }]);
 
 		// A new main bar at 45 takes over the secondary bar at 47 from the previous main bar.
 		const moved = run(core, ticks([1, 45, 1, 1, 1, 1, 1]));
-		const patch = unpackPatches(moved.patches).find(entry => entry.series === 2)!;
+		const patch = moved.patches!.find(entry => entry.series === 2)!;
 		expect(patch.start).toBe(3);
 		expect([...patch.data]).toEqual([NaN, 43]);
 	});
@@ -210,19 +202,19 @@ describe('EngineCore', () => {
 				[1, 11 * MIN, 4, 4, 4, 4, 1],
 			),
 		);
-		const values = unpackPatches(event.patches).filter(patch => patch.series === 1 && patch.level === 0);
+		const values = event.patches!.filter(patch => patch.series === 1 && patch.level === 0);
 		expect(values.map(patch => [patch.start, patch.count])).toEqual([
 			[10, 2],
 			[count - 1, 2],
 		]);
 		expect(values[0]!.data[3 * 2]).toBe(1.5);
-		const times = unpackPatches(event.patches).filter(patch => patch.series === TIME_PATCH && patch.level === 0);
+		const times = event.patches!.filter(patch => patch.series === TIME_PATCH && patch.level === 0);
 		expect(times.map(patch => [patch.start, patch.count])).toEqual([
 			[10, 2],
 			[count - 1, 2],
 		]);
 		// The time patches of the main series come before any values.
-		expect(unpackPatches(event.patches)[0]!.series).toBe(TIME_PATCH);
+		expect(event.patches![0]!.series).toBe(TIME_PATCH);
 	});
 
 	it('skips missing values when merging a secondary series onto main bars', () => {

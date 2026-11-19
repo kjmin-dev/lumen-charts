@@ -483,7 +483,7 @@ export class IndicatorEngine {
 	 * every changed output to `specs` (series, level, start, count, columns). `endBefore` is the end of
 	 * the main timeline before the batch.
 	 */
-	public ticks(endBefore: number, specs: PatchSpecs): void {
+	public ticks(endBefore: number, specs: PatchSpecs | number[]): void {
 		const host = this._host;
 		const end = host.end();
 		for (const instance of this._instances) {
@@ -560,7 +560,7 @@ export class IndicatorEngine {
 	 * Specs of a notice after values were swapped in: the latest row of each swapped output, so the
 	 * last-value label follows. Returns false when there is nothing to report.
 	 */
-	public takeNotice(specs: PatchSpecs): boolean {
+	public takeNotice(specs: PatchSpecs | number[]): boolean {
 		if (!this._swapped) {
 			return false;
 		}
@@ -570,7 +570,7 @@ export class IndicatorEngine {
 			const store = instance.store;
 			if (store !== null && store.end === end && end > store.first) {
 				for (const series of instance.outputs) {
-					specs.add(series, 0, end - 1, 1, 1);
+					specs.push(series, 0, end - 1, 1, 1);
 				}
 			}
 		}
@@ -596,7 +596,7 @@ export class IndicatorEngine {
 	 * Copies rows (or buckets) `[start, start + count)` of a derived series at `level` into `data`
 	 * from `offset` on, column after column.
 	 */
-	public copy(series: number, level: number, start: number, count: number, data: Float64Array, offset: number): void {
+	public copy(series: number, level: number, start: number, count: number, data: Float64Array, offset = 0): void {
 		const entry = this._byOutput.get(series);
 		if (entry === undefined) {
 			data.fill(NaN, offset, offset + count * (level === 0 ? 1 : 4));
@@ -912,14 +912,14 @@ export class IndicatorEngine {
 	}
 
 	/** Adds the patch specs of every output of an instance for rows `[from, end)`. */
-	private _specs(instance: Instance, from: number, end: number, specs: PatchSpecs): void {
+	private _specs(instance: Instance, from: number, end: number, specs: PatchSpecs | number[]): void {
 		const levels = instance.pyramid.levels.length;
 		for (const series of instance.outputs) {
-			specs.add(series, 0, from, end - from, 1);
+			specs.push(series, 0, from, end - from, 1);
 			for (let level = 1; level <= levels; level++) {
 				const shift = levelShift(level);
 				const lo = from >> shift;
-				specs.add(series, level, lo, ((end - 1) >> shift) + 1 - lo, 4);
+				specs.push(series, level, lo, ((end - 1) >> shift) + 1 - lo, 4);
 			}
 		}
 	}
