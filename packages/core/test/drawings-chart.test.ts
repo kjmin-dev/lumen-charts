@@ -315,6 +315,58 @@ describe('drawings on a chart', () => {
 			expect(line.points()[1]!.price).toBeCloseTo(108, 1);
 		});
 
+		it('drags a rectangle by a corner its points do not name, and by the middle of an edge', async () => {
+			const drawings = t.chart.drawings();
+			const box = drawings.add({
+				type: 'rectangle',
+				points: [
+					{ time: 920 * MINUTE, price: 95 },
+					{ time: 980 * MINUTE, price: 105 },
+				],
+			});
+			await t.settle();
+			const changed: DrawingApi[] = [];
+			drawings.subscribe('changed', drawing => changed.push(drawing));
+			const drag = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+				t.pointer('pointerdown', from.x, from.y);
+				t.runFrames();
+				t.pointer('pointermove', to.x, to.y);
+				t.runFrames();
+				t.pointer('pointerup', to.x, to.y);
+				t.runFrames();
+			};
+			// The corner at the first point's time and the second's price; (980, 95) stays.
+			drag(at(t, 920, 105), at(t, 930, 102));
+			let points = box.points();
+			expect(points[0]!.time).toBe(930 * MINUTE);
+			expect(points[0]!.price).toBe(95);
+			expect(points[1]!.time).toBe(980 * MINUTE);
+			expect(points[1]!.price).toBeCloseTo(102, 1);
+			// The middle of the right edge moves that edge in time alone.
+			const middle = at(t, 980, (95 + points[1]!.price) / 2);
+			t.pointer('pointermove', middle.x, middle.y);
+			t.runFrames();
+			expect(t.chart.element().style.cursor).toBe('ew-resize');
+			const price = points[1]!.price;
+			drag(middle, { x: at(t, 970, 0).x, y: middle.y - 30 });
+			points = box.points();
+			expect(points.map(point => point.time)).toEqual([930 * MINUTE, 970 * MINUTE]);
+			expect(points.map(point => point.price)).toEqual([95, price]);
+			expect(changed).toEqual([box, box]);
+			// Two points still: the handles are derived, the state is what it was.
+			expect(box.toJSON().points.length).toBe(2);
+			// Escape puts a dragged corner back.
+			const corner = at(t, 970, 95);
+			t.pointer('pointerdown', corner.x, corner.y);
+			t.runFrames();
+			t.pointer('pointermove', corner.x + 40, corner.y + 40);
+			t.runFrames();
+			t.key('Escape');
+			t.pointer('pointerup', corner.x + 40, corner.y + 40);
+			t.runFrames();
+			expect(box.points()).toEqual(points);
+		});
+
 		it('puts a drawing back where it was on Escape during a drag', async () => {
 			const drawings = t.chart.drawings();
 			const line = drawings.add(trend(920, 980));

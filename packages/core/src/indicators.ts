@@ -466,10 +466,13 @@ export class ChartIndicators {
 	}
 
 	/**
-	 * Makes the indicators those of a checked state (see `planRestore`), in its order. Indicators are
-	 * kept, and only take the state's options, as far as both lists start with the same ones (same id,
-	 * definition and source); the others are removed and those of the state added. `seriesById` finds
-	 * the chart's series.
+	 * Makes the indicators those of a checked state (see `planRestore`), matching them by id. An
+	 * indicator is kept, and only takes the state's options, when the state has the same id,
+	 * definition and source for it, and every indicator the state has it read is kept too and was
+	 * added before it: the engine computes in the order indicators were added, and an input reads
+	 * only an earlier one. The others are removed, and those of the state the chart lacks are added in
+	 * the state's order, after the kept ones, which stay where they are in the list. `seriesById`
+	 * finds the chart's series.
 	 */
 	public restore(
 		plans: readonly IndicatorPlan[],
@@ -480,44 +483,62 @@ export class ChartIndicators {
 			'indicator' in reference
 				? restored.get(reference.indicator)?.outputList.find(output => output.name === reference.output)?.series
 				: seriesById(reference.series);
-		let kept = 0;
-		for (; kept < plans.length && kept < this._list.length; kept++) {
-			const plan = plans[kept]!;
-			const existing = this._list[kept]!;
-			if (existing.id !== plan.id || existing.definition !== plan.info || existing.source !== seriesOf(plan.source)) {
-				break;
+		const list = this._list;
+		const kept = new Set<Indicator>();
+		// A state lists an indicator after what it reads, so those are decided before it.
+		for (const plan of plans) {
+			const existing = this._byId(plan.id);
+			if (existing === undefined || existing.definition !== plan.info || existing.source !== seriesOf(plan.source)) {
+				continue;
 			}
-			restored.set(plan.id, existing);
+			const position = list.indexOf(existing);
+			const earlier = (reference: unknown): boolean => {
+				if (typeof reference !== 'object' || reference === null || !('indicator' in reference)) {
+					return true;
+				}
+				const read = restored.get((reference as { indicator: string }).indicator);
+				return read !== undefined && list.indexOf(read) < position;
+			};
+			if (earlier(plan.source) && plan.inputs.every(earlier)) {
+				restored.set(plan.id, existing);
+				kept.add(existing);
+			}
+		}
+		const optionsOf = (plan: IndicatorPlan): DeepPartial<IndicatorOptions> => ({
+			params: plan.params,
+			inputs: plan.inputs.map(input => {
+				if (input === undefined || typeof input === 'string') {
+					return input;
+				}
+				if ('indicator' in input) {
+					return restored.get(input.indicator)!.output(input.output);
+				}
+				return { series: seriesById(input.series)!, column: input.column };
+			}) as IndicatorInput[],
+			outputs: plan.outputs,
+			priceScaleId: plan.priceScaleId,
+		});
+		// The kept ones first: what they read afterwards is kept too, so none of them reads an
+		// indicator that goes, and none is taken along when it is removed.
+		for (const plan of plans) {
+			const existing = restored.get(plan.id);
+			if (existing !== undefined) {
+				existing.applyOptions(optionsOf(plan));
+			}
 		}
 		// From the last one back, so each is gone before the ones it reads.
-		const stale = this._list.slice(kept);
+		const stale = this._list.filter(indicator => !kept.has(indicator));
 		for (let i = stale.length - 1; i >= 0; i--) {
 			this.remove(stale[i]!);
 		}
-		plans.forEach((plan, i) => {
-			const options: DeepPartial<IndicatorOptions> = {
-				params: plan.params,
-				inputs: plan.inputs.map(input => {
-					if (input === undefined || typeof input === 'string') {
-						return input;
-					}
-					if ('indicator' in input) {
-						return restored.get(input.indicator)!.output(input.output);
-					}
-					return { series: seriesById(input.series)!, column: input.column };
-				}) as IndicatorInput[],
-				outputs: plan.outputs,
-				priceScaleId: plan.priceScaleId,
-			};
-			if (i < kept) {
-				restored.get(plan.id)!.applyOptions(options);
-			} else {
+		for (const plan of plans) {
+			if (!restored.has(plan.id)) {
 				restored.set(
 					plan.id,
-					this.add(seriesOf(plan.source), plan.info.name, { ...options, id: plan.id }) as Indicator,
+					this.add(seriesOf(plan.source), plan.info.name, { ...optionsOf(plan), id: plan.id }) as Indicator,
 				);
 			}
-		});
+		}
 		return restored;
 	}
 

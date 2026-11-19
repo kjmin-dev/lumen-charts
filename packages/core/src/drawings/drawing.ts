@@ -1,4 +1,5 @@
 import {
+	type AutoscaleRange,
 	type DrawTarget,
 	HIT_BODY,
 	HIT_NONE,
@@ -25,6 +26,10 @@ import {
 export const HANDLE_RADIUS = 5;
 /** Space between a label and what it labels, in CSS pixels. */
 const LABEL_PAD = 4;
+/** Handles of a box: its four corners, then the middles of its four edges. */
+const BOX_HANDLES = 8;
+/** A side of a box has a handle in its middle from this length on, so it stays clear of the corners'. */
+const MIN_EDGE = 4 * HANDLE_RADIUS;
 
 /** What every drawing of a chart shares: how handles look and how text is measured. */
 export interface DrawingStyle {
@@ -57,7 +62,9 @@ const G_B = 10;
 const G_C = 14;
 /** Where a label goes. */
 const G_LABEL = 18;
-const G_SIZE = 20;
+/** Handles of a box (see `BOX_HANDLES`): x and y of each, NaN for one that is left out. */
+const G_HANDLES = 20;
+const G_SIZE = G_HANDLES + 2 * BOX_HANDLES;
 
 /** Shared by drawings without Fibonacci levels, which is most of them. */
 const NO_ROWS = new Float64Array(0);
@@ -92,20 +99,29 @@ export class Drawing implements PanePrimitive, DrawingApi {
 	public zIndex: number;
 	/** Number of points. */
 	public readonly count: number;
+	/**
+	 * Number of handles: one per point, and for a box (rectangle, price range) its four corners and
+	 * the middles of its four edges, all derived from its two points.
+	 */
+	public readonly handleCount: number;
 	public readonly times: Float64Array;
 	public readonly prices: Float64Array;
 	/** Logical positions of the points, as of `_timeline`. */
 	public readonly logical: Float64Array;
 	/** Screen geometry, see the `G_` offsets. */
-	public readonly geometry = new Float64Array(G_SIZE);
+	public readonly geometry: Float64Array;
 	/** Whether the last `update` found it in the pane. */
 	public onScreen = false;
 	public host: PrimitiveHost | null = null;
 	/** False once removed. */
 	public alive = true;
+	/** `PanePrimitive.autoscale`: there while the `autoscale` option is on, so only then is it asked. */
+	public autoscale: PanePrimitive['autoscale'];
 
 	private _options: DrawingOptions;
 	private readonly _owner: DrawingOwner;
+	/** A rectangle or a price range: two points that are opposite corners. */
+	private readonly _box: boolean;
 	private _timeline = -1;
 	private _pointsChanged = true;
 	/** Changes with every change of the points, for the label cache. */
@@ -138,10 +154,14 @@ export class Drawing implements PanePrimitive, DrawingApi {
 		this.priceScaleId = state.priceScaleId;
 		this.zIndex = state.zIndex;
 		this.count = POINT_COUNTS[state.type];
+		this._box = state.type === 'rectangle' || state.type === 'priceRange';
+		this.handleCount = this._box ? BOX_HANDLES : this.count;
+		this.geometry = new Float64Array(this._box ? G_SIZE : G_HANDLES);
 		this.times = new Float64Array(this.count);
 		this.prices = new Float64Array(this.count);
 		this.logical = new Float64Array(this.count).fill(NaN);
 		this._options = state.options;
+		this.autoscale = state.options.autoscale ? this._priceRange : undefined;
 		for (let k = 0; k < this.count; k++) {
 			this.times[k] = state.points[k]!.time;
 			this.prices[k] = state.points[k]!.price;
@@ -203,10 +223,7 @@ export class Drawing implements PanePrimitive, DrawingApi {
 	}
 
 	public applyOptions(options: Partial<DrawingOptions>): void {
-		this._options = drawingOptions(this.type, { ...this._options, ...definedOnly(options) });
-		this._labelPoints = -1;
-		this._measuredText = null;
-		this.host?.requestUpdate();
+		this._setOptions(drawingOptions(this.type, { ...this._options, ...definedOnly(options) }));
 		this._owner.changed(this);
 	}
 
@@ -249,6 +266,38 @@ export class Drawing implements PanePrimitive, DrawingApi {
 		this._owner.remove(this);
 	}
 
+	/**
+	 * Takes the points, options and z-index of a checked state with this drawing's id, type and price
+	 * scale, for a restore. Returns whether any of them differed; what is the same is left as it is,
+	 * with its positions and geometry. The owner is not told: it sends the one event.
+	 */
+	public restore(state: Required<Omit<DrawingState, 'version'>>): boolean {
+		let changed = false;
+		const points = state.points;
+		for (let k = 0; k < this.count; k++) {
+			const point = points[k]!;
+			if (point.time !== this.times[k] || point.price !== this.prices[k]) {
+				this.times[k] = point.time;
+				this.prices[k] = point.price;
+				changed = true;
+			}
+		}
+		if (changed) {
+			this.pointsChanged();
+		}
+		if (!sameOptions(this._options, state.options)) {
+			this._setOptions(state.options);
+			changed = true;
+		}
+		if (state.zIndex !== this.zIndex) {
+			this.zIndex = state.zIndex;
+			// Its entry reads the z-index again.
+			this.host?.requestUpdate();
+			changed = true;
+		}
+		return changed;
+	}
+
 	// Editing (the chart's pointer interaction)
 
 	/** The points changed: positions and geometry are computed again. */
@@ -262,6 +311,47 @@ export class Drawing implements PanePrimitive, DrawingApi {
 	public setPoint(k: number, time: number, price: number): void {
 		this.times[k] = time;
 		this.prices[k] = price;
+	}
+
+	/**
+	 * Moves handle `handle` to a time and price whose logical position the caller knows. A handle of a
+	 * point moves the point. Of a box, a corner takes the time of one point and the price of the
+	 * other, and the middle of an edge the time or the price of one point alone: whatever is dragged,
+	 * the opposite corner or edge stays where it is.
+	 */
+	public moveHandle(handle: number, time: number, price: number): void {
+		if (handle < this.count) {
+			this.times[handle] = time;
+			this.prices[handle] = price;
+			return;
+		}
+		switch (handle) {
+			case 2:
+				this.times[0] = time;
+				this.prices[1] = price;
+				break;
+			case 3:
+				this.times[1] = time;
+				this.prices[0] = price;
+				break;
+			case 4:
+				this.times[0] = time;
+				break;
+			case 5:
+				this.times[1] = time;
+				break;
+			case 6:
+				this.prices[0] = price;
+				break;
+			case 7:
+				this.prices[1] = price;
+				break;
+		}
+	}
+
+	/** Cursor over handle `handle`: the middle of an edge moves along one axis only. */
+	public handleCursor(handle: number): string {
+		return this._box && handle >= 4 ? (handle < 6 ? 'ew-resize' : 'ns-resize') : 'move';
 	}
 
 	// PanePrimitive
@@ -282,15 +372,8 @@ export class Drawing implements PanePrimitive, DrawingApi {
 			return;
 		}
 		const count = this.count;
-		const logical = this.logical;
+		const logical = this._locate(view);
 		const type = this.type;
-		if (this._timeline !== view.timelineVersion || this._pointsChanged) {
-			this._timeline = view.timelineVersion;
-			this._pointsChanged = false;
-			for (let k = 0; k < count; k++) {
-				logical[k] = view.timeToLogical(this.times[k]!);
-			}
-		}
 		this._measureText(options);
 		if (type === 'priceRange' || type === 'fibRetracement') {
 			this._makeLabels(view, options);
@@ -401,6 +484,26 @@ export class Drawing implements PanePrimitive, DrawingApi {
 				g[G_A + 1] = top;
 				g[G_A + 2] = right;
 				g[G_A + 3] = bottom;
+				// Corners: the two points, then the two the points do not name. Then the middles of the
+				// edges at the first and second point's time, and at the first and second point's price.
+				const middleX = right - left >= MIN_EDGE ? (x0 + x1) / 2 : NaN;
+				const middleY = bottom - top >= MIN_EDGE ? (y0 + y1) / 2 : NaN;
+				g[G_HANDLES] = x0;
+				g[G_HANDLES + 1] = y0;
+				g[G_HANDLES + 2] = x1;
+				g[G_HANDLES + 3] = y1;
+				g[G_HANDLES + 4] = x0;
+				g[G_HANDLES + 5] = y1;
+				g[G_HANDLES + 6] = x1;
+				g[G_HANDLES + 7] = y0;
+				g[G_HANDLES + 8] = x0;
+				g[G_HANDLES + 9] = middleY;
+				g[G_HANDLES + 10] = x1;
+				g[G_HANDLES + 11] = middleY;
+				g[G_HANDLES + 12] = middleX;
+				g[G_HANDLES + 13] = y0;
+				g[G_HANDLES + 14] = middleX;
+				g[G_HANDLES + 15] = y1;
 				if (type === 'priceRange') {
 					// The label sits past the second point: below a fall, above a rise.
 					const lineHeight = options.fontSize * 1.4;
@@ -568,9 +671,10 @@ export class Drawing implements PanePrimitive, DrawingApi {
 		ctx.lineWidth = Math.max(1, Math.round(ratio));
 		ctx.strokeStyle = this._options.color;
 		ctx.fillStyle = this._owner.style.handleFill;
-		for (let k = 0; k < this.count; k++) {
-			const x = g[G_POINTS + 2 * k]!;
-			const y = g[G_POINTS + 2 * k + 1]!;
+		const at = this._box ? G_HANDLES : G_POINTS;
+		for (let k = 0; k < this.handleCount; k++) {
+			const x = g[at + 2 * k]!;
+			const y = g[at + 2 * k + 1]!;
 			if (x !== x || y !== y) {
 				continue;
 			}
@@ -589,9 +693,19 @@ export class Drawing implements PanePrimitive, DrawingApi {
 		const options = this._options;
 		if (!options.locked) {
 			const reach = HANDLE_RADIUS + tolerance;
-			for (let k = this.count - 1; k >= 0; k--) {
-				const dx = x - g[G_POINTS + 2 * k]!;
-				const dy = y - g[G_POINTS + 2 * k + 1]!;
+			const at = this._box ? G_HANDLES : G_POINTS;
+			const handles = this.handleCount;
+			// Points and corners first, the last on top; then the middles of edges (NaN when left out).
+			for (let k = Math.min(handles, 4) - 1; k >= 0; k--) {
+				const dx = x - g[at + 2 * k]!;
+				const dy = y - g[at + 2 * k + 1]!;
+				if (dx * dx + dy * dy <= reach * reach) {
+					return 1 + k;
+				}
+			}
+			for (let k = 4; k < handles; k++) {
+				const dx = x - g[at + 2 * k]!;
+				const dy = y - g[at + 2 * k + 1]!;
 				if (dx * dx + dy * dy <= reach * reach) {
 					return 1 + k;
 				}
@@ -639,6 +753,105 @@ export class Drawing implements PanePrimitive, DrawingApi {
 			}
 		}
 		return HIT_NONE;
+	}
+
+	/** Takes options over, with what follows from them. */
+	private _setOptions(options: DrawingOptions): void {
+		this._options = options;
+		this.autoscale = options.autoscale ? this._priceRange : undefined;
+		this._labelPoints = -1;
+		this._measuredText = null;
+		this.host?.requestUpdate();
+	}
+
+	/** The logical positions of the points, looked up again when the timeline or the points changed. */
+	private _locate(view: PaneView): Float64Array {
+		const logical = this.logical;
+		if (this._timeline !== view.timelineVersion || this._pointsChanged) {
+			this._timeline = view.timelineVersion;
+			this._pointsChanged = false;
+			for (let k = 0; k < this.count; k++) {
+				logical[k] = view.timeToLogical(this.times[k]!);
+			}
+		}
+		return logical;
+	}
+
+	/**
+	 * `PanePrimitive.autoscale` of a drawing with the `autoscale` option: the prices of its points,
+	 * to count while their time span overlaps the view. That does not depend on the view, so it gives
+	 * the span with them and is asked again only when it or the timeline changed; the chart filters by
+	 * the span, like a hit test by the bounds. With the points go what they imply: every Fibonacci
+	 * level and the parallel line of a channel. A horizontal line is in view at any time, and a
+	 * vertical line has no price to show.
+	 */
+	private _priceRange(range: AutoscaleRange, view: PaneView): boolean {
+		const type = this.type;
+		if (!this._options.visible || type === 'verticalLine') {
+			range.spanFrom = Infinity;
+			range.spanTo = -Infinity;
+			return false;
+		}
+		const count = this.count;
+		const prices = this.prices;
+		const logical = this.logical;
+		let lo = -Infinity;
+		let hi = Infinity;
+		if (type !== 'horizontalLine') {
+			this._locate(view);
+			lo = Infinity;
+			hi = -Infinity;
+			for (let k = 0; k < count; k++) {
+				const position = logical[k]!;
+				if (position !== position) {
+					// Not known yet: asked again in the next frame, and when the answer is in.
+					return false;
+				}
+				lo = Math.min(lo, position);
+				hi = Math.max(hi, position);
+			}
+		}
+		let low = prices[0]!;
+		let high = low;
+		for (let k = 1; k < count; k++) {
+			low = Math.min(low, prices[k]!);
+			high = Math.max(high, prices[k]!);
+		}
+		let known = true;
+		if (type === 'fibRetracement') {
+			const levels = this._options.levels;
+			const from = prices[1]!;
+			const span = prices[0]! - from;
+			for (let i = 0; i < levels.length; i++) {
+				const price = from + span * levels[i]!;
+				low = Math.min(low, price);
+				high = Math.max(high, price);
+			}
+		} else if (type === 'parallelChannel') {
+			// As drawn: the parallel line is the base line moved in y. The mapping of the last frame
+			// does for that, since rows are linear in the values of the scale whatever its range is.
+			// Before the scale has a range the points alone count, and it is asked again.
+			const y0 = view.priceToY(prices[0]!);
+			const y1 = view.priceToY(prices[1]!);
+			const run = logical[1]! - logical[0]!;
+			const along = run !== 0 ? y0 + ((y1 - y0) * (logical[2]! - logical[0]!)) / run : y0;
+			const dy = view.priceToY(prices[2]!) - along;
+			const first = view.yToPrice(y0 + dy);
+			const second = view.yToPrice(y1 + dy);
+			known = first === first && second === second;
+			if (known) {
+				low = Math.min(low, first, second);
+				high = Math.max(high, first, second);
+			}
+		}
+		range.low = low;
+		range.high = high;
+		if (known) {
+			range.spanFrom = lo;
+			range.spanTo = hi;
+			return true;
+		}
+		return !(hi < range.from || lo > range.to);
 	}
 
 	// Drawing helpers
@@ -950,6 +1163,31 @@ export function checkPoints(points: readonly DrawingPoint[], count: number, type
 			throw new Error('lumen-charts: drawing points need a finite time and price');
 		}
 	}
+}
+
+/** Whether two sets of options, each with every key, hold the same values. */
+function sameOptions(a: DrawingOptions, b: DrawingOptions): boolean {
+	for (const key in a) {
+		const value = a[key as keyof DrawingOptions];
+		const other = b[key as keyof DrawingOptions];
+		if (value === other) {
+			continue;
+		}
+		if (key !== 'levels') {
+			return false;
+		}
+		const levels = value as number[];
+		const others = other as number[];
+		if (levels.length !== others.length) {
+			return false;
+		}
+		for (let i = 0; i < levels.length; i++) {
+			if (levels[i] !== others[i]) {
+				return false;
+			}
+		}
+	}
+	return true;
 }
 
 function definedOnly<T extends object>(value: T): Partial<T> {

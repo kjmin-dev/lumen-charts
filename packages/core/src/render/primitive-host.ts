@@ -87,7 +87,6 @@ export class PaneViewState implements PaneView {
 	public barSpacing = 1;
 	public firstBar = 0;
 	public lastBar = -1;
-	public timelineVersion = 0;
 	public priceFormatVersion = 0;
 	/** Changes whenever anything a primitive's geometry depends on changes. */
 	public version = 0;
@@ -98,6 +97,8 @@ export class PaneViewState implements PaneView {
 	private _spacing = 1;
 	private _priceVersion = -1;
 	private _priceBase = NaN;
+	/** Timeline version as of the last `sync`. */
+	private _timeline = 0;
 	private readonly _times: TimeIndex;
 	private readonly _price: PriceMapping;
 	private readonly _coarse: () => LevelWindow | null;
@@ -111,6 +112,11 @@ export class PaneViewState implements PaneView {
 
 	public get priceMapping(): PriceMapping {
 		return this._price;
+	}
+
+	/** Always that of the time index, also between two frames: `timeToLogical` answers from it. */
+	public get timelineVersion(): number {
+		return this._times.version;
 	}
 
 	/** Takes over the frame's mapping; `version` changes if anything differs from the last frame. */
@@ -136,7 +142,7 @@ export class PaneViewState implements PaneView {
 			lastBar === this.lastBar &&
 			price.version === this._priceVersion &&
 			(base === this._priceBase || (base !== base && this._priceBase !== this._priceBase)) &&
-			timeline === this.timelineVersion
+			timeline === this._timeline
 		) {
 			return;
 		}
@@ -152,7 +158,7 @@ export class PaneViewState implements PaneView {
 		this.from = this.xToLogical(0);
 		this.to = this.xToLogical(width);
 		this._priceVersion = price.version;
-		this.timelineVersion = timeline;
+		this._timeline = timeline;
 		this.priceFormatVersion = price.formatKey;
 		this.version++;
 	}
@@ -201,7 +207,7 @@ export class PrimitiveEntry implements PrimitiveHost {
 	public readonly zOrder: PrimitiveZOrder;
 	public zIndex: number;
 	/** Attach order, which breaks ties of `zIndex`. */
-	public readonly seq: number;
+	public seq: number;
 	/** Slot of its bounds in the layer's bounds array. */
 	public slot = -1;
 	/** Needs `update` regardless of the view. */
@@ -212,6 +218,10 @@ export class PrimitiveEntry implements PrimitiveHost {
 	public hidden = false;
 	/** Whatever the owner keeps with it (a built-in drawing knows its own). */
 	public owner: unknown = null;
+	/** Whether the primitive takes part in autoscale (it has `autoscale`), as of the last change. */
+	public autoscales = false;
+	/** Its place in `PrimitiveLayers.autoscaling` and `ranges` while it does. */
+	public rangeSlot = -1;
 	private readonly _layers: PrimitiveLayers;
 
 	public constructor(layers: PrimitiveLayers, primitive: PanePrimitive, view: PaneViewState, seq: number) {
@@ -400,6 +410,8 @@ function byZ(a: PrimitiveEntry, b: PrimitiveEntry): number {
 export interface PrimitiveLayersHost {
 	/** A primitive of this z-order changed and its layer must be redrawn. */
 	primitiveChanged(zOrder: PrimitiveZOrder): void;
+	/** What a primitive gives autoscale may have changed: price ranges must be computed again. */
+	rangeChanged(): void;
 }
 
 /** Every primitive of the pane, in its three layers. */
@@ -407,6 +419,14 @@ export class PrimitiveLayers {
 	public readonly bottom = new PrimitiveLayer('bottom');
 	public readonly normal = new PrimitiveLayer('normal');
 	public readonly top = new PrimitiveLayer('top');
+	/** The entries that take part in autoscale, of every layer and in no order: the only ones a model update looks at. */
+	public readonly autoscaling: PrimitiveEntry[] = [];
+	/**
+	 * Four numbers per entry of `autoscaling`, like the bounds of a layer but in data: the logical
+	 * positions its answer holds between, and the lowest and highest price it gave (NaN for none). A
+	 * first number that is NaN says the entry has to be asked: it gave no span, or it changed since.
+	 */
+	public ranges = new Float64Array(64);
 	private readonly _host: PrimitiveLayersHost;
 	private readonly _byPrimitive = new Map<PanePrimitive, PrimitiveEntry>();
 	private _seq = 0;
@@ -439,6 +459,7 @@ export class PrimitiveLayers {
 		this.layer(entry.zOrder).add(entry);
 		primitive.attached?.(entry);
 		this._host.primitiveChanged(entry.zOrder);
+		this._setAutoscales(entry, primitive.autoscale !== undefined);
 		return entry;
 	}
 
@@ -450,6 +471,7 @@ export class PrimitiveLayers {
 		this._byPrimitive.delete(primitive);
 		this.layer(entry.zOrder).remove(entry);
 		this._host.primitiveChanged(entry.zOrder);
+		this._setAutoscales(entry, false);
 		primitive.detached?.();
 		return true;
 	}
@@ -471,10 +493,19 @@ export class PrimitiveLayers {
 
 	/**
 	 * An entry asked for an update: its `zIndex` is read again and its layer redrawn, unless it is
-	 * drawn elsewhere meanwhile (hidden), when only the overlay is.
+	 * drawn elsewhere meanwhile (hidden), when only the overlay is. Whether it takes part in autoscale
+	 * is read again too, and price ranges are computed again if it does; not while it is hidden, when
+	 * what it gave before stands (a drawing being dragged does not move the scale under the pointer).
 	 */
 	public changed(entry: PrimitiveEntry): void {
 		entry.dirty = true;
+		if (!this._setAutoscales(entry, entry.primitive.autoscale !== undefined) && entry.autoscales) {
+			// Asked again; what it gave last stands meanwhile.
+			this._forget(entry.rangeSlot);
+			if (!entry.hidden) {
+				this._host.rangeChanged();
+			}
+		}
 		const zIndex = entry.primitive.zIndex ?? 0;
 		const layer = this.layer(entry.zOrder);
 		if (zIndex !== entry.zIndex) {
@@ -497,5 +528,62 @@ export class PrimitiveLayers {
 		entry.hidden = hidden;
 		this.layer(entry.zOrder).changed = true;
 		this._host.primitiveChanged(entry.zOrder);
+		if (!hidden && entry.autoscales) {
+			this._forget(entry.rangeSlot);
+			this._host.rangeChanged();
+		}
+	}
+
+	/** Has every entry that takes part in autoscale asked again: the timeline or the scales changed. */
+	public forgetRanges(): void {
+		for (let i = this.autoscaling.length - 1; i >= 0; i--) {
+			this._forget(i);
+		}
+	}
+
+	/** Drops the span of the entry in `slot`, so it is asked again; the prices it gave stay. */
+	private _forget(slot: number): void {
+		this.ranges[slot * 4] = NaN;
+		this.ranges[slot * 4 + 1] = NaN;
+	}
+
+	/** Gives an entry a new place in the attach order, after every other entry's. */
+	public resequence(entry: PrimitiveEntry): void {
+		entry.seq = this._seq++;
+		this.layer(entry.zOrder).reorder();
+		this._host.primitiveChanged(entry.zOrder);
+	}
+
+	/** Lists or unlists an entry for autoscale. Returns true when that changed, and ranges with it. */
+	private _setAutoscales(entry: PrimitiveEntry, autoscales: boolean): boolean {
+		if (autoscales === entry.autoscales) {
+			return false;
+		}
+		entry.autoscales = autoscales;
+		const list = this.autoscaling;
+		let ranges = this.ranges;
+		if (autoscales) {
+			const slot = list.length;
+			if (slot * 4 === ranges.length) {
+				ranges = new Float64Array(ranges.length * 2);
+				ranges.set(this.ranges);
+				this.ranges = ranges;
+			}
+			entry.rangeSlot = slot;
+			list.push(entry);
+			ranges.fill(NaN, slot * 4, slot * 4 + 4);
+		} else {
+			// The last entry takes its place: the list has no order to keep.
+			const slot = entry.rangeSlot;
+			const last = list.pop()!;
+			if (last !== entry) {
+				list[slot] = last;
+				last.rangeSlot = slot;
+				ranges.copyWithin(slot * 4, list.length * 4, list.length * 4 + 4);
+			}
+			entry.rangeSlot = -1;
+		}
+		this._host.rangeChanged();
+		return true;
 	}
 }
