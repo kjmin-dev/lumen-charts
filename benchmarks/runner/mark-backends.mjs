@@ -13,6 +13,7 @@ const { values } = parseArgs({
 		'check-only': { type: 'boolean' },
 		'gpu-timers': { type: 'boolean' },
 		'scatter-paths': { type: 'boolean' },
+		'heat-paths': { type: 'boolean' },
 	},
 });
 const gpuTimers = values['gpu-timers'] ?? false;
@@ -22,19 +23,24 @@ if (!Number.isSafeInteger(repeats) || repeats < 1 || !Number.isSafeInteger(frame
 	throw new Error('Expected positive repeats and at least two frames');
 
 const scatterPaths = values['scatter-paths'] ?? false;
+const heatPaths = values['heat-paths'] ?? false;
+if (heatPaths && scatterPaths) throw new Error('Choose one path study per run');
 const backends = ['canvas2d', 'webgl2', 'webgpu'];
+if (heatPaths) backends.push('webgpuDirect', 'webgpuDirectBundle');
 if (scatterPaths) backends.push('webgl2Visible', 'webgpuVisible', 'webgpuColumns');
 const scatterCases = [
 	{ type: 'scatter', count: 300000, action: 'zoom' },
 	...['pan', 'zoom', 'tick'].map(action => ({ type: 'scatter', count: 1000000, action })),
 ];
-const cases = scatterPaths
-	? [
-			{ type: 'scatter', count: 100000, action: 'zoom' },
-			...scatterCases,
-			{ type: 'scatter', count: 1000000, action: 'zoom', shape: 'burst' },
-		]
-	: [...scatterCases, ...['pan', 'zoom', 'tick'].map(action => ({ type: 'heatmap', count: 1440000, action }))];
+const cases = heatPaths
+	? [false, true].map(varyRange => ({ type: 'heatmap', count: 1440000, action: 'pan', varyRange }))
+	: scatterPaths
+		? [
+				{ type: 'scatter', count: 100000, action: 'zoom' },
+				...scatterCases,
+				{ type: 'scatter', count: 1000000, action: 'zoom', shape: 'burst' },
+			]
+		: [...scatterCases, ...['pan', 'zoom', 'tick'].map(action => ({ type: 'heatmap', count: 1440000, action }))];
 const routes = new Map();
 for (const name of ['run-page', 'scene', 'timers', 'canvas2d', 'webgl2', 'webgpu', 'webgpu-columns']) {
 	routes.set(
@@ -120,6 +126,7 @@ try {
 		adapter,
 		gpuTimers,
 		scatterPaths,
+		heatPaths,
 		repeats,
 		frames,
 		loadStart: os.loadavg(),
@@ -135,7 +142,7 @@ try {
 				backend,
 				frames,
 				check: true,
-				checkSequence: scatterPaths,
+				checkSequence: scatterPaths || heatPaths,
 			});
 			await page.close();
 			if (reference && JSON.stringify(output) !== JSON.stringify(reference))
@@ -174,7 +181,11 @@ try {
 						entry.count,
 						entry.action,
 						backend,
-						entry.shape ?? 'cloud/grid',
+						entry.varyRange === undefined
+							? (entry.shape ?? 'cloud/grid')
+							: entry.varyRange
+								? 'changing range'
+								: 'fixed range',
 						'JS p95',
 						js.p95.toFixed(3),
 						'ms, display p95',

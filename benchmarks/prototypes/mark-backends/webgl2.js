@@ -24,10 +24,11 @@ void main() {
 	vec2 corner = vec2(gl_VertexID & 1, gl_VertexID >> 1);
 	gl_Position = vec4(corner * 2.0 - 1.0, 0, 1);
 }`;
-const heatFragment = `
+const heatFragment = rangeControl => `
 uniform vec4 view;
 uniform float scale;
 uniform sampler2D cells;
+uniform float gain;
 out vec4 color;
 void main() {
 	ivec2 size = textureSize(cells, 0);
@@ -35,6 +36,7 @@ void main() {
 	int y = int(floor((view.y - gl_FragCoord.y + view.w) * 0.5));
 	if (x < 0 || x >= size.x) discard;
 	float v = texelFetch(cells, ivec2(x,y), 0).r;
+	${rangeControl ? 'v = min(255.0, floor(round(v * 255.0) * gain / 256.0)) / 255.0;' : ''}
 	color = vec4(v, 1.0-v, 128.0/255.0, 1);
 }`;
 
@@ -46,7 +48,7 @@ export function webgl2(target, scene, timer) {
 	const program = gl.createProgram();
 	for (const [kind, source] of [
 		[gl.VERTEX_SHADER, scatter ? scatterVertex : heatVertex],
-		[gl.FRAGMENT_SHADER, scatter ? scatterFragment : heatFragment],
+		[gl.FRAGMENT_SHADER, scatter ? scatterFragment : heatFragment(scene.rangeControl)],
 	]) {
 		const shader = gl.createShader(kind);
 		gl.shaderSource(shader, '#version 300 es\nprecision highp float;\nprecision highp int;\n' + source);
@@ -60,6 +62,7 @@ export function webgl2(target, scene, timer) {
 	gl.disable(gl.DITHER);
 	const view = gl.getUniformLocation(program, 'view');
 	const scale = gl.getUniformLocation(program, 'scale');
+	const gain = scene.rangeControl && gl.getUniformLocation(program, 'gain');
 	if (scatter) {
 		gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
 		gl.bufferData(gl.ARRAY_BUFFER, scene.points, gl.DYNAMIC_DRAW);
@@ -78,6 +81,7 @@ export function webgl2(target, scene, timer) {
 		gl.viewport(0, 0, v.w, v.h);
 		gl.uniform4f(view, v.w, v.h, v.x + v.shift, v.y);
 		gl.uniform1f(scale, v.scale);
+		if (gain) gl.uniform1f(gain, v.gain);
 		if (update && scatter) gl.bufferSubData(gl.ARRAY_BUFFER, first * 8, scene.points, first * 2, 2);
 		if (update && !scatter)
 			gl.texSubImage2D(gl.TEXTURE_2D, 0, width - 1, 0, 1, rows, gl.RED, gl.UNSIGNED_BYTE, scene.column);

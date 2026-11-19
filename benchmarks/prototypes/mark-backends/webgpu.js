@@ -2,7 +2,7 @@ import { gpuQueries } from './timers.js';
 import { rows, width } from './scene.js';
 
 const uniforms = `
-struct View { size: vec2f, origin: vec2f, scale: f32 }
+struct View { size: vec2f, origin: vec2f, scale: f32, gain: f32 }
 @group(0) @binding(0) var<uniform> view: View;
 `;
 const scatterShader =
@@ -23,7 +23,7 @@ struct Vertex {
 @fragment fn fs(v: Vertex) -> @location(0) vec4f {
 	return vec4f(select(vec3f(38,166,154), vec3f(239,83,80), v.side != 0u) / 255.0, 1);
 }`;
-const heatShader =
+const heatShader = rangeControl =>
 	uniforms +
 	`
 @group(0) @binding(1) var cells: texture_2d<f32>;
@@ -35,11 +35,12 @@ const heatShader =
 	let x = i32(floor((p.x + view.origin.x) / view.scale));
 	if (x < 0 || x >= i32(textureDimensions(cells).x)) { discard; }
 	let y = i32(floor((p.y + view.origin.y) * 0.5));
-	let v = textureLoad(cells, vec2i(x, y), 0).r;
+	var v = textureLoad(cells, vec2i(x, y), 0).r;
+	${rangeControl ? 'v = min(255.0, floor(round(v * 255.0) * view.gain / 256.0)) / 255.0;' : ''}
 	return vec4f(v, 1.0 - v, 128.0/255.0, 1);
 }`;
 
-export async function webgpu(target, scene, timer) {
+export async function webgpu(target, scene, timer, useBundle = false) {
 	const adapter = await navigator.gpu?.requestAdapter();
 	if (!adapter || adapter.info.isFallbackAdapter) throw new Error('Hardware WebGPU adapter unavailable');
 	const device = await adapter.requestDevice({ requiredFeatures: timer ? ['timestamp-query'] : [] });
@@ -51,7 +52,7 @@ export async function webgpu(target, scene, timer) {
 	const format = navigator.gpu.getPreferredCanvasFormat();
 	ctx.configure({ device, format, alphaMode: 'premultiplied' });
 	const scatter = scene.type === 'scatter';
-	const module = device.createShaderModule({ code: scatter ? scatterShader : heatShader });
+	const module = device.createShaderModule({ code: scatter ? scatterShader : heatShader(scene.rangeControl) });
 	const pipeline = await device.createRenderPipelineAsync({
 		layout: 'auto',
 		vertex: {
@@ -94,12 +95,21 @@ export async function webgpu(target, scene, timer) {
 		entries.push({ binding: 1, resource: cells.createView() });
 	}
 	const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
+	let bundles;
+	if (useBundle) {
+		const encoder = device.createRenderBundleEncoder({ colorFormats: [format] });
+		encoder.setPipeline(pipeline);
+		encoder.setBindGroup(0, group);
+		encoder.draw(4);
+		bundles = [encoder.finish()];
+	}
 	return (v, first, count, update) => {
 		transform[0] = v.w;
 		transform[1] = v.h;
 		transform[2] = v.x + v.shift;
 		transform[3] = v.y;
 		transform[4] = v.scale;
+		if (scene.rangeControl) transform[5] = v.gain;
 		device.queue.writeBuffer(uniformsBuffer, 0, transform);
 		if (update && scatter) device.queue.writeBuffer(points, first * 8, scene.points, first * 2, 2);
 		if (update && !scatter)
@@ -114,13 +124,17 @@ export async function webgpu(target, scene, timer) {
 				{ view: ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0] },
 			],
 		});
-		pass.setPipeline(pipeline);
-		pass.setBindGroup(0, group);
-		if (scatter) {
-			pass.setVertexBuffer(0, points);
-			pass.draw(4, count, 0, first);
+		if (bundles) {
+			pass.executeBundles(bundles);
 		} else {
-			pass.draw(4);
+			pass.setPipeline(pipeline);
+			pass.setBindGroup(0, group);
+			if (scatter) {
+				pass.setVertexBuffer(0, points);
+				pass.draw(4, count, 0, first);
+			} else {
+				pass.draw(4);
+			}
 		}
 		pass.end();
 		device.queue.submit([encoder.finish()]);

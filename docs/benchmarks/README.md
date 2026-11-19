@@ -88,4 +88,5 @@ The JSON files beside each document are the runs its numbers come from.
 - [stage-5-partial-redraw-options.md](stage-5-partial-redraw-options.md): the option that turns partial frames off (`redraw: 'full'`, checked by `pnpm bench:pixels --redraw full` on both rasterizers) and dashed lines drawn from the changed columns; the `line-ticks` scenario draws a frame per tick on solid, dashed and dotted lines.
 - [stage-5-heatmap-scatter.md](stage-5-heatmap-scatter.md): the scenarios `scatter` and `heatmap` pan, zoom and update the two series drawn through a pixel buffer, up to the number of marks at which a frame misses its budget.
 - [Mark rendering backends](mark-backends.md) compares Canvas 2D, WebGL2 and WebGPU on the same scatter and heatmap fixtures, including GPU pass timings and compositor cadence.
+- [Heatmap color range](heat-range.md) measures fixed and changing color limits and direct WebGPU presentation.
 - [Scatter rendering paths](scatter-paths.md) compares the instanced-quad WebGPU renderer with a compute shader and WebGL2 native points across densities.

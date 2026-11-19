@@ -47,9 +47,17 @@ export function canvas2d(target, scene) {
 	pixels = new Uint32Array(image.data.buffer);
 	for (let i = 0; i < pixels.length; i++) pixels[i] = heatColor(scene.cells[i]);
 	bitmapCtx.putImageData(image, 0, 0);
+	const lut = new Uint32Array(256);
+	let previousGain = 256;
 	const stripe = bitmapCtx.createImageData(1, rows);
 	const stripePixels = new Uint32Array(stripe.data.buffer);
 	return (v, _first, _count, update) => {
+		if (scene.rangeControl && v.gain !== previousGain) {
+			for (let i = 0; i < lut.length; i++) lut[i] = heatColor(Math.min(255, Math.floor((i * v.gain) / 256)));
+			for (let i = 0; i < pixels.length; i++) pixels[i] = lut[scene.cells[i]];
+			bitmapCtx.putImageData(image, 0, 0);
+			previousGain = v.gain;
+		}
 		if (update) {
 			for (let y = 0; y < rows; y++) stripePixels[y] = heatColor(scene.column[y]);
 			bitmapCtx.putImageData(stripe, width - 1, 0);
