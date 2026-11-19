@@ -83,3 +83,4 @@ The JSON files beside each document are the runs its numbers come from.
 - [stage-5-min-max.md](stage-5-min-max.md): the first of them, the min/max loops, is measured before and after.
 - [stage-5-partial-redraw.md](stage-5-partial-redraw.md): the second, the partial redraw of tick frames; `pnpm bench:pixels` checks in headless Chromium that such a frame leaves the pixels of a full redraw.
 - [stage-5-partial-redraw-options.md](stage-5-partial-redraw-options.md): the option that turns partial frames off (`redraw: 'full'`, checked by `pnpm bench:pixels --redraw full` on both rasterizers) and dashed lines drawn from the changed columns; the `line-ticks` scenario draws a frame per tick on solid, dashed and dotted lines.
+- [stage-4-follow-ups.md](stage-4-follow-ups.md): the `draw-autoscale` scenario pans with 100 and 1,000 drawings that take part in autoscale; hover over 1,000 drawings and a restore of 1,000, matched by id, against `main`.
