@@ -555,7 +555,12 @@ describe('heatmap and scatter series on a chart', () => {
 		await withBars(400);
 		const white = packColor(255, 255, 255, 255);
 		const black = packColor(0, 0, 0, 255);
-		const heat = t.chart.addSeries('heatmap', { palette: ['#000000', '#ffffff'], valueMin: 0, valueMax: 100 });
+		const heat = t.chart.addSeries('heatmap', {
+			autoscale: true,
+			palette: ['#000000', '#ffffff'],
+			valueMin: 0,
+			valueMax: 100,
+		});
 		// Columns at bars 0 to 299: white at every tenth, black between.
 		heat.setData(grid(300, 4, c => (c % 10 === 0 ? 100 : 0), 0));
 		t.chart.timeScale().setVisibleLogicalRange({ from: 100, to: 120 });

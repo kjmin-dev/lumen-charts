@@ -165,8 +165,8 @@ allow, is what the WebGL2 layer of section 6 is for.
 ## 9. Stages and measurement gates
 
 Stage 5, heatmap and scatter (measured, [stage 5 heatmap and scatter](../benchmarks/stage-5-heatmap-scatter.md)):
-TBD.
+On the M1 worker, 100k scattered points and 240k heatmap cells fit the 8 ms pan and zoom budget. Incremental updates fit the 4 ms frame budget up to 1M points and 1.44M cells.
 
 ## 10. Open questions
 
-- Open after stage 5 (heatmap and scatter): TBD.
+- Open after stage 5 (heatmap and scatter): Full redraws miss 8 ms at 300k scattered points on zoom and at 1.44M heatmap cells on pan and zoom. These cases are the targets for a GPU renderer.
