@@ -231,9 +231,10 @@ describe('chart state', () => {
 		expect(indicators[0]!.output().lastValue()).toBeGreaterThan(0);
 	});
 
-	it('removes series the state lacks and replaces indicators from the first one that differs', async () => {
+	it('removes series the state lacks and replaces the indicators that differ, keeping the others by id', async () => {
 		const { t, state } = await configured();
 		const kept = t.chart.indicators()[0]!;
+		const macd = t.chart.indicators()[3]!;
 		const changed = stored(state);
 		changed.series = changed.series!.filter(series => series.id !== 'volume');
 		changed.series.push({ ...changed.series[1]!, id: 'extra', order: 9 });
@@ -244,11 +245,168 @@ describe('chart state', () => {
 		expect(t.chart.indicators().map(indicator => [indicator.id, indicator.name])).toEqual([
 			['average', 'sma'],
 			['strength', 'rsi'],
-			['smooth', 'wma'],
 			['macd', 'macd'],
+			['smooth', 'wma'],
 		]);
 		expect(t.chart.indicators()[0]).toBe(kept);
+		// The one after the first difference reads only what is kept: it stays, listed before the new one.
+		expect(t.chart.indicators()[2]).toBe(macd);
+		expect(macd.output().lastValue()).not.toBeNaN();
+		// The state saved now restores into the same chart without a change.
+		const again = t.chart.indicators();
+		t.chart.restoreState(stored(t.chart.saveState()));
+		expect(t.chart.indicators()).toEqual(again);
 		expect(t.chart.saveState().series!.map(series => series.order)).toEqual([0, 2, 6]);
+	});
+
+	it('keeps an indicator by id only while everything it reads is kept and was added before it', async () => {
+		const { t, state } = await configured();
+		const engine = (
+			t.chart as unknown as {
+				_data: {
+					engine: Record<'addIndicator' | 'updateIndicator' | 'removeIndicator', (...args: never[]) => unknown>;
+				};
+			}
+		)._data.engine;
+		const calls: string[] = [];
+		for (const name of ['addIndicator', 'updateIndicator', 'removeIndicator'] as const) {
+			const original = engine[name].bind(engine);
+			engine[name] = (...args: never[]) => {
+				calls.push(name);
+				return original(...args);
+			};
+		}
+		const [average, , smooth, macd] = t.chart.indicators();
+		// Without the second one: the others stay as they are, and nothing is computed again.
+		const fewer = stored(state);
+		fewer.indicators = fewer.indicators!.filter(indicator => indicator.id !== 'strength');
+		t.chart.restoreState(fewer);
+		expect(t.chart.indicators()).toEqual([average, smooth, macd]);
+		expect(calls).toEqual(['removeIndicator']);
+		// The first one is another definition: what reads it goes with it, in the state's order.
+		calls.length = 0;
+		const other = stored(fewer);
+		other.indicators![0]!.name = 'ema';
+		t.chart.restoreState(other);
+		expect(t.chart.indicators().map(indicator => indicator.id)).toEqual(['average', 'smooth', 'macd']);
+		expect(t.chart.indicators().some(indicator => [average, smooth, macd].includes(indicator))).toBe(false);
+		expect(calls.filter(name => name === 'addIndicator').length).toBe(3);
+		// A new indicator listed first, and a kept one that now reads it: the engine computes in the
+		// order they were added, so the reader is made again after it.
+		const [first, second, third] = t.chart.indicators();
+		calls.length = 0;
+		const chained = stored(other);
+		chained.indicators!.unshift({ ...chained.indicators![0]!, id: 'fresh', name: 'sma', order: 20 });
+		chained.indicators![3]!.inputs = [{ indicator: 'fresh', output: 'value' }];
+		t.chart.restoreState(chained);
+		const list = t.chart.indicators();
+		expect(list.map(indicator => indicator.id)).toEqual(['average', 'smooth', 'fresh', 'macd']);
+		expect(list.slice(0, 2)).toEqual([first, second]);
+		expect(list[3]).not.toBe(third);
+		expect(calls).toEqual(['removeIndicator', 'addIndicator', 'addIndicator']);
+		await t.settle();
+		expect(list[3]!.output().lastValue()).not.toBeNaN();
+		// Kept, with another parameter: updated in place.
+		calls.length = 0;
+		const tuned = stored(t.chart.saveState());
+		tuned.indicators![1]!.params.period = 7;
+		t.chart.restoreState(tuned);
+		expect(t.chart.indicators()).toEqual(list);
+		expect(calls).toEqual(['updateIndicator']);
+	});
+
+	it('matches drawings by id: unchanged ones are left alone, changed ones updated in place', async () => {
+		const { t, state } = await configured();
+		const drawings = t.chart.drawings();
+		const [trend, note, fib] = drawings.list();
+		expect([trend!.id, note!.id, fib!.id]).toEqual(['trend', 'note', 'fib']);
+		const events: string[] = [];
+		for (const event of ['created', 'changed', 'removed'] as const) {
+			drawings.subscribe(event, drawing => events.push(`${event} ${drawing.id}`));
+		}
+		const updates = new Map<string, number>();
+		for (const drawing of drawings.list()) {
+			const primitive = drawing as unknown as { update: (...args: unknown[]) => void };
+			const update = primitive.update.bind(primitive);
+			primitive.update = (...args) => {
+				updates.set(drawing.id, (updates.get(drawing.id) ?? 0) + 1);
+				update(...args);
+			};
+		}
+		drawings.select('trend');
+		// The same state: nothing happens to any drawing.
+		t.chart.restoreState(stored(state), { parts: ['drawings'] });
+		expect(t.frames.length).toBe(1);
+		t.runFrames();
+		expect(events).toEqual([]);
+		expect(updates.size).toBe(0);
+		expect(drawings.list()).toEqual([trend, note, fib]);
+		expect(drawings.selected()).toBe(trend);
+
+		// One moved, one restyled and raised, one gone, one new, in one frame.
+		const next = stored(state);
+		const [trendState, fibState, noteState] = [
+			next.drawings!.find(drawing => drawing.id === 'trend')!,
+			next.drawings!.find(drawing => drawing.id === 'fib')!,
+			next.drawings!.find(drawing => drawing.id === 'note')!,
+		];
+		trendState.points[1]!.price = 111;
+		noteState.options.text = 'c';
+		noteState.zIndex = 9;
+		next.drawings = [trendState, { ...fibState, id: 'fib-2' }, noteState];
+		t.chart.restoreState(next, { parts: ['drawings'] });
+		expect(t.frames.length).toBe(1);
+		expect(events).toEqual(['removed fib', 'changed trend', 'created fib-2', 'changed note']);
+		expect(drawings.get('trend')).toBe(trend);
+		expect(drawings.get('note')).toBe(note);
+		expect(trend!.points()[1]!.price).toBe(111);
+		expect(note!.options().text).toBe('c');
+		expect(drawings.list().map(drawing => drawing.id)).toEqual(['trend', 'fib-2', 'note']);
+		expect(drawings.selected()).toBe(trend);
+		t.runFrames();
+		expect(updates.get('trend')).toBe(1);
+		expect(updates.get('note')).toBe(1);
+		expect(t.chart.saveState({ parts: ['drawings'] })).toEqual({ version: 1, drawings: next.drawings });
+
+		// Another type under an id that is taken: a drawing cannot change its type, so it is replaced.
+		events.length = 0;
+		const retyped = stored(next);
+		retyped.drawings![0] = { ...retyped.drawings![0]!, type: 'ray' };
+		t.chart.restoreState(retyped, { parts: ['drawings'] });
+		expect(events).toEqual(['removed trend', 'created trend']);
+		expect(drawings.get('trend')).not.toBe(trend);
+		expect(drawings.selected()).toBeNull();
+		// A state that is wrong anywhere still changes nothing.
+		events.length = 0;
+		const wrong = stored(next);
+		wrong.drawings![2]!.points = [];
+		expect(() => t.chart.restoreState(wrong, { parts: ['drawings'] })).toThrow(/drawings\[2\]/);
+		expect(events).toEqual([]);
+		expect(drawings.get('trend')!.type).toBe('ray');
+	});
+
+	it('puts drawings of equal z-index in the order of the state', async () => {
+		const t = testChart();
+		t.chart.addSeries('candlestick', { id: 'main' }).setData(candles(1000));
+		const drawings = t.chart.drawings();
+		for (const id of ['a', 'b', 'c', 'd']) {
+			drawings.add({ type: 'horizontalLine', id, points: [{ time: 0, price: 100 }] });
+		}
+		await t.settle();
+		const state = t.chart.saveState({ parts: ['drawings'] });
+		const events: string[] = [];
+		drawings.subscribe('changed', drawing => events.push(drawing.id));
+		const order = ['c', 'a', 'd', 'b'];
+		state.drawings = order.map(id => state.drawings!.find(drawing => drawing.id === id)!);
+		t.chart.restoreState(stored(state));
+		expect(drawings.list().map(drawing => drawing.id)).toEqual(order);
+		// Their own state is what it was.
+		expect(events).toEqual([]);
+		expect(t.chart.saveState({ parts: ['drawings'] })).toEqual(state);
+		// A tool in progress ends, as before.
+		drawings.startTool('trendLine');
+		t.chart.restoreState(stored(state));
+		expect(drawings.activeTool()).toBeNull();
 	});
 
 	it('restores the drawing order of series and indicators', async () => {
@@ -771,6 +929,24 @@ describe('chart state', () => {
 			expect(layer.filter(call => call.name === 'stroke').length).toBeGreaterThan(0);
 			await t.settle();
 			expect(t.chart.saveState().drawings!.length).toBe(1000);
+			// The state the chart is in: every drawing is found by id, so none is made, removed or drawn again.
+			const events: string[] = [];
+			for (const event of ['created', 'changed', 'removed'] as const) {
+				t.chart.drawings().subscribe(event, drawing => events.push(`${event} ${drawing.id}`));
+			}
+			const same = stored(t.chart.saveState());
+			t.clearCalls();
+			t.chart.restoreState(same);
+			expect(t.frames.length).toBe(1);
+			t.runFrames();
+			expect(events).toEqual([]);
+			expect(t.calls(t.canvases().at(-2)).length).toBe(0);
+			// One of the thousand differs: one event, and the layer is drawn once.
+			same.drawings![500]!.options.color = '#00ff00';
+			t.chart.restoreState(same);
+			t.runFrames();
+			expect(events).toEqual(['changed d-500']);
+			expect(t.calls(t.canvases().at(-2)).filter(call => call.name === 'clearRect').length).toBe(1);
 		});
 
 		it('restores the state a chart is in with one frame and without computing an indicator again', async () => {

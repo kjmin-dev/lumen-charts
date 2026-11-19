@@ -35,16 +35,44 @@ mapped with the scale's base on a percentage or indexed one, as the crosshair re
 Tools: `trendLine`, `ray`, `extendedLine`, `horizontalLine`, `verticalLine`, `rectangle`,
 `parallelChannel` (three points: the third sets the width), `fibRetracement` (`levels` option),
 `text` and `priceRange` (change, percentage and bars). Every drawing takes `color`, `lineWidth`,
-`lineStyle`, `fillColor`, `text`, `textColor`, `fontSize`, `visible` and `locked`, and has a
-`zIndex`.
+`lineStyle`, `fillColor`, `text`, `textColor`, `fontSize`, `visible`, `locked` and `autoscale`, and
+has a `zIndex`.
 
 With the pointer: hovering a drawing shows its handles, pressing selects it, dragging moves it by
-whole bars, and dragging a handle moves that point. A locked drawing can be selected but not moved;
+whole bars, and dragging a handle moves that point. A rectangle and a price range have eight
+handles: the four corners and the middle of each edge (where the side is at least 20 pixels long).
+A corner moves in time and price and the middle of an edge along one of them, and what is opposite
+stays where it is. They are still two points, in `points()` and in the saved state: the handles are
+derived from them, and a box dragged past its opposite side turns inside out. The other tools have
+one handle per point; the third point of a parallel channel is the handle of its second line. A
+locked drawing can be selected but not moved;
 pressing it pans. Escape cancels a drawing being created or dragged, or clears the selection;
 Delete and Backspace remove the selected drawing (the chart takes keys once clicked). With the
 crosshair in `magnet` mode, points snap to the open, high, low or close of their bar. Touch reaches
 lines from further away than a mouse. Events: `created` (also for `add`), `changed` (API changes,
 and once at the end of a drag), `removed`, `selected` and `hovered`.
+
+By default the price scale fits the series and a drawing above or below them is out of view. With
+`autoscale: true` the autoscale of its price scale keeps the drawing in view while the time span of
+its points overlaps the pane:
+
+```ts
+drawings.add({ type: 'horizontalLine', points: [{ time: t1, price: 250 }], options: { autoscale: true } });
+zone.applyOptions({ autoscale: true });
+```
+
+- It gives the prices of its points, with every Fibonacci level and both lines of a channel. A
+  horizontal line counts at any time, a vertical line has no price, and a ray or an extended line
+  counts where its two points are, not where it runs to.
+- The range is the series' range and the drawings' together, and the scale's `scaleMargins` go
+  around both. A scale with `autoScale` off keeps its range, and a scale without a visible series
+  takes nothing from drawings.
+- A drawing being dragged keeps what it gave before, so the scale does not move under the pointer;
+  the scale fits again when it is released.
+- It costs the frames that compute price ranges (a pan, a zoom, new data) one pass over the
+  drawings that opted in, which looks at the time span first: about 2 µs for 1,000 of them (see
+  [docs/benchmarks/stage-4-follow-ups.md](../benchmarks/stage-4-follow-ups.md)). Hovering computes
+  no range.
 
 Points are stored as times, not bar indexes, so a drawing stays where it was through prepends,
 bars removed and a new resolution: a time between two bars sits between them, a time past the last

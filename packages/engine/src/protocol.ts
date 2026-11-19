@@ -1,4 +1,5 @@
 import type { IndicatorInfo } from './indicators/definition';
+import type { MarksChange, MarksRequest, MarksUpdate } from './marks/protocol';
 
 /** Kind of a series store: OHLCV keeps six columns, a line keeps time and one value. */
 export type SeriesKind = 'ohlcv' | 'line';
@@ -119,7 +120,11 @@ type EngineOperation =
 	 * Logical positions of `times` on the main timeline, answered in the event's `resolved`. Reads
 	 * only: it changes nothing and waits for no rows.
 	 */
-	| { type: 'resolve'; seq: number; times: Float64Array };
+	| { type: 'resolve'; seq: number; times: Float64Array }
+	/** Adds, removes or changes a marks series (a scatter or a heatmap; see `marks/protocol.ts`). */
+	| { type: 'marks'; seq: number; series: number; change: MarksChange }
+	/** Rows of a marks series for a view, answered in the event's `marks`. Reads only. */
+	| { type: 'marksWindow'; seq: number; series: number; request: MarksRequest };
 
 /**
  * Where times fall on the main timeline, as of the event that carries it.
@@ -408,6 +413,8 @@ export interface EngineEvent {
 	refused?: number[];
 	/** Answer to a `resolve` command. */
 	resolved?: TimelineResolution;
+	/** Rows of marks series: the answer to a `marksWindow` command, or what an append changed in the window sent last. */
+	marks?: MarksUpdate[];
 }
 
 /** First message a worker host sends, before any event. */
@@ -442,6 +449,13 @@ export function transferables(event: EngineEvent): ArrayBuffer[] {
 	}
 	if (event.resolved !== undefined) {
 		add(event.resolved.positions.buffer as ArrayBuffer);
+	}
+	if (event.marks !== undefined) {
+		for (const update of event.marks) {
+			add(update.time.buffer as ArrayBuffer);
+			add(update.price.buffer as ArrayBuffer);
+			add(update.values.buffer as ArrayBuffer);
+		}
 	}
 	return list;
 }

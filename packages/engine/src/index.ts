@@ -101,3 +101,23 @@ export {
 	aggregate,
 } from './pyramid';
 export { ANCHOR_SHIFT, ChunkedStore, SUMMARY_BYTES } from './store';
+export { MarksEngine, type MarksOutcome } from './marks/engine';
+export { HEATMAP_LEVEL_COLUMNS, HeatmapStore } from './marks/heatmap-store';
+export type {
+	HeatmapColumns,
+	MarksChange,
+	MarksData,
+	MarksKind,
+	MarksRequest,
+	MarksSelection,
+	MarksStore,
+	MarksUpdate,
+	ScatterRows,
+} from './marks/protocol';
+export {
+	SCATTER_LEVEL_ROWS,
+	SCATTER_LEVEL_THRESHOLD,
+	SCATTER_PRICE_BINS,
+	ScatterColumns,
+	ScatterStore,
+} from './marks/scatter-store';

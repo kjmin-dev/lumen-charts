@@ -18,9 +18,11 @@ const LWC_CAPABILITIES: readonly string[] = ['indicators'];
  */
 const LUMEN_CAPABILITIES: readonly string[] = [
 	'datafeed', // refetch.ts
+	'drawingAutoscale', // draw-autoscale.ts
 	'drawings', // drawings.ts
 	'indicators', // indicators.ts
 	'lineStyle', // line-ticks.ts
+	'marks', // marks.ts
 	'priceAxes', // axes-frames.ts
 	'state', // state.ts
 	'timeZones', // time-zones.ts

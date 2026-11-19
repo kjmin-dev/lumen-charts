@@ -1,5 +1,6 @@
 import { CHUNK_MASK, CHUNK_ROWS, CHUNK_SHIFT, TIME } from './chunk';
 import { IndicatorEngine } from './indicators/engine';
+import { MarksEngine } from './marks/engine';
 import {
 	type Command,
 	type EngineEvent,
@@ -249,6 +250,8 @@ export class EngineCore {
 
 	/** Indicators and their derived series. */
 	private readonly _indicators: IndicatorEngine;
+	/** Scatter and heatmap series, which are not on the main timeline. */
+	private readonly _marks = new MarksEngine();
 	/** `seq` of the last command answered, which a notice repeats. */
 	private _lastAck = 0;
 	/** Collects fetch requests made and cancelled between commands, which the next notice carries. */
@@ -390,6 +393,12 @@ export class EngineCore {
 			case 'resolve':
 				event.resolved = this._resolveTimes(command.times);
 				break;
+			case 'marks':
+				yield* this._marks.change(command.series, command.change, event);
+				break;
+			case 'marksWindow':
+				this._marks.window(command.series, command.seq, command.request, event);
+				break;
 		}
 	}
 
@@ -411,7 +420,7 @@ export class EngineCore {
 
 	/** Bytes held by every store and pyramid, indicators included. */
 	public get byteLength(): number {
-		let bytes = this._time.byteLength + this._indicators.byteLength;
+		let bytes = this._time.byteLength + this._indicators.byteLength + this._marks.byteLength;
 		for (const state of this._series.values()) {
 			bytes += state.store.byteLength + state.pyramid.byteLength;
 		}

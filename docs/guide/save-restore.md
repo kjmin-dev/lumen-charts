@@ -62,10 +62,18 @@ or take the one the chart gives (`series-1`, `indicator-1`, ... in the order the
 - **Series** the chart already has (same `id` and type) keep their bars and take the state's
   options, so restoring into a chart that is already loaded fetches nothing. A series the chart
   lacks is added without bars, and one the state lacks is removed.
-- **Indicators** are computed again from the bars; the ones the chart already has, in the same
-  order, are kept and take the state's options.
-- **Drawings** are replaced, with a `removed` and a `created` event each. Code that saves on those
-  events should not do so during a restore.
+- **Indicators** are found by `id`. One the chart already has is kept, with its values, and takes
+  the state's options when its definition and source are the same and everything it reads is kept
+  too and was added to the chart before it (the engine computes indicators in the order they were
+  added). The others are removed, and those the chart lacks are added and computed from the bars;
+  they come after the kept ones in `chart.indicators()`.
+- **Drawings** are found by `id`. A drawing whose state says what it is already is left alone: no
+  event, nothing looked up or drawn again. One whose points, options or `zIndex` differ takes them
+  in place, with one `changed` event; one the state lacks is removed (`removed`), and one the chart
+  lacks is added (`created`). A state with another `type` or `priceScaleId` under an id that is
+  taken replaces that drawing (`removed`, then `created`). A drawing that stays keeps the object
+  `drawings.get(id)` returns, and stays selected if it was. Code that saves on these events should
+  not do so during a restore.
 - **The view** is saved as the times at the edges of the pane, not bar indexes, so it comes back to
   the same times with more history loaded or at another resolution. With no bars yet it waits for
   them; a view set afterwards (`fitContent`, ...) wins. Price scales that do not autoscale get their
@@ -94,5 +102,7 @@ chart.restoreState(layout, { parts: ['options', 'series', 'indicators', 'drawing
 ```
 
 A restore is applied in one frame however much it holds. With 1,000 drawings and 5 indicators on 1M
-candles, `saveState` takes 0.07 ms and `restoreState` about 3 ms of JavaScript, its frame included
-(see [docs/benchmarks/stage-4-save-restore.md](../benchmarks/stage-4-save-restore.md)).
+candles, `saveState` takes 0.07 ms and `restoreState` into an empty chart about 3 ms of JavaScript,
+its frame included (see [docs/benchmarks/stage-4-save-restore.md](../benchmarks/stage-4-save-restore.md)).
+Restoring the state a chart is already in checks it and changes nothing
+([docs/benchmarks/stage-4-follow-ups.md](../benchmarks/stage-4-follow-ups.md)).

@@ -24,8 +24,16 @@ export class FrameModel {
 	public readonly timeTicks = new TimeTicks();
 	/** Device-pixel positions of vertical grid lines and time axis labels. */
 	public tickXs = new Float32Array(64);
+	/**
+	 * Takes more than the series into the ranges of the price scales, for the logical positions in
+	 * view: called between collecting the series' ranges and fitting the scales (primitives that take
+	 * part in autoscale, see `PanePrimitives.includeRanges`).
+	 */
+	public ranges: ((from: number, to: number) => void) | null = null;
 	/** A counter that changes when the time ticks are computed again. */
 	public ticksGeneration = 0;
+	/** Takes part in the update between the series and the fitting of the price scales, when set. */
+	public marks: { frame(): void } | null = null;
 	/** What the time ticks were last computed for. */
 	private _ticksScale = -1;
 	private _ticksCache = -1;
@@ -165,7 +173,12 @@ export class FrameModel {
 				}
 			}
 		}
+		// Heatmap and scatter series: their mapping of times, their rows, their part in the autoscale.
+		this.marks?.frame();
 
+		if (this.ranges !== null && source !== null) {
+			this.ranges(scale.from, scale.to);
+		}
 		for (let i = 0; i < axes.length; i++) {
 			axes[i]!.fit();
 		}

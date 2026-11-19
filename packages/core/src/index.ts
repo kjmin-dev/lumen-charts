@@ -60,6 +60,7 @@ export type {
 	TimeRange,
 } from './series';
 export {
+	type AutoscaleRange,
 	type DrawTarget,
 	HIT_BODY,
 	HIT_NONE,
@@ -71,6 +72,11 @@ export {
 	type SeriesItems,
 	type SeriesRenderer,
 } from './primitives';
+export type { HeatmapColumn, HeatmapData, ScatterColumns, ScatterData, ScatterPoint } from './marks/input';
+export type { HeatmapOptions, MarkSeriesOptionsCommon, MarkSeriesType, ScatterOptions } from './marks/options';
+export { PALETTES, type Palette } from './marks/palette';
+export type { HeatmapSeriesApi, MarkSeriesApi, ScatterSeriesApi } from './marks/series';
+export type { MarkSeriesState } from './marks/state';
 export { getCanvasBudget, setCanvasBudget } from './shared/canvas-budget';
 export {
 	CHART_STATE_VERSION,
