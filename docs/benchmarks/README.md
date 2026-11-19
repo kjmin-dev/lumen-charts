@@ -78,9 +78,9 @@ The JSON files beside each document are the runs its numbers come from.
 - [stage-4-price-axes.md](stage-4-price-axes.md): the `axes-frames` scenario pans and zooms candles with three moving averages on one axis, on a logarithmic or a percentage scale, and on four axes; it and the frame cases of earlier stages against `main`.
 - [stage-4-drawings.md](stage-4-drawings.md): the `drawings` scenario hovers, drags and pans over 1,000 drawings on 1M candles (the stage 4 hover gate).
 - [stage-4-time-zones.md](stage-4-time-zones.md): the scenarios `tz-frames` (pan and zoom in New York time with the sessions of an equity exchange) and `tz-change` (switching time zones at run time).
+- [stage-4-follow-ups.md](stage-4-follow-ups.md): the `draw-autoscale` scenario pans with 100 and 1,000 drawings that take part in autoscale; hover over 1,000 drawings and a restore of 1,000, matched by id, against `main`.
 - [stage-4-save-restore.md](stage-4-save-restore.md): the `state` scenario saves and restores a chart with 5 indicators and 1,000 drawings.
 - [stage-5-profile.md](stage-5-profile.md): where frame, tick and load time goes, from traces of these scenarios, and what that decides about the optional steps of stage 5.
 - [stage-5-min-max.md](stage-5-min-max.md): the first of them, the min/max loops, is measured before and after.
 - [stage-5-partial-redraw.md](stage-5-partial-redraw.md): the second, the partial redraw of tick frames; `pnpm bench:pixels` checks in headless Chromium that such a frame leaves the pixels of a full redraw.
 - [stage-5-partial-redraw-options.md](stage-5-partial-redraw-options.md): the option that turns partial frames off (`redraw: 'full'`, checked by `pnpm bench:pixels --redraw full` on both rasterizers) and dashed lines drawn from the changed columns; the `line-ticks` scenario draws a frame per tick on solid, dashed and dotted lines.
-- [stage-4-follow-ups.md](stage-4-follow-ups.md): the `draw-autoscale` scenario pans with 100 and 1,000 drawings that take part in autoscale; hover over 1,000 drawings and a restore of 1,000, matched by id, against `main`.
