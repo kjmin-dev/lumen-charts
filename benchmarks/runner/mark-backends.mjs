@@ -12,6 +12,7 @@ const { values } = parseArgs({
 		frames: { type: 'string', default: '60' },
 		'check-only': { type: 'boolean' },
 		'gpu-timers': { type: 'boolean' },
+		'scatter-paths': { type: 'boolean' },
 	},
 });
 const gpuTimers = values['gpu-timers'] ?? false;
@@ -20,14 +21,22 @@ const frames = Number(values.frames);
 if (!Number.isSafeInteger(repeats) || repeats < 1 || !Number.isSafeInteger(frames) || frames < 2)
 	throw new Error('Expected positive repeats and at least two frames');
 
+const scatterPaths = values['scatter-paths'] ?? false;
 const backends = ['canvas2d', 'webgl2', 'webgpu'];
-const cases = [
+if (scatterPaths) backends.push('webgl2Visible', 'webgpuVisible', 'webgpuColumns');
+const scatterCases = [
 	{ type: 'scatter', count: 300000, action: 'zoom' },
 	...['pan', 'zoom', 'tick'].map(action => ({ type: 'scatter', count: 1000000, action })),
-	...['pan', 'zoom', 'tick'].map(action => ({ type: 'heatmap', count: 1440000, action })),
 ];
+const cases = scatterPaths
+	? [
+			{ type: 'scatter', count: 100000, action: 'zoom' },
+			...scatterCases,
+			{ type: 'scatter', count: 1000000, action: 'zoom', shape: 'burst' },
+		]
+	: [...scatterCases, ...['pan', 'zoom', 'tick'].map(action => ({ type: 'heatmap', count: 1440000, action }))];
 const routes = new Map();
-for (const name of ['run-page', 'scene', 'timers', ...backends]) {
+for (const name of ['run-page', 'scene', 'timers', 'canvas2d', 'webgl2', 'webgpu', 'webgpu-columns']) {
 	routes.set(
 		'/' + name + '.js',
 		await readFile(new URL('../prototypes/mark-backends/' + name + '.js', import.meta.url), 'utf8'),
@@ -90,6 +99,8 @@ try {
 			webgpuVendor: gpu?.info.vendor,
 			webgpuArchitecture: gpu?.info.architecture,
 			softwareWebGPU: gpu?.info.isFallbackAdapter,
+			preferredCanvasFormat: navigator.gpu?.getPreferredCanvasFormat(),
+			bgraStorage: gpu?.features.has('bgra8unorm-storage'),
 			webglRenderer: info && gl.getParameter(info.UNMASKED_RENDERER_WEBGL),
 		};
 	});
@@ -108,6 +119,7 @@ try {
 		cpu: os.cpus()[0].model,
 		adapter,
 		gpuTimers,
+		scatterPaths,
 		repeats,
 		frames,
 		loadStart: os.loadavg(),
@@ -118,12 +130,15 @@ try {
 		let reference;
 		for (const backend of backends) {
 			const page = await newPage();
-			const output = await page.evaluate(config => window.run(config), { ...entry, backend, frames, check: true });
+			const output = await page.evaluate(config => window.run(config), {
+				...entry,
+				backend,
+				frames,
+				check: true,
+				checkSequence: scatterPaths,
+			});
 			await page.close();
-			if (
-				reference &&
-				(output.before !== reference.before || output.middle !== reference.middle || output.after !== reference.after)
-			)
+			if (reference && JSON.stringify(output) !== JSON.stringify(reference))
 				throw new Error('Pixel mismatch: ' + JSON.stringify({ entry, backend, output, reference }));
 			reference = output;
 		}
@@ -159,10 +174,12 @@ try {
 						entry.count,
 						entry.action,
 						backend,
+						entry.shape ?? 'cloud/grid',
 						'JS p95',
 						js.p95.toFixed(3),
 						'ms, display p95',
 						trace.displayInterval.p95.toFixed(2),
+						...(result.gpuPass ? ['GPU p95', summarize(result.gpuPass).p95.toFixed(3)] : []),
 						'ms',
 					);
 				}

@@ -4,7 +4,7 @@ export const height = 1200;
 export const rows = 600;
 export const colors = [0xff9aa626, 0xff5053ef];
 
-export function makeScene(type, count, extra) {
+export function makeScene(type, count, extra, shape = 'cloud') {
 	if (type === 'heatmap') {
 		const cells = new Uint8Array(width * rows);
 		for (let y = 0; y < rows; y++) {
@@ -18,6 +18,18 @@ export function makeScene(type, count, extra) {
 		seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
 		points[2 * i] = Math.floor((i * (width - 4)) / count) + 1;
 		points[2 * i + 1] = 1 + Math.floor((seed / 0x100000000) * (height - 2));
+	}
+	if (shape === 'burst') {
+		// Put the middle 7/8 of the points into 1/32 of the time range. Timestamps
+		// stay sorted and include many ties, as in a burst of trades.
+		for (let i = 0; i < count; i++) {
+			const t = i / count;
+			let x;
+			if (t < 1 / 16) x = t * 16 * (31 / 64);
+			else if (t < 15 / 16) x = 31 / 64 + (t - 1 / 16) / 28;
+			else x = 33 / 64 + (t - 15 / 16) * 16 * (31 / 64);
+			points[2 * i] = Math.floor(x * (width - 4)) + 1;
+		}
 	}
 	return { type, points, count };
 }

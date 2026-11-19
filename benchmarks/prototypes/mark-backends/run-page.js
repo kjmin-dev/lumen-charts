@@ -1,9 +1,41 @@
 import { canvas2d } from './canvas2d.js';
 import { webgl2 } from './webgl2.js';
 import { webgpu } from './webgpu.js';
+import { webgpuColumns } from './webgpu-columns.js';
 import { canvas, height, makeScene, updateScene, viewFor, width } from './scene.js';
 
-const backends = { canvas2d, webgl2, webgpu };
+// Both graphics APIs get the same visible-range control. The half-open interval selects
+// precisely the centers kept by the reference shader, including the original draw-order IDs.
+function visibleRange(renderer) {
+	return async (target, scene, timer) => {
+		const draw = await renderer(target, scene, timer);
+		const lowerBound = (pixel, scale, lo, hi) => {
+			while (lo < hi) {
+				const mid = lo + Math.floor((hi - lo) / 2);
+				if (Math.floor(scene.points[2 * mid] * scale) < pixel) lo = mid + 1;
+				else hi = mid;
+			}
+			return lo;
+		};
+		return (v, first, count, update) => {
+			if (update) return draw(v, first, count, true);
+			const x = v.x + v.shift;
+			const end = first + count;
+			const left = lowerBound(x, v.scale, first, end);
+			const right = lowerBound(x + v.w, v.scale, left, end);
+			draw(v, left, right - left, false);
+		};
+	};
+}
+
+const backends = {
+	canvas2d,
+	webgl2,
+	webgpu,
+	webgl2Visible: visibleRange(webgl2),
+	webgpuVisible: visibleRange(webgpu),
+	webgpuColumns,
+};
 const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
 
 async function digest(ctx) {
@@ -12,9 +44,9 @@ async function digest(ctx) {
 	return Array.from(hash, n => n.toString(16).padStart(2, '0')).join('');
 }
 
-export async function run({ backend, type, count, action, frames, check, gpuTimers }) {
+export async function run({ backend, type, count, action, frames, check, gpuTimers, shape, checkSequence }) {
 	const warmup = 12;
-	const scene = makeScene(type, count, warmup + frames + 1);
+	const scene = makeScene(type, count, Math.max(16, warmup + frames + 1), shape);
 	const output = canvas(width, height);
 	output.style.width = width / devicePixelRatio + 'px';
 	output.style.height = height / devicePixelRatio + 'px';
@@ -44,6 +76,15 @@ export async function run({ backend, type, count, action, frames, check, gpuTime
 	}
 	if (check) {
 		const before = await digest(screen);
+		if (checkSequence) {
+			const sequence = [];
+			for (let i = 0; i < 16; i++) {
+				render(i);
+				sequence.push(await digest(screen));
+			}
+			if (new Set(sequence).size < 2) throw new Error('Rendered frames did not change');
+			return { before, sequence };
+		}
 		render(1);
 		const middle = await digest(screen);
 		render(8);
