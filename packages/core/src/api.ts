@@ -6,6 +6,8 @@ import type { ChartOptions, DeepPartial } from './options';
 import type { PriceScaleApi } from './price-axes';
 import type { PanePrimitive } from './primitives';
 import type { SeriesApi, SeriesCreateOptions, SeriesType } from './series';
+import type { HeatmapOptions, ScatterOptions } from './marks/options';
+import type { HeatmapSeriesApi, MarkSeriesApi, ScatterSeriesApi } from './marks/series';
 import type { ChartState, ChartStateSelection } from './state';
 
 /** A range of logical positions: bar `i` covers `[i - 0.5, i + 0.5)`. */
@@ -58,9 +60,17 @@ export interface ChartApi {
 	 */
 	addSeries<T extends SeriesType>(type: T, options?: SeriesCreateOptions<T>): SeriesApi<T>;
 	/**
+	 * Adds a heatmap: columns of cells on a grid of prices, drawn below the other series. Its marks
+	 * are placed by time on the timeline of the bars, so the chart needs a series with bars. `id`
+	 * names it in saved state, like any series.
+	 */
+	addSeries(type: 'heatmap', options?: Partial<HeatmapOptions> & { id?: string }): HeatmapSeriesApi;
+	/** Adds a scatter series: points at any time and price, drawn above the other series. */
+	addSeries(type: 'scatter', options?: Partial<ScatterOptions> & { id?: string }): ScatterSeriesApi;
+	/**
 	 * Removes a series, and every indicator that reads it.
 	 */
-	removeSeries(series: SeriesApi): void;
+	removeSeries(series: SeriesApi | MarkSeriesApi): void;
 	/**
 	 * Adds an indicator computed from `source` (a series, or an indicator output to chain from) in
 	 * the data engine, with the worker when there is one. Its outputs are series on the main timeline,
@@ -77,8 +87,13 @@ export interface ChartApi {
 	): IndicatorApi;
 	/** Removes an indicator, and every indicator that reads its outputs. */
 	removeIndicator(indicator: IndicatorApi): void;
-	/** The series of the chart in the order they are drawn, without the outputs of indicators. */
+	/**
+	 * The series of the chart in the order they are drawn, without the outputs of indicators and
+	 * without heatmap and scatter series (see `markSeries`).
+	 */
 	series(): SeriesApi[];
+	/** The heatmap and scatter series of the chart, in the order they were added. */
+	markSeries(): (HeatmapSeriesApi | ScatterSeriesApi)[];
 	/** The indicators of the chart in the order they were added. */
 	indicators(): IndicatorApi[];
 	/**
@@ -133,7 +148,8 @@ export interface ChartApi {
 	 *   functions of `localization` stay as they are.
 	 * - Series are matched by `id` and type: one the chart has keeps its bars, datafeed, renderer and
 	 *   primitives and takes the state's options; one it lacks is added without bars (find it with
-	 *   `series()` and hand it data); one the state lacks is removed.
+	 *   `series()`, or `markSeries()` for a heatmap or a scatter, and hand it data); one the state
+	 *   lacks is removed.
 	 * - Indicators are found by name, so custom ones must be registered first. They are kept as far
 	 *   as both lists start with the same ones, and the others are computed again.
 	 * - Drawings are replaced, with a `removed` and a `created` event each.

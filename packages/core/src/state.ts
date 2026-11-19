@@ -19,6 +19,7 @@ import {
 	type LocalizationOptions,
 } from './options';
 import type { PriceRange } from './price-axes';
+import type { MarkSeriesState } from './marks/state';
 import { type AnySeriesOptions, type SeriesType, defaultSeriesOptions } from './series';
 
 /**
@@ -119,7 +120,8 @@ export interface ViewState {
 export interface ChartState {
 	version: typeof CHART_STATE_VERSION;
 	options?: ChartStateOptions;
-	series?: SeriesState[];
+	/** Heatmap and scatter series are listed with the others, each with the options of its type. */
+	series?: (SeriesState | MarkSeriesState)[];
 	indicators?: IndicatorState[];
 	drawings?: DrawingState[];
 	view?: ViewState;

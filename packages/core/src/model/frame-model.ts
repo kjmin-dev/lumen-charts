@@ -32,6 +32,8 @@ export class FrameModel {
 	public ranges: ((from: number, to: number) => void) | null = null;
 	/** A counter that changes when the time ticks are computed again. */
 	public ticksGeneration = 0;
+	/** Takes part in the update between the series and the fitting of the price scales, when set. */
+	public marks: { frame(): void } | null = null;
 	/** What the time ticks were last computed for. */
 	private _ticksScale = -1;
 	private _ticksCache = -1;
@@ -171,6 +173,8 @@ export class FrameModel {
 				}
 			}
 		}
+		// Heatmap and scatter series: their mapping of times, their rows, their part in the autoscale.
+		this.marks?.frame();
 
 		if (this.ranges !== null && source !== null) {
 			this.ranges(scale.from, scale.to);

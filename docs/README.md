@@ -39,5 +39,6 @@ The documents are split so that two pull requests rarely edit the same lines. Ke
 - [design/stage-4-drawings.md](design/stage-4-drawings.md): drawings, primitives and custom renderers (sections 6.1, 7.1, 8, 9).
 - [design/stage-4-time-zones.md](design/stage-4-time-zones.md): time zones and sessions (section 4.3).
 - [design/stage-4-save-restore.md](design/stage-4-save-restore.md): save and restore of the chart's state (sections 7.2, 9).
+- [design/stage-5-heatmap-scatter.md](design/stage-5-heatmap-scatter.md): heatmap and scatter series in the engine, drawn through a pixel buffer (sections 3, 4.4 to 4.6, 6.3, 7, 8, 9, 10).
 - [design/stage-5.md](design/stage-5.md): the optional steps: partial redraw, the min/max loops, and what was rejected or deferred (sections 4.2, 5, 6.2, 9, 10).
 - [design/stage-4-follow-ups.md](design/stage-4-follow-ups.md): handles derived from a drawing's points, primitives and drawings in autoscale, and restore by id (sections 7.1, 7.2, 8).
