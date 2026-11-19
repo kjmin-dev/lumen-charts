@@ -190,15 +190,69 @@ export class Drawings implements DrawingsApi, DrawingOwner {
 	}
 
 	/**
-	 * Replaces every drawing with those of checked states (see `Drawing.stateOf`), for a restore.
-	 * `removed` and `created` are emitted as for `clear` and `add`.
+	 * Makes the drawings those of checked states (see `Drawing.stateOf`), for a restore, matching
+	 * them by id. A drawing whose state says what it is already is left alone: no event, and its
+	 * positions and geometry stay. One that differs in points, options or z-index takes them in place,
+	 * with one `changed`. A drawing no state names is removed (`removed`), as is one whose state has
+	 * another type or price scale, which a drawing cannot change; the states without a drawing are
+	 * added (`created`). The drawings end up in the order of the states, bottom to top. A tool or a
+	 * drag in progress ends first; a selected drawing that stays, stays selected.
 	 */
 	public restore(states: readonly ConstructorParameters<typeof Drawing>[1][]): void {
-		this.clear();
+		this.cancelTool();
+		this._endDrag(false);
+		const byId = this._byId;
+		if (byId.size > 0) {
+			const kept = new Set<Drawing>();
+			for (const state of states) {
+				const existing = byId.get(state.id);
+				if (
+					existing !== undefined &&
+					existing.type === state.type &&
+					existing.priceScaleId === state.priceScaleId &&
+					existing.pane === state.pane
+				) {
+					kept.add(existing);
+				}
+			}
+			if (kept.size < byId.size) {
+				// From the top down, as in `clear`.
+				const drawings = this.list();
+				for (let i = drawings.length - 1; i >= 0; i--) {
+					if (!kept.has(drawings[i] as Drawing)) {
+						this.remove(drawings[i]!);
+					}
+				}
+				for (const drawing of byId.values()) {
+					if (!kept.has(drawing)) {
+						this.remove(drawing);
+					}
+				}
+			}
+		}
+		const layers = this._host.layers;
+		// Equal z-indexes are drawn in attach order: it follows the order of the states.
+		let last = -1;
 		for (const state of states) {
-			const drawing = new Drawing(this, state);
-			this._attach(drawing, this._viewOf(state.priceScaleId));
-			this._emit('created', drawing);
+			let drawing = byId.get(state.id);
+			let entry: PrimitiveEntry | undefined;
+			if (drawing === undefined) {
+				drawing = new Drawing(this, state);
+				entry = this._attach(drawing, this._viewOf(state.priceScaleId));
+				this._emit('created', drawing);
+			} else {
+				if (drawing.restore(state)) {
+					this._noteZ(drawing.zIndex);
+					this.changed(drawing);
+				}
+				entry = layers.entryOf(drawing);
+			}
+			if (entry !== undefined) {
+				if (entry.seq < last) {
+					layers.resequence(entry);
+				}
+				last = entry.seq;
+			}
 		}
 	}
 

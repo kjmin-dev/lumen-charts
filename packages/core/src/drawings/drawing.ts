@@ -266,6 +266,38 @@ export class Drawing implements PanePrimitive, DrawingApi {
 		this._owner.remove(this);
 	}
 
+	/**
+	 * Takes the points, options and z-index of a checked state with this drawing's id, type and price
+	 * scale, for a restore. Returns whether any of them differed; what is the same is left as it is,
+	 * with its positions and geometry. The owner is not told: it sends the one event.
+	 */
+	public restore(state: Required<Omit<DrawingState, 'version'>>): boolean {
+		let changed = false;
+		const points = state.points;
+		for (let k = 0; k < this.count; k++) {
+			const point = points[k]!;
+			if (point.time !== this.times[k] || point.price !== this.prices[k]) {
+				this.times[k] = point.time;
+				this.prices[k] = point.price;
+				changed = true;
+			}
+		}
+		if (changed) {
+			this.pointsChanged();
+		}
+		if (!sameOptions(this._options, state.options)) {
+			this._setOptions(state.options);
+			changed = true;
+		}
+		if (state.zIndex !== this.zIndex) {
+			this.zIndex = state.zIndex;
+			// Its entry reads the z-index again.
+			this.host?.requestUpdate();
+			changed = true;
+		}
+		return changed;
+	}
+
 	// Editing (the chart's pointer interaction)
 
 	/** The points changed: positions and geometry are computed again. */
@@ -1131,6 +1163,31 @@ export function checkPoints(points: readonly DrawingPoint[], count: number, type
 			throw new Error('lumen-charts: drawing points need a finite time and price');
 		}
 	}
+}
+
+/** Whether two sets of options, each with every key, hold the same values. */
+function sameOptions(a: DrawingOptions, b: DrawingOptions): boolean {
+	for (const key in a) {
+		const value = a[key as keyof DrawingOptions];
+		const other = b[key as keyof DrawingOptions];
+		if (value === other) {
+			continue;
+		}
+		if (key !== 'levels') {
+			return false;
+		}
+		const levels = value as number[];
+		const others = other as number[];
+		if (levels.length !== others.length) {
+			return false;
+		}
+		for (let i = 0; i < levels.length; i++) {
+			if (levels[i] !== others[i]) {
+				return false;
+			}
+		}
+	}
+	return true;
 }
 
 function definedOnly<T extends object>(value: T): Partial<T> {
