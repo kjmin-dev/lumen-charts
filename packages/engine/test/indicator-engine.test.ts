@@ -12,6 +12,7 @@ import {
 	levelCount,
 	levelShift,
 	resolveParams,
+	unpackPatches,
 } from '@lumen-charts/engine';
 import { describe, expect, it, vi } from 'vitest';
 import { counts } from './fixtures/plugin';
@@ -299,9 +300,9 @@ describe('indicator engine', () => {
 			// The patch of every output carries its latest value, in the same message as the bar.
 			for (const { outputs } of added) {
 				for (const series of outputs) {
-					expect(event.patches!.some(p => p.series === series && p.level === 0 && p.start + p.count === end)).toBe(
-						true,
-					);
+					expect(
+						unpackPatches(event.patches).some(p => p.series === series && p.level === 0 && p.start + p.count === end),
+					).toBe(true);
 				}
 			}
 			if (batch % 15 === 14) {

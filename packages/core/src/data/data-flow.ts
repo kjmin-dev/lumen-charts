@@ -1,4 +1,16 @@
-import { type EngineClient, type EngineEvent, columnCount, createEngine, levelFor } from '@lumen-charts/engine';
+import {
+	type EngineClient,
+	type EngineEvent,
+	PATCH_COUNT,
+	PATCH_LEVEL,
+	PATCH_OFFSET,
+	PATCH_SERIES,
+	PATCH_START,
+	PATCH_STRIDE,
+	columnCount,
+	createEngine,
+	levelFor,
+} from '@lumen-charts/engine';
 import type { ChartIndicators } from '../indicators';
 import { INVALIDATE_LIGHT, type Invalidation } from '../model/invalidation';
 import type { TimeDisplay } from '../model/time-display';
@@ -212,20 +224,23 @@ export class DataFlow {
 		if (patches === undefined) {
 			return;
 		}
-		for (const patch of patches) {
-			if (patch.level !== 0 || patch.start + patch.count !== event.end) {
+		const { index, data } = patches;
+		for (let p = 0; p < index.length; p += PATCH_STRIDE) {
+			const rows = index[p + PATCH_COUNT]!;
+			if (index[p + PATCH_LEVEL] !== 0 || index[p + PATCH_START]! + rows !== event.end) {
 				continue;
 			}
+			const id = index[p + PATCH_SERIES];
 			for (const series of this._series) {
-				if (series.engineId !== patch.series) {
+				if (series.engineId !== id) {
 					continue;
 				}
-				const rows = patch.count;
+				const offset = index[p + PATCH_OFFSET]!;
 				const closeColumn = series.kind === 'ohlcv' ? 3 : 0;
-				const close = patch.data[closeColumn * rows + rows - 1]!;
+				const close = data[offset + closeColumn * rows + rows - 1]!;
 				if (close === close) {
 					series.lastValue = close;
-					series.lastUp = close >= patch.data[rows - 1]!;
+					series.lastUp = close >= data[offset + rows - 1]!;
 				}
 				break;
 			}

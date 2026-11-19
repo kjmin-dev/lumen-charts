@@ -1,4 +1,16 @@
-import { type EngineEvent, MAX_LEVEL, TIME_PATCH, levelShift } from '@lumen-charts/engine';
+import {
+	type EngineEvent,
+	MAX_LEVEL,
+	PATCH_COLUMNS,
+	PATCH_COUNT,
+	PATCH_LEVEL,
+	PATCH_OFFSET,
+	PATCH_SERIES,
+	PATCH_START,
+	PATCH_STRIDE,
+	TIME_PATCH,
+	levelShift,
+} from '@lumen-charts/engine';
 
 export interface WindowRequest {
 	level: number;
@@ -176,6 +188,7 @@ export class LevelWindow {
 			this._atTail = this.capacity > 0 && this.start + this.count === timelineEnd;
 			return;
 		}
+		const { index, data } = patches;
 		const start = this.start;
 		const capacity = this.capacity;
 		const cachedEnd = start + this.count;
@@ -183,49 +196,54 @@ export class LevelWindow {
 		// grow only from the tail of the timeline: otherwise the items in between were never delivered.
 		let end = cachedEnd;
 		if (this._atTail) {
-			for (const patch of patches) {
-				if (patch.level === level && patch.series === TIME_PATCH && patch.start <= cachedEnd) {
-					end = Math.max(end, Math.min(patch.start + patch.count, start + capacity, timelineEnd));
+			for (let p = 0; p < index.length; p += PATCH_STRIDE) {
+				const patchStart = index[p + PATCH_START]!;
+				if (index[p + PATCH_LEVEL] === level && index[p + PATCH_SERIES] === TIME_PATCH && patchStart <= cachedEnd) {
+					end = Math.max(end, Math.min(patchStart + index[p + PATCH_COUNT]!, start + capacity, timelineEnd));
 				}
 			}
 		}
-		for (const patch of patches) {
+		// Read in place: a tick brings a patch per series and level, and nothing is allocated for them.
+		for (let p = 0; p < index.length; p += PATCH_STRIDE) {
+			const patchStart = index[p + PATCH_START]!;
 			// A patch that leaves a gap after the cached items cannot be applied. The items it touches
 			// are outside the window, and a new snapshot is requested when they come into view.
-			if (patch.level !== level || patch.start > end) {
+			if (index[p + PATCH_LEVEL] !== level || patchStart > end) {
 				continue;
 			}
-			const from = Math.max(patch.start, start);
-			const to = Math.min(patch.start + patch.count, end);
+			const patchCount = index[p + PATCH_COUNT]!;
+			const from = Math.max(patchStart, start);
+			const to = Math.min(patchStart + patchCount, end);
 			if (to <= from) {
 				continue;
 			}
+			const series = index[p + PATCH_SERIES]!;
 			let target: Float64Array;
 			let columns = 1;
-			if (patch.series === TIME_PATCH) {
+			if (series === TIME_PATCH) {
 				target = this.time;
 			} else {
-				columns = patch.data.length / patch.count;
-				let block = this.blocks.get(patch.series);
+				columns = index[p + PATCH_COLUMNS]!;
+				let block = this.blocks.get(series);
 				if (block === undefined) {
 					// A series that got its first data through ticks, after the snapshot was taken.
-					block = new Float64Array(columnCount(patch.series, level) * capacity).fill(NaN);
-					this.blocks.set(patch.series, block);
+					block = new Float64Array(columnCount(series, level) * capacity).fill(NaN);
+					this.blocks.set(series, block);
 					this.version = ++versions;
 				}
 				target = block;
 			}
 			const rows = to - from;
-			const sourceRow = from - patch.start;
+			const source = index[p + PATCH_OFFSET]! + from - patchStart;
 			const targetRow = from - start;
 			if (rows === 1) {
 				for (let c = 0; c < columns; c++) {
-					target[c * capacity + targetRow] = patch.data[c * patch.count + sourceRow]!;
+					target[c * capacity + targetRow] = data[source + c * patchCount]!;
 				}
 			} else {
 				for (let c = 0; c < columns; c++) {
-					const offset = c * patch.count + sourceRow;
-					target.set(patch.data.subarray(offset, offset + rows), c * capacity + targetRow);
+					const offset = source + c * patchCount;
+					target.set(data.subarray(offset, offset + rows), c * capacity + targetRow);
 				}
 			}
 			if (from < this.dirtyLo) {

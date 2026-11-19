@@ -1,6 +1,6 @@
 import { resolve as resolvePath } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { type EngineClient, type EngineEvent, LocalTransport, createEngine } from '@lumen-charts/engine';
+import { type EngineClient, type EngineEvent, LocalTransport, createEngine, unpackPatches } from '@lumen-charts/engine';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeWorker } from './fake-worker';
 import { ohlcv } from './helpers';
@@ -51,7 +51,7 @@ describe('EngineClient on the calling thread', () => {
 		engine.requestWindow(0, 10, 16);
 		await engine.whenIdle();
 		expect(events.length).toBe(4);
-		expect(events[2]!.patches!.find(patch => patch.series === series)!.data[3]).toBe(999);
+		expect(unpackPatches(events[2]!.patches).find(patch => patch.series === series)!.data[3]).toBe(999);
 		// The window was requested after the ticks, so it already holds their result.
 		const window = events[3]!.window!;
 		expect(window.series[0]!.data[3 * window.capacity + 9]).toBe(999);

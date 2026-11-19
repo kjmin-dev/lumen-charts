@@ -1,4 +1,4 @@
-import { CHUNK_ROWS, EngineCore, type EngineEvent, type FetchRequest } from '@lumen-charts/engine';
+import { CHUNK_ROWS, EngineCore, type EngineEvent, type FetchRequest, unpackPatches } from '@lumen-charts/engine';
 import { describe, expect, it } from 'vitest';
 import { line, run, ticks } from './helpers';
 
@@ -167,11 +167,11 @@ describe('memory limit', () => {
 		// The correction waits for its chunk; the update of the last bar does not wait for it.
 		expect(event.waiting).toEqual([0]);
 		expect(event.rejected).toBe(0);
-		expect(event.patches!.some(patch => patch.level === 0 && patch.start === COUNT - 1)).toBe(true);
+		expect(unpackPatches(event.patches).some(patch => patch.level === 0 && patch.start === COUNT - 1)).toBe(true);
 		expect(event.fetch!.length).toBe(1);
 		const [restored] = answerAll(core, event);
 		expect(restored!.applied).toEqual([event.ack, 0]);
-		const level1 = restored!.patches!.find(patch => patch.series === 1 && patch.level === 1)!;
+		const level1 = unpackPatches(restored!.patches).find(patch => patch.series === 1 && patch.level === 1)!;
 		// The bucket's highest value is the correction now.
 		expect(level1.start).toBe(index >> 4);
 		expect(level1.data[1]).toBe(1e6);
@@ -207,7 +207,7 @@ describe('memory limit', () => {
 		const events = answerAll(core, rawWindow(core, OLD, 100), changed);
 		const last = events.at(-1)!;
 		expect(windowValues(last)[3]).toBe(777);
-		const level1 = events.flatMap(event => event.patches ?? []).find(p => p.level === 1 && p.series === 1)!;
+		const level1 = events.flatMap(event => unpackPatches(event.patches)).find(p => p.level === 1 && p.series === 1)!;
 		const bucket = (OLD + 3) >> 4;
 		expect(level1.data[1 * level1.count + bucket - level1.start]).toBe(777);
 	});

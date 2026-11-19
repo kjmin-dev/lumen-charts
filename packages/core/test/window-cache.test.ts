@@ -1,4 +1,4 @@
-import { type EngineEvent, TIME_PATCH } from '@lumen-charts/engine';
+import { type EngineEvent, TIME_PATCH, packPatches } from '@lumen-charts/engine';
 import { describe, expect, it } from 'vitest';
 import { WindowCache } from '../src/data/window-cache';
 
@@ -61,10 +61,10 @@ describe('WindowCache', () => {
 		const answer = windowEvent(0, 100, 200);
 		// A patch the engine made before it took the snapshot, of a bar a deletion in the same event
 		// removed: it neither overwrites the snapshot nor grows it past the end of the timeline.
-		answer.patches = [
+		answer.patches = packPatches([
 			{ series: TIME_PATCH, level: 0, start: 99, count: 3, data: new Float64Array([990, 1000, 1010]) },
 			{ series: 1, level: 0, start: 99, count: 3, data: new Float64Array(15).fill(-1) },
-		];
+		]);
 		cache.apply(answer, columns);
 		expect(cache.raw.count).toBe(100);
 		expect(cache.raw.blocks.get(1)![3 * 200 + 99]).toBe(99);
@@ -72,10 +72,10 @@ describe('WindowCache', () => {
 		cache.apply(
 			event({
 				end: 101,
-				patches: [
+				patches: packPatches([
 					{ series: TIME_PATCH, level: 0, start: 100, count: 1, data: new Float64Array([1000]) },
 					{ series: 1, level: 0, start: 100, count: 1, data: new Float64Array([1, 2, 0, 1.5, 9]) },
-				],
+				]),
 			}),
 			columns,
 		);
@@ -107,10 +107,10 @@ describe('WindowCache', () => {
 		cache.apply(
 			event({
 				end: 11,
-				patches: [
+				patches: packPatches([
 					{ series: TIME_PATCH, level: 0, start: 10, count: 1, data: new Float64Array([100]) },
 					{ series: 1, level: 0, start: 10, count: 1, data: new Float64Array([1, 1, 1, 1, 1]) },
-				],
+				]),
 			}),
 			columns,
 		);
@@ -149,7 +149,7 @@ describe('WindowCache', () => {
 		cache.apply(
 			event({
 				end: 150,
-				patches: [{ series: 1, level: 0, start: 149, count: 1, data: new Float64Array([1, 2, 3, 4, 5]) }],
+				patches: packPatches([{ series: 1, level: 0, start: 149, count: 1, data: new Float64Array([1, 2, 3, 4, 5]) }]),
 			}),
 			columns,
 		);
@@ -168,10 +168,10 @@ describe('WindowCache', () => {
 			cache.apply(
 				event({
 					end: index + 1,
-					patches: [
+					patches: packPatches([
 						{ series: TIME_PATCH, level: 0, start: index, count: 1, data: new Float64Array([index * 10]) },
 						{ series: 1, level: 0, start: index, count: 1, data: new Float64Array([9, 9, 9, index, 9]) },
-					],
+					]),
 				}),
 				columns,
 			);
@@ -201,7 +201,10 @@ describe('WindowCache', () => {
 		cache.apply(windowEvent(0, 10, 16), columns);
 		const version = cache.raw.version;
 		cache.apply(
-			event({ end: 10, patches: [{ series: 2, level: 0, start: 4, count: 1, data: new Float64Array([7]) }] }),
+			event({
+				end: 10,
+				patches: packPatches([{ series: 2, level: 0, start: 4, count: 1, data: new Float64Array([7]) }]),
+			}),
 			() => 1,
 		);
 		const block = cache.raw.blocks.get(2)!;
@@ -217,7 +220,7 @@ describe('WindowCache', () => {
 		cache.apply(
 			event({
 				end: 1000,
-				patches: [{ series: TIME_PATCH, level: 0, start: 999, count: 1, data: new Float64Array([1]) }],
+				patches: packPatches([{ series: TIME_PATCH, level: 0, start: 999, count: 1, data: new Float64Array([1]) }]),
 			}),
 			columns,
 		);
@@ -271,13 +274,13 @@ describe('WindowCache by level', () => {
 		cache.apply(
 			event({
 				end: 1009,
-				patches: [
+				patches: packPatches([
 					{ series: TIME_PATCH, level: 0, start: 1000, count: 9, data: new Float64Array(9).fill(7) },
 					{ series: 1, level: 0, start: 1000, count: 9, data: new Float64Array(45).fill(1) },
 					// Bucket 62 (rows 992 to 1007) changed and bucket 63 opened with row 1008.
 					{ series: TIME_PATCH, level: 1, start: 62, count: 2, data: new Float64Array([9920, 10_080]) },
 					{ series: 1, level: 1, start: 62, count: 2, data: new Float64Array([0, 0, 0, 0, 0, 0, 62.5, 63.5, 0, 0]) },
-				],
+				]),
 			}),
 			columns,
 		);
