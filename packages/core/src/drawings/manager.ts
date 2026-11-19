@@ -86,7 +86,7 @@ export class Drawings implements DrawingsApi, DrawingOwner {
 	private _pressY = 0;
 	private _pressing = false;
 	private _moved = false;
-	/** The drawing pressed, and the handle being dragged (`1 + k`) or its body (0). */
+	/** The drawing pressed, and the handle being dragged (`1 + k`, see `Drawing.moveHandle`) or its body (0). */
 	private _pressedDrawing: Drawing | null = null;
 	private _dragHit = HIT_BODY;
 	/** Points before the drag, to move from and to restore on Escape. */
@@ -525,7 +525,13 @@ export class Drawings implements DrawingsApi, DrawingOwner {
 		const before = this._hovered;
 		this._hovered = entry;
 		this._hoveredHit = hit;
-		this.cursor = entry === null ? (this._tool !== null ? 'crosshair' : '') : hit > HIT_BODY ? 'move' : 'pointer';
+		if (entry === null) {
+			this.cursor = this._tool !== null ? 'crosshair' : '';
+		} else if (hit > HIT_BODY) {
+			this.cursor = entry.primitive instanceof Drawing ? entry.primitive.handleCursor(hit - 1) : 'move';
+		} else {
+			this.cursor = 'pointer';
+		}
 		this._host.invalidateOverlay();
 		if (entry !== before) {
 			const drawing = entry !== null && entry.primitive instanceof Drawing ? entry.primitive : null;
@@ -688,13 +694,12 @@ export class Drawings implements DrawingsApi, DrawingOwner {
 		const view = this._viewOf(drawing.priceScaleId);
 		const times = this._host.times;
 		if (this._dragHit > HIT_BODY) {
-			const k = this._dragHit - 1;
 			const point = this._point;
 			if (!this._pointAt(x, y, view, true, point, 0)) {
 				return;
 			}
 			times.seed(point[1]!, point[0]!);
-			drawing.setPoint(k, point[1]!, point[2]!);
+			drawing.moveHandle(this._dragHit - 1, point[1]!, point[2]!);
 		} else {
 			// The whole drawing moves by whole bars, and by the pointer's distance on the price axis.
 			const shift = Math.round(view.xToLogical(x) - view.xToLogical(this._pressX));

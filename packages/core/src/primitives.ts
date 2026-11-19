@@ -135,8 +135,9 @@ export interface PanePrimitive {
 	drawHighlight?(target: DrawTarget, view: PaneView, hovered: boolean, selected: boolean): void;
 	/**
 	 * Whether the point `(x, y)` (CSS pixels in the pane) hits the primitive, within `tolerance`
-	 * pixels: `HIT_NONE` (-1), `HIT_BODY` (0), or `1 + k` for the handle of point `k`. Only called
-	 * where `bounds`, grown by the tolerance, contain the point.
+	 * pixels: `HIT_NONE` (-1), `HIT_BODY` (0), or `1 + k` for handle `k` (of the built-in drawings, the
+	 * handle of point `k`, then those derived from the points: the other corners and the edges of a
+	 * box). Only called where `bounds`, grown by the tolerance, contain the point.
 	 */
 	hitTest?(x: number, y: number, tolerance: number): number;
 }

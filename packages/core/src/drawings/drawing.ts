@@ -25,6 +25,10 @@ import {
 export const HANDLE_RADIUS = 5;
 /** Space between a label and what it labels, in CSS pixels. */
 const LABEL_PAD = 4;
+/** Handles of a box: its four corners, then the middles of its four edges. */
+const BOX_HANDLES = 8;
+/** A side of a box has a handle in its middle from this length on, so it stays clear of the corners'. */
+const MIN_EDGE = 4 * HANDLE_RADIUS;
 
 /** What every drawing of a chart shares: how handles look and how text is measured. */
 export interface DrawingStyle {
@@ -57,7 +61,9 @@ const G_B = 10;
 const G_C = 14;
 /** Where a label goes. */
 const G_LABEL = 18;
-const G_SIZE = 20;
+/** Handles of a box (see `BOX_HANDLES`): x and y of each, NaN for one that is left out. */
+const G_HANDLES = 20;
+const G_SIZE = G_HANDLES + 2 * BOX_HANDLES;
 
 /** Shared by drawings without Fibonacci levels, which is most of them. */
 const NO_ROWS = new Float64Array(0);
@@ -92,12 +98,17 @@ export class Drawing implements PanePrimitive, DrawingApi {
 	public zIndex: number;
 	/** Number of points. */
 	public readonly count: number;
+	/**
+	 * Number of handles: one per point, and for a box (rectangle, price range) its four corners and
+	 * the middles of its four edges, all derived from its two points.
+	 */
+	public readonly handleCount: number;
 	public readonly times: Float64Array;
 	public readonly prices: Float64Array;
 	/** Logical positions of the points, as of `_timeline`. */
 	public readonly logical: Float64Array;
 	/** Screen geometry, see the `G_` offsets. */
-	public readonly geometry = new Float64Array(G_SIZE);
+	public readonly geometry: Float64Array;
 	/** Whether the last `update` found it in the pane. */
 	public onScreen = false;
 	public host: PrimitiveHost | null = null;
@@ -106,6 +117,8 @@ export class Drawing implements PanePrimitive, DrawingApi {
 
 	private _options: DrawingOptions;
 	private readonly _owner: DrawingOwner;
+	/** A rectangle or a price range: two points that are opposite corners. */
+	private readonly _box: boolean;
 	private _timeline = -1;
 	private _pointsChanged = true;
 	/** Changes with every change of the points, for the label cache. */
@@ -138,6 +151,9 @@ export class Drawing implements PanePrimitive, DrawingApi {
 		this.priceScaleId = state.priceScaleId;
 		this.zIndex = state.zIndex;
 		this.count = POINT_COUNTS[state.type];
+		this._box = state.type === 'rectangle' || state.type === 'priceRange';
+		this.handleCount = this._box ? BOX_HANDLES : this.count;
+		this.geometry = new Float64Array(this._box ? G_SIZE : G_HANDLES);
 		this.times = new Float64Array(this.count);
 		this.prices = new Float64Array(this.count);
 		this.logical = new Float64Array(this.count).fill(NaN);
@@ -262,6 +278,47 @@ export class Drawing implements PanePrimitive, DrawingApi {
 	public setPoint(k: number, time: number, price: number): void {
 		this.times[k] = time;
 		this.prices[k] = price;
+	}
+
+	/**
+	 * Moves handle `handle` to a time and price whose logical position the caller knows. A handle of a
+	 * point moves the point. Of a box, a corner takes the time of one point and the price of the
+	 * other, and the middle of an edge the time or the price of one point alone: whatever is dragged,
+	 * the opposite corner or edge stays where it is.
+	 */
+	public moveHandle(handle: number, time: number, price: number): void {
+		if (handle < this.count) {
+			this.times[handle] = time;
+			this.prices[handle] = price;
+			return;
+		}
+		switch (handle) {
+			case 2:
+				this.times[0] = time;
+				this.prices[1] = price;
+				break;
+			case 3:
+				this.times[1] = time;
+				this.prices[0] = price;
+				break;
+			case 4:
+				this.times[0] = time;
+				break;
+			case 5:
+				this.times[1] = time;
+				break;
+			case 6:
+				this.prices[0] = price;
+				break;
+			case 7:
+				this.prices[1] = price;
+				break;
+		}
+	}
+
+	/** Cursor over handle `handle`: the middle of an edge moves along one axis only. */
+	public handleCursor(handle: number): string {
+		return this._box && handle >= 4 ? (handle < 6 ? 'ew-resize' : 'ns-resize') : 'move';
 	}
 
 	// PanePrimitive
@@ -401,6 +458,26 @@ export class Drawing implements PanePrimitive, DrawingApi {
 				g[G_A + 1] = top;
 				g[G_A + 2] = right;
 				g[G_A + 3] = bottom;
+				// Corners: the two points, then the two the points do not name. Then the middles of the
+				// edges at the first and second point's time, and at the first and second point's price.
+				const middleX = right - left >= MIN_EDGE ? (x0 + x1) / 2 : NaN;
+				const middleY = bottom - top >= MIN_EDGE ? (y0 + y1) / 2 : NaN;
+				g[G_HANDLES] = x0;
+				g[G_HANDLES + 1] = y0;
+				g[G_HANDLES + 2] = x1;
+				g[G_HANDLES + 3] = y1;
+				g[G_HANDLES + 4] = x0;
+				g[G_HANDLES + 5] = y1;
+				g[G_HANDLES + 6] = x1;
+				g[G_HANDLES + 7] = y0;
+				g[G_HANDLES + 8] = x0;
+				g[G_HANDLES + 9] = middleY;
+				g[G_HANDLES + 10] = x1;
+				g[G_HANDLES + 11] = middleY;
+				g[G_HANDLES + 12] = middleX;
+				g[G_HANDLES + 13] = y0;
+				g[G_HANDLES + 14] = middleX;
+				g[G_HANDLES + 15] = y1;
 				if (type === 'priceRange') {
 					// The label sits past the second point: below a fall, above a rise.
 					const lineHeight = options.fontSize * 1.4;
@@ -568,9 +645,10 @@ export class Drawing implements PanePrimitive, DrawingApi {
 		ctx.lineWidth = Math.max(1, Math.round(ratio));
 		ctx.strokeStyle = this._options.color;
 		ctx.fillStyle = this._owner.style.handleFill;
-		for (let k = 0; k < this.count; k++) {
-			const x = g[G_POINTS + 2 * k]!;
-			const y = g[G_POINTS + 2 * k + 1]!;
+		const at = this._box ? G_HANDLES : G_POINTS;
+		for (let k = 0; k < this.handleCount; k++) {
+			const x = g[at + 2 * k]!;
+			const y = g[at + 2 * k + 1]!;
 			if (x !== x || y !== y) {
 				continue;
 			}
@@ -589,9 +667,19 @@ export class Drawing implements PanePrimitive, DrawingApi {
 		const options = this._options;
 		if (!options.locked) {
 			const reach = HANDLE_RADIUS + tolerance;
-			for (let k = this.count - 1; k >= 0; k--) {
-				const dx = x - g[G_POINTS + 2 * k]!;
-				const dy = y - g[G_POINTS + 2 * k + 1]!;
+			const at = this._box ? G_HANDLES : G_POINTS;
+			const handles = this.handleCount;
+			// Points and corners first, the last on top; then the middles of edges (NaN when left out).
+			for (let k = Math.min(handles, 4) - 1; k >= 0; k--) {
+				const dx = x - g[at + 2 * k]!;
+				const dy = y - g[at + 2 * k + 1]!;
+				if (dx * dx + dy * dy <= reach * reach) {
+					return 1 + k;
+				}
+			}
+			for (let k = 4; k < handles; k++) {
+				const dx = x - g[at + 2 * k]!;
+				const dy = y - g[at + 2 * k + 1]!;
 				if (dx * dx + dy * dy <= reach * reach) {
 					return 1 + k;
 				}

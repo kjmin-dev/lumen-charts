@@ -55,6 +55,14 @@ function drawing(type: DrawingType, points: [number, number][], options = {}, pa
 /** Pane position of bar `bar` at `price`. */
 const xy = (bar: number, price: number): [number, number] => [bar * 10, 300 - 2 * price];
 
+/** The points of a drawing as (bar, price). */
+const corners = (d: Drawing) => d.points().map(point => [point.time / 60_000, point.price]);
+const make = () =>
+	drawing('rectangle', [
+		[10, 40],
+		[30, 80],
+	]).d;
+
 describe('drawing geometry and hit tests', () => {
 	it('clips lines, rays and extended lines to the pane', () => {
 		const out = new Float64Array(4);
@@ -125,10 +133,104 @@ describe('drawing geometry and hit tests', () => {
 		expect(drawing('rectangle', points).d.hitTest(...xy(20, 60), 4)).toBe(HIT_BODY);
 		const hollow = drawing('rectangle', points, { fillColor: '' }).d;
 		expect(hollow.hitTest(...xy(20, 60), 4)).toBe(HIT_NONE);
-		expect(hollow.hitTest(...xy(20, 80), 4)).toBe(HIT_BODY);
-		expect(hollow.hitTest(...xy(30, 60), 4)).toBe(HIT_BODY);
-		expect(hollow.hitTest(...xy(30, 40), 4)).toBe(HIT_BODY);
+		expect(hollow.hitTest(...xy(15, 80), 4)).toBe(HIT_BODY);
+		expect(hollow.hitTest(...xy(30, 50), 4)).toBe(HIT_BODY);
 		expect(hollow.hitTest(...xy(30, 80), 4)).toBe(2);
+	});
+
+	it('rectangle and price range: a handle at every corner and in the middle of every edge', () => {
+		for (const type of ['rectangle', 'priceRange'] as const) {
+			const { d } = drawing(type, [
+				[10, 40],
+				[30, 80],
+			]);
+			expect(d.handleCount).toBe(8);
+			// The two points, then the corners they do not name.
+			expect(d.hitTest(...xy(10, 40), 4)).toBe(1);
+			expect(d.hitTest(...xy(30, 80), 4)).toBe(2);
+			expect(d.hitTest(...xy(10, 80), 4)).toBe(3);
+			expect(d.hitTest(...xy(30, 40), 4)).toBe(4);
+			// The edges at the first and second point's time, then at their prices.
+			expect(d.hitTest(...xy(10, 60), 4)).toBe(5);
+			expect(d.hitTest(...xy(30, 60), 4)).toBe(6);
+			expect(d.hitTest(...xy(20, 40), 4)).toBe(7);
+			expect(d.hitTest(...xy(20, 80), 4)).toBe(8);
+			expect(d.handleCursor(0)).toBe('move');
+			expect(d.handleCursor(3)).toBe('move');
+			expect(d.handleCursor(4)).toBe('ew-resize');
+			expect(d.handleCursor(7)).toBe('ns-resize');
+		}
+		expect(
+			drawing('trendLine', [
+				[10, 40],
+				[30, 80],
+			]).d.handleCount,
+		).toBe(2);
+		expect(
+			drawing('parallelChannel', [
+				[10, 40],
+				[30, 80],
+				[10, 60],
+			]).d.handleCount,
+		).toBe(3);
+	});
+
+	it('rectangle: a side too short for it has no handle in its middle', () => {
+		// 15 pixels wide and 80 high: the corners' handles would cover one between them.
+		const { d } = drawing('rectangle', [
+			[10, 40],
+			[11.5, 80],
+		]);
+		expect(d.hitTest(...xy(10, 60), 4)).toBe(5);
+		expect(d.hitTest(...xy(11.5, 60), 4)).toBe(6);
+		expect(d.hitTest(...xy(10.75, 40), 0)).toBe(HIT_BODY);
+		const ctx = {
+			arcs: 0,
+			beginPath() {},
+			fill() {},
+			stroke() {},
+			arc() {
+				this.arcs++;
+			},
+		};
+		d.drawHighlight(
+			{ context: ctx as unknown as CanvasRenderingContext2D, pixelRatio: 1, width: 400, height: 300 },
+			view(),
+			true,
+			false,
+		);
+		expect(ctx.arcs).toBe(6);
+	});
+
+	it('rectangle: a dragged corner or edge leaves the opposite one where it is', () => {
+		let d = make();
+		// The corner at the first point's time and the second's price: the opposite one is (30, 40).
+		d.moveHandle(2, 5 * 60_000, 90);
+		expect(corners(d)).toEqual([
+			[5, 40],
+			[30, 90],
+		]);
+		d = make();
+		d.moveHandle(3, 35 * 60_000, 20);
+		expect(corners(d)).toEqual([
+			[10, 20],
+			[35, 80],
+		]);
+		d = make();
+		d.moveHandle(0, 12 * 60_000, 44);
+		d.moveHandle(4, 8 * 60_000, 999);
+		d.moveHandle(5, 33 * 60_000, 999);
+		d.moveHandle(6, 0, 30);
+		d.moveHandle(7, 0, 95);
+		expect(corners(d)).toEqual([
+			[8, 30],
+			[33, 95],
+		]);
+		// Dragged past the opposite corner, the box turns inside out and stays a box.
+		d.moveHandle(4, 50 * 60_000, 0);
+		d.pointsChanged();
+		d.update(view({ to: 60 }), { left: 0, top: 0, right: 400, bottom: 300 });
+		expect(d.hitTest(...xy(40, 60), 4)).toBe(HIT_BODY);
 	});
 
 	it('parallel channel: both lines and the fill between them', () => {
