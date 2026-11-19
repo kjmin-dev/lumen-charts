@@ -87,6 +87,8 @@ export interface HeatmapJob extends MarksJobBase {
 
 export interface MarksRun {
 	backend?: string;
+	backendFrames?: Record<string, number>;
+	backendTransitions?: number;
 	gpuPass?: Distribution;
 	rendererPath?: string;
 	rendererBytes?: number;
@@ -254,6 +256,9 @@ async function runMarks(job: ScatterJob | HeatmapJob, { factory, container }: Ru
 
 		let first = 0;
 		let last = 0;
+		const backendFrames: Record<string, number> = {};
+		let lastBackend: string | undefined;
+		let transitions = 0;
 		startFrameRecording();
 		let recording;
 		try {
@@ -285,6 +290,14 @@ async function runMarks(job: ScatterJob | HeatmapJob, { factory, container }: Ru
 						return;
 					}
 					try {
+						if (first && !last) {
+							const path = marks.markBackend?.()?.path;
+							if (path) {
+								backendFrames[path] = (backendFrames[path] ?? 0) + 1;
+								if (lastBackend && lastBackend !== path) transitions++;
+								lastBackend = path;
+							}
+						}
 						step(frame + 1);
 					} catch (error) {
 						reject(error);
@@ -321,6 +334,7 @@ async function runMarks(job: ScatterJob | HeatmapJob, { factory, container }: Ru
 					}
 				: {}),
 			...(gpuSamples?.length ? { gpuPass: summarize(gpuSamples) } : {}),
+			...(Object.keys(backendFrames).length ? { backendFrames, backendTransitions: transitions } : {}),
 			jsTime: summarize(jsTime),
 			interval: summarize(intervals),
 			frames: last - first,

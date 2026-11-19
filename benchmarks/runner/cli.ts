@@ -3,7 +3,7 @@
 // Usage: pnpm bench [options]; pnpm bench --help lists them.
 
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import { dirname, relative, resolve } from 'node:path';
@@ -659,8 +659,16 @@ async function main(): Promise<void> {
 			? resolve(invokedFrom, args.out)
 			: resolve(benchDir, 'results', `${createdAt.toISOString().replace(/[:.]/g, '-')}.json`);
 	process.stdout.write(`Building the harness page…\n`);
-	await build({ configFile: resolve(benchDir, 'vite.config.ts'), logLevel: 'warn' });
-	const server = await preview({ configFile: resolve(benchDir, 'vite.config.ts'), logLevel: 'warn' });
+	// Isolate the served files from concurrent browser checks and baseline checkouts.
+	const buildDir = mkdtempSync(resolve(os.tmpdir(), 'lumen-bench-'));
+	process.once('exit', () => rmSync(buildDir, { recursive: true, force: true }));
+	const viteOptions = {
+		configFile: resolve(benchDir, 'vite.config.ts'),
+		logLevel: 'warn' as const,
+		build: { outDir: buildDir, emptyOutDir: true },
+	};
+	await build(viteOptions);
+	const server = await preview(viteOptions);
 	const baseUrl = server.resolvedUrls?.local[0];
 	if (baseUrl === undefined) {
 		throw new Error('Preview server has no local URL');

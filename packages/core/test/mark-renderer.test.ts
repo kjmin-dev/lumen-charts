@@ -19,15 +19,30 @@ describe('mark renderer selection', () => {
 		for (let i = 0; i < 3; i++) policy.canvas(11, true);
 		expect(policy.wants(true, false, true)).toBe(true);
 		policy.gpu(90);
-		for (let i = 0; i < 6; i++) policy.gpu(15);
+		for (let i = 0; i < 24; i++) policy.gpu(15);
 		for (let i = 0; i < 25; i++) {
 			policy.canvas(11, true);
 			expect(policy.wants(true, false, true)).toBe(false);
 		}
 	});
+	it('latches initialization across cheap interim frames and tolerates a single expensive window upload', () => {
+		const p = new AutoMarks();
+		for (let i = 0; i < 3; i++) p.canvas(10, true);
+		expect(p.wants(true, false, true)).toBe(true);
+		for (let i = 0; i < 8; i++) {
+			p.canvas(0.1, true);
+			expect(p.wants(true, false, true)).toBe(true);
+		}
+		p.gpu(35);
+		for (let i = 0; i < 60; i++) {
+			p.gpu(i === 14 ? 80 : 1);
+			expect(p.wants(true, false, true)).toBe(true);
+		}
+	});
 	it('keeps the fast path across single sparse frames and leaves after sustained low density', () => {
 		const policy = new AutoMarks();
 		for (let i = 0; i < 3; i++) policy.canvas(10, true);
+		expect(policy.wants(true, false, true)).toBe(true);
 		policy.gpu(50);
 		for (let i = 0; i < 10; i++) policy.gpu(1);
 		for (let i = 0; i < 7; i++) expect(policy.wants(false, true, true)).toBe(true);
