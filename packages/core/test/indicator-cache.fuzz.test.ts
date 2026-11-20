@@ -162,12 +162,16 @@ function runOne(seed: number, steps: number): string | null {
 			apply(notice);
 		}
 	};
-	/** Requests a window of `level` over the visible range the way the chart plans one. */
+	/**
+	 * Requests a window of `level` over the visible range the way the chart plans one, naming the
+	 * levels the cache holds, and lets go of the levels far from it as a chart does.
+	 */
 	const view = (level: number, from: number, to: number): void => {
 		const request = cache.plan(level, from, to, model.first, model.end);
 		if (request !== null) {
-			apply(exec({ type: 'window', ...request }));
+			apply(exec({ type: 'window', ...request, levels: cache.patchedLevels() }));
 		}
+		cache.retain(level, level);
 	};
 	/** Compares every derived value the cache holds with the model, bit for bit. */
 	const check = (what: string): string | null => {
