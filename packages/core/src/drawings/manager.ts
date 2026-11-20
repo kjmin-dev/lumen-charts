@@ -3,7 +3,6 @@ import { type DrawTarget, HIT_BODY, HIT_NONE } from '../primitives';
 import type { HitResult, PaneViewState, PrimitiveEntry, PrimitiveLayers } from '../render/primitive-host';
 import { Drawing, type DrawingOwner, type DrawingStyle } from './drawing';
 import {
-	DEFAULT_PRICE_SCALE_ID,
 	type DrawingApi,
 	type DrawingEvent,
 	type DrawingInput,
@@ -28,6 +27,7 @@ export interface DrawingsHost {
 	readonly times: TimeIndex;
 	/** The view of a price scale, made with the scale if the chart has none of that id. */
 	view(priceScaleId: string): PaneViewState;
+	viewAt(y: number): PaneViewState;
 	/** Left edge of the pane in the chart element, CSS pixels. */
 	paneLeft(): number;
 	/** The overlay must be drawn again. */
@@ -501,16 +501,23 @@ export class Drawings implements DrawingsApi, DrawingOwner {
 		const editing = this._editing;
 		if (editing !== null && editing.alive) {
 			const view = this._viewOf(editing.priceScaleId);
+			const clipped = view.clip(target);
 			editing.draw(target, view);
 			editing.drawHighlight(target, view, false, true);
+			if (clipped) target.context.restore();
 		}
 		const hovered = this._hovered;
 		const selected = this._selected;
 		if (hovered !== null && hovered.primitive !== editing) {
+			const clipped = hovered.view.clip(target);
 			hovered.primitive.drawHighlight?.(target, hovered.view, true, hovered.primitive === selected);
+			if (clipped) target.context.restore();
 		}
 		if (selected !== null && selected !== editing && selected !== hovered?.primitive && selected.alive) {
-			selected.drawHighlight(target, this._viewOf(selected.priceScaleId), false, true);
+			const view = this._viewOf(selected.priceScaleId);
+			const clipped = view.clip(target);
+			selected.drawHighlight(target, view, false, true);
+			if (clipped) target.context.restore();
 		}
 	}
 
@@ -622,7 +629,7 @@ export class Drawings implements DrawingsApi, DrawingOwner {
 	/** First point of a new drawing of the tool. */
 	private _startNew(x: number, y: number): boolean {
 		const type = this._tool!;
-		const view = this._viewOf(DEFAULT_PRICE_SCALE_ID);
+		const view = this._host.viewAt(y);
 		const point = this._point;
 		if (!this._pointAt(x, y, view, true, point, 0)) {
 			// No bars there to place a point on: the press pans instead.
@@ -634,7 +641,13 @@ export class Drawings implements DrawingsApi, DrawingOwner {
 			points.push({ time: point[1]!, price: point[2]! });
 		}
 		this._host.times.seed(point[1]!, point[0]!);
-		const state = Drawing.stateOf({ type, points, options: this._toolOptions, zIndex: this._zMax + 1 });
+		const state = Drawing.stateOf({
+			type,
+			points,
+			priceScaleId: view.scaleId,
+			options: this._toolOptions,
+			zIndex: this._zMax + 1,
+		});
 		const drawing = new Drawing(this, state);
 		this._placed = 1;
 		this._state = PLACING;

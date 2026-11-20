@@ -41,9 +41,9 @@ export interface GridOptions {
 
 /**
  * `normal` follows the pointer; `magnet` puts the horizontal line on the close of the bar under the
- * pointer; `hidden` shows no crosshair.
+ * pointer; `nearest` selects the closest visible close in the active pane; `hidden` shows no crosshair.
  */
-export type CrosshairMode = 'normal' | 'magnet' | 'hidden';
+export type CrosshairMode = 'normal' | 'magnet' | 'nearest' | 'hidden';
 
 export interface CrosshairLineOptions {
 	visible: boolean;
@@ -79,6 +79,9 @@ export type PriceScaleMode = 'normal' | 'logarithmic' | 'percentage' | 'indexed'
 export const DEFAULT_PRICE_SCALE_ID = 'default';
 
 export interface PriceScaleOptions {
+	/** A positive weight gives a named scale an independent pane below the main pane.
+	 * Heights are proportional, with the main pane having weight one by default. Zero shares the main pane. */
+	paneWeight: number;
 	/**
 	 * Show the axis. A scale without one is an overlay: its series are drawn over the pane, scaled on
 	 * their own, and their value labels go on the default scale's axis, or on the first visible axis
@@ -341,6 +344,7 @@ export const BASE_OPTIONS: ChartOptions = {
 	},
 	crosshair: { mode: 'normal', vertLine: crosshairLine(), horzLine: crosshairLine() },
 	priceScale: {
+		paneWeight: 0,
 		visible: true,
 		position: 'right',
 		borderVisible: true,

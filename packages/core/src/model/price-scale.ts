@@ -27,6 +27,11 @@ export class PriceScale {
 	public readonly id: string;
 	/** Height of the pane in CSS pixels. */
 	public height = 0;
+	/** CSS coordinates in the chart's shared plot area. */
+	public top = 0;
+	public contains(y: number): boolean {
+		return y >= this.top && y < this.top + this.height;
+	}
 	/** Visible range, in values of the scale. */
 	public min = 0;
 	public max = 1;
@@ -69,11 +74,12 @@ export class PriceScale {
 		this._update();
 	}
 
-	public setHeight(height: number): void {
-		if (height === this.height) {
+	public setHeight(height: number, top = 0): void {
+		if (height === this.height && top === this.top) {
 			return;
 		}
 		this.height = height;
+		this.top = top;
 		this._update();
 	}
 
@@ -292,8 +298,8 @@ export class PriceScale {
 		if (this.height <= 0 || !this.hasRange) {
 			return;
 		}
-		const a = this.yToValue(0);
-		const b = this.yToValue(this.height);
+		const a = this.yToValue(this.top);
+		const b = this.yToValue(this.top + this.height);
 		const reach = spacing / Math.abs(this._scale);
 		const low = Math.max(Math.min(a, b), this.min - reach);
 		const high = Math.min(Math.max(a, b), this.max + reach);
@@ -404,7 +410,7 @@ export class PriceScale {
 	}
 
 	private _update(): void {
-		const top = this.height * this._topMargin;
+		const top = this.top + this.height * this._topMargin;
 		const inner = Math.max(1, this.height * (1 - this._topMargin - this._bottomMargin));
 		const k = inner / (this.max - this.min);
 		if (this.inverted) {

@@ -23,7 +23,7 @@ export interface PriceRange {
  * A price scale of the chart. Its values are prices on a normal or logarithmic scale, and changes
  * in percent or index values on a percentage or indexed one (see `PriceScaleMode`). Ranges and
  * coordinates are those of the last frame drawn; coordinates are CSS pixels from the top of the
- * pane.
+ * chart's plotting area, including the offset of an independent pane.
  */
 export interface PriceScaleApi {
 	/** `default` for the scale `ChartOptions.priceScale` configures, or the id series name it by. */
@@ -81,6 +81,16 @@ export class PriceAxis implements PriceScaleApi, AxisTarget {
 	public tickYs = new Float32Array(64);
 	/** Tick generation the axis canvas shows, and the one its width was fitted to; -1 forces it. */
 	public drawn = -1;
+	public drawnGrid = -1;
+
+	public get paneWeight(): number {
+		const weight = this.settings.paneWeight;
+		return Number.isFinite(weight) && weight > 0 ? weight : 0;
+	}
+
+	public get separatePane(): boolean {
+		return this.id !== DEFAULT_PRICE_SCALE_ID && this.paneWeight > 0;
+	}
 	public fitTicks = -1;
 	public fitDigit = -1;
 
@@ -288,7 +298,7 @@ export class PriceAxes {
 				this._host,
 				this._settings.options.priceScales[id] ?? overlayScaleOptions(this._settings.theme()),
 			);
-			axis.scale.setHeight(this._layout.paneHeight);
+			axis.scale.setHeight(this._layout.mainPaneHeight);
 			this._byId.set(id, axis);
 			this.list.push(axis);
 			this._syncAxisLayer(axis);
@@ -306,7 +316,7 @@ export class PriceAxes {
 		let grid = axes[0]!;
 		if (grid.count === 0) {
 			for (const axis of axes) {
-				if (axis.settings.visible && axis.count > 0) {
+				if (!axis.separatePane && axis.settings.visible && axis.count > 0) {
 					grid = axis;
 					break;
 				}
@@ -319,7 +329,7 @@ export class PriceAxes {
 			if (first !== null) {
 				priceScale.setFormat(first.seriesOptions.minMove, first.seriesOptions.precision);
 			}
-			if (axis !== grid && !axis.settings.visible) {
+			if (axis !== grid && !axis.settings.visible && !axis.separatePane) {
 				continue;
 			}
 			if (axis.count === 0) {
@@ -419,10 +429,10 @@ export class PriceAxes {
 	}
 
 	/** Moves the scales that do not autoscale with a drag of `dy` CSS pixels. */
-	public scrollBy(dy: number): void {
+	public scrollBy(dy: number, y: number): void {
 		let moved = false;
 		for (const axis of this.list) {
-			if (!axis.settings.autoScale && axis.count > 0 && axis.scale.hasRange) {
+			if (!axis.settings.autoScale && axis.count > 0 && axis.scale.hasRange && axis.scale.contains(y)) {
 				axis.scale.scrollBy(dy);
 				moved = true;
 			}

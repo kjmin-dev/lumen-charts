@@ -145,6 +145,15 @@ export class TimeMap {
 		this.pace = t1 > t0 ? (this.knotX(k + 1) - x0) / (t1 - t0) : 0;
 	}
 
+	/** Advance one logical bar. At raw knots use the exact timestamp across fractional pixel positions and session gaps. */
+	public barEnd(time: number): number {
+		this.segment(time);
+		if (this.count === 0) return NaN;
+		if (this._size === 1 && this._segment >= 0 && this.t0 === time && this._segment + 1 < this.count) return this.t1;
+		const x = this.x0 + (time - this.t0) * this.pace;
+		return this.time(x + this.spacing);
+	}
+
 	/** Device x of a time; NaN without bars. */
 	public x(time: number): number {
 		this.segment(time);

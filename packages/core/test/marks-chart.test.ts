@@ -227,6 +227,29 @@ describe('heatmap and scatter series on a chart', () => {
 		expect(heat.valueAt(104 * MINUTE, 89.9)).toBeNull();
 	});
 
+	it('ends a single heatmap column at the next logical bar', async () => {
+		await withBars();
+		const heat = t.chart.addSeries('heatmap');
+		heat.setData(grid(1, 2, () => 42));
+		await t.settle();
+		expect(heat.valueAt(100 * MINUTE, 90.5)).toBe(42);
+		expect(heat.valueAt(101 * MINUTE - 1, 90.5)).toBe(42);
+		expect(heat.valueAt(101 * MINUTE, 90.5)).toBeNull();
+		expect(heat.valueAt(130 * MINUTE, 90.5)).toBeNull();
+	});
+
+	it('uses the next timeline bar for a single column across a session gap', async () => {
+		const data = candles(200);
+		for (let i = 101; i < data.time.length; i++) data.time[i]! += 2 * 86400000;
+		t.chart.addSeries('candlestick').setData(data);
+		const heat = t.chart.addSeries('heatmap');
+		heat.setData(grid(1, 2, () => 42));
+		await t.settle();
+		const end = data.time[101]!;
+		expect(heat.valueAt(end - 1, 90.5)).toBe(42);
+		expect(heat.valueAt(end, 90.5)).toBeNull();
+	});
+
 	it('takes the points in view into the autoscale of their price scale, unless told not to', async () => {
 		await withBars();
 		const before = t.chart.priceScale().getVisibleRange()!;
@@ -417,7 +440,7 @@ describe('heatmap and scatter series on a chart', () => {
 		t.clearCalls();
 		scatter.applyOptions({ opacity: 0.4 });
 		await t.settle();
-		expect(t.puts().length).toBe(1);
+		expect(t.puts().length).toBe(0);
 		expect(t.drawingsLayer.some(call => call.name === 'drawImage')).toBe(true);
 		t.clearCalls();
 		scatter.applyOptions({ visible: false });

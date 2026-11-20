@@ -42,7 +42,7 @@ Each has a guide:
 - [Several charts on one page](docs/guide/several-charts.md): shared workers, frames and observers.
 - [Level of detail](docs/guide/level-of-detail.md): wide views draw from buckets, not bars.
 - [History on demand: datafeed and memory limit](docs/guide/datafeed.md): bars let go and fetched again, corrections, deletions, resolution changes.
-- [Indicators](docs/guide/indicators.md): the built-in ones, chains, and the histogram series.
+- [Indicators](docs/guide/indicators.md): the built-in indicators, chains, histograms and independent indicator panes.
 - [Price axes](docs/guide/price-axes.md): several scales, logarithmic, percentage and indexed modes, tick sizes.
 - [Custom indicators](docs/guide/custom-indicators.md): your own kernels, loaded into the engine as a module.
 - [Drawings](docs/guide/drawings.md): tools, the pointer, events and their JSON.

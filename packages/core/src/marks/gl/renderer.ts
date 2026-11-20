@@ -1,6 +1,7 @@
 import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
 import type { MarkFrame, MarkRendererReason } from '../backend';
 import { heatStyle, scatterBounds, scatterRecords } from '../gpu/geometry';
+import { heatEdge } from '../render';
 import { HeatRanges } from '../heat-ranges';
 import type { ScatterOptions } from '../options';
 import { parseColor } from '../palette';
@@ -18,12 +19,16 @@ class GlLayer {
 	private packed = new Uint32Array(0);
 	private colors = new Uint32Array(512);
 	private version = -1;
+	private count = -1;
 	private revision = -1;
 	private projection = '';
 	private mapping = '';
 	private palette: Uint32Array | null = null;
 	private fallback = '';
-	constructor(private pool: GlContext) {
+	constructor(
+		private pool: GlContext,
+		private listener: () => void,
+	) {
 		const cache = pool.canvas.ownerDocument.createElement('canvas').getContext('2d');
 		if (!cache) throw new Error('Mark layer unavailable');
 		this.cache = cache;
@@ -100,43 +105,60 @@ class GlLayer {
 			const data = new Uint32Array(w.values.buffer as ArrayBuffer, w.values.byteOffset, w.values.length);
 			this.records.write(data, from * w.rows, to * w.rows);
 		}
-		this.heat.project(f);
 		const n = (width + height) * 2;
-		this.ranges.bind(n);
-		this.ranges.write(this.heat.data, 0, n);
+		const sameGrid = !this.ranges.bind(n) && !full && !fresh && w.count === this.count;
+		if (!sameGrid) {
+			this.heat.project(f);
+			this.ranges.write(this.heat.data, 0, n);
+		}
 		if (this.style.bind(512) || styleChanged) {
 			heatStyle(f.palette, f.mapping, this.colors);
 			this.style.write(this.colors, 0, 512);
 		}
-		let left = 0;
-		if (!full && !fresh && to > from) {
+		let left = 0,
+			right = width;
+		if (sameGrid && from === w.count - 1 && to === w.count) {
+			left = Math.max(0, Math.min(width, heatEdge(w.time, w.count, from, f.map)));
+			right = Math.max(left, Math.min(width, heatEdge(w.time, w.count, to, f.map)));
+		} else if (!full && !fresh && to > from) {
 			// The column before an append or replacement shares its edge.
 			left = Math.max(0, Math.min(width, Math.round(f.map.x(w.time[Math.max(0, from - 1)]!) - f.map.spacing / 2)));
 		}
 		const gl = this.pool.gl;
 		gl.uniform1i(p.rows, w.rows);
-		gl.scissor(left, 0, width - left, height);
+		gl.scissor(left, 0, right - left, height);
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-		this.copy(left, width, height);
+		this.copy(left, right, height);
 	}
 
 	private copy(left: number, right: number, height: number) {
 		const width = right - left;
 		if (width <= 0) return;
 		this.cache.clearRect(left, 0, width, height);
-		this.cache.drawImage(this.pool.canvas, left, 0, width, height, left, 0, width, height);
+		this.cache.drawImage(
+			this.pool.canvas,
+			left,
+			this.pool.canvas.height - height,
+			width,
+			height,
+			left,
+			0,
+			width,
+			height,
+		);
 	}
 
 	paint(f: MarkFrame, target: CanvasRenderingContext2D, full: boolean) {
 		const { width, height, window: w } = f;
 		if (full || this.version !== w.version || this.revision !== w.revision) {
-			const program = this.pool.begin(f.type, width, height);
+			const program = this.pool.begin(this.listener, f.type, width, height);
 			full = this.resize(width, height) || full;
 			const mapping = [f.mapping.min, f.mapping.factor, f.mapping.log].join(',');
 			const styleChanged = this.palette !== f.palette || mapping !== this.mapping;
 			this.pool.gl.enable(this.pool.gl.SCISSOR_TEST);
 			if (f.type === 'scatter') this.scatter(f, program, full, styleChanged);
 			else this.heatmap(f, program, full, styleChanged);
+			this.count = w.count;
 			this.version = w.version;
 			this.revision = w.revision;
 			this.mapping = mapping;
@@ -186,7 +208,7 @@ export class GlMarkClient {
 			this.pool ??= GlContext.acquire(this.doc, this.change);
 			if (!this.pool) return (this.failure = 'unavailable');
 			if (this.pool.gl.isContextLost()) return 'context-lost';
-			this.layer ??= new GlLayer(this.pool);
+			this.layer ??= new GlLayer(this.pool, this.change);
 			this.layer.paint(f, target, full);
 			return null;
 		} catch (error) {

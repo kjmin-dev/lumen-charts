@@ -38,6 +38,8 @@ export class ChartLayout {
 	public paneLeft = 0;
 	public paneWidth = 0;
 	public paneHeight = 0;
+	public mainPaneHeight = 0;
+	public split = false;
 	public axisHeight = 0;
 	/** The device pixel ratio the canvases were last placed with. */
 	public pixelRatio = 1;
@@ -188,25 +190,49 @@ export class ChartLayout {
 	public compute(): void {
 		const { timeScale, layout } = this._settings.options;
 		const axes = this._host.priceAxes();
-		let left = 0;
-		let right = 0;
+		const mainWeight = axes[0]?.paneWeight || 1;
+		let largest = mainWeight,
+			left = 0,
+			right = 0,
+			panelLeft = 0,
+			panelRight = 0;
+		this.split = false;
 		for (const axis of axes) {
-			if (axis.settings.visible) {
-				if (axis.settings.position === 'left') {
-					left += axis.axisWidth;
-				} else {
-					right += axis.axisWidth;
-				}
+			const separate = axis.separatePane;
+			if (separate) {
+				this.split = true;
+				largest = Math.max(largest, axis.paneWeight);
 			}
+			if (!axis.settings.visible) continue;
+			if (axis.settings.position === 'left') {
+				if (separate) panelLeft = Math.max(panelLeft, axis.axisWidth);
+				else left += axis.axisWidth;
+			} else if (separate) panelRight = Math.max(panelRight, axis.axisWidth);
+			else right += axis.axisWidth;
 		}
+		left = Math.max(left, panelLeft);
+		right = Math.max(right, panelRight);
 		this.axisHeight = timeScale.visible ? Math.round(layout.fontSize + 16) : 0;
 		this.paneLeft = left;
 		this.paneWidth = Math.max(0, this.width - left - right);
 		this.paneHeight = Math.max(0, this.height - this.axisHeight);
-		let leftEdge = left;
-		let rightEdge = left + this.paneWidth;
+		let weight = mainWeight / largest;
+		let total = weight;
+		for (const axis of axes) if (axis.separatePane) total += axis.paneWeight / largest;
+		this.mainPaneHeight = Math.round((this.paneHeight * weight) / total);
+		let bottom = this.mainPaneHeight,
+			leftEdge = left,
+			rightEdge = left + this.paneWidth;
 		for (const axis of axes) {
-			if (axis.settings.visible) {
+			if (axis.separatePane) {
+				const top = bottom;
+				weight += axis.paneWeight / largest;
+				bottom = Math.round((this.paneHeight * weight) / total);
+				axis.scale.setHeight(bottom - top, top);
+				axis.axisLeft = axis.settings.position === 'left' ? left - axis.axisWidth : left + this.paneWidth;
+			} else {
+				axis.scale.setHeight(this.mainPaneHeight);
+				if (!axis.settings.visible) continue;
 				if (axis.settings.position === 'left') {
 					leftEdge -= axis.axisWidth;
 					axis.axisLeft = leftEdge;
@@ -215,7 +241,6 @@ export class ChartLayout {
 					rightEdge += axis.axisWidth;
 				}
 			}
-			axis.scale.setHeight(this.paneHeight);
 		}
 		this._scale.setWidth(this.paneWidth);
 		this.dirty = true;
@@ -233,7 +258,7 @@ export class ChartLayout {
 		this.pane.place(paneLeft, 0, paneWidth, paneHeight, ratio);
 		for (const axis of this._host.priceAxes()) {
 			if (axis.settings.visible) {
-				axis.layer?.place(axis.axisLeft, 0, axis.axisWidth, paneHeight, ratio);
+				axis.layer?.place(axis.axisLeft, axis.scale.top, axis.axisWidth, axis.scale.height, ratio);
 			}
 			// Resizing a canvas clears it, so the axes are drawn again whatever their state.
 			axis.drawn = -1;

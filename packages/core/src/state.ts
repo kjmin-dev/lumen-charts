@@ -200,7 +200,7 @@ const CHOICES: Readonly<Record<string, readonly string[]>> = {
 	horzAlign: ALIGNMENTS,
 	vertAlign: ['top', 'center', 'bottom'],
 	mode: SCALE_MODES,
-	'crosshair.mode': ['normal', 'magnet', 'hidden'],
+	'crosshair.mode': ['normal', 'magnet', 'nearest', 'hidden'],
 };
 
 const SOURCE_COLUMN_NAMES: readonly string[] = ['time', 'open', 'high', 'low', 'close', 'volume', 'value'];

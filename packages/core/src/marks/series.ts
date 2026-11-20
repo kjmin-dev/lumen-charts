@@ -28,6 +28,8 @@ import {
 	type PointStamp,
 	type PriceProjection,
 	drawHeatmap,
+	heatEdge,
+	heatEndTime,
 	drawScatter,
 	emptyBox,
 	makeStamp,
@@ -205,6 +207,7 @@ export abstract class MarkSeries {
 	private readonly _current = new Float64Array(14);
 	private _drawnOptions: AnyMarkOptions | null = null;
 	private _drawnRevision = -1;
+	private drawnCount = -1;
 	/** Marks in view when the picture was last drawn in full. */
 	protected _marks = 0;
 	protected readonly _box: PixelBox = { left: 0, top: 0, right: 0, bottom: 0 };
@@ -253,13 +256,23 @@ export abstract class MarkSeries {
 			return;
 		}
 		// Throws before anything changes.
-		const palette = checkOptions(next);
+		const palette = checkOptions(next, options.palette === undefined ? this._palette : undefined);
 		this.setOptions(next, palette);
 	}
 
 	/** Takes options that were checked (`checkOptions`). */
 	public setOptions(options: AnyMarkOptions, palette: Uint32Array): void {
 		const scaleChanged = options.priceScaleId !== this.seriesOptions.priceScaleId;
+		const previous = this.seriesOptions;
+		if (
+			this._drawnOptions === previous &&
+			palette === this._palette &&
+			Object.keys(options).every(
+				key => key === 'opacity' || options[key as keyof AnyMarkOptions] === previous[key as keyof AnyMarkOptions],
+			)
+		) {
+			this._drawnOptions = options;
+		}
 		this.seriesOptions = options;
 		this._palette = palette;
 		this._paletteOptions = options;
@@ -300,7 +313,7 @@ export abstract class MarkSeries {
 	/** Rows from the engine: a window, or the rows an append changed. */
 	public receive(update: MarksUpdate): void {
 		if (this.window.apply(update)) {
-			this._primitiveHost?.requestUpdate();
+			if (this.type !== 'heatmap') this._primitiveHost?.requestUpdate();
 			this._host.rowsChanged(this);
 		}
 	}
@@ -406,13 +419,9 @@ export abstract class MarkSeries {
 		return 'canvas2d';
 	}
 
-	public draw(target: DrawTarget): void {
+	private prepareGeometry(): boolean {
 		const options = this.seriesOptions;
-		if (!options.visible) {
-			return;
-		}
 		const host = this._host;
-		const surface = this.surface;
 		const window = this.window;
 		const width = host.paneWidth(),
 			height = host.paneHeight();
@@ -463,6 +472,36 @@ export abstract class MarkSeries {
 			// NaN (before the first frame) never matches: drawn again.
 			same = current[i] === drawn[i];
 		}
+		return same;
+	}
+
+	/** Merge the affected strip of a value-only heatmap update into the pane clip. */
+	public paneDamage(bounds: { left: number; right: number }): boolean {
+		if (!this.seriesOptions.visible) return true;
+		const w = this.window;
+		if (!this.prepareGeometry() || this.drawnCount !== w.count) return false;
+		if (this._drawnRevision === w.revision) return true;
+		if (w.dirtyFrom !== w.count - 1 || w.dirtyTo !== w.count) return false;
+		const map = this._host.map;
+		bounds.left = Math.min(bounds.left, heatEdge(w.time, w.count, w.dirtyFrom, map));
+		bounds.right = Math.max(bounds.right, heatEdge(w.time, w.count, w.count, map));
+		return true;
+	}
+
+	public draw(target: DrawTarget): void {
+		const options = this.seriesOptions;
+		if (!options.visible) return;
+		const host = this._host,
+			window = this.window,
+			surface = this.surface;
+		const same = this.prepareGeometry();
+		const drawn = this._drawn,
+			current = this._current,
+			projection = this._projection;
+		const shown = current[8] === 1;
+		const ratio = host.pixelRatio(),
+			width = host.paneWidth(),
+			height = host.paneHeight();
 		const pref = host.markRenderer();
 		const wasGpu = this._effective !== 'canvas2d';
 		let path: MarkRendererStatus['path'] = 'canvas2d';
@@ -531,6 +570,7 @@ export abstract class MarkSeries {
 			drawn.set(current);
 			this._drawnOptions = options;
 		}
+		this.drawnCount = window.count;
 		this._drawnRevision = window.revision;
 		window.clearDirty();
 	}
@@ -550,8 +590,7 @@ export abstract class MarkSeries {
 }
 
 /** The color table of options that are sound; throws a RangeError for those that are not. */
-export function checkOptions(options: AnyMarkOptions): Uint32Array {
-	const palette = buildPalette(options.palette);
+export function checkOptions(options: AnyMarkOptions, palette = buildPalette(options.palette)): Uint32Array {
 	if ('color' in options && parseColor(options.color) === null) {
 		throw new RangeError(`lumen-charts: cannot read the color "${String(options.color)}"`);
 	}
@@ -788,9 +827,8 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		}
 		if (column === window.count - 1) {
 			// The last column held is as wide as the one before it, and no wider than that.
-			const last = window.time[column]!;
-			const width = column > 0 ? last - window.time[column - 1]! : Infinity;
-			if (window.start + window.count < window.total || time >= last + width) {
+			const end = heatEndTime(window.time, window.count, this._host.map);
+			if (window.start + window.count < window.total || !(time < end)) {
 				return null;
 			}
 		}

@@ -47,7 +47,7 @@ export type GlProgram = ReturnType<typeof program>;
 // then copy their result to their own cached image before the next series draws.
 const pools = new WeakMap<Document, GlContext>();
 export class GlContext {
-	private readonly listeners = new Set<() => void>();
+	private readonly listeners = new Map<() => void, { width: number; height: number }>();
 	private readonly programs = new Map<MarkSeriesType, ReturnType<typeof program>>();
 	public readonly limit: number;
 	private pixels = 0;
@@ -77,7 +77,7 @@ export class GlContext {
 			pool = new GlContext(doc, canvas, gl);
 			pools.set(doc, pool);
 		}
-		pool.listeners.add(listener);
+		pool.listeners.set(listener, { width: 0, height: 0 });
 		return pool;
 	}
 	private readonly change = (event: Event) => {
@@ -86,17 +86,47 @@ export class GlContext {
 		this.corners = null;
 		trackCanvas(this.pixels, 0);
 		this.pixels = 0;
-		for (const listener of this.listeners) listener();
+		for (const listener of this.listeners.keys()) listener();
 	};
-	begin(type: MarkSeriesType, width: number, height: number) {
-		const pixels = width * height;
-		if (width > this.limit || height > this.limit || !canvasFits(pixels - this.pixels)) throw new GlBudget();
+	private preferredSize() {
+		let width = 1,
+			height = 1;
+		for (const size of this.listeners.values()) {
+			width = Math.max(width, size.width);
+			height = Math.max(height, size.height);
+		}
+		return { width, height };
+	}
+
+	private resize(width: number, height: number) {
+		// Shrink first when one dimension grows and the other shrinks.
+		if (height < this.canvas.height) this.canvas.height = height;
 		if (width !== this.canvas.width) this.canvas.width = width;
 		if (height !== this.canvas.height) this.canvas.height = height;
-		trackCanvas(this.pixels, pixels);
-		this.pixels = pixels;
+		trackCanvas(this.pixels, width * height);
+		this.pixels = width * height;
+	}
+
+	begin(listener: () => void, type: MarkSeriesType, width: number, height: number) {
+		if (width > this.limit || height > this.limit) throw new GlBudget();
+		const size = this.listeners.get(listener)!;
+		if (
+			size.width !== width ||
+			size.height !== height ||
+			this.canvas.width < width ||
+			this.canvas.height < height ||
+			!this.pixels ||
+			!canvasFits(0)
+		) {
+			size.width = width;
+			size.height = height;
+			const preferred = this.preferredSize();
+			if (canvasFits(preferred.width * preferred.height - this.pixels)) this.resize(preferred.width, preferred.height);
+			else if (canvasFits(width * height - this.pixels)) this.resize(width, height);
+			else throw new GlBudget();
+		}
 		const gl = this.gl;
-		if (gl.drawingBufferWidth !== width || gl.drawingBufferHeight !== height) throw new GlBudget();
+		if (gl.drawingBufferWidth < width || gl.drawingBufferHeight < height) throw new GlBudget();
 		// A real attribute at location zero also avoids desktop GL's emulated vertex buffer.
 		if (!this.corners) {
 			this.corners = gl.createBuffer();
@@ -119,7 +149,12 @@ export class GlContext {
 		return pipeline;
 	}
 	release(listener: () => void) {
-		if (!this.listeners.delete(listener) || this.listeners.size) return;
+		if (!this.listeners.delete(listener)) return;
+		if (this.listeners.size) {
+			const size = this.preferredSize();
+			if (this.pixels) this.resize(Math.min(size.width, this.canvas.width), Math.min(size.height, this.canvas.height));
+			return;
+		}
 		pools.delete(this.doc);
 		this.canvas.removeEventListener('webglcontextlost', this.change);
 		this.canvas.removeEventListener('webglcontextrestored', this.change);

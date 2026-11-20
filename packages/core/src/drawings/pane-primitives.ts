@@ -136,6 +136,10 @@ export class PanePrimitives {
 				layers: this.layers,
 				times: this._times,
 				view: id => this.viewFor(id),
+				viewAt: y =>
+					this.viewFor(
+						this._axes.list.find(axis => axis.separatePane && axis.scale.contains(y))?.id ?? DEFAULT_PRICE_SCALE_ID,
+					),
 				paneLeft: () => this._layout.paneLeft,
 				invalidateOverlay: () => this._invalidate(INVALIDATE_CURSOR),
 				snapPrice: (index, y, view) => this._snapPrice(index, y, view),
@@ -307,7 +311,8 @@ export class PanePrimitives {
 	private _snapPrice(index: number, y: number, view: PaneViewState): number {
 		const free = view.yToPrice(y);
 		const drawn = this._model.drawn;
-		if (this._settings.options.crosshair.mode !== 'magnet' || drawn === null) {
+		const mode = this._settings.options.crosshair.mode;
+		if ((mode !== 'magnet' && mode !== 'nearest') || drawn === null) {
 			return free;
 		}
 		const row = Math.floor(index / 2 ** drawn.shift) - drawn.start;
@@ -315,14 +320,14 @@ export class PanePrimitives {
 			return free;
 		}
 		const ratio = this._layout.pixelRatio;
+		let best = NaN,
+			bestY = NaN,
+			distance = Infinity;
 		for (const series of this._series) {
 			const axis = series.axis;
 			if (!series.seriesOptions.visible || axis === null || axis.id !== view.scaleId || row >= series.close.length) {
 				continue;
 			}
-			let best = NaN;
-			let bestY = NaN;
-			let distance = Infinity;
 			for (let c = 0; c < 4; c++) {
 				const price = (c === 0 ? series.open : c === 1 ? series.high : c === 2 ? series.low : series.close)[row]!;
 				const at = series.deviceY(price) / ratio;
@@ -333,11 +338,9 @@ export class PanePrimitives {
 					bestY = at;
 				}
 			}
-			if (best === best) {
-				// The same price, unless the series has a base of its own (percentage, indexed).
-				return Math.abs(view.priceToY(best) - bestY) < 1e-6 ? best : view.yToPrice(bestY);
-			}
+			if (mode === 'magnet' && best === best) break;
 		}
+		if (best === best) return Math.abs(view.priceToY(best) - bestY) < 1e-6 ? best : view.yToPrice(bestY);
 		return free;
 	}
 

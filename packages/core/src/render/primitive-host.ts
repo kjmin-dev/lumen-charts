@@ -1,3 +1,4 @@
+import { clipPricePane } from './chrome';
 import type { LevelWindow } from '../data/window-cache';
 import type { PriceScale } from '../model/price-scale';
 import type { TimeIndex } from '../model/time-index';
@@ -17,6 +18,8 @@ import {
  * indexed, inverted) and any number of them can sit behind it.
  */
 export interface PriceMapping {
+	readonly top: number;
+	readonly height: number;
 	/** CSS y from the top of the pane; NaN for a price the scale cannot show. */
 	priceToY(price: number): number;
 	/** The price at a CSS y; NaN where there is none. */
@@ -40,6 +43,13 @@ export class ScaleMapping implements PriceMapping {
 
 	public constructor(scale: PriceScale) {
 		this._scale = scale;
+	}
+
+	public get top() {
+		return this._scale.top;
+	}
+	public get height() {
+		return this._scale.height;
 	}
 
 	public priceToY(price: number): number {
@@ -108,6 +118,21 @@ export class PaneViewState implements PaneView {
 		this._times = times;
 		this._price = price;
 		this._coarse = coarse;
+	}
+
+	public containsY(y: number): boolean {
+		return y >= this._price.top && y < this._price.top + this._price.height;
+	}
+
+	public clip(target: DrawTarget): boolean {
+		return clipPricePane(
+			target.context,
+			Math.round(target.width * target.pixelRatio),
+			target.pixelRatio,
+			this._price.top,
+			this._price.height,
+			target.height,
+		);
 	}
 
 	public get priceMapping(): PriceMapping {
@@ -357,7 +382,9 @@ export class PrimitiveLayer {
 			) {
 				continue;
 			}
+			const clipped = entry.view.clip(target);
 			entry.primitive.draw(target, entry.view);
+			if (clipped) target.context.restore();
 		}
 		this.changed = false;
 	}
@@ -382,7 +409,7 @@ export class PrimitiveLayer {
 				continue;
 			}
 			const primitive = entry.primitive;
-			if (primitive.hitTest === undefined || entry.hidden) {
+			if (primitive.hitTest === undefined || entry.hidden || !entry.view.containsY(y)) {
 				continue;
 			}
 			const hit = primitive.hitTest(x, y, tolerance);

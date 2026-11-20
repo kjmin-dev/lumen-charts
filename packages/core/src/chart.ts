@@ -657,8 +657,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		return this._axes.at(target);
 	}
 
-	public scrollPrices(dy: number): void {
-		this._axes.scrollBy(dy);
+	public scrollPrices(dy: number, y: number): void {
+		this._axes.scrollBy(dy, y);
 	}
 
 	// PriceAxisHost and SeriesHost
@@ -814,6 +814,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	/** Pushes resolved options into the parts that keep their own copy. */
 	private _applyResolved(options: ChartOptions): void {
+		this._layout.root.style.backgroundColor = options.layout.background;
 		this._accessibility.apply(options.accessibility);
 		this._axes.sync(options);
 		this._paneRenderer.applyOptions(options);

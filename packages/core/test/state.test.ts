@@ -533,7 +533,7 @@ describe('chart state', () => {
 			[
 				'has an unknown crosshair mode',
 				state => ({ ...state, options: { crosshair: { mode: 'logarithmic' } } }),
-				/options\.crosshair\.mode must be one of normal, magnet, hidden/,
+				/options\.crosshair\.mode must be one of normal, magnet, nearest, hidden/,
 			],
 			[
 				'has an unknown time zone',
