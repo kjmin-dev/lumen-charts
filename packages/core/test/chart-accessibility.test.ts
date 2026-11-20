@@ -1,3 +1,4 @@
+import { createChart } from '@lumen-charts/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MINUTE, TestChart, candles } from './drawing-helpers';
 
@@ -81,6 +82,64 @@ describe('accessible chart data', () => {
 		expect(span()).toBeCloseTo(300);
 		expect(press(slider, 'Tab')).toBe(false);
 		expect(press(slider, 'Home', { ctrlKey: true })).toBe(false);
+	});
+
+	it('applies key bindings per action, updates the hint and retains them across state restoration', async () => {
+		const next = ['Cmd+Shift+k'];
+		t = new TestChart({ accessibility: { keyBindings: { next, refresh: [] } } });
+		const chart = t.chart;
+		const slider = chart.element().querySelector('input')!;
+		const hint = document.getElementById(slider.getAttribute('aria-describedby')!.split(' ')[0]!)!;
+		next[0] = 'z';
+		chart.addSeries('candlestick').setData(candles(120));
+		await t.settle();
+		slider.focus();
+		press(slider, 'Home');
+		await t.settle();
+		expect(press(slider, 'K', { metaKey: true, shiftKey: true })).toBe(true);
+		expect(slider.value).toBe('2');
+		expect(press(slider, 'Enter')).toBe(false);
+		expect(hint.textContent).toContain('Shift+Command/Meta+K');
+		expect(hint.textContent).not.toContain('refresh the reading');
+
+		const saved = chart.saveState({ parts: ['options'] });
+		chart.applyOptions({ accessibility: { keyBindings: { next: ['Alt+[KeyN]'], fitContent: ['f'] } } });
+		chart.restoreState(saved);
+		expect(press(slider, 'K', { metaKey: true, shiftKey: true })).toBe(false);
+		expect(press(slider, 'ñ', { altKey: true, code: 'KeyN' })).toBe(true);
+		expect(slider.value).toBe('3');
+		expect(press(slider, 'ArrowRight')).toBe(true);
+		expect(slider.value).toBe('4');
+		expect(press(slider, '0')).toBe(false);
+		expect(press(slider, 'f')).toBe(true);
+		expect(press(slider, 'z')).toBe(false);
+		expect(chart.options().accessibility.keyBindings.next).toEqual(['ArrowRight', 'ArrowUp', 'Alt+[KeyN]']);
+		expect(chart.options().accessibility.keyBindings.refresh).toEqual([]);
+		expect(hint.textContent).toContain('Alt/Option+[KeyN]');
+		expect(hint.textContent).not.toContain('Command/Meta+K');
+	});
+
+	it('rejects conflicting bindings before mounting or changing any live options', async () => {
+		t = new TestChart({ accessibility: { label: 'Prices', keyBindings: { refresh: ['Cmd+r'] } } });
+		const { chart } = t;
+		const container = document.createElement('div');
+		expect(() => createChart(container, { accessibility: { keyBindings: { next: ['Home'] } } })).toThrow(/Home/);
+		expect(container.childElementCount).toBe(0);
+		expect(() =>
+			chart.applyOptions({
+				theme: 'dark',
+				accessibility: { label: 'Other', keyBindings: { fitContent: ['Meta+R'] } },
+			}),
+		).toThrow(/Meta\+R/);
+		chart.applyOptions({ height: 300 });
+		expect(chart.theme()).toBe('light');
+		expect(chart.element().getAttribute('aria-label')).toBe('Prices');
+		const slider = chart.element().querySelector('input')!;
+		expect(press(slider, 'r', { metaKey: true })).toBe(false);
+		chart.addSeries('candlestick').setData(candles(10));
+		await t.settle();
+		slider.focus();
+		expect(press(slider, 'r', { metaKey: true })).toBe(true);
 	});
 
 	it('keeps a live quote quiet until explicitly refreshed and preserves focus through empty data', async () => {

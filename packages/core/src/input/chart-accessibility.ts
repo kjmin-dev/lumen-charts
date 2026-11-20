@@ -1,3 +1,4 @@
+import type { ChartKeymap } from './chart-key-bindings';
 import type { ChartReadout } from './chart-readout';
 import type { Crosshair } from '../model/crosshair';
 import type { FrameModel } from '../model/frame-model';
@@ -7,8 +8,6 @@ import type { ChartOptions } from '../options';
 import type { ChartLayout } from '../render/layout';
 
 let nextId = 0;
-const instructions =
-	'Arrow keys move one data point. Page Up and Page Down move one view. Home and End go to the ends. Plus and minus zoom. Zero fits all data. Enter refreshes the reading.';
 const clipped =
 	'position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;';
 
@@ -24,6 +23,7 @@ function setText(element: HTMLElement, value: string) {
 export class ChartAccessibility {
 	private readonly slider: HTMLInputElement;
 	private readonly panel: HTMLElement;
+	private readonly hint: HTMLElement;
 	private readonly summary: HTMLElement;
 	private readonly reading: HTMLElement;
 	private readonly status: HTMLElement;
@@ -40,9 +40,10 @@ export class ChartAccessibility {
 	private end = NaN;
 	private firstBucket = 0;
 	private summaryDirty = true;
-	private options: ChartOptions['accessibility'] = { label: '', description: '' };
+	private description = '';
 
 	public constructor(
+		private keymap: ChartKeymap,
 		private readonly layout: ChartLayout,
 		private readonly scale: TimeScale,
 		private readonly model: FrameModel,
@@ -80,11 +81,11 @@ export class ChartAccessibility {
 		this.slider.style.cssText = 'display:block;width:10rem;max-width:100%;margin:0;';
 		this.reading = doc.createElement('div');
 		this.reading.setAttribute('aria-hidden', 'true');
-		const hint = doc.createElement('span');
-		hint.id = id + '-keys';
-		hint.textContent = instructions;
-		this.slider.setAttribute('aria-describedby', hint.id + ' ' + this.summary.id);
-		this.panel.append(this.slider, this.reading, hint);
+		this.hint = doc.createElement('span');
+		this.hint.id = id + '-keys';
+		this.hint.textContent = keymap.instructions;
+		this.slider.setAttribute('aria-describedby', this.hint.id + ' ' + this.summary.id);
+		this.panel.append(this.slider, this.reading, this.hint);
 		this.status = doc.createElement('p');
 		this.status.setAttribute('role', 'status');
 		this.status.setAttribute('aria-atomic', 'true');
@@ -99,8 +100,13 @@ export class ChartAccessibility {
 			this.panel.addEventListener(type, stopPropagation);
 	}
 
+	public setKeymap(keymap: ChartKeymap) {
+		this.keymap = keymap;
+		setText(this.hint, keymap.instructions);
+	}
+
 	public apply(options: ChartOptions['accessibility']) {
-		this.options = options;
+		this.description = options.description;
 		const name = options.label.trim() || 'Financial chart';
 		this.layout.root.setAttribute('aria-label', name);
 		this.slider.setAttribute('aria-label', name + ' data');
@@ -121,7 +127,7 @@ export class ChartAccessibility {
 		const summary = this.readout.summary(
 			scale.end - scale.first,
 			size,
-			this.options.description,
+			this.description,
 			this.summaryDirty || inventoryChanged,
 		);
 		this.summaryDirty = false;
@@ -217,54 +223,43 @@ export class ChartAccessibility {
 		this.choose(index);
 	};
 	private readonly onKey = (event: KeyboardEvent) => {
-		if (
-			event.defaultPrevented ||
-			event.isComposing ||
-			event.metaKey ||
-			event.ctrlKey ||
-			event.altKey ||
-			this.scale.isEmpty
-		)
-			return;
 		const scale = this.scale;
+		if (scale.isEmpty) return;
+		const action = this.keymap.match(event);
+		if (!action) return;
 		const step = this.size;
 		const bucketStart = Math.floor(this.index / step) * step;
 		const page = Math.max(1, Math.floor(scale.width / (scale.barSpacing * step))) * step;
-		switch (event.key) {
-			case 'ArrowLeft':
-			case 'ArrowDown':
+		switch (action) {
+			case 'previous':
 				this.choose(bucketStart - step);
 				break;
-			case 'ArrowRight':
-			case 'ArrowUp':
+			case 'next':
 				this.choose(bucketStart + step);
 				break;
-			case 'PageUp':
+			case 'pageForward':
 				this.choose(bucketStart + page);
 				break;
-			case 'PageDown':
+			case 'pageBackward':
 				this.choose(bucketStart - page);
 				break;
-			case 'Enter':
+			case 'refresh':
 				this.choose(this.index);
 				break;
-			case 'Home':
+			case 'first':
 				this.choose(scale.first);
 				break;
-			case 'End':
+			case 'last':
 				this.choose(scale.end - 1);
 				break;
-			case '+':
-			case '=':
-			case '-':
-			case '0':
+			case 'zoomIn':
+			case 'zoomOut':
+			case 'fitContent':
 				this.ownsCrosshair = true;
-				if (event.key === '0') scale.fitContent();
-				else scale.zoomAt(scale.indexToX(this.index), event.key === '-' ? 0.8 : 1.25);
+				if (action === 'fitContent') scale.fitContent();
+				else scale.zoomAt(scale.indexToX(this.index), action === 'zoomOut' ? 0.8 : 1.25);
 				this.invalidate(INVALIDATE_LIGHT);
 				break;
-			default:
-				return;
 		}
 		event.preventDefault();
 	};

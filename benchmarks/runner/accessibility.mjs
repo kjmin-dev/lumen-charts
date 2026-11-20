@@ -43,7 +43,10 @@ try {
 		const cdp = await page.context().newCDPSession(page);
 		const { nodes } = await cdp.send('Accessibility.getFullAXTree');
 		const control = nodes.find(n => !n.ignored && n.role.value === 'slider' && n.name.value === 'North market data');
-		assert.match(control.description.value, /Arrow keys.*Hourly market prices.*300 bars/);
+		assert.match(
+			control.description.value,
+			/ArrowLeft or ArrowDown to inspect the previous sample.*Hourly market prices.*300 bars/,
+		);
 		assert.equal(control.value.value, 2);
 		const status = nodes.find(n => n.role.value === 'status' && n.childIds.length);
 		assert.equal(status.properties.find(p => p.name === 'live').value.value, 'polite');
@@ -70,6 +73,31 @@ try {
 	assert.equal(await south.inputValue(), '196');
 	await page.keyboard.press('Tab');
 	assert.equal(await isFocused(south), true);
+	await page.evaluate(() =>
+		window.charts[1].applyOptions({
+			accessibility: {
+				keyBindings: { first: ['Cmd+Shift+F8'], next: ['Ctrl+Shift+K'], previous: ['Option+[KeyJ]'], refresh: [] },
+			},
+		}),
+	);
+	await page.keyboard.press('Meta+Shift+F8');
+	await settle();
+	assert.equal(await south.inputValue(), '1');
+	await page.keyboard.press('Shift+k');
+	assert.equal(await south.inputValue(), '1');
+	await page.keyboard.press('Control+Shift+k');
+	assert.equal(await south.inputValue(), '2');
+	await page.keyboard.press('Alt+j');
+	assert.equal(await south.inputValue(), '1');
+	await page.keyboard.press('ArrowRight');
+	assert.equal(await south.inputValue(), '2');
+	assert.equal(await north.inputValue(), '300');
+	const southHint = await south.evaluate(
+		el => document.getElementById(el.getAttribute('aria-describedby').split(' ')[0]).textContent,
+	);
+	assert.match(southHint, /Ctrl\+Shift\+K/);
+	assert.doesNotMatch(southHint, /refresh the reading/);
+
 	await page.keyboard.press('Tab');
 	assert.equal(await isFocused(page.locator('#after')), true);
 	await page.keyboard.press('Shift+Tab');

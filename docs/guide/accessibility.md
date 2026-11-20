@@ -14,17 +14,40 @@ chart.addSeries('candlestick', { id: 'Bid', precision: 5 }).setData(bars);
 
 ## Controls
 
-| Key                 | Action                                                                |
-| ------------------- | --------------------------------------------------------------------- |
-| Left or Down        | Inspect the previous sample.                                          |
-| Right or Up         | Inspect the next sample.                                              |
-| Page Down / Page Up | Move backward / forward by the number of samples in the current view. |
-| Home / End          | Inspect the first / last sample on the timeline.                      |
-| + or = / − (hyphen) | Zoom in / out around the inspected position.                          |
-| 0                   | Fit the timeline to the pane.                                         |
-| Enter               | Refresh the selected values after live updates.                       |
+| Action ID                      | Default keys               | Effect                                             |
+| ------------------------------ | -------------------------- | -------------------------------------------------- |
+| `previous` / `next`            | Left or Down / Right or Up | Inspect the previous or next sample.               |
+| `pageBackward` / `pageForward` | Page Down / Page Up        | Move by the number of samples in the current view. |
+| `first` / `last`               | Home / End                 | Inspect the first or last sample on the timeline.  |
+| `zoomIn` / `zoomOut`           | Plus or equals / hyphen    | Zoom around the inspected position.                |
+| `fitContent`                   | 0                          | Fit the timeline to the pane.                      |
+| `refresh`                      | Enter                      | Refresh the selected values after live updates.    |
 
 The navigator starts at the rightmost visible bar. Moving beyond the viewport scrolls the chart and requests its usual data window. At coarse levels of detail, each step visits an aggregate bucket. The reading identifies the covered bar numbers and the time the bucket starts. Zoom in to inspect its individual bars. A missing value is announced explicitly. A visible crosshair follows keyboard navigation when the chart's crosshair is enabled.
+
+## Custom key bindings
+
+Set `accessibility.keyBindings` in `createChart` or in a later `applyOptions` call. Each array lists alternative shortcuts for one action. Navigation actions keep their standard slider keys and accept extra shortcuts. For zoom, fit and refresh, the array replaces that action's shortcuts. An empty array disables a zoom, fit or refresh shortcut and clears any extra keys for a navigation action. Omitted actions keep their current settings.
+
+```ts
+chart.applyOptions({
+	accessibility: {
+		keyBindings: {
+			previous: ['Shift+J'], // Shift+J or the standard arrows
+			next: ['Shift+K'],
+			fitContent: ['Ctrl+Shift+F', 'Cmd+Shift+F'],
+			refresh: ['Option+[KeyR]'], // physical R position, on any layout
+			zoomOut: [], // release the default minus shortcut
+		},
+	},
+});
+```
+
+- Join modifiers and a key with `+`. Modifiers can appear in any order and must match exactly. Supported names are `Shift`, `Ctrl` (`Control`), `Alt` (`Option`) and `Meta` (`Cmd`, `Command`). Modifier names and ASCII letters are case-insensitive.
+- Use the character produced by the keyboard layout or a named `KeyboardEvent.key` such as `ArrowRight` or `F8`. Use `Space` for the space bar and `Plus` for a literal plus sign. On a layout that produces `+` with Shift, the chord is `Shift+Plus`. The default zoom and fit bindings accept their characters with or without Shift.
+- Use brackets for a physical `KeyboardEvent.code` such as `Shift+[Digit1]` or `Alt+[KeyR]`. This also works when Option produces a different character. The navigator leaves dead keys, text composition and browser-reported AltGr text input to the system. If a keystroke matches both a logical key and a physical key binding, the logical key takes precedence.
+- Tab and Shift+Tab move focus out of the navigator. Assigning Tab, a modifier by itself or the same chord to two actions raises a `RangeError` before the chart applies the configuration. Browser and operating system shortcuts work as chart bindings only when the browser delivers their key events to the navigator.
+- `chart.options().accessibility.keyBindings` lists the effective chords. The focused navigator and its screen reader description use the same bindings. Each chart keeps its own configuration across state restoration.
 
 ## Data exposed to assistive technology
 

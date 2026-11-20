@@ -30,6 +30,7 @@ import {
 	type PriceScaleOptions,
 	mergeOptions,
 	optionsEqual,
+	prepareChartKeymap,
 	resolveOptions,
 } from './options';
 import { type PriceAxis, PriceAxes, type PriceAxisHost, type PriceScaleApi } from './price-axes';
@@ -130,7 +131,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _unwatchPixelRatio: (() => void) | null = null;
 
 	public constructor(container: HTMLElement, options: DeepPartial<ChartOptions>) {
-		const input = mergeOptions({}, options);
+		const input = mergeOptions<DeepPartial<ChartOptions>>({}, options);
+		const keymap = prepareChartKeymap(input);
 		// Throws a RangeError for an unknown time zone or locale, or a malformed session schedule.
 		this._time.apply(resolveOptions(input, false));
 		this._settings = new ChartSettings(container, input, this._onScheme);
@@ -181,6 +183,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._marks = this._createMarks();
 		this._model.marks = this._marks;
 		this._accessibility = new ChartAccessibility(
+			keymap,
 			this._layout,
 			this.scale,
 			this._model,
@@ -309,11 +312,13 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 		checkMarkRenderer(options.markRenderer);
 		const input = mergeOptions(this._settings.input, options);
+		const keymap = options.accessibility?.keyBindings === undefined ? undefined : prepareChartKeymap(input);
 		if (options.localization !== undefined || options.sessions !== undefined) {
 			// Throws before anything changes.
 			this._applyTime(resolveOptions(input, false));
 		}
 		this._settings.apply(input);
+		if (keymap) this._accessibility.setKeymap(keymap);
 		this._update();
 	}
 
