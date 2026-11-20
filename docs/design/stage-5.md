@@ -227,3 +227,25 @@ thread's 28 ms (stage 3).
   indicators are shown after 18.6–18.8 instead of 51.8 ms with 1M bars, a load of 1M bars with 20
   indicators settles after 283 instead of 316 ms. The bars of a prepend reach the screen about
   0.8 ms later, the wait for the slice under way. Ticks are unchanged.
+
+## Merged columns kept across a pan
+
+Below a pixel per bar, `SeriesView.update` merges the rows of each device column into one item
+(section 6.2, "Cheaper wide-view frames"). A pan merged every column again, for every series.
+
+- **Why it can keep them.** In that range the origin is on a whole device pixel (`FrameModel`), so a
+  pan moves it by a whole number of pixels, and both ends of a column are computed from the column
+  minus the origin, whole numbers both: the column that held a row before is that many columns away
+  now and holds the same rows.
+- **As built.** With the same window (`version`), spacing and level, the view moves the items it
+  holds into place (`copyWithin`) and merges only the columns the pan uncovered, the first and the
+  last column of the view (they take whatever lies beyond them up to the ends of the visible
+  elements), and the columns of elements changed in place since the last frame. Anything else (a
+  zoom, another level, a replaced window) merges everything as before. Prices are projected again
+  in full, as the price range usually changes with the pan.
+- **Tested** against a full rebuild of the same geometry over random pans, zooms, replaced windows
+  and changes in place in the same frame, with gaps in the data, coarse levels and the start of the
+  data in view; a variant that ignores the changes in place fails it.
+- **Measured** ([merged-pan.md](../benchmarks/merged-pan.md)): pan frames with 20 indicators on 1M
+  candles take 3.4 instead of 4.3 ms of JavaScript at p50 with 20,000 bars in view, 3.5 instead of
+  4.0 ms with all of them; zooms are unchanged.
