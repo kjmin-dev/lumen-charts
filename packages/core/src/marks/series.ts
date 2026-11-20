@@ -938,15 +938,23 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		);
 	}
 
-	protected _drawRows(map: TimeMap, from: number, to: number, box: PixelBox): void {
+	protected _drawRows(map: TimeMap, from: number, _to: number, box: PixelBox): void {
 		const window = this.window;
 		const surface = this.surface;
 		const whole = surface.box;
-		// The column before the first one changed ends where that one begins, which may be new.
-		const first = Math.max(0, from - 1);
-		const end = Math.min(window.count, Math.max(to, window.upperBound(this.viewTo) + 1));
+		const viewFirst = Math.max(0, window.upperBound(this.viewFrom) - 1);
+		const end = Math.min(window.count, window.upperBound(this.viewTo) + 1);
+		// The preceding column's right edge can move. Earlier columns rounded to the
+		// same left edge also contribute to its maximum in a full draw.
+		let first = Math.max(viewFirst, from - 1);
+		if (first >= end) return;
+		const edge = (i: number) => Math.round(map.x(window.time[i]!) - map.spacing / 2);
+		const left = Math.max(0, Math.min(surface.width, edge(first)));
+		if (left === surface.width) return;
+		if (left > 0) {
+			while (first > viewFirst && edge(first - 1) === left) first--;
+		}
 		this._quantize(first, end);
-		const left = Math.max(0, Math.min(surface.width, Math.round(map.x(window.time[first]!) - map.spacing / 2)));
 		// Everything from there to the right edge of the picture is drawn again: the last column's
 		// right edge follows from the columns before it.
 		const right = Math.max(left, whole.right);
@@ -974,7 +982,7 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 			this._projection,
 			this._colors,
 			this._scratch,
-			left,
+			0,
 			surface.width,
 			whole,
 		);
