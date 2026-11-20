@@ -210,3 +210,20 @@ Two limits of the partial redraw above are closed, and a third is decided
 ## Allocations between ticks
 
 The indicator benchmark created a message channel for each turn of its wait loop. An idle worker wait removes most of those allocations. Packing the changed rows of all indicators into two transferred buffers further reduces library allocations on the main thread. Charts request packed patches on their first engine command. Direct clients get object patches by default, including clients using an older worker. See the [allocation profiles and gate measurement](../benchmarks/gc-floor.md).
+
+## Background work right after a command
+
+A worker host waited 20 ms after a command before it started background work, so that the window
+request that follows the answer to a load or a prepend would not wait behind a slice of it. The
+worker sat idle meanwhile, and a prepend that needs no window request (the bars land outside the
+view) waited the whole 20 ms for nothing: a worker's 10k prepend settled at 52 ms against the main
+thread's 28 ms (stage 3).
+
+- **As built.** Background work starts in a task of its own right after a command, behind the
+  messages that have arrived by then. For 20 ms after each command it runs in slices of 1 ms
+  instead of 4 ms, so a window request that arrives meanwhile waits at most a short slice. Every
+  command opens those 20 ms again.
+- **Measured** ([background-start.md](../benchmarks/background-start.md)): a 10k prepend's
+  indicators are shown after 18.6–18.8 instead of 51.8 ms with 1M bars, a load of 1M bars with 20
+  indicators settles after 283 instead of 316 ms. The bars of a prepend reach the screen about
+  0.8 ms later, the wait for the slice under way. Ticks are unchanged.
