@@ -87,6 +87,8 @@ class GlLayer {
 		const gl = this.pool.gl;
 		const first = this.bounds[left]!,
 			end = this.bounds[right + size - 1]!;
+		this.records.layout(p.recordsStride);
+		this.ranges.layout(p.rangesStride);
 		gl.uniform1i(p.first, first);
 		gl.uniform1i(p.stamp, size);
 		gl.uniform1i(p.circle, Number(options.shape === 'circle'));
@@ -125,6 +127,9 @@ class GlLayer {
 			left = Math.max(0, Math.min(width, Math.round(f.map.x(w.time[Math.max(0, from - 1)]!) - f.map.spacing / 2)));
 		}
 		const gl = this.pool.gl;
+		this.records.layout(p.recordsStride);
+		this.ranges.layout(p.rangesStride);
+		this.style.layout(p.styleStride);
 		gl.uniform1i(p.rows, w.rows);
 		gl.scissor(left, 0, right - left, height);
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);

@@ -32,6 +32,9 @@ function program(gl: WebGL2RenderingContext, vertex: string, fragment: string) {
 			stamp: location('stamp'),
 			circle: location('circle'),
 			rows: location('rows'),
+			recordsStride: location('recordsStride'),
+			rangesStride: location('rangesStride'),
+			styleStride: location('styleStride'),
 		};
 	} catch (error) {
 		gl.deleteProgram(p);
