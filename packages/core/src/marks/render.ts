@@ -282,6 +282,18 @@ export class HeatmapScratch {
 	}
 }
 
+/** Exclusive end of the final column, in the same time coordinates as its start. */
+export function heatEndTime(time: Float64Array, count: number, map: TimeMap): number {
+	const last = time[count - 1]!;
+	return count > 1 ? last + (last - time[count - 2]!) : map.barEnd(last);
+}
+
+/** Device edge before a column, or after the final column. */
+export function heatEdge(time: Float64Array, count: number, column: number, map: TimeMap): number {
+	const t = column < count ? time[column]! : heatEndTime(time, count, map);
+	return Math.round(map.x(t) - map.spacing / 2);
+}
+
 /** Shared pixel boundaries for Canvas 2D and WebGPU. */
 export function heatGeometry(
 	height: number,
@@ -306,19 +318,9 @@ export function heatGeometry(
 	const edges = scratch.edges;
 	const rowTop = scratch.rowTop;
 	const rowBottom = scratch.rowBottom;
-	const halfBar = map.spacing / 2;
 	for (let c = 0; c <= columns; c++) {
-		let x: number;
-		if (from + c < count) {
-			x = map.x(time[from + c]!) - halfBar;
-		} else if (count >= 2) {
-			// The right edge of the last column: as far from its time as the column before it is.
-			const last = time[count - 1]!;
-			x = map.x(last + (last - time[count - 2]!)) - halfBar;
-		} else {
-			x = map.x(time[count - 1]!) + halfBar;
-		}
-		edges[c] = x <= clipLeft ? clipLeft : x >= clipRight ? clipRight : Math.round(x);
+		const x = heatEdge(time, count, from + c, map);
+		edges[c] = Math.max(clipLeft, Math.min(clipRight, x));
 	}
 	const left = edges[0]!;
 	const right = edges[columns]!;

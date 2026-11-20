@@ -80,6 +80,29 @@ function fixture(pref: MarkRenderer | undefined, worker: boolean) {
 	};
 }
 
+/** Record uploads on the chart's shared GL context for one settled public operation. */
+async function uploadBytes(gl: WebGL2RenderingContext | undefined, operation: () => Promise<void>) {
+	const bytes = [0, 0, 0];
+	if (!gl) {
+		await operation();
+		return bytes;
+	}
+	const original = gl.texSubImage2D;
+	gl.texSubImage2D = new Proxy(original, {
+		apply(method, context, args) {
+			const unit = gl.getParameter(gl.ACTIVE_TEXTURE) - gl.TEXTURE0;
+			bytes[unit] = (bytes[unit] ?? 0) + args[4] * args[5] * 4;
+			return Reflect.apply(method, context, args);
+		},
+	});
+	try {
+		await operation();
+	} finally {
+		gl.texSubImage2D = original;
+	}
+	return bytes;
+}
+
 type Fixture = ReturnType<typeof fixture>;
 function read(source: HTMLCanvasElement) {
 	const copy = document.createElement('canvas');
@@ -173,6 +196,28 @@ async function check(
 		await compare('changed last column', s => s.heat.update({ time: barTime(95) + 24000, values: s.column }));
 		await compare('new heat column', s => s.heat.update({ time: barTime(95) + 45000, values: s.column }));
 		await compare('show dirty tail', s => s.chart.timeScale().setVisibleLogicalRange({ from: 75.2, to: 98.1 }));
+		// Force a complete reference composition while the test chart clips an in-place update.
+		b.chart.applyOptions({ redraw: 'auto' });
+		await b.chart.whenIdle();
+		const liveGL = mode === 'webgl2' ? window.testMarkContexts.find(gl => !gl.isContextLost()) : undefined;
+		const columnBytes = await uploadBytes(liveGL, () =>
+			compare('partial heatmap composition with foreground bars and drawing', s => {
+				s.heat.update({ time: barTime(95) + 45000, values: s.column.map(value => 100 - value) });
+			}),
+		);
+		if (liveGL && (!columnBytes[0] || columnBytes[1])) throw Error('Value-only heatmap upload ' + columnBytes);
+
+		await compare('partial heatmap transparency', s => {
+			s.heat.update({ time: barTime(95) + 45000, values: s.column.map(() => NaN) });
+		});
+		const opacityBytes = await uploadBytes(liveGL, () =>
+			compare('opacity-only scatter composition', s => s.scatter.applyOptions({ opacity: 0.42 })),
+		);
+		if (liveGL && opacityBytes.some(bytes => bytes > 0)) throw Error('Opacity uploaded scatter data ' + opacityBytes);
+		await compare('independent oscillator pane', s => {
+			s.chart.applyOptions({ priceScales: { oscillator: { paneWeight: 0.5, visible: true } } });
+			s.chart.series()[0]!.addIndicator('rsi', { priceScaleId: 'oscillator' });
+		});
 		await compare('circle marker', s => s.scatter.applyOptions({ shape: 'circle', pointSize: 5 }));
 		if (mode === 'hardware' && b.scatter.renderer().reason !== 'unsupported-style')
 			throw Error('Missing shape fallback');
@@ -291,9 +336,22 @@ async function check(
 					window.testMarkContexts.filter(gl => !gl.isContextLost()).length !== 1
 				)
 					throw Error('Charts did not share the GL context');
+				const width = live[0]!.canvas.width,
+					height = live[0]!.canvas.height;
+				for (let i = 0; i < 3; i++) {
+					await compare('shared buffer smaller viewport ' + i, s =>
+						s.chart.timeScale().setVisibleLogicalRange({ from: 70 + i, to: 97 + i }),
+					);
+					if (live[0]!.canvas.width !== width || live[0]!.canvas.height !== height)
+						throw Error('Smaller chart resized the shared WebGL buffer');
+					other.chart.timeScale().setVisibleLogicalRange({ from: i, to: 88 + i });
+					await other.chart.whenIdle();
+				}
 			} finally {
 				other.dispose();
 			}
+			if (live[0]!.canvas.height !== b.host.querySelector('canvas')!.height)
+				throw Error('Shared buffer retained the larger sibling');
 			await compare('shared WebGL2 context after sibling teardown', s => s.heat.applyOptions({ opacity: 0.5 }));
 			const extension = live[0]!.getExtension('WEBGL_lose_context')!;
 			extension.loseContext();

@@ -4,7 +4,7 @@
 const chart = createChart(element, {
 	theme: 'auto', // 'light' (default), 'dark', or follow the system setting
 	grid: { vertLines: { visible: false }, horzLines: { style: 'dashed' } },
-	crosshair: { mode: 'magnet' }, // or 'normal', 'hidden'
+	crosshair: { mode: 'magnet' }, // or 'nearest', 'normal', 'hidden'
 	priceScale: { position: 'left', scaleMargins: { top: 0.1, bottom: 0.2 } },
 	watermark: { visible: true, text: 'BTCUSD · 1m' },
 });

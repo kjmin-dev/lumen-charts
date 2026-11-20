@@ -1,3 +1,4 @@
+import { heatEdge } from '../render';
 import { HeatRanges, HeatPan } from '../heat-ranges';
 import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
 import type { GpuBackend, MarkFrame } from '../backend';
@@ -298,6 +299,11 @@ export class GpuMarkBackend implements GpuBackend {
 		if (styleChanged || newWindow || fresh) {
 			heatStyle(f.palette, f.mapping, this.style);
 			style.write(this.style);
+		}
+		if (!full && !fresh && !newWindow && this.count === w.count && dirtyFrom === w.count - 1 && dirtyTo === w.count) {
+			left = Math.max(0, Math.min(f.width, heatEdge(w.time, w.count, dirtyFrom, f.map)));
+			right = Math.max(left, Math.min(f.width, heatEdge(w.time, w.count, dirtyTo, f.map)));
+			return { left, right };
 		}
 		this.heat.project(f);
 		const n = (f.width + f.height) * 2;

@@ -55,6 +55,7 @@ export class AxisRenderer {
 					axis.tickYs,
 					priceScale.tickLabels,
 					priceScale.tickCount,
+					Math.round(priceScale.top * ratio),
 				);
 			}
 			axis.drawn = priceScale.ticksGeneration;

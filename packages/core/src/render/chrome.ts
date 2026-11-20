@@ -104,6 +104,7 @@ export function drawPriceAxis(
 	ys: Float32Array,
 	labels: readonly string[],
 	count: number,
+	offsetY = 0,
 ): void {
 	ctx.fillStyle = style.background;
 	ctx.fillRect(0, 0, width, height);
@@ -118,7 +119,7 @@ export function drawPriceAxis(
 	ctx.textBaseline = 'middle';
 	const x = side === 'right' ? padding : width - padding;
 	for (let i = 0; i < count; i++) {
-		ctx.fillText(labels[i]!, x, ys[i]!);
+		ctx.fillText(labels[i]!, x, ys[i]! - offsetY);
 	}
 }
 
@@ -294,4 +295,22 @@ function linear(channel: number): number {
 /** Device-pixel thickness of a line `width` CSS pixels wide. */
 export function deviceThickness(width: number, pixelRatio: number): number {
 	return Math.max(1, Math.floor(width * pixelRatio));
+}
+
+/** Clip global device coordinates to one price pane. The caller restores the context when true. */
+export function clipPricePane(
+	ctx: CanvasRenderingContext2D,
+	width: number,
+	ratio: number,
+	top: number,
+	height: number,
+	total: number,
+): boolean {
+	if (top === 0 && height === total) return false;
+	const y = Math.round(top * ratio);
+	ctx.save();
+	ctx.beginPath();
+	ctx.rect(0, y, width, Math.round((top + height) * ratio) - y);
+	ctx.clip();
+	return true;
 }

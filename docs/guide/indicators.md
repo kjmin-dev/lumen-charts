@@ -36,3 +36,27 @@ incremental updates give the same bits as a full computation.
 
 A histogram series is also available for your own data, for example volume:
 `chart.addSeries('histogram', { color: '#26a69a', negativeColor: '#ef5350', base: 0 })`.
+
+## Independent indicator panes
+
+Set a positive `paneWeight` on a named price scale to give its series a pane below the price chart.
+The main pane has weight 1 by default. Named panes follow the order of the `priceScales` options.
+This layout assigns half the height to price and a quarter each to RSI and volume.
+
+```ts
+chart.applyOptions({
+	priceScales: {
+		oscillator: { paneWeight: 0.5, visible: true },
+		volume: { paneWeight: 0.5, visible: true },
+	},
+	crosshair: { mode: 'nearest' },
+});
+candles.addIndicator('rsi', { priceScaleId: 'oscillator' });
+const volume = chart.addSeries('histogram', { priceScaleId: 'volume' });
+```
+
+Each pane fits its own price range. Pan, zoom and the vertical crosshair share the time axis.
+Dragging a visible price axis scales that pane. Adjust its height at runtime with
+`chart.priceScale('oscillator').applyOptions({ paneWeight: 0.75 })`. A weight of zero
+returns the series to the main pane as an overlay. Saving and restoring the chart options
+and series preserves the pane sizes and assignments.

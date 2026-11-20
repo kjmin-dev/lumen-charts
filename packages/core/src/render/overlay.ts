@@ -7,14 +7,22 @@ import type { CandlestickOptions, HistogramOptions, LineOptions } from '../optio
 import { AXIS_PADDING, type PriceAxes, type PriceAxis } from '../price-axes';
 import type { Series } from '../series';
 import type { ChartSettings } from '../settings';
-import { drawColumn, drawRow, drawTag, isFaint, textColorOn, deviceThickness } from './chrome';
+import { clipPricePane, drawColumn, drawRow, drawTag, isFaint, textColorOn, deviceThickness } from './chrome';
 import type { ChartLayout } from './layout';
 
+interface ValueTag {
+	y: number;
+	top: number;
+	series: Series;
+	color: string;
+}
+const byHeight = (a: ValueTag, b: ValueTag) => a.y - b.y;
 /**
  * Draws the layer above everything else: price lines and value labels of the series, primitives
  * and drawings on top, and the crosshair with its labels and markers.
  */
 export class OverlayRenderer {
+	private readonly tags = new Map<PriceAxis, { items: ValueTag[]; count: number }>();
 	private readonly _settings: ChartSettings;
 	private readonly _layout: ChartLayout;
 	private readonly _scale: TimeScale;
@@ -65,12 +73,13 @@ export class OverlayRenderer {
 		// Value labels of overlays go on the default scale's axis, or on the first visible one.
 		let overlayAxis: PriceAxis | null = null;
 		for (const axis of this._axes.list) {
-			if (axis.settings.visible) {
+			if (axis.settings.visible && !axis.separatePane) {
 				overlayAxis = axis;
 				break;
 			}
 		}
 
+		for (const group of this.tags.values()) group.count = 0;
 		for (const series of this._series) {
 			const seriesOptions = series.seriesOptions;
 			const value = series.lastValue;
@@ -78,7 +87,11 @@ export class OverlayRenderer {
 			if (value !== value || !seriesOptions.visible || axis === null) {
 				continue;
 			}
-			const labelAxis = axis.settings.visible ? axis : overlayAxis;
+			const labelAxis = axis.settings.visible
+				? axis
+				: !axis.separatePane && overlayAxis?.scale.top === 0
+					? overlayAxis
+					: null;
 			const showLine = seriesOptions.priceLineVisible;
 			const showLabel = seriesOptions.lastValueVisible && labelAxis !== null;
 			if (!showLine && !showLabel) {
@@ -86,7 +99,7 @@ export class OverlayRenderer {
 			}
 			const y = Math.round(series.deviceY(value));
 			// NaN (a value the scale cannot show) fails too.
-			if (!(y >= 0 && y < paneHeight)) {
+			if (!axis.scale.contains(y / ratio)) {
 				continue;
 			}
 			const color = seriesColor(ctx, series);
@@ -101,8 +114,38 @@ export class OverlayRenderer {
 					seriesOptions.priceLineStyle,
 				);
 			}
-			if (showLabel) {
-				this._axisTag(ctx, labelAxis!, y - (tagHeight >> 1), tagHeight, color, series.valueLabel(axis.scale, value));
+			if (showLabel && labelAxis) {
+				let group = this.tags.get(labelAxis);
+				if (!group) this.tags.set(labelAxis, (group = { items: [], count: 0 }));
+				const tag = (group.items[group.count] ??= { y, top: 0, series, color });
+				tag.y = y;
+				tag.series = series;
+				tag.color = color;
+				group.count++;
+			}
+		}
+
+		for (const [axis, group] of this.tags) {
+			const items = group.items;
+			items.length = group.count;
+			if (!items.length) continue;
+			items.sort(byHeight);
+			const top = Math.round(axis.scale.top * ratio);
+			const bottom = Math.round((axis.scale.top + axis.scale.height) * ratio);
+			const count = Math.min(items.length, tagHeight > 0 ? Math.floor((bottom - top) / tagHeight) : 0);
+			let next = top;
+			for (let i = 0; i < count; i++) {
+				const tag = items[i]!;
+				tag.top = Math.min(bottom - (count - i) * tagHeight, Math.max(next, tag.y - (tagHeight >> 1)));
+				next = tag.top + tagHeight;
+				this._axisTag(
+					ctx,
+					axis,
+					tag.top,
+					tagHeight,
+					tag.color,
+					tag.series.valueLabel(tag.series.axis!.scale, tag.series.lastValue),
+				);
 			}
 		}
 
@@ -133,8 +176,8 @@ export class OverlayRenderer {
 		const inCache = drawn !== null && row >= 0 && row < drawn.count;
 		let cssY = this._crosshair.y;
 		let magnet: Series | null = null;
-		if (crosshair.mode === 'magnet' && inCache) {
-			magnet = this._magnetSeries(row);
+		if ((crosshair.mode === 'magnet' || crosshair.mode === 'nearest') && inCache) {
+			magnet = this._magnetSeries(row, cssY, ratio, crosshair.mode === 'nearest');
 			const snapped = magnet === null ? Number.NaN : magnet.deviceY(magnet.close[row]!);
 			if (Number.isFinite(snapped)) {
 				cssY = snapped / ratio;
@@ -160,7 +203,13 @@ export class OverlayRenderer {
 			const top = y - (tagHeight >> 1);
 			for (const axis of this._axes.list) {
 				const priceScale = axis.scale;
-				if (!axis.settings.visible || axis.count === 0 || !priceScale.hasRange) {
+				if (
+					!axis.settings.visible ||
+					axis.count === 0 ||
+					!priceScale.hasRange ||
+					!priceScale.contains(cssY) ||
+					priceScale.height * ratio < tagHeight
+				) {
 					continue;
 				}
 				const text =
@@ -172,7 +221,17 @@ export class OverlayRenderer {
 								magnet.seriesOptions.precision,
 							)
 						: priceScale.formatValue(priceScale.yToValue(cssY));
-				this._axisTag(ctx, axis, top, tagHeight, background, text);
+				this._axisTag(
+					ctx,
+					axis,
+					Math.max(
+						Math.round(priceScale.top * ratio),
+						Math.min(top, Math.round((priceScale.top + priceScale.height) * ratio) - tagHeight),
+					),
+					tagHeight,
+					background,
+					text,
+				);
 			}
 		}
 		if (vertLine.labelVisible && options.timeScale.visible && inCache) {
@@ -227,17 +286,22 @@ export class OverlayRenderer {
 		);
 	}
 
-	/** The first visible series with a value at a cache row, for the magnet crosshair. */
-	private _magnetSeries(row: number): Series | null {
+	private _magnetSeries(row: number, cssY: number, ratio: number, nearest: boolean): Series | null {
+		let best: Series | null = null,
+			distance = Infinity;
 		for (const series of this._series) {
-			if (series.seriesOptions.visible && series.axis !== null && row < series.close.length) {
-				const value = series.close[row]!;
-				if (value === value) {
-					return series;
-				}
+			const scale = series.axis?.scale;
+			if (!scale?.contains(cssY) || !series.seriesOptions.visible) continue;
+			const y = series.deviceY(series.close[row]!);
+			if (!Number.isFinite(y) || (this._layout.split && !scale.contains(y / ratio))) continue;
+			if (!nearest) return series;
+			const d = Math.abs(y - cssY * ratio);
+			if (d < distance) {
+				best = series;
+				distance = d;
 			}
 		}
-		return null;
+		return best;
 	}
 
 	/** Dots where the crosshair crosses line series, ringed in the background color. */
@@ -254,10 +318,19 @@ export class OverlayRenderer {
 				continue;
 			}
 			const y = series.deviceY(value);
-			if (!Number.isFinite(y)) {
+			if (!Number.isFinite(y) || !series.axis?.scale.contains(y / ratio)) {
 				continue;
 			}
 			const radius = line.crosshairMarkerRadius * ratio;
+			const scale = series.axis.scale;
+			const clipped = clipPricePane(
+				ctx,
+				this._layout.overlay.width,
+				ratio,
+				scale.top,
+				scale.height,
+				this._layout.paneHeight,
+			);
 			ctx.fillStyle = background;
 			ctx.beginPath();
 			ctx.arc(x, y, radius + ratio, 0, 2 * Math.PI);
@@ -266,6 +339,7 @@ export class OverlayRenderer {
 			ctx.beginPath();
 			ctx.arc(x, y, radius, 0, 2 * Math.PI);
 			ctx.fill();
+			if (clipped) ctx.restore();
 		}
 	}
 }

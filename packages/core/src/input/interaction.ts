@@ -32,7 +32,7 @@ export interface InteractionHost {
 	/** The price axis drawn on `target` (the element under the pointer), or null. */
 	priceAxisAt(target: EventTarget | null): AxisTarget | null;
 	/** Moves the price scales that do not autoscale with a drag of `dy` CSS pixels. */
-	scrollPrices(dy: number): void;
+	scrollPrices(dy: number, y: number): void;
 	/** What takes presses before they pan, if anything. */
 	pointerDelegate(): PointerDelegate | null;
 }
@@ -61,6 +61,7 @@ const LINE_HEIGHT = 16;
 const OP_PAN = 0;
 const OP_WHEEL_ZOOM = 1;
 const OP_PINCH_ZOOM = 2;
+const OP_PRICE_PAN = 3;
 const OP_STRIDE = 3;
 
 /** Kinds of gesture input waiting for the frame, see `Interaction._gestures`. */
@@ -122,6 +123,8 @@ export class Interaction {
 	/** Client position of the last queued input of a gesture answered not taken, which pans from there. */
 	private _gestureX = 0;
 	private _gestureY = 0;
+	private _pressClientY = 0;
+	private _delegatePressY = 0;
 
 	public constructor(element: HTMLElement, host: InteractionHost) {
 		this._element = element;
@@ -174,6 +177,8 @@ export class Interaction {
 			const value = ops[i + 2]!;
 			if (kind === OP_PAN) {
 				host.scale.scrollBy(value);
+			} else if (kind === OP_PRICE_PAN) {
+				host.scrollPrices(value, ops[i + 1]! - rect.top);
 			} else {
 				const x = ops[i + 1]! - rect.left;
 				host.scale.zoomAt(kind === OP_WHEEL_ZOOM ? Math.min(host.paneWidth(), Math.max(0, x)) : x, value);
@@ -211,6 +216,7 @@ export class Interaction {
 			const x = clientX - left;
 			const y = clientY - top;
 			if (kind === GESTURE_PRESS) {
+				this._delegatePressY = clientY;
 				taken = delegate !== null && delegate.press(x, y, gestures[i + 3] === 0 ? 'mouse' : 'touch');
 			} else if (taken && delegate !== null) {
 				if (kind === GESTURE_MOVE) {
@@ -226,7 +232,7 @@ export class Interaction {
 					host.invalidate(INVALIDATE_LIGHT);
 				}
 				if (clientY !== lastY) {
-					host.scrollPrices(clientY - lastY);
+					host.scrollPrices(clientY - lastY, this._delegatePressY - top);
 				}
 			}
 			lastX = clientX;
@@ -291,6 +297,7 @@ export class Interaction {
 			return;
 		}
 		this._velocity = 0;
+		if (this._pointers.size === 0) this._pressClientY = event.clientY;
 		if (this._gesturePointer >= 0) {
 			if (this._gestureStart < 0) {
 				// The gesture in progress is taken: one pointer edits, others wait until it is released.
@@ -310,7 +317,8 @@ export class Interaction {
 				this._host.invalidate(INVALIDATE_LIGHT);
 			}
 			if (first !== undefined && first.y !== pressY) {
-				this._host.scrollPrices(first.y - pressY);
+				this._push(OP_PRICE_PAN, pressY, first.y - pressY);
+				this._host.invalidate(INVALIDATE_CURSOR);
 			}
 		} else if (this._pointers.size === 0 && this._host.priceAxisAt(event.target) === null) {
 			// Not on a price axis, which the pointer scales whatever drawings there are.
@@ -373,7 +381,8 @@ export class Interaction {
 			host.invalidate(INVALIDATE_LIGHT);
 		}
 		if (dy !== 0) {
-			host.scrollPrices(dy);
+			this._push(OP_PRICE_PAN, this._pressClientY, dy);
+			host.invalidate(INVALIDATE_CURSOR);
 		}
 		// Keep two samples at least a few milliseconds apart to measure the release speed from.
 		if (event.timeStamp - this._sampleTime > KINETIC_WINDOW / 2) {

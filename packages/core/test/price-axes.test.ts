@@ -122,6 +122,7 @@ describe('price axes', () => {
 	};
 	const range = (id?: string) => chart.priceScale(id).getVisibleRange()!;
 	const axisLeft = (id: string) => Number.parseFloat(axisOf(id).layer!.canvas.style.left);
+	const canvas = (id: string) => axisOf(id).layer!.canvas;
 	const paneWidth = () => Number.parseFloat(canvases()[0]!.style.width);
 
 	beforeEach(() => {
@@ -489,6 +490,72 @@ describe('price axes', () => {
 		expect(macd.output('histogram').options().priceScaleId).toBe('histogram');
 	});
 
+	it('stacks indicator and volume panes on one timeline and restores their sizes and scales', async () => {
+		chart.applyOptions({
+			priceScales: { oscillator: { paneWeight: 0.5, visible: true }, volume: { paneWeight: 0.5, visible: true } },
+		});
+		const source = chart.addSeries('candlestick', { id: 'price' });
+		source.setData(candles(200));
+		const rsi = source.addIndicator('rsi', { priceScaleId: 'oscillator' });
+		const volume = chart.addSeries('histogram', { id: 'volume-bars', priceScaleId: 'volume' });
+		volume.setData(line(200, i => i + 1));
+		await settle();
+		const top = (id: string) => parseFloat(canvas(id).style.top);
+		const height = (id: string) => parseFloat(canvas(id).style.height);
+		expect(top('oscillator')).toBe(height('default'));
+		expect(top('volume')).toBe(top('oscillator') + height('oscillator'));
+		expect(height('default')).toBeCloseTo(2 * height('oscillator'), 0);
+		expect(chart.priceScale(rsi.output().options().priceScaleId).priceToCoordinate(50)!).toBeGreaterThan(
+			top('oscillator'),
+		);
+		expect(volume.priceToCoordinate(100)!).toBeGreaterThan(top('volume'));
+		chart.priceScale('volume').setVisibleRange({ from: 0, to: 250 });
+		chart.priceScale().setVisibleRange({ from: 80, to: 120 });
+		await settle();
+		const before = range('volume');
+		pointer(canvases()[0]!, 'pointerdown', 300, top('volume') + 10);
+		pointer(canvases()[0]!, 'pointermove', 300, top('volume') + 24);
+		pointer(canvases()[0]!, 'pointerup', 300, top('volume') + 24);
+		await settle();
+		expect(range('volume')).not.toEqual(before);
+		expect(range()).toEqual({ from: 80, to: 120 });
+		expect(axisLabels('oscillator').length).toBeGreaterThan(0);
+		const state = chart.saveState();
+		chart.priceScale('volume').applyOptions({ paneWeight: 0 });
+		chart.resize(800, 600);
+		await settle();
+		expect(top('volume')).toBe(0);
+		chart.restoreState(state);
+		await settle();
+		expect(chart.priceScale('volume').options().paneWeight).toBe(0.5);
+		expect(top('volume')).toBeGreaterThan(top('oscillator'));
+		expect(canvas('oscillator').style.left).toBe(canvas('volume').style.left);
+	});
+
+	it('separates value labels without moving the plotted prices and snaps to the nearest close', async () => {
+		chart.applyOptions({ crosshair: { mode: 'nearest' } });
+		const first = chart.addSeries('line', { color: '#112233', precision: 2 });
+		const other = chart.addSeries('line', { color: '#445566', precision: 2 });
+		first.setData(line(100, () => 100));
+		other.setData(line(100, () => 101));
+		await settle();
+		chart.priceScale().setVisibleRange({ from: 0, to: 200 });
+		clearCalls();
+		await settle();
+		const y1 = first.priceToCoordinate(100)!;
+		const y2 = other.priceToCoordinate(101)!;
+		expect(Math.abs(y1 - y2)).toBeLessThan(5);
+		const labels = overlay().filter(
+			call => call.name === 'fillText' && ['100.00', '101.00'].includes(String(call.args[0])),
+		);
+		expect(labels).toHaveLength(2);
+		expect(Math.abs(Number(labels[0]!.args[2]) - Number(labels[1]!.args[2]))).toBeGreaterThanOrEqual(20);
+		clearCalls();
+		pointer(canvases()[0]!, 'pointermove', 500, y2);
+		await settle();
+		const crosshair = overlay().filter(call => call.name === 'fillText' && call.args[0] === '101.00');
+		expect(crosshair.length).toBe(2);
+	});
 	it('formats prices by the tick size of the series', async () => {
 		const series = chart.addSeries('candlestick', { minMove: 0.25 });
 		const data = candles(1000);

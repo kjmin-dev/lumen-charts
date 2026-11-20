@@ -17,7 +17,7 @@ candles.addIndicator('rsi', { priceScaleId: 'oscillator' }); // an overlay of it
 
 other.applyOptions({ priceScaleId: 'default' }); // a series can change scales at any time
 chart.priceScale('compare').applyOptions({ invertScale: true });
-const y = candles.priceToCoordinate(101.25); // CSS pixels from the top of the pane, or null
+const y = candles.priceToCoordinate(101.25); // CSS pixels from the top of the shared plot, or null
 ```
 
 Each scale has a mode: `normal`, `logarithmic` (equal ratios take equal room; prices at or below
@@ -28,7 +28,7 @@ inverted. Dragging an axis scales it and turns its `autoScale` off; a double cli
 it back on, and while it is off, dragging the pane up or down moves the scale.
 
 Axes go on their side from the pane outward: the default scale first, then the others in the order
-`priceScales` lists them. The crosshair shows its price on every visible axis, and each series' last
+`priceScales` lists them. The crosshair shows its price on every visible axis of the active pane, and each series' last
 value is labelled on the axis of its scale (an overlay's on the default axis). `minMove`, the tick
 size of a series, rounds its labels and gives them its decimals (`precision` overrides them); the axis
 of a scale puts its ticks on multiples of the tick size of its first series. Without a tick size,
@@ -39,3 +39,9 @@ the scale's options, the width of its axis, its visible range (`getVisibleRange`
 `setVisibleRange`, which turns autoscale off) and price to coordinate conversions. Indicators take
 `priceScaleId` for all their outputs, or per output in `outputs`. Every option is documented in
 `PriceScaleOptions` and `SeriesOptionsCommon`; the design ([section 8.1](../design/stage-4-price-axes.md)) explains the choices.
+
+Latest-value labels are spaced within each axis while the price lines stay at their values.
+If the axis cannot fit every label, the labels nearest its top are shown first.
+The `nearest` crosshair mode snaps to the visible close closest to the pointer in the active pane.
+At equal distances, series order breaks the tie. The `magnet` mode snaps to the first eligible series.
+[Independent indicator panes](indicators.md#independent-indicator-panes)

@@ -36,7 +36,7 @@ differ from candles and lines in what they hold, which is not one value per bar:
   without one. It is drawn above the other series and below drawings.
 - **A heatmap** holds columns of `rows` cells on one grid of prices. A column covers the time from
   its own to the next column's (the last one, as long as the one before it), so one column per bar
-  fills the bars, and several per bar divide them. It is drawn below the other series. The grid is
+  fills the bars, and several per bar divide them. A series containing just one column spans one logical bar. Its end time is exclusive for `valueAt`. It is drawn below the other series. The grid is
   set by `setData`; `update` and `append` add columns on it. A grid that follows the price, with
   another range of prices per column, is not built: give the grid the whole range, with NaN where
   there is nothing.

@@ -102,7 +102,7 @@ export class ChartMarks implements MarkSeriesHost {
 			primitives.ensureDrawings();
 		}
 		series.attachedScale = series.scaleId;
-		primitives.layers.attach(series.primitive, primitives.viewFor(series.scaleId));
+		primitives.layers.attach(series.primitive, primitives.viewFor(series.scaleId), series);
 	}
 
 	public destroy(): void {

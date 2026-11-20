@@ -1,4 +1,6 @@
+import { clipPricePane } from './chrome';
 import type { Crosshair } from '../model/crosshair';
+import { HeatmapSeries } from '../marks/series';
 import type { PanePrimitives } from '../drawings/pane-primitives';
 import type { FrameModel } from '../model/frame-model';
 import type { TimeDisplay } from '../model/time-display';
@@ -18,6 +20,7 @@ import { drawExtendedHours, drawSessionBreaks } from './sessions';
  * redraws the columns of the changed items instead of the whole layer.
  */
 export class PaneRenderer {
+	private readonly markClip = { left: Infinity, right: -Infinity };
 	/**
 	 * The series layer cannot be brought up to date by redrawing the columns of changed items: set
 	 * by every change other than data changed in place, and until the layer is drawn in full.
@@ -111,15 +114,22 @@ export class PaneRenderer {
 			!this._paneShadeRight.match(marks.shadeRight, marks.shadeCount) ||
 			grid !== this._paneGrid ||
 			grid.scale.ticksGeneration !== this._paneGridTicks ||
-			layers.bottom.entries.length > 0 ||
+			(this._layout.split &&
+				this._axes.list.some(axis => axis.separatePane && axis.drawnGrid !== axis.scale.ticksGeneration)) ||
 			(this._primitives.merged && layers.normal.entries.length > 0)
 		) {
 			return PANE_FULL;
 		}
 		const ratio = this._layout.pixelRatio;
 		const body = this._widths.body;
-		let left = Infinity;
-		let right = -Infinity;
+		const clip = this.markClip;
+		clip.left = Infinity;
+		clip.right = -Infinity;
+		for (const entry of layers.bottom.entries) {
+			if (!(entry.owner instanceof HeatmapSeries) || !entry.owner.paneDamage(clip)) return PANE_FULL;
+		}
+		let left = clip.left;
+		let right = clip.right;
 		for (const series of this._series) {
 			if (!series.isDrawn()) {
 				return PANE_FULL;
@@ -215,6 +225,27 @@ export class PaneRenderer {
 			options.grid.horzLines,
 			ratio,
 		);
+		if (this._layout.split) {
+			for (const axis of this._axes.list) {
+				if (!axis.separatePane) continue;
+				const top = Math.round(axis.scale.top * ratio);
+				ctx.fillStyle = axis.settings.borderColor;
+				ctx.fillRect(0, top, layer.width, Math.max(1, Math.floor(ratio)));
+				drawGrid(
+					ctx,
+					layer.width,
+					layer.height,
+					this._model.tickXs,
+					0,
+					axis.tickYs,
+					axis.scale.tickCount,
+					options.grid.vertLines,
+					options.grid.horzLines,
+					ratio,
+				);
+				axis.drawnGrid = axis.scale.ticksGeneration;
+			}
+		}
 		if (marks.breakCount > 0) {
 			const breaks = sessions.breaks;
 			drawSessionBreaks(
@@ -246,64 +277,10 @@ export class PaneRenderer {
 			if (view.count === 0 || !series.seriesOptions.visible) {
 				continue;
 			}
-			if (series.renderer !== null) {
-				view.barWidth = widths.body;
-				const axis = series.axis;
-				series.renderer.draw(
-					this._primitives.targetOf(ctx),
-					view,
-					axis === null ? this._primitives.view : this._primitives.viewFor(axis.id),
-				);
-				continue;
-			}
-			let from = 0;
-			let to = view.count;
-			if (partial) {
-				const reach = seriesReach(series, ratio, widths.body);
-				// One item more on either side: where a line starts or ends it has a cap, not a join.
-				// A dashed line too: `drawLine` gives its path the length the whole one has before it.
-				from = Math.max(0, view.firstAfter(this._clipLeft - reach) - 1);
-				to = Math.min(to, view.firstAfter(this._clipRight + reach) + 1);
-				if (to <= from) {
-					continue;
-				}
-			}
-			const inverted = series.deviceScale < 0;
-			if (series.kind === 'ohlcv') {
-				drawCandles(
-					ctx,
-					view,
-					widths.body,
-					widths.wick,
-					border,
-					series.seriesOptions as CandlestickOptions,
-					inverted,
-					from,
-					to,
-				);
-			} else if (series.type === 'histogram') {
-				const histogram = series.seriesOptions as HistogramOptions;
-				let base = Math.round(series.deviceY(histogram.base));
-				if (!Number.isFinite(base)) {
-					// A base a logarithmic scale cannot show: the bars grow from the edge of the pane.
-					base = inverted ? 0 : layer.height;
-				}
-				drawHistogram(
-					ctx,
-					view,
-					base,
-					widths.body,
-					histogram.color,
-					histogram.negativeColor || histogram.color,
-					inverted,
-					from,
-					to,
-				);
-			} else {
-				const line = series.seriesOptions as LineOptions;
-				const width = Math.max(1, line.lineWidth * ratio);
-				drawLine(ctx, view, line.color, width, dashPattern(line.lineStyle, width), line.lineType === 'step', from, to);
-			}
+			const scale = series.axis!.scale;
+			const clipped = clipPricePane(ctx, layer.width, ratio, scale.top, scale.height, this._layout.paneHeight);
+			this.drawSeries(ctx, series, partial, ratio, border);
+			if (clipped) ctx.restore();
 		}
 		if (primitives && this._primitives.merged) {
 			if (layers.normal.update(this._primitives.bounds)) {
@@ -331,6 +308,75 @@ export class PaneRenderer {
 		this._paneGrid = grid;
 		this._paneGridTicks = grid.scale.ticksGeneration;
 		this.stale = false;
+	}
+
+	private drawSeries(
+		ctx: CanvasRenderingContext2D,
+		series: Series,
+		partial: boolean,
+		ratio: number,
+		border: number,
+	): void {
+		const view = series.view;
+		const widths = this._widths;
+		if (series.renderer !== null) {
+			view.barWidth = widths.body;
+			const axis = series.axis;
+			series.renderer.draw(
+				this._primitives.targetOf(ctx),
+				view,
+				axis === null ? this._primitives.view : this._primitives.viewFor(axis.id),
+			);
+			return;
+		}
+		let from = 0;
+		let to = view.count;
+		if (partial) {
+			const reach = seriesReach(series, ratio, widths.body);
+			// One item more on either side: where a line starts or ends it has a cap, not a join.
+			// A dashed line too: `drawLine` gives its path the length the whole one has before it.
+			from = Math.max(0, view.firstAfter(this._clipLeft - reach) - 1);
+			to = Math.min(to, view.firstAfter(this._clipRight + reach) + 1);
+			if (to <= from) {
+				return;
+			}
+		}
+		const inverted = series.deviceScale < 0;
+		if (series.kind === 'ohlcv') {
+			drawCandles(
+				ctx,
+				view,
+				widths.body,
+				widths.wick,
+				border,
+				series.seriesOptions as CandlestickOptions,
+				inverted,
+				from,
+				to,
+			);
+		} else if (series.type === 'histogram') {
+			const histogram = series.seriesOptions as HistogramOptions;
+			let base = Math.round(series.deviceY(histogram.base));
+			if (!Number.isFinite(base)) {
+				// A base a logarithmic scale cannot show: the bars grow from the edge of the pane.
+				base = inverted ? 0 : this._layout.pane.height;
+			}
+			drawHistogram(
+				ctx,
+				view,
+				base,
+				widths.body,
+				histogram.color,
+				histogram.negativeColor || histogram.color,
+				inverted,
+				from,
+				to,
+			);
+		} else {
+			const line = series.seriesOptions as LineOptions;
+			const width = Math.max(1, line.lineWidth * ratio);
+			drawLine(ctx, view, line.color, width, dashPattern(line.lineStyle, width), line.lineType === 'step', from, to);
+		}
 	}
 
 	private _renderWatermark(ctx: CanvasRenderingContext2D, width: number, height: number): void {
