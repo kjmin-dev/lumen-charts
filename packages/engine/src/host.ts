@@ -10,10 +10,15 @@ export interface EngineScope {
 /** Longest stretch of background work a worker host runs before looking at its messages again. */
 const BACKGROUND_SLICE_MS = 4;
 /**
- * Delay before a worker host starts background work after a command. The answer to a load is usually
- * followed at once by a window request, which should not wait behind a slice of background work.
+ * How long after a command background work runs in short slices. The answer to a load or a prepend
+ * is usually followed by a window request, which should not wait behind a slice of background work;
+ * it arrives within a round trip to the main thread, which a busy frame can stretch to most of a
+ * frame. Until then the work goes on a millisecond at a time instead of not at all: waiting the whole
+ * time instead made a worker's prepend settle 20 ms later than the main thread's.
  */
-const BACKGROUND_DELAY_MS = 20;
+const BACKGROUND_GRACE_MS = 20;
+/** Longest stretch of background work while a window request may still be on its way. */
+const BACKGROUND_GRACE_SLICE_MS = 1;
 /**
  * Longest stretch a worker host that serves several engines runs commands before looking at its
  * messages again: a command of one engine waits at most this long behind a bulk load of another.
@@ -55,9 +60,10 @@ export function attachEngineHost(scope: EngineScope): void {
 	let waiting = 0;
 	/** The commands left wait for the continuation task, which is posted. */
 	let yielded = false;
-	/** Background work is on its way: the delay runs, or it continues in a posted task. */
+	/** Background work is on its way: it continues in a posted task. */
 	let background = false;
-	let timer: ReturnType<typeof setTimeout> | null = null;
+	/** Until this time background work runs in short slices (`BACKGROUND_GRACE_MS`). */
+	let graceUntil = 0;
 	let posted = false;
 	let channel: MessageChannel | null = null;
 
@@ -147,19 +153,16 @@ export function attachEngineHost(scope: EngineScope): void {
 	};
 
 	const scheduleBackground = (): void => {
+		// Every command opens the grace period again: the request that follows its answer may come.
+		graceUntil = performance.now() + BACKGROUND_GRACE_MS;
 		if (background) {
 			return;
 		}
 		for (const hosted of ring) {
 			if (hosted.core.busy) {
 				background = true;
-				timer = setTimeout(() => {
-					timer = null;
-					// Commands that wait for the continuation come first; it takes this up afterwards.
-					if (waiting === 0) {
-						runBackground();
-					}
-				}, BACKGROUND_DELAY_MS);
+				// A posted task runs behind the messages that have arrived by then.
+				post();
 				return;
 			}
 		}
@@ -179,7 +182,8 @@ export function attachEngineHost(scope: EngineScope): void {
 
 	/** Runs one slice of background work, taking the engines that have some in turn. */
 	const runBackground = (): void => {
-		const deadline = performance.now() + BACKGROUND_SLICE_MS;
+		const now = performance.now();
+		const deadline = now + (now < graceUntil ? BACKGROUND_GRACE_SLICE_MS : BACKGROUND_SLICE_MS);
 		let idle = 0;
 		while (idle < ring.length) {
 			backgroundTurn = (backgroundTurn + 1) % ring.length;
@@ -211,12 +215,12 @@ export function attachEngineHost(scope: EngineScope): void {
 		if (waiting > 0) {
 			pump();
 			// Background work that was under way goes on behind the commands.
-			if (background && timer === null && !posted) {
+			if (background && !posted) {
 				post();
 			}
 		} else {
 			yielded = false;
-			if (background && timer === null) {
+			if (background) {
 				runBackground();
 			}
 		}

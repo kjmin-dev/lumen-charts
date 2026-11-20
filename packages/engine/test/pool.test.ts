@@ -284,6 +284,38 @@ describe('shared engine workers', () => {
 		expect(Math.max(...waitingAtBackground)).toBe(0);
 	});
 
+	it('starts background work right after a command, without waiting for a timer', async () => {
+		// With timers frozen, a host that waited for one before background work would never start it.
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+		try {
+			const cores = new Set<EngineCore>();
+			const run = EngineCore.prototype.run;
+			vi.spyOn(EngineCore.prototype, 'run').mockImplementation(function (this: EngineCore, command) {
+				cores.add(this);
+				return run.call(this, command);
+			});
+			const background = vi.spyOn(EngineCore.prototype, 'backgroundStep');
+			const engine = create();
+			const series = engine.addSeries('ohlcv');
+			engine.setData(series, ohlcv(600_000), 600_000);
+			await engine.whenIdle();
+			const busy = (): boolean => Array.from(cores).some(core => core.busy);
+			expect(busy()).toBe(true);
+			// Tasks only: the host's own message tasks, never a timer.
+			const settle = async (remaining: number): Promise<void> => {
+				await new Promise(resolve => setImmediate(resolve));
+				if (busy() && remaining > 0) {
+					await settle(remaining - 1);
+				}
+			};
+			await settle(10_000);
+			expect(background).toHaveBeenCalled();
+			expect(busy()).toBe(false);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it('lets the other engines in while one engine loads in bulk', async () => {
 		const a = create();
 		const b = create();
