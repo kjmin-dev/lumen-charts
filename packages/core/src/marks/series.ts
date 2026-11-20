@@ -1,3 +1,4 @@
+import { HeatRanges, HeatPan } from './heat-ranges';
 import type { EngineClient, MarksUpdate } from '@lumen-charts/engine';
 import { DEFAULT_PRICE_SCALE_ID, definedOnly } from '../options';
 import type { PriceAxis, PriceScaleApi } from '../price-axes';
@@ -34,7 +35,9 @@ import {
 	quantize,
 	slotColors,
 } from './render';
-import { PixelSurface } from './surface';
+import { CanvasMarkBackend } from './canvas-backend';
+import { MarkGpuClient, type MarkRenderer, type MarkRendererStatus, type MarkRendererReason } from './backend';
+import { AutoMarks } from './auto';
 import type { TimeMap } from './time-map';
 import { MarksWindow } from './window';
 
@@ -49,6 +52,8 @@ export interface MarkSeriesApi<T extends MarkSeriesType = MarkSeriesType> {
 	/** Name of the series in saved state: the `id` it was added with, or the one it was given. */
 	readonly id: string;
 	readonly type: T;
+	/** Requested renderer and the effective path for this series. */
+	renderer(): MarkRendererStatus;
 	/**
 	 * Merges options. Throws a RangeError for a palette or color that cannot be read, before anything
 	 * changes.
@@ -112,6 +117,7 @@ export interface HeatmapSeriesApi extends MarkSeriesApi<'heatmap'> {
 
 /** What a mark series needs from the chart. */
 export interface MarkSeriesHost {
+	markRenderer(): MarkRenderer;
 	/** The data engine, created if need be; null once the chart is destroyed. */
 	engine(): EngineClient | null;
 	/** Options changed: the frame fits the scales again and draws the layers. */
@@ -154,7 +160,20 @@ export abstract class MarkSeries {
 	public readonly engineId: number;
 	public seriesOptions: AnyMarkOptions;
 	public readonly window = new MarksWindow();
-	public readonly surface: PixelSurface;
+	public readonly surface: CanvasMarkBackend;
+	private readonly _gpu = new MarkGpuClient();
+	private _auto = new AutoMarks();
+	private _effective: MarkRendererStatus['path'] = 'canvas2d';
+	private _reason: MarkRendererReason | null = null;
+	private _peakBytes = 0;
+	private readonly _invalidateBackend = () => {
+		this.forget();
+		this._primitiveHost?.requestUpdate();
+		this._host.optionsChanged(this);
+	};
+	private readonly _canvasAll = () => this._drawAll(this._host.map);
+	private readonly _canvasRows = (from: number, to: number, box: PixelBox) =>
+		this._drawRows(this._host.map, from, to, box);
 	/** Times at the edges of the pane, with room for what a mark covers beside its time; NaN before the first frame. */
 	public viewFrom = Number.NaN;
 	public viewTo = Number.NaN;
@@ -171,14 +190,13 @@ export abstract class MarkSeries {
 	protected readonly _mapping: ValueMapping = { min: 0, factor: 1, log: false };
 	protected readonly _projection: PriceProjection = { offset: 0, scale: 0, log: false };
 	/** What the picture held was drawn with: see `_signature`. */
-	private readonly _drawn = new Float64Array(12).fill(Number.NaN);
-	private readonly _current = new Float64Array(12);
+	private readonly _drawn = new Float64Array(14).fill(Number.NaN);
+	private readonly _current = new Float64Array(14);
 	private _drawnOptions: AnyMarkOptions | null = null;
 	private _drawnRevision = -1;
 	/** Marks in view when the picture was last drawn in full. */
 	protected _marks = 0;
 	protected readonly _box: PixelBox = { left: 0, top: 0, right: 0, bottom: 0 };
-	protected readonly _cleared: PixelBox = { left: 0, top: 0, right: 0, bottom: 0 };
 
 	public constructor(
 		host: MarkSeriesHost,
@@ -206,7 +224,7 @@ export abstract class MarkSeries {
 		this._paletteOptions = merged;
 		this.seriesOptions = merged;
 		this.engineId = host.engine()?.addMarks(type) ?? -1;
-		this.surface = new PixelSurface(host.document());
+		this.surface = new CanvasMarkBackend(host.document());
 	}
 
 	// API
@@ -305,10 +323,29 @@ export abstract class MarkSeries {
 
 	/** The picture held is gone (the browser lost the canvas): the next frame draws it again. */
 	public forget(): void {
+		this._gpu.backend?.release();
 		this._drawn.fill(Number.NaN);
 	}
 
+	public renderer(): MarkRendererStatus {
+		return {
+			requested: this._host.markRenderer(),
+			effective: this._effective === 'canvas2d' ? 'canvas2d' : 'webgpu',
+			path: this._effective,
+			reason: this._reason,
+			bytes: this._gpu.backend?.bytes ?? 0,
+			peakBytes: this._peakBytes,
+		};
+	}
+	public preferenceChanged(): void {
+		this._gpu.release();
+		this._effective = 'canvas2d';
+		this._reason = null;
+		this._auto = new AutoMarks();
+		this._invalidateBackend();
+	}
 	public release(): void {
+		this._gpu.release();
 		this.surface.release();
 	}
 
@@ -320,7 +357,8 @@ export abstract class MarkSeries {
 		const host = this._host;
 		const surface = this.surface;
 		const window = this.window;
-		const fresh = surface.resize(host.paneWidth(), host.paneHeight());
+		const width = host.paneWidth(),
+			height = host.paneHeight();
 		const scale = host.axisOf(this).scale;
 		const ratio = host.pixelRatio();
 		const projection = this._projection;
@@ -360,36 +398,117 @@ export abstract class MarkSeries {
 		current[9] = this.viewFrom;
 		current[10] = this.viewTo;
 		current[11] = ratio;
+		current[12] = width;
+		current[13] = height;
 		const drawn = this._drawn;
-		let same = !fresh && this._drawnOptions === options;
+		let same = this._drawnOptions === options;
 		for (let i = 0; same && i < current.length; i++) {
 			// NaN (before the first frame) never matches: drawn again.
 			same = current[i] === drawn[i];
 		}
+		const pref = host.markRenderer();
+		const wasGpu = this._effective !== 'canvas2d';
+		let path: MarkRendererStatus['path'] = 'canvas2d';
+		let reason: MarkRendererReason | null = null;
+		let eligible = false;
+		if (pref !== 'canvas2d' && shown && width > 0 && height > 0) {
+			const scatter = this.type === 'scatter';
+			const so = options as ScatterOptions;
+			const size = scatter ? Math.max(1, Math.round(so.pointSize * ratio)) : 1;
+			const supported = !scatter || (so.shape === 'square' && size <= 9);
+			const from = scatter ? window.lowerBound(this.viewFrom) : Math.max(0, window.upperBound(this.viewFrom) - 1);
+			const to = scatter ? window.upperBound(this.viewTo) : Math.min(window.count, window.upperBound(this.viewTo) + 1);
+			const marks = Math.max(0, to - from) * (scatter ? 1 : window.rows);
+			const floor = scatter ? 100_000 : 240_000;
+			eligible = supported && marks >= floor;
+			const wants = pref === 'webgpu' || this._auto.wants(eligible, marks < floor / 2, !same);
+			if (!supported) reason = 'unsupported-style';
+			else if (!wants) reason = 'auto-canvas';
+			else {
+				this._gpu.start(host.document(), this._invalidateBackend);
+				const backend = this._gpu.backend;
+				if (backend) {
+					const start = pref === 'auto' && !same ? performance.now() : 0;
+					try {
+						const result = backend.paint(
+							{
+								type: this.type,
+								window,
+								map: host.map,
+								projection,
+								mapping: this._mapping,
+								palette: this._palette,
+								options,
+								width,
+								height,
+								ratio,
+								from,
+								to,
+							},
+							target.context,
+							!same || !wasGpu,
+						);
+						if (result === 'budget') reason = result;
+						else {
+							path = result;
+							this._peakBytes = Math.max(this._peakBytes, backend.bytes);
+							this._marks = marks;
+							if (start) this._auto.gpu(performance.now() - start);
+						}
+					} catch {
+						this._gpu.release();
+						this._gpu.disable('render-failed');
+						reason = 'render-failed';
+					}
+				} else reason = this._gpu.reason;
+			}
+			if (!wants || !supported) this._gpu.release();
+		}
+		if (path === 'canvas2d') {
+			const fresh = surface.resize(width, height);
+			const full =
+				fresh ||
+				wasGpu ||
+				!same ||
+				(this.type === 'scatter' && window.level > 0 && this._drawnRevision !== window.revision);
+			if (full) this._marks = 0;
+			const start = pref === 'auto' && full && eligible ? performance.now() : 0;
+			const reuse =
+				full &&
+				shown &&
+				this.type === 'heatmap' &&
+				this.reusePan(
+					!fresh &&
+						!wasGpu &&
+						this._drawnOptions === options &&
+						window.revision === this._drawnRevision &&
+						[1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13].every(i => current[i] === drawn[i]),
+				);
+			surface.paint(
+				target.context,
+				Math.min(1, options.opacity),
+				full && !reuse,
+				window.revision !== this._drawnRevision,
+				shown,
+				window,
+				this._canvasAll,
+				this._canvasRows,
+				this._box,
+			);
+			if (start) this._auto.canvas(performance.now() - start, true);
+		} else if (!wasGpu) surface.release();
+		this._effective = path;
+		this._reason = reason;
 		if (!same) {
 			drawn.set(current);
 			this._drawnOptions = options;
-			surface.clear(this._cleared);
-			this._marks = 0;
-			if (shown) {
-				this._drawAll(host.map);
-			}
-			// The pixels cleared and the pixels written.
-			const box = surface.box;
-			const cleared = this._cleared;
-			cleared.left = Math.min(cleared.left, box.left);
-			cleared.top = Math.min(cleared.top, box.top);
-			cleared.right = Math.max(cleared.right, box.right);
-			cleared.bottom = Math.max(cleared.bottom, box.bottom);
-			surface.commit(cleared);
-		} else if (window.revision !== this._drawnRevision && shown && window.dirtyTo > window.dirtyFrom) {
-			emptyBox(this._box);
-			this._drawRows(host.map, window.dirtyFrom, window.dirtyTo, this._box);
-			surface.commit(this._box);
 		}
 		this._drawnRevision = window.revision;
 		window.clearDirty();
-		surface.draw(target.context, Math.min(1, options.opacity));
+	}
+
+	protected reusePan(_compatible: boolean): boolean {
+		return false;
 	}
 
 	/** Writes the rows in view into the surface, which is empty, and sets its box. */
@@ -723,6 +842,43 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 			quantize(window.values, this._slots, rows, this._slotsTo, to, mapping);
 			this._slotsTo = to;
 		}
+	}
+
+	private readonly panRanges = new HeatRanges();
+	private readonly pan = new HeatPan();
+
+	protected override reusePan(compatible: boolean): boolean {
+		const surface = this.surface,
+			w = this.window,
+			map = this._host.map;
+		const from = Math.max(0, w.upperBound(this.viewFrom) - 1),
+			to = Math.min(w.count, w.upperBound(this.viewTo) + 1);
+		const { width, height } = surface;
+		this.panRanges.project({ window: w, map, projection: this._projection, width, height, from, to });
+		const ranges = this.panRanges.data;
+		const delta = this.pan.translation(map.x(w.time[0]!), ranges, width, height, compatible);
+		if (delta === null || Math.abs(delta) > width / 4) return false;
+		this._marks = Math.max(0, to - from) * w.rows;
+		if (!delta) return true;
+		surface.shiftColumns(delta);
+		const left = delta > 0 ? 0 : width + delta,
+			right = delta > 0 ? delta : width;
+		this._quantize(from, to);
+		for (let x = left; x < right; x++) {
+			const c0 = ranges[x * 2]!,
+				c1 = ranges[x * 2 + 1]!;
+			for (let y = 0; y < height; y++) {
+				const k = (width + y) * 2,
+					lo = ranges[k]!,
+					hi = ranges[k + 1]!;
+				let slot = 0;
+				for (let c = c0; c < c1; c++) for (let r = lo; r < hi; r++) slot = Math.max(slot, this._slots[c * w.rows + r]!);
+				surface.pixels[x * height + y] = this._colors[slot]!;
+			}
+		}
+		Object.assign(surface.box, { left: 0, right: width, top: 0, bottom: height });
+		surface.commit({ left, right, top: 0, bottom: height });
+		return true;
 	}
 
 	protected _drawAll(map: TimeMap): void {

@@ -40,7 +40,9 @@ export default defineConfig({
 		target: 'es2022',
 		sourcemap: true,
 		// The harness page, and the page of the pixel check (`pnpm bench:pixels`).
-		rollupOptions: { input: [resolve(root, 'index.html'), resolve(root, 'pixels.html')] },
+		rollupOptions: {
+			input: [resolve(root, 'index.html'), resolve(root, 'pixels.html'), resolve(root, 'mark-renderers.html')],
+		},
 		// A profiled run (`pnpm bench --profile`) keeps function names, so CPU samples can be read.
 		...(process.env['LUMEN_BENCH_PROFILE'] === undefined ? {} : { minify: false }),
 	},

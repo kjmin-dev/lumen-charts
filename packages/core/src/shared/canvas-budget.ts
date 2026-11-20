@@ -1,5 +1,5 @@
 /**
- * Canvas memory of the page, counted in device pixels of canvas bitmaps (4 bytes each).
+ * Page rendering budget, in four-byte units for canvas bitmaps and resident mark GPU buffers.
  *
  * Mobile browsers cap the memory all canvases of a page may take (iOS Safari at a few hundred
  * megabytes, by device), and a canvas past the cap is not drawn. Split layouts times three layers
@@ -26,7 +26,7 @@ export function getCanvasBudget(): number {
 	return budget;
 }
 
-/** Device pixels of all canvas layers of the page. */
+/** Four-byte units charged to all canvas layers and mark renderer buffers on the page. */
 export function canvasPixelsInUse(): number {
 	return used;
 }

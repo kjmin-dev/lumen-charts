@@ -1,3 +1,4 @@
+import type { MarkRenderer } from './backend';
 import type { EngineClient, MarksUpdate } from '@lumen-charts/engine';
 import type { PanePrimitives } from '../drawings/pane-primitives';
 import type { FrameModel } from '../model/frame-model';
@@ -11,6 +12,7 @@ import { TimeMap } from './time-map';
 
 /** What the marks need from the chart. */
 export interface ChartMarksHost {
+	markRenderer(): MarkRenderer;
 	/** The data engine, created with the first series; null once the chart is destroyed. */
 	ensureEngine(): EngineClient | null;
 	/** Anything on the layers may differ: the frame draws them in full. */
@@ -118,6 +120,14 @@ export class ChartMarks implements MarkSeriesHost {
 		for (const series of this.list) {
 			series.forget();
 		}
+	}
+
+	public preferenceChanged(): void {
+		for (const series of this.list) series.preferenceChanged();
+	}
+
+	public markRenderer(): MarkRenderer {
+		return this._host.markRenderer();
 	}
 
 	// MarkSeriesHost

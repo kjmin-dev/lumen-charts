@@ -1,0 +1,329 @@
+import { createChart, getCanvasBudget, setCanvasBudget, type MarkRenderer } from '@lumen-charts/core';
+import { canvasPixelsInUse } from '../../../packages/core/src/shared/canvas-budget';
+const start = 1_731_000_000_000;
+const barTime = (i: number) => start + i * 60_000 + (i >= 48 ? 2 * 86400000 : 0);
+const raf = () => new Promise<void>(done => requestAnimationFrame(() => done()));
+
+function fixture(pref: MarkRenderer, worker: boolean) {
+	const host = document.createElement('div');
+	document.body.append(host);
+	const chart = createChart(host, {
+		width: 380,
+		height: 240,
+		autoSize: false,
+		worker,
+		markRenderer: pref,
+		theme: 'light',
+		redraw: 'full',
+		localization: { timeZone: 'America/New_York' },
+	});
+	const bars = chart.addSeries('candlestick');
+	bars.setData(
+		Array.from({ length: 96 }, (_, i) => ({
+			time: barTime(i),
+			open: 80 + (i % 7),
+			high: 97,
+			low: 70,
+			close: 83 + (i % 3),
+		})),
+	);
+	const scatter = chart.addSeries('scatter', {
+		id: 'trades',
+		pointSize: 1.5,
+		palette: ['#ab3232', '#77ac86'],
+		valueMin: 0,
+		valueMax: 100,
+	});
+	const heat = chart.addSeries('heatmap', {
+		id: 'depth',
+		valueMin: 0,
+		valueMax: 100,
+		palette: ['rgba(12,96,120,0.4)', '#dc7832'],
+		opacity: 0.73,
+	});
+	const rows = 141;
+	const time = Float64Array.from({ length: 864 }, (_, i) => barTime(Math.floor(i / 9)) + (i % 9) * 3000);
+	const column = Float32Array.from({ length: rows }, (_, i) => (i % 5 === 0 ? NaN : i % 101));
+	heat.setData({
+		time,
+		priceStart: 65,
+		priceStep: 0.25,
+		rows,
+		values: Float32Array.from({ length: time.length * rows }, (_, i) => (i % 29 === 0 ? NaN : ((i * 31) % 1000) / 10)),
+	});
+	scatter.setData(
+		Array.from({ length: 2500 }, (_, i) => ({
+			time: time[Math.floor((i * time.length) / 2500)]!,
+			price: 69 + ((i * 73) % 3000) / 100,
+			value: i % 101,
+		})),
+	);
+	chart.drawings().add({
+		id: 'reference',
+		type: 'trendLine',
+		points: [
+			{ time: barTime(10), price: 73 },
+			{ time: barTime(87), price: 95 },
+		],
+	});
+	chart.timeScale().setVisibleLogicalRange({ from: 1.25, to: 90.77 });
+	return {
+		chart,
+		host,
+		scatter,
+		heat,
+		column,
+		dispose() {
+			chart.destroy();
+			host.remove();
+		},
+	};
+}
+
+type Fixture = ReturnType<typeof fixture>;
+function read(source: HTMLCanvasElement) {
+	const copy = document.createElement('canvas');
+	copy.width = source.width;
+	copy.height = source.height;
+	const ctx = copy.getContext('2d', { willReadFrequently: true })!;
+	ctx.drawImage(source, 0, 0);
+	return ctx.getImageData(0, 0, copy.width, copy.height).data;
+}
+function differences(a: Fixture, b: Fixture) {
+	const left = Array.from(a.host.querySelectorAll('canvas')),
+		right = Array.from(b.host.querySelectorAll('canvas'));
+	if (!left.length || left.length !== right.length) throw Error('Canvas layer count differs');
+	let different = 0,
+		largest = 0,
+		first = '';
+	for (let k = 0; k < left.length; k++) {
+		const l = left[k]!,
+			r = right[k]!;
+		if (l.width !== r.width || l.height !== r.height) throw Error('Canvas layer sizes differ');
+		if (!l.width || !l.height) continue;
+
+		const x = read(l),
+			y = read(r);
+		for (let i = 0; i < x.length; i++)
+			if (x[i] !== y[i]) {
+				different++;
+				largest = Math.max(largest, Math.abs(x[i]! - y[i]!));
+				if (!first)
+					first = `layer ${k}, pixel ${(i >> 2) % l.width},${Math.floor((i >> 2) / l.width)}, channel ${i % 4}, ${x[i]} vs ${y[i]}`;
+			}
+	}
+	return { different, largest, first };
+}
+
+async function check(mode: 'hardware' | 'unavailable' | 'rejected' | 'native-fallback', worker: boolean) {
+	const memory = canvasPixelsInUse(),
+		budget = getCanvasBudget(),
+		begin = performance.now();
+	const a = fixture('canvas2d', worker),
+		b = fixture('webgpu', worker);
+	const results: { name: string; different: number; largest: number; first: string; heat: string; scatter: string }[] =
+		[];
+	async function compare(name: string, change: (s: Fixture) => void = () => {}) {
+		for (const s of [a, b]) change(s);
+		await Promise.all([a.chart.whenIdle(), b.chart.whenIdle()]);
+		await raf();
+		const diff = differences(a, b);
+		results.push({ name, ...diff, scatter: b.scatter.renderer().path, heat: b.heat.renderer().path });
+		if (diff.different) throw Error(name + ' ' + JSON.stringify(diff));
+	}
+	let report;
+	try {
+		await Promise.all([a.chart.whenIdle(), b.chart.whenIdle()]);
+		const firstFrameMs = performance.now() - begin;
+		if (mode === 'hardware') {
+			for (
+				let i = 0;
+				i < 150 && (b.scatter.renderer().effective !== 'webgpu' || b.heat.renderer().effective !== 'webgpu');
+				i++
+			)
+				await raf();
+			if (b.heat.renderer().effective !== 'webgpu' || b.scatter.renderer().effective !== 'webgpu')
+				throw Error('GPU did not activate: ' + JSON.stringify([b.heat.renderer(), b.scatter.renderer()]));
+		}
+		await compare('initial fractional range');
+		const readyMs = performance.now() - begin;
+		for (let i = 0; i < 16; i++)
+			await compare('fractional zoom ' + i, s =>
+				s.chart.timeScale().setVisibleLogicalRange({ from: i / 9 + 0.125, to: 91.7 - i / 2.7 }),
+			);
+		await compare('zero opacity', s => s.heat.applyOptions({ opacity: 0 }));
+		await compare('restore opacity', s => s.heat.applyOptions({ opacity: 0.73 }));
+		await compare('log price scale', s => s.chart.priceScale().applyOptions({ mode: 'logarithmic' }));
+		await compare('resize', s => s.chart.resize(365, 231));
+		await compare('palette and gain', s =>
+			s.heat.applyOptions({ palette: 'viridis', valueMin: 1, valueMax: 73, valueScale: 'log', opacity: 0.55 }),
+		);
+		await compare('center and duplicate times', s => {
+			s.scatter.applyOptions({ barAlign: 'start', opacity: 0.66 });
+			s.scatter.append([
+				{ time: barTime(95) + 40000, price: 83, value: 1 },
+				{ time: barTime(95) + 40000, price: 83, value: 91 },
+			]);
+		});
+		await compare('changed last column', s => s.heat.update({ time: barTime(95) + 24000, values: s.column }));
+		await compare('new heat column', s => s.heat.update({ time: barTime(95) + 45000, values: s.column }));
+		await compare('show dirty tail', s => s.chart.timeScale().setVisibleLogicalRange({ from: 75.2, to: 98.1 }));
+		await compare('circle fallback', s => s.scatter.applyOptions({ shape: 'circle', pointSize: 5 }));
+		if (mode === 'hardware' && b.scatter.renderer().reason !== 'unsupported-style')
+			throw Error('Missing shape fallback');
+		const state = a.chart.saveState();
+		await compare('restore', s => {
+			s.chart.restoreState(state);
+			s.scatter.applyOptions({ shape: 'square', pointSize: 2 });
+		});
+		if (b.chart.options().markRenderer !== 'webgpu' || JSON.stringify(state).includes('markRenderer'))
+			throw Error('Renderer preference leaked into state');
+		const readPrice = 80;
+		const readTime = barTime(91);
+		if (
+			a.heat.valueAt(readTime, readPrice) !== b.heat.valueAt(readTime, readPrice) ||
+			a.scatter.priceToCoordinate(readPrice) !== b.scatter.priceToCoordinate(readPrice)
+		)
+			throw Error('Mark data queries differ');
+		if (mode === 'hardware') {
+			await compare('dense column kernel', s => {
+				const n = 390000;
+				const time = new Float64Array(n),
+					price = new Float64Array(n),
+					value = new Float32Array(n);
+				let seed = 11;
+				for (let i = 0; i < n; i++) {
+					time[i] = barTime(82) + (i / n) * 60000;
+					seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+					price[i] = 70 + (25 * seed) / 4294967296;
+					value[i] = i % 100;
+				}
+				// A distant price outlier keeps the coarse price bins wider than the visible scale.
+				price[0] = 1e5;
+				s.scatter.applyOptions({ autoscale: false });
+				s.scatter.setData({ time, price, value });
+				s.chart.priceScale().applyOptions({ mode: 'normal' });
+				s.chart.timeScale().setVisibleLogicalRange({ from: 77.3, to: 85.1 });
+			});
+			if (b.scatter.renderer().path !== 'scatter-columns')
+				throw Error('Dense column kernel not exercised: ' + JSON.stringify(b.scatter.drawn()));
+			await compare('runtime canvas preference', s => s.chart.applyOptions({ markRenderer: 'canvas2d' }));
+			b.chart.applyOptions({ markRenderer: 'webgpu' });
+			await b.chart.whenIdle();
+			for (let i = 0; i < 150 && b.scatter.renderer().effective !== 'webgpu'; i++) await raf();
+			await compare('runtime GPU selection');
+		}
+		// Force coarse heatmap LOD, including subpixel bins, missing values and a
+		// high isolated cell. Compare the public readout as well as the final RGBA layers.
+		const extras = new Map<Fixture, ReturnType<Fixture['chart']['markSeries']>[number]>();
+		await compare('coarse heatmap with overlapping series', s => {
+			const extra = s.chart.addSeries('heatmap', { id: 'coarse', maxMarks: 500, opacity: 0.4 });
+			const times = Float64Array.from({ length: 4000 }, (_, i) => barTime(76) + i * 420);
+			const values = Float32Array.from({ length: times.length * 20 }, (_, i) => (i % 7 === 0 ? NaN : i % 997));
+			extra.setData({ time: times, rows: 20, priceStart: 71, priceStep: 1, values });
+			extras.set(s, extra);
+			s.chart.timeScale().setVisibleLogicalRange({ from: 72.25, to: 110 });
+		});
+		const coarseA = extras.get(a)!,
+			coarseB = extras.get(b)!;
+		if (coarseA.drawn().level < 1 || coarseA.drawn().level !== coarseB.drawn().level)
+			throw Error('Coarse heatmap LOD not exercised');
+		await compare('remove coarse heatmap', s => s.chart.removeSeries(extras.get(s)!));
+		await compare('full history replacement', s =>
+			s.scatter.setData([
+				{ time: barTime(90), price: 83, value: 1 },
+				{ time: barTime(90), price: 83, value: 78 },
+			]),
+		);
+		const peakBytes = b.heat.renderer().peakBytes + b.scatter.renderer().peakBytes;
+		if (mode === 'hardware') {
+			// Keep the reference chart and device alive while a second accelerated chart is created and removed.
+			const deviceCount = window.testMarkDevices.length;
+			const c = fixture('webgpu', worker);
+			try {
+				await c.chart.whenIdle();
+				for (let i = 0; i < 100 && c.heat.renderer().effective !== 'webgpu'; i++) await raf();
+				if (c.heat.renderer().effective !== 'webgpu') throw Error('Second chart did not activate');
+			} finally {
+				c.dispose();
+			}
+			if (window.testMarkDevices.length !== deviceCount) throw Error('Charts did not share a device');
+			setCanvasBudget(0);
+			await compare('resource budget', s => {
+				s.chart.resize(371, 233);
+				s.heat.applyOptions({ opacity: 0.58 });
+			});
+			if (b.heat.renderer().reason !== 'budget') throw Error('Missing budget fallback');
+			setCanvasBudget(budget);
+			await compare('budget restored', s => s.heat.applyOptions({ opacity: 0.59 }));
+			for (const s of [a, b]) s.heat.update({ time: barTime(95) + 45000, values: s.column });
+			const live = window.testMarkDevices.at(-1)!;
+			live.destroy();
+			await live.lost;
+			for (let i = 0; i < 90 && b.heat.renderer().reason !== 'device-lost'; i++) await raf();
+			await compare('recovered on Canvas');
+			if (b.heat.renderer().reason !== 'device-lost')
+				throw Error('Missing device-loss fallback: ' + JSON.stringify(b.heat.renderer()));
+		} else {
+			const status = b.heat.renderer();
+			const reason = mode === 'rejected' ? 'initialization-failed' : 'unavailable';
+			if (status.effective !== 'canvas2d' || status.reason !== reason)
+				throw Error('Unexpected fallback: ' + JSON.stringify(status));
+		}
+		report = {
+			mode,
+			worker,
+			firstFrameMs,
+			readyMs,
+			peakBytes,
+			fallback: b.heat.renderer().reason,
+			checks: results.length,
+			results,
+		};
+	} finally {
+		setCanvasBudget(budget);
+		a.dispose();
+		b.dispose();
+	}
+	if (canvasPixelsInUse() !== memory) throw Error('Mark resources leaked after teardown');
+	return report;
+}
+declare global {
+	interface Window {
+		checkMarkRenderers: typeof check;
+		testMarkDevices: GPUDevice[];
+	}
+}
+window.checkMarkRenderers = check;
+
+// A USB-connected phone can exercise its own browser through a localhost port reverse.
+// The device capture is confined to this qualification page.
+if (new URLSearchParams(location.search).has('run')) {
+	const result = document.createElement('pre');
+	document.body.append(result);
+	void (async () => {
+		window.testMarkDevices = [];
+		const adapter = await navigator.gpu?.requestAdapter();
+		const available = Boolean(adapter && !adapter.info?.isFallbackAdapter);
+		if (available) {
+			const request = GPUAdapter.prototype.requestDevice;
+			GPUAdapter.prototype.requestDevice = async function (descriptor) {
+				const device = await request.call(this, descriptor);
+				window.testMarkDevices.push(device);
+				return device;
+			};
+		}
+		result.textContent = 'Checking mark renderers…';
+		return {
+			browser: navigator.userAgent,
+			dpr: devicePixelRatio,
+			...(await check(available ? 'hardware' : 'native-fallback', true)),
+		};
+	})()
+		.then(run => {
+			result.textContent = JSON.stringify(run, null, 2);
+		})
+		.catch((error: unknown) => {
+			result.textContent = String(error);
+		});
+}

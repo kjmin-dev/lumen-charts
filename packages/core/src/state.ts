@@ -43,7 +43,7 @@ export interface ChartStateSelection {
 }
 
 /** Options that belong to the page the chart is on rather than to what it shows: never saved. */
-export const ENVIRONMENT_OPTIONS = ['width', 'height', 'autoSize', 'worker', 'memoryLimit'] as const;
+export const ENVIRONMENT_OPTIONS = ['width', 'height', 'autoSize', 'worker', 'memoryLimit', 'markRenderer'] as const;
 
 /**
  * The chart options a state holds: the ones applied to the chart (not the defaults or the theme's

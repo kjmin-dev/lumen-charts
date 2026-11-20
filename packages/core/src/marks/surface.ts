@@ -73,6 +73,23 @@ export class PixelSurface {
 		emptyBox(box);
 	}
 
+	/** Translate the retained picture by whole device columns. Storage is transposed. */
+	public shiftColumns(delta: number): void {
+		if (!delta || !this._ctx || !this._canvas) return;
+		const offset = delta * this.height;
+		if (delta > 0) {
+			this.pixels.copyWithin(offset, 0, this.pixels.length - offset);
+			this.pixels.fill(0, 0, offset);
+		} else {
+			this.pixels.copyWithin(0, -offset);
+			this.pixels.fill(0, this.pixels.length + offset);
+		}
+		this._ctx.save();
+		this._ctx.globalCompositeOperation = 'copy';
+		this._ctx.drawImage(this._canvas, 0, delta);
+		this._ctx.restore();
+	}
+
 	/** Hands the pixels of `box` over to the canvas. */
 	public commit(box: PixelBox): void {
 		const left = Math.max(0, box.left);

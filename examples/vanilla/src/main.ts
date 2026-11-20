@@ -34,11 +34,13 @@ for (let i = 0; i < count; i++) {
 }
 
 const theme = params.get('theme');
+const renderer = params.get('markRenderer');
 const chart = createChart(container, {
 	// `?theme=light` or `?theme=dark` pins a theme; by default the chart follows the system setting.
 	theme: theme === 'light' || theme === 'dark' ? theme : 'auto',
 	watermark: { visible: true, text: 'DEMO · 1m' },
 	worker: params.get('worker') !== '0',
+	markRenderer: renderer === 'webgpu' || renderer === 'auto' ? renderer : 'canvas2d',
 });
 const candles = lineOnly ? null : chart.addSeries('candlestick');
 const line = chart.addSeries('line', { color: '#f5b83d', lineWidth: lineOnly ? 1 : 1.5 });
@@ -53,6 +55,23 @@ const indicators =
 				candles.addIndicator('ema', { params: { period: 50 } }),
 			];
 
+// ?marks=1&markRenderer=webgpu adds both mark layers and a live backend selector.
+if (params.has('marks') && count > 0) {
+	const times = time.slice(Math.max(0, count - 1000));
+	const scatter = chart.addSeries('scatter', { pointSize: 2 });
+	const heat = chart.addSeries('heatmap', { opacity: 0.65 });
+	const values = Float32Array.from({ length: times.length * 32 }, (_, i) => 50 + 49 * Math.sin(i * 0.061));
+	heat.setData({ time: times, priceStart: price - 3, priceStep: 0.2, rows: 32, values });
+	scatter.setData({ time: times, price: close.subarray(count - times.length) });
+	const picker = document.createElement('select');
+	picker.setAttribute('aria-label', 'Mark renderer');
+	for (const choice of ['canvas2d', 'webgpu', 'auto']) picker.add(new Option(choice, choice));
+	picker.value = chart.options().markRenderer;
+	picker.addEventListener('change', () =>
+		chart.applyOptions({ markRenderer: picker.value as 'canvas2d' | 'webgpu' | 'auto' }),
+	);
+	document.getElementById('tools')?.append(picker);
+}
 // Live ticks: several updates to the last bar, then a new one.
 let lastTime = time[count - 1]!;
 let barOpen = price;

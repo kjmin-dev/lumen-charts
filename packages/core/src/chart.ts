@@ -20,6 +20,7 @@ import { TimeIndex } from './model/time-index';
 import { TimeScale } from './model/time-scale';
 import {
 	type CandlestickOptions,
+	checkMarkRenderer,
 	type ChartOptions,
 	DEFAULT_PRICE_SCALE_ID,
 	type DeepPartial,
@@ -277,6 +278,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		return new ChartMarks(
 			{
 				ensureEngine: () => this._data.ensureEngine(),
+				markRenderer: () => this._settings.options.markRenderer,
 				invalidate: () => this.invalidate(INVALIDATE_LIGHT),
 				dataChanged: this._onDataChanged,
 			},
@@ -294,6 +296,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		if (this._destroyed) {
 			return;
 		}
+		checkMarkRenderer(options.markRenderer);
 		const input = mergeOptions(this._settings.input, options);
 		if (options.localization !== undefined || options.sessions !== undefined) {
 			// Throws before anything changes.
@@ -782,7 +785,9 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		if (optionsEqual(next, this._settings.options)) {
 			return;
 		}
+		const rendererChanged = next.markRenderer !== this._settings.options.markRenderer;
 		this._settings.options = next;
+		if (rendererChanged) this._marks.preferenceChanged();
 		this._applyResolved(next);
 		this._data.setMemoryLimit(next.memoryLimit);
 		this.invalidate(INVALIDATE_FULL);

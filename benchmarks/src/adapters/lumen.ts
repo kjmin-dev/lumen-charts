@@ -65,6 +65,8 @@ class LumenAdapter
 		MarksAdapter
 {
 	private readonly _chart: ChartApi;
+	private readonly _markRenderer =
+		typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('markRenderer');
 	private _series: AnySeries | null = null;
 	private _kind: Prepared['kind'] | null = null;
 	/** Indicators of the stage 3 set to put on the next series, and those on the current one. */
@@ -79,10 +81,10 @@ class LumenAdapter
 	private _heatmap: lumen.HeatmapSeriesApi | null = null;
 
 	public constructor(container: HTMLElement, size: ChartSize | 'auto', worker: boolean) {
-		this._chart = createChart(
-			container,
-			size === 'auto' ? { worker } : { width: size.width, height: size.height, autoSize: false, worker },
-		);
+		this._chart = createChart(container, {
+			...(size === 'auto' ? { worker } : { width: size.width, height: size.height, autoSize: false, worker }),
+			...(this._markRenderer ? { markRenderer: this._markRenderer as 'canvas2d' | 'webgpu' | 'auto' } : {}),
+		});
 	}
 
 	public prepareCandles(data: CandleColumns): Prepared {
@@ -113,6 +115,10 @@ class LumenAdapter
 	public setScatter(points: ScatterInput, pointSize: number): void {
 		this._scatter ??= this._chart.addSeries('scatter', { pointSize });
 		this._scatter.setData(points);
+		if (this._markRenderer)
+			this._chart
+				.drawings()
+				.add({ type: 'horizontalLine', points: [{ time: points.time[0] ?? 0, price: points.price[0] ?? 0 }] });
 	}
 
 	public appendScatter(time: number, price: number, value: number): void {
@@ -122,12 +128,20 @@ class LumenAdapter
 	public setHeatmap(data: HeatmapInput): void {
 		this._heatmap ??= this._chart.addSeries('heatmap');
 		this._heatmap.setData(data);
+		if (this._markRenderer)
+			this._chart.drawings().add({
+				type: 'horizontalLine',
+				points: [{ time: data.time[0] ?? 0, price: data.priceStart + (data.priceStep * data.rows) / 2 }],
+			});
 	}
 
 	public updateHeatmap(time: number, values: Float32Array): void {
 		this._heatmap?.update({ time, values });
 	}
 
+	public markBackend() {
+		return (this._scatter ?? this._heatmap)?.renderer?.();
+	}
 	public marksDrawn(): { level: number; marks: number } {
 		return (this._scatter ?? this._heatmap)?.drawn() ?? { level: 0, marks: 0 };
 	}

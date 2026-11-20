@@ -260,6 +260,10 @@ export function slotColors(palette: Uint32Array, out: Uint32Array): void {
 export class HeatmapScratch {
 	/** Device x of the left edge of each column drawn, and of the right edge of the last. */
 	public edges = new Int32Array(0);
+	public firstRow = 0;
+	public endRow = 0;
+	public top = 0;
+	public bottom = 0;
 	/** The pixel rows `[rowTop, rowBottom)` each cell row covers; none where they are equal. */
 	public rowTop = new Int32Array(0);
 	public rowBottom = new Int32Array(0);
@@ -276,6 +280,87 @@ export class HeatmapScratch {
 			this.merged = new Uint8Array(rows);
 		}
 	}
+}
+
+/** Shared pixel boundaries for Canvas 2D and WebGPU. */
+export function heatGeometry(
+	height: number,
+	time: Float64Array,
+	rows: number,
+	count: number,
+	from: number,
+	to: number,
+	priceStart: number,
+	priceStep: number,
+	map: TimeMap,
+	projection: PriceProjection,
+	scratch: HeatmapScratch,
+	clipLeft: number,
+	clipRight: number,
+): boolean {
+	if (to <= from || map.count === 0 || clipRight <= clipLeft) {
+		return false;
+	}
+	const columns = to - from;
+	scratch.reserve(columns, rows);
+	const edges = scratch.edges;
+	const rowTop = scratch.rowTop;
+	const rowBottom = scratch.rowBottom;
+	const halfBar = map.spacing / 2;
+	for (let c = 0; c <= columns; c++) {
+		let x: number;
+		if (from + c < count) {
+			x = map.x(time[from + c]!) - halfBar;
+		} else if (count >= 2) {
+			// The right edge of the last column: as far from its time as the column before it is.
+			const last = time[count - 1]!;
+			x = map.x(last + (last - time[count - 2]!)) - halfBar;
+		} else {
+			x = map.x(time[count - 1]!) + halfBar;
+		}
+		edges[c] = x <= clipLeft ? clipLeft : x >= clipRight ? clipRight : Math.round(x);
+	}
+	const left = edges[0]!;
+	const right = edges[columns]!;
+	if (right <= left) {
+		return false;
+	}
+	// The cell rows that are in the pane, `[firstRow, endRow)`, and the pixel rows they cover.
+	const { offset, scale, log } = projection;
+	let firstRow = rows;
+	let endRow = 0;
+	let top = height;
+	let bottom = 0;
+	let previous = 0;
+	for (let r = 0; r <= rows; r++) {
+		const price = priceStart + r * priceStep;
+		const y = offset - (log ? Math.log10(price) : price) * scale;
+		// A price a logarithmic scale cannot show is below everything it can.
+		const edge = y === y ? Math.round(y) : scale > 0 ? Infinity : -Infinity;
+		if (r > 0) {
+			const above = Math.max(0, Math.min(previous, edge));
+			const below = Math.min(height, Math.max(previous, edge));
+			rowTop[r - 1] = above;
+			rowBottom[r - 1] = Math.max(above, below);
+			if (Math.max(previous, edge) > 0 && Math.min(previous, edge) < height) {
+				if (r - 1 < firstRow) {
+					firstRow = r - 1;
+				}
+				endRow = r;
+				top = Math.min(top, above);
+				bottom = Math.max(bottom, below);
+			}
+		}
+		previous = edge;
+	}
+	if (endRow <= firstRow || bottom <= top) {
+		return false;
+	}
+	scratch.firstRow = firstRow;
+	scratch.endRow = endRow;
+	scratch.top = top;
+	scratch.bottom = bottom;
+	return true;
 }
 
 /**
@@ -312,65 +397,28 @@ export function drawHeatmap(
 	clipRight: number,
 	box: PixelBox,
 ): void {
-	if (to <= from || map.count === 0 || clipRight <= clipLeft) {
+	if (
+		!heatGeometry(
+			height,
+			time,
+			rows,
+			count,
+			from,
+			to,
+			priceStart,
+			priceStep,
+			map,
+			projection,
+			scratch,
+			clipLeft,
+			clipRight,
+		)
+	)
 		return;
-	}
+	const { edges, rowTop, rowBottom, merged, firstRow, endRow, top, bottom } = scratch;
 	const columns = to - from;
-	scratch.reserve(columns, rows);
-	const edges = scratch.edges;
-	const rowTop = scratch.rowTop;
-	const rowBottom = scratch.rowBottom;
-	const merged = scratch.merged;
-	const halfBar = map.spacing / 2;
-	for (let c = 0; c <= columns; c++) {
-		let x: number;
-		if (from + c < count) {
-			x = map.x(time[from + c]!) - halfBar;
-		} else if (count >= 2) {
-			// The right edge of the last column: as far from its time as the column before it is.
-			const last = time[count - 1]!;
-			x = map.x(last + (last - time[count - 2]!)) - halfBar;
-		} else {
-			x = map.x(time[count - 1]!) + halfBar;
-		}
-		edges[c] = x <= clipLeft ? clipLeft : x >= clipRight ? clipRight : Math.round(x);
-	}
 	const left = edges[0]!;
 	const right = edges[columns]!;
-	if (right <= left) {
-		return;
-	}
-	// The cell rows that are in the pane, `[firstRow, endRow)`, and the pixel rows they cover.
-	const { offset, scale, log } = projection;
-	let firstRow = rows;
-	let endRow = 0;
-	let top = height;
-	let bottom = 0;
-	let previous = 0;
-	for (let r = 0; r <= rows; r++) {
-		const price = priceStart + r * priceStep;
-		const y = offset - (log ? Math.log10(price) : price) * scale;
-		// A price a logarithmic scale cannot show is below everything it can.
-		const edge = y === y ? Math.round(y) : scale > 0 ? Infinity : -Infinity;
-		if (r > 0) {
-			const above = Math.max(0, Math.min(previous, edge));
-			const below = Math.min(height, Math.max(previous, edge));
-			rowTop[r - 1] = above;
-			rowBottom[r - 1] = Math.max(above, below);
-			if (Math.max(previous, edge) > 0 && Math.min(previous, edge) < height) {
-				if (r - 1 < firstRow) {
-					firstRow = r - 1;
-				}
-				endRow = r;
-				top = Math.min(top, above);
-				bottom = Math.max(bottom, below);
-			}
-		}
-		previous = edge;
-	}
-	if (endRow <= firstRow || bottom <= top) {
-		return;
-	}
 	// Columns narrower than a pixel are gathered in `merged` until a column has a pixel.
 	let gathered = false;
 	for (let c = 0; c < columns; c++) {

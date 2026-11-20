@@ -72,6 +72,7 @@ export {
 	type SeriesItems,
 	type SeriesRenderer,
 } from './primitives';
+export type { MarkRenderer, MarkRendererStatus, MarkRendererReason } from './marks/backend';
 export type { HeatmapColumn, HeatmapData, ScatterColumns, ScatterData, ScatterPoint } from './marks/input';
 export type { HeatmapOptions, MarkSeriesOptionsCommon, MarkSeriesType, ScatterOptions } from './marks/options';
 export { PALETTES, type Palette } from './marks/palette';

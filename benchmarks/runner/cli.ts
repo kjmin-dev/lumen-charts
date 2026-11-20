@@ -3,7 +3,7 @@
 // Usage: pnpm bench [options]; pnpm bench --help lists them.
 
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import { dirname, relative, resolve } from 'node:path';
@@ -18,6 +18,7 @@ import type { PageEnvironment } from '../src/harness/environment.ts';
 import { headline } from '../src/headline.ts';
 import { planJobs } from '../src/plan.ts';
 import { TRACE_CATEGORIES } from '../src/profile.ts';
+import { installMarkPassTimer } from '../src/marks/pass-timer.ts';
 import { redactLocalPaths } from '../src/redact.ts';
 import {
 	type AdapterInfo,
@@ -67,6 +68,8 @@ Selection
                        0 measures all 10,000 ticks and 300 frames, as the stage 0 baseline did)
   --max-workers <list> worker limits to run the multi scenario with, one case each: numbers, or
                        default for the library's own limit (default: default)
+  --mark-renderer <id>  run the chart mark workload with canvas2d, webgpu or auto and a drawing
+  --mark-gpu-timers     collect separate WebGPU pass samples where timestamp queries are available
   --packages <dir>     measure the packages/ directory of another checkout instead of this
                        workspace's, with this harness: for comparing two versions of the library
   --quick              smoke test: small data sets, short runs, one repeat
@@ -143,6 +146,8 @@ const { values: args } = parseArgs({
 		budget: { type: 'string' },
 		'max-workers': { type: 'string' },
 		packages: { type: 'string' },
+		'mark-renderer': { type: 'string' },
+		'mark-gpu-timers': { type: 'boolean' },
 		quick: { type: 'boolean', default: false },
 		list: { type: 'boolean', default: false },
 		headed: { type: 'boolean', default: false },
@@ -450,6 +455,7 @@ async function newPage(session: Session): Promise<BenchPage> {
 	const context = await session.browser.newContext({ viewport, deviceScaleFactor: dpr });
 	const page = await context.newPage();
 	const cdp = await context.newCDPSession(page);
+	if (args['mark-gpu-timers']) await page.addInitScript(installMarkPassTimer);
 	await page.exposeFunction('__benchCollectGarbage', async () => {
 		await cdp.send('HeapProfiler.collectGarbage');
 	});
@@ -500,6 +506,8 @@ async function newPage(session: Session): Promise<BenchPage> {
 		});
 	}
 	const query = new URLSearchParams({ auto: '', width: String(chart.width), height: String(chart.height) });
+	if (args['mark-renderer'])
+		query.set('markRenderer', oneOf(['canvas2d', 'webgpu', 'auto'], args['mark-renderer'], '--mark-renderer'));
 	await page.goto(`${session.baseUrl}?${query.toString()}`);
 	await page.waitForFunction(() => window.bench !== undefined);
 	return { context, page, sampled: () => sampled };
@@ -651,8 +659,16 @@ async function main(): Promise<void> {
 			? resolve(invokedFrom, args.out)
 			: resolve(benchDir, 'results', `${createdAt.toISOString().replace(/[:.]/g, '-')}.json`);
 	process.stdout.write(`Building the harness page…\n`);
-	await build({ configFile: resolve(benchDir, 'vite.config.ts'), logLevel: 'warn' });
-	const server = await preview({ configFile: resolve(benchDir, 'vite.config.ts'), logLevel: 'warn' });
+	// Isolate the served files from concurrent browser checks and baseline checkouts.
+	const buildDir = mkdtempSync(resolve(os.tmpdir(), 'lumen-bench-'));
+	process.once('exit', () => rmSync(buildDir, { recursive: true, force: true }));
+	const viteOptions = {
+		configFile: resolve(benchDir, 'vite.config.ts'),
+		logLevel: 'warn' as const,
+		build: { outDir: buildDir, emptyOutDir: true },
+	};
+	await build(viteOptions);
+	const server = await preview(viteOptions);
 	const baseUrl = server.resolvedUrls?.local[0];
 	if (baseUrl === undefined) {
 		throw new Error('Preview server has no local URL');
@@ -695,7 +711,7 @@ async function main(): Promise<void> {
 			createdAt: createdAt.toISOString(),
 			environment: {
 				runner: {
-					arguments: process.argv.slice(2),
+					arguments: process.argv.slice(2).map(arg => redactLocalPaths(arg, localPrefixes())),
 					node: process.version,
 					durationSeconds: (performance.now() - runStart) / 1000,
 					skipped,
@@ -719,7 +735,7 @@ async function main(): Promise<void> {
 				},
 				// Which library sources the workspace adapters were built from: the workspace's (the commit
 				// above), or the directory given with --packages, as it was typed.
-				sources: args.packages ?? 'workspace',
+				sources: args.packages ? redactLocalPaths(args.packages, localPrefixes()) : 'workspace',
 				packages: {
 					'lightweight-charts': packageVersion('lightweight-charts'),
 					playwright: packageVersion('playwright'),
