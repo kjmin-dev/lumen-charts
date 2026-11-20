@@ -350,11 +350,11 @@ export const BASE_OPTIONS: ChartOptions = {
 	worker: true,
 	memoryLimit: Infinity,
 	redraw: 'auto',
-	markRenderer: 'canvas2d',
+	markRenderer: 'webgl2',
 };
 
 export function checkMarkRenderer(value: MarkRenderer | undefined): void {
-	if (value !== undefined && value !== 'canvas2d' && value !== 'webgpu' && value !== 'auto')
+	if (value !== undefined && value !== 'canvas2d' && value !== 'webgl2' && value !== 'webgpu' && value !== 'auto')
 		throw new RangeError('lumen-charts: invalid markRenderer');
 }
 
@@ -382,7 +382,11 @@ export function resolveOptions(input: DeepPartial<ChartOptions>, dark: boolean):
 			}
 		}
 	}
-	return { ...resolved, priceScales: scales };
+	return {
+		...resolved,
+		markRenderer: resolved.markRenderer === 'auto' ? 'webgl2' : resolved.markRenderer,
+		priceScales: scales,
+	};
 }
 
 const overlayDefaults: Partial<Record<ThemeName, PriceScaleOptions>> = {};

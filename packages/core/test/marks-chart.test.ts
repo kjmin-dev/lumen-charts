@@ -345,6 +345,20 @@ describe('heatmap and scatter series on a chart', () => {
 		expect(heat.valueAt(112 * MINUTE, 95)).toBe(7);
 	});
 
+	it('preserves earlier subpixel maxima when replacing a neighboring heatmap column', async () => {
+		await withBars();
+		const heat = t.chart.addSeries('heatmap', { valueMin: 0, valueMax: 100, palette: ['transparent', '#ff0000'] });
+		const base = 150 * MINUTE;
+		const time = Float64Array.from([base - MINUTE, base, base + 1, base + 2, base + 40000]);
+		heat.setData({ time, values: Float32Array.of(0, 100, 0, 0, 0), rows: 1, priceStart: 99, priceStep: 2 });
+		await t.settle();
+		const before = t.lit();
+		expect(before.length).toBeGreaterThan(0);
+		heat.update({ time: base + 40000, values: Float32Array.of(0) });
+		await t.settle();
+		expect(t.lit()).toEqual(before);
+	});
+
 	it('keeps the picture while only the bars tick, and draws it again when the view moves', async () => {
 		await withBars();
 		const bars = t.chart.series()[0]!;

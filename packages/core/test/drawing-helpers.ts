@@ -53,7 +53,11 @@ export class TestChart {
 		vi.stubGlobal('requestAnimationFrame', (callback: (now: number) => void) => this.frames.push(callback));
 		vi.stubGlobal('cancelAnimationFrame', () => {});
 		const recorders = this.recorders;
-		vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+		vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (
+			this: HTMLCanvasElement,
+			kind: string,
+		) {
+			if (kind !== '2d') return null;
 			let entry = recorders.get(this);
 			if (entry === undefined) {
 				entry = recorder();

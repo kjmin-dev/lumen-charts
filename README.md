@@ -49,7 +49,7 @@ Each has a guide:
 - [Save and restore](docs/guide/save-restore.md): the chart's state as versioned JSON.
 - [Themes and display options](docs/guide/themes.md): themes, grid, crosshair, watermark, series styles.
 - [Time zones and sessions](docs/guide/time-zones.md): wall-clock axes, trading days, extended hours.
-- [Heatmap and scatter series](docs/guide/heatmap-scatter.md): order books and trades with Canvas 2D, optional WebGPU and adaptive selection.
+- [Heatmap and scatter series](docs/guide/heatmap-scatter.md): order books and trades with per-chart WebGL2, WebGPU or Canvas 2D rendering.
 
 ## Packages
 

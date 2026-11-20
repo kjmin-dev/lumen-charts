@@ -28,6 +28,9 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm --filter @lumen-charts/benchmarks exec playwright install --with-deps chromium
+      - name: Compare mark renderers and exercise GPU fallback
+        run: node benchmarks/runner/mark-charts.mjs --software-gl --mode webgl2,pending,canvas-only --dpr 1
       - run: pnpm build
       # What npm would receive: licenses, READMEs, exports, source maps, no workspace: ranges.
       - run: pnpm release:check

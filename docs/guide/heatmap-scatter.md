@@ -62,8 +62,7 @@ values of a line. A heatmap's grid does not by default, so the book follows the 
 squeezing them; `autoscale` changes either. A series alone on its scale is fitted whatever the
 option says.
 
-**Many marks.** The chart draws these series through a pixel buffer rather than shape by shape, so
-the cost of a frame follows the pixels of the pane and the marks in view, not canvas calls:
+**Many marks.** The engine sends a window around the view to the selected renderer. Each renderer uses the same levels of detail.
 
 - A scatter with more points than pixels across is drawn from a level of detail, in which the
   points of one pixel column that share a price bin are one mark with the largest value of them. The
@@ -95,9 +94,16 @@ console.log(trades.renderer(), depth.renderer());
 chart.applyOptions({ markRenderer: 'canvas2d' });
 ```
 
-- `canvas2d` is the default. `webgpu` requests acceleration for marks. The chart draws with Canvas 2D while the optional module, device and pipelines initialize. `whenIdle()` retains its data/frame semantics. Each series reports `requested`, `effective`, `path`, fallback `reason`, current `bytes` and `peakBytes`. These byte estimates cover its GPU buffers and renderer bitmaps. An opaque scatter append can update the retained layer on the CPU while the effective series backend is WebGPU.
-- `auto` starts on Canvas 2D and samples full draws on the host. Trials require repeated costly draws, enough visible data after LOD and room in the page rendering budget. The chart compares warm GPU submission/composition costs with its Canvas measurements and uses a cooldown for switching back. Small or inexpensive workloads can stay on Canvas 2D. A browser/device combination needs its own performance measurements. [Integrated chart results](../benchmarks/integrated-mark-renderers.md).
-- GPU scatter supports square markers up to nine device pixels. Circles and larger markers use the existing Canvas painter. A sparse held window can use price-band tiles. Larger or time-concentrated windows use a column kernel. Heatmaps share the exact integer edges, missing-value rules and maximum reduction with Canvas, including at fractional zoom and on log scales.
-- Each chart keeps grid, price series, marks, drawings and overlay in their original order. Charts in a document share the GPU device and pipelines. Individual series keep their own resources. Budget pressure, unavailable hardware, failed initialization or device loss fall back to the latest engine window. To explicitly retry initialization after a loss, select `canvas2d` and then `webgpu` again. The renderer preference belongs to the host and survives chart-state restoration.
+The chart instance selects one mark renderer for its scatter and heatmap series. Candles, axes, labels and drawings use the pane compositor. The preference survives chart-state restoration. Change it at runtime with `applyOptions`.
 
-Run the vanilla example with `?bars=1000&marks=1&markRenderer=webgpu` to switch preferences on the same chart.
+| `markRenderer`     | Drawing behavior                                                                                                                                                                                                                                                                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `webgl2` (default) | Uses WebGL2 when available, with Canvas 2D as the fallback. Charts in the same document share a GL context and programs. Each series owns its textures and cached image. A restored context redraws from the current engine window.                                                                                                                          |
+| `webgpu`           | Uses WebGL2 while the WebGPU device and pipelines initialize, with Canvas 2D available if WebGL2 cannot draw. If WebGPU is unavailable, fails, loses its device, exceeds its resource limits, or cannot draw a marker style, the series tries WebGL2, then Canvas 2D. To retry device acquisition after loss, switch away from `webgpu` and select it again. |
+| `canvas2d`         | Uses the Canvas 2D pixel buffer directly, including on devices that support both GPU APIs.                                                                                                                                                                                                                                                                   |
+
+Older applications passing `auto` get the WebGL2 default. Rendering cost and mark count do not change the selected backend. WebGPU's scatter kernels cover square stamps up to nine device pixels. WebGL2 also supports circular and larger stamps. All three backends use the same time and price projections, palette and overlap order. Heatmaps preserve missing cells and maximum-value reduction at coarse levels of detail.
+
+`renderer()` reports the resolved preference, the effective backend and draw path for the last frame, and the reason the preferred backend could not draw it. `bytes` and `peakBytes` estimate per-series acceleration resources and exclude the shared GL drawing buffer. An opaque WebGPU scatter append may update its cached image with a 2D patch. `whenIdle()` waits for data and chart frames and can resolve while WebGPU is initializing.
+
+Run the vanilla example with `?bars=1000&marks=1&markRenderer=webgpu` to switch preferences on the same chart. [Cross-browser checks and WebGL2 timings](../benchmarks/explicit-mark-renderers.md).
