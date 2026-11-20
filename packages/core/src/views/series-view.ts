@@ -120,6 +120,9 @@ export class SeriesView {
 	private _shift = 0;
 	private _firstRow = 0;
 	private _firstColumn = 0;
+	/** Items `_keepShifted` kept, `[_keptFrom, _keptTo)`. */
+	private _keptFrom = 0;
+	private _keptTo = 0;
 
 	/**
 	 * Rebuilds the items for the given geometry.
@@ -161,6 +164,9 @@ export class SeriesView {
 
 		let itemFrom = 0;
 		let itemTo = count;
+		/** Items `[keepFrom, keepTo)` hold what they held before, moved with the view (`_keepShifted`). */
+		let keepFrom = 0;
+		let keepTo = 0;
 		if (same) {
 			if (dirtyHi <= dirtyLo) {
 				return;
@@ -180,7 +186,13 @@ export class SeriesView {
 			}
 			this._touch(itemFrom, itemTo);
 		} else {
-			this._ensure(count);
+			if (merged && this.merged && version === this._version && spacing === this._spacing && shift === this._shift) {
+				this._keepShifted(origin, firstColumn, count);
+				keepFrom = this._keptFrom;
+				keepTo = this._keptTo;
+			} else {
+				this._ensure(count);
+			}
 			this._version = version;
 			this._origin = origin;
 			this._spacing = spacing;
@@ -195,76 +207,31 @@ export class SeriesView {
 			this.pathLengthCount = 0;
 		}
 
-		const itemOpen = this.open;
-		const itemHigh = this.high;
-		const itemLow = this.low;
-		const itemClose = this.close;
-		const itemX = this.x;
 		if (merged) {
-			// Column `p` holds the rows whose center falls in [p, p + 1), and the elements whose first
-			// row is one of them. Both ends of a column use the same expression, so neighboring columns
-			// can never overlap or leave an element out; the first and last column take everything up
-			// to the ends of the visible elements.
-			const base = firstColumn - origin;
-			const last = count - 1;
-			// A raw line passes one column for all four prices and needs only one read per row.
-			const single = high === low;
-			let rowFrom =
-				itemFrom === 0
-					? from - cacheStart
-					: Math.min(to, Math.max(from, Math.ceil(Math.ceil((base + itemFrom) / spacing) / size))) - cacheStart;
-			for (let k = itemFrom; k < itemTo; k++) {
-				const rowTo =
-					k === last
-						? to - cacheStart
-						: Math.min(to, Math.max(from, Math.ceil(Math.ceil((base + k + 1) / spacing) / size))) - cacheStart;
-				let max = -Infinity;
-				let min = Infinity;
-				if (single) {
-					for (let row = rowFrom; row < rowTo; row++) {
-						const value = high[row]!;
-						// Rows without a value are skipped. `Math.max` and `Math.min` compile to one
-						// instruction each, where a comparison is a branch that prices mispredict.
-						if (value === value) {
-							max = Math.max(max, value);
-							min = Math.min(min, value);
-						}
-					}
-				} else {
-					for (let row = rowFrom; row < rowTo; row++) {
-						const h = high[row]!;
-						const l = low[row]!;
-						if (h === h) {
-							max = Math.max(max, h);
-						}
-						if (l === l) {
-							min = Math.min(min, l);
-						}
-					}
+			if (keepTo > keepFrom) {
+				// The columns the view moved onto, the two at its ends, and those changed in place since.
+				this._merge(0, keepFrom, geometry, open, high, low, close, cacheStart);
+				this._merge(keepTo, count, geometry, open, high, low, close, cacheStart);
+				const lo = Math.max(dirtyLo, from);
+				const hi = Math.min(dirtyHi, to);
+				if (hi > lo) {
+					const changedFrom = Math.max(keepFrom, Math.floor(origin + lo * size * spacing) - firstColumn - 1);
+					const changedTo = Math.min(keepTo, Math.floor(origin + (hi - 1) * size * spacing) - firstColumn + 2);
+					this._merge(changedFrom, changedTo, geometry, open, high, low, close, cacheStart);
 				}
-				if (max === -Infinity || min === Infinity) {
-					itemOpen[k] = NaN;
-					itemHigh[k] = NaN;
-					itemLow[k] = NaN;
-					itemClose[k] = NaN;
-				} else {
-					let first = rowFrom;
-					while (first < rowTo - 1 && open[first]! !== open[first]!) {
-						first++;
-					}
-					let latest = rowTo - 1;
-					while (latest > rowFrom && close[latest]! !== close[latest]!) {
-						latest--;
-					}
-					itemOpen[k] = open[first]!;
-					itemHigh[k] = max;
-					itemLow[k] = min;
-					itemClose[k] = close[latest]!;
+				const itemX = this.x;
+				for (let k = keepFrom; k < keepTo; k++) {
+					itemX[k] = firstColumn + k;
 				}
-				itemX[k] = firstColumn + k;
-				rowFrom = rowTo;
+			} else {
+				this._merge(itemFrom, itemTo, geometry, open, high, low, close, cacheStart);
 			}
 		} else {
+			const itemOpen = this.open;
+			const itemHigh = this.high;
+			const itemLow = this.low;
+			const itemClose = this.close;
+			const itemX = this.x;
 			const offset = from - cacheStart;
 			// An element is drawn at the center of its rows.
 			const center = (size - 1) / 2;
@@ -278,6 +245,8 @@ export class SeriesView {
 			}
 		}
 
+		const itemHigh = this.high;
+		const itemLow = this.low;
 		let min = Infinity;
 		let max = -Infinity;
 		for (let k = 0; k < count; k++) {
@@ -440,6 +409,134 @@ export class SeriesView {
 		return lo;
 	}
 
+	/**
+	 * Merges the elements of pixel columns `[itemFrom, itemTo)` into their items, for the geometry
+	 * the view holds (`count`, `_firstColumn` and the rest are up to date).
+	 *
+	 * Column `p` holds the rows whose center falls in [p, p + 1), and the elements whose first row is
+	 * one of them. Both ends of a column use the same expression, so neighboring columns can never
+	 * overlap or leave an element out; the first and last column take everything up to the ends of
+	 * the visible elements.
+	 */
+	private _merge(
+		itemFrom: number,
+		itemTo: number,
+		geometry: Geometry,
+		open: Float64Array,
+		high: Float64Array,
+		low: Float64Array,
+		close: Float64Array,
+		cacheStart: number,
+	): void {
+		if (itemTo <= itemFrom) {
+			return;
+		}
+		const { origin, spacing, from, to } = geometry;
+		const size = 2 ** geometry.shift;
+		const firstColumn = this._firstColumn;
+		const itemOpen = this.open;
+		const itemHigh = this.high;
+		const itemLow = this.low;
+		const itemClose = this.close;
+		const itemX = this.x;
+		const base = firstColumn - origin;
+		const last = this.count - 1;
+		// A raw line passes one column for all four prices and needs only one read per row.
+		const single = high === low;
+		let rowFrom =
+			itemFrom === 0
+				? from - cacheStart
+				: Math.min(to, Math.max(from, Math.ceil(Math.ceil((base + itemFrom) / spacing) / size))) - cacheStart;
+		for (let k = itemFrom; k < itemTo; k++) {
+			const rowTo =
+				k === last
+					? to - cacheStart
+					: Math.min(to, Math.max(from, Math.ceil(Math.ceil((base + k + 1) / spacing) / size))) - cacheStart;
+			let max = -Infinity;
+			let min = Infinity;
+			if (single) {
+				for (let row = rowFrom; row < rowTo; row++) {
+					const value = high[row]!;
+					// Rows without a value are skipped. `Math.max` and `Math.min` compile to one
+					// instruction each, where a comparison is a branch that prices mispredict.
+					if (value === value) {
+						max = Math.max(max, value);
+						min = Math.min(min, value);
+					}
+				}
+			} else {
+				for (let row = rowFrom; row < rowTo; row++) {
+					const h = high[row]!;
+					const l = low[row]!;
+					if (h === h) {
+						max = Math.max(max, h);
+					}
+					if (l === l) {
+						min = Math.min(min, l);
+					}
+				}
+			}
+			if (max === -Infinity || min === Infinity) {
+				itemOpen[k] = NaN;
+				itemHigh[k] = NaN;
+				itemLow[k] = NaN;
+				itemClose[k] = NaN;
+			} else {
+				let first = rowFrom;
+				while (first < rowTo - 1 && open[first]! !== open[first]!) {
+					first++;
+				}
+				let latest = rowTo - 1;
+				while (latest > rowFrom && close[latest]! !== close[latest]!) {
+					latest--;
+				}
+				itemOpen[k] = open[first]!;
+				itemHigh[k] = max;
+				itemLow[k] = min;
+				itemClose[k] = close[latest]!;
+			}
+			itemX[k] = firstColumn + k;
+			rowFrom = rowTo;
+		}
+	}
+
+	/**
+	 * Keeps the merged columns a pan can keep, for a view of `count` columns from `firstColumn` with
+	 * the origin at `origin`, over the same window, spacing and level as the items held. The new items
+	 * that hold their columns are `[_keptFrom, _keptTo)` afterwards (empty for none), moved into
+	 * place; the arrays are large enough for `count` items either way.
+	 *
+	 * Below a pixel per element the origin is on a whole pixel (see `FrameModel.update`), so a pan
+	 * moves it by a whole number of pixels, `delta`, and every row with it: the column that held a row
+	 * before is `delta` columns away now, and holds the same rows, since both ends of a column are
+	 * computed from the column minus the origin, whole numbers both. Only the first and the last
+	 * column of a view also take what lies beyond them up to the ends of the visible elements, so
+	 * those, before and after, are merged again, with the columns the view moved onto.
+	 */
+	private _keepShifted(origin: number, firstColumn: number, count: number): void {
+		const delta = origin - this._origin;
+		const heldCount = this.count;
+		// Index in the items held of the column that new item 0 is.
+		const offset = firstColumn - delta - this._firstColumn;
+		const keepFrom = Math.max(1, 1 - offset);
+		const keepTo = Math.min(count - 1, heldCount - 1 - offset);
+		if (!Number.isInteger(delta) || heldCount < 3 || keepTo <= keepFrom) {
+			this._ensure(count);
+			this._keptFrom = 0;
+			this._keptTo = 0;
+			return;
+		}
+		this._ensure(count, heldCount);
+		const start = keepFrom + offset;
+		const end = keepTo + offset;
+		this.open.copyWithin(keepFrom, start, end);
+		this.high.copyWithin(keepFrom, start, end);
+		this.low.copyWithin(keepFrom, start, end);
+		this.close.copyWithin(keepFrom, start, end);
+		this._keptFrom = keepFrom;
+		this._keptTo = keepTo;
+	}
+
 	/** Notes items `[from, to)` as rebuilt in place, for the next projection and the next draw. */
 	private _touch(from: number, to: number): void {
 		if (to <= from) {
@@ -464,16 +561,17 @@ export class SeriesView {
 		}
 	}
 
-	private _ensure(count: number): void {
+	/** Makes room for `count` items, keeping the prices of the first `keep` items held. */
+	private _ensure(count: number, keep = 0): void {
 		if (this.open.length >= count) {
 			return;
 		}
 		// Grow in steps so a slowly widening view does not reallocate every frame.
 		const size = Math.max(count, Math.ceil(this.open.length * 1.5), 256);
-		this.open = new Float64Array(size);
-		this.high = new Float64Array(size);
-		this.low = new Float64Array(size);
-		this.close = new Float64Array(size);
+		this.open = grown(this.open, size, keep);
+		this.high = grown(this.high, size, keep);
+		this.low = grown(this.low, size, keep);
+		this.close = grown(this.close, size, keep);
 		this.x = new Float32Array(size);
 		this.yOpen = new Float32Array(size);
 		this.yHigh = new Float32Array(size);
@@ -481,6 +579,15 @@ export class SeriesView {
 		this.yClose = new Float32Array(size);
 		this.up = new Uint8Array(size);
 	}
+}
+
+/** A larger copy of `values` with their first `keep` entries. */
+function grown(values: Float64Array<ArrayBuffer>, size: number, keep: number): Float64Array<ArrayBuffer> {
+	const larger = new Float64Array(size);
+	if (keep > 0) {
+		larger.set(values.subarray(0, keep));
+	}
+	return larger;
 }
 
 /** Width of a candle body in device pixels for a bar spacing, and the wick width that goes with it. */

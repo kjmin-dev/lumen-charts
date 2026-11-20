@@ -209,6 +209,118 @@ describe('SeriesView', () => {
 		}
 	});
 
+	it('keeps the merged columns a whole-pixel pan keeps, with the items of a full rebuild', () => {
+		// Pans of whole pixels, with now and then a change in place in the same frame, a zoom or a
+		// replaced window; rows without a value; raw rows and buckets; the data starting in view.
+		let state = 7;
+		const next = (): number => {
+			state = (state * 1664525 + 1013904223) >>> 0;
+			return state / 4294967296;
+		};
+		const count = 40_000;
+		const candles = randomWalk(count, 5);
+		const line = new Float64Array(candles.close);
+		for (let i = 0; i < count; i++) {
+			if (next() < 0.02) {
+				line[i] = NaN;
+			}
+		}
+		const width = 1200;
+		for (const shift of [0, 2]) {
+			const size = 2 ** shift;
+			const elements = count / size;
+			for (const single of [false, true]) {
+				const open = single ? line : candles.open;
+				const high = single ? line : candles.high;
+				const low = single ? line : candles.low;
+				const close = single ? line : candles.close;
+				const view = new SeriesView();
+				let spacing = width / (elements * 0.4) / size;
+				let origin = Math.round(-elements * 0.3 * size * spacing);
+				let version = 1;
+				const geometry: Geometry = { origin, spacing, from: 0, to: 0, shift, firstRow: 0 };
+				let kept = 0;
+				for (let step = 0; step < 400; step++) {
+					const roll = next();
+					if (roll < 0.03) {
+						version++;
+					} else if (roll < 0.06) {
+						// Zooms that keep elements narrower than a pixel, where columns are merged.
+						// The rows stay wider than two panes, so a pan has something to move over.
+						spacing = Math.max((2 * width) / count, Math.min(0.5 / size, spacing * (next() < 0.5 ? 0.8 : 1.25)));
+					} else {
+						// Pans of up to 40 pixels either way, and now and then far enough to show the start.
+						origin += Math.round((next() - 0.5) * (next() < 0.05 ? 4000 : 80));
+					}
+					// In view: from the start of the data a little inside the pane to its end at the right edge.
+					origin = Math.round(Math.min(width / 4, Math.max(width - count * spacing, origin)));
+					const first = Math.max(0, Math.ceil(-origin / (spacing * size)));
+					const last = Math.min(elements, Math.ceil((width - origin) / (spacing * size)));
+					geometry.origin = origin;
+					geometry.spacing = spacing;
+					geometry.from = first;
+					geometry.to = Math.max(first, last);
+					geometry.firstRow = first * size;
+					let dirtyLo = Infinity;
+					let dirtyHi = -Infinity;
+					if (next() < 0.2 && geometry.to > geometry.from) {
+						// A change in place of an element (a row, or a bucket of a coarse level), reported.
+						const element = geometry.from + Math.floor(next() * (geometry.to - geometry.from));
+						high[element] = (high[element]! || 100) + 50;
+						if (!single) {
+							low[element] = low[element]! - 50;
+						}
+						dirtyLo = element;
+						dirtyHi = element + 1;
+					}
+					const held = view as unknown as { _keptFrom: number; _keptTo: number };
+					held._keptFrom = 0;
+					held._keptTo = 0;
+					view.update(geometry, open, high, low, close, 0, version, dirtyLo, dirtyHi);
+					const fresh = new SeriesView();
+					fresh.update(geometry, open, high, low, close, 0, version, Infinity, -Infinity);
+					expect(view.count).toBe(fresh.count);
+					expect(items(view)).toEqual(items(fresh));
+					expect([view.min, view.max]).toEqual([fresh.min, fresh.max]);
+					if (held._keptTo > held._keptFrom) {
+						kept++;
+					}
+				}
+				expect(kept).toBeGreaterThan(100);
+			}
+		}
+	});
+
+	it('merges only the columns a pan moves onto and the two at the ends', () => {
+		const data = randomWalk(20_000, 9);
+		const view = new SeriesView();
+		const spacing = 0.1;
+		const geometry: Geometry = { origin: -500, spacing, from: 5000, to: 15_000, shift: 0, firstRow: 5000 };
+		view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
+		const merged: number[] = [];
+		const merge = (view as unknown as { _merge(from: number, to: number): void })._merge;
+		(view as unknown as { _merge: typeof merge })._merge = function (
+			this: SeriesView,
+			from: number,
+			to: number,
+			...rest: unknown[]
+		) {
+			merged.push(Math.max(0, to - from));
+			return (merge as (...args: unknown[]) => void).call(this, from, to, ...rest);
+		};
+		// Three pixels to the right: the view starts 30 rows earlier.
+		geometry.origin = -497;
+		geometry.from = 4970;
+		geometry.to = 14_970;
+		geometry.firstRow = 4970;
+		view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
+		const fresh = new SeriesView();
+		fresh.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
+		expect(items(view)).toEqual(items(fresh));
+		// Three new columns and the first one, then the last one.
+		expect(merged.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(5);
+	});
+
 	it('rebuilds everything when the columns are replaced or the geometry moves', () => {
 		const data = randomWalk(1000);
 		const view = new SeriesView();
