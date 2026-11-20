@@ -37,6 +37,10 @@ export interface DataFlowHost {
 	resolveView(): void;
 	/** An event was handled: whoever waits for the chart may have nothing left to wait for. */
 	settled(): void;
+	/** The engine threw while running a command (`engine`), or its worker failed (`worker`). */
+	failed(kind: 'engine' | 'worker', message: string, cause: unknown): void;
+	/** The engine did not apply `count` rows of the series or marks series with engine id `id`. */
+	refused(id: number, count: number): void;
 }
 
 interface Deferred {
@@ -118,6 +122,7 @@ export class DataFlow {
 		if (this.engine === null && !this._closed) {
 			this.engine = createEngine({ packedPatches: true, worker: this._settings.options.worker });
 			this.engine.onevent = this._onEvent;
+			this.engine.onlost = this._onLost;
 			this._memoryLimit = this._settings.options.memoryLimit;
 			if (this._memoryLimit !== Infinity) {
 				this.engine.setMemoryLimit(this._memoryLimit);
@@ -213,6 +218,38 @@ export class DataFlow {
 		}
 		// Nothing to draw, or a chart outside the viewport, which draws when it comes back.
 		this._host.settled();
+		// Told last, so a handler that calls the chart finds this event applied.
+		if (event.failed === true) {
+			this._host.failed('engine', event.error ?? 'The data engine failed to run a command', event.cause);
+		}
+		const rejected = event.rejectedSeries;
+		if (rejected !== undefined) {
+			for (let i = 0; i + 1 < rejected.length; i += 2) {
+				this._host.refused(rejected[i]!, rejected[i + 1]!);
+			}
+		}
+	};
+
+	/**
+	 * The worker of the engine failed, and the rows it held are gone with it. The chart keeps drawing
+	 * the rows it holds and starts no other engine, since the data would not be there. Nothing it waits
+	 * for will come: datafeed requests are dropped, and calls held back for data run now.
+	 */
+	private readonly _onLost = (message: string, cause: unknown): void => {
+		this._fetches.abort(null);
+		this._indicators.engineLost(message);
+		const deferred = this._deferred;
+		this._deferred = [];
+		if (deferred.length > 0) {
+			this._host.syncView();
+			for (const { action } of deferred) {
+				action();
+			}
+			this._host.callApplied();
+		}
+		this._host.invalidate(INVALIDATE_LIGHT);
+		this._host.settled();
+		this._host.failed('worker', message, cause);
 	};
 
 	/**

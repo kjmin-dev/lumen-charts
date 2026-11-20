@@ -584,6 +584,9 @@ export class ChartIndicators {
 		if (engine === null) {
 			return Promise.reject(new Error('The chart was destroyed'));
 		}
+		if (engine.lost) {
+			return Promise.reject(new Error('The data engine of the chart stopped'));
+		}
 		const href = new URL(String(url), this._host.baseUrl()).href;
 		return new Promise((resolve, reject) => {
 			const waiters = this._plugins.get(href) ?? [];
@@ -613,9 +616,19 @@ export class ChartIndicators {
 
 	/** Rejects every module still loading: the chart is gone. */
 	public destroy(): void {
+		this._rejectPlugins('The chart was destroyed');
+	}
+
+	/** The engine stopped: nothing is computed any more, and no module finishes loading. */
+	public engineLost(message: string): void {
+		this.computing = 0;
+		this._rejectPlugins(message);
+	}
+
+	private _rejectPlugins(reason: string): void {
 		for (const waiters of this._plugins.values()) {
 			for (const { reject } of waiters) {
-				reject(new Error('The chart was destroyed'));
+				reject(new Error(reason));
 			}
 		}
 		this._plugins.clear();

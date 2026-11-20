@@ -51,6 +51,7 @@ Each has a guide:
 - [Themes and display options](docs/guide/themes.md): themes, grid, crosshair, watermark, series styles.
 - [Time zones and sessions](docs/guide/time-zones.md): wall-clock axes, trading days, extended hours.
 - [Heatmap and scatter series](docs/guide/heatmap-scatter.md): order books and trades with per-chart WebGL2, WebGPU or Canvas 2D rendering.
+- [Errors](docs/guide/errors.md): failed engine commands, a failed worker and refused updates, reported to `subscribe('error')`.
 
 ## Packages
 

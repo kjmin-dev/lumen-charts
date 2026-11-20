@@ -40,6 +40,30 @@ export interface TimeScaleApi {
 	sessionAt(time: number): SessionInfo | null;
 }
 
+/**
+ * Something that went wrong outside a call of the application, reported to `subscribe('error')`.
+ *
+ * - `engine`: the data engine threw while running a command. The command changed nothing the chart
+ *   relies on, and the chart goes on. `message` is what was thrown; `cause` is the value thrown when
+ *   the engine runs on this thread (from a worker only the text arrives).
+ * - `worker`: the worker of the data engine failed after it started. The data it held is gone and
+ *   the chart does not start another: it keeps drawing what it holds, takes no more data, and
+ *   whoever waits for it (`whenIdle`, `whenApplied`) is no longer kept waiting. `cause` is the event
+ *   the worker fired. Every chart on the worker gets one.
+ * - `refused`: the engine did not apply `count` bars or points of the series `seriesId`: a time out
+ *   of order, or between two bars that exist. This can be routine for a live feed, so it is never
+ *   reported unless someone subscribed.
+ */
+export interface ChartError {
+	kind: 'engine' | 'worker' | 'refused';
+	message: string;
+	/** The series of a `refused` error; absent when the engine names a series the chart no longer has. */
+	seriesId?: string;
+	/** Bars or points refused, for `refused`. */
+	count?: number;
+	cause?: unknown;
+}
+
 export interface ChartApi {
 	/**
 	 * Merges options, including nested ones: `{ grid: { vertLines: { visible: false } } }` changes
@@ -131,6 +155,12 @@ export interface ChartApi {
 	whenApplied(): Promise<void>;
 	/** Where the data engine runs; `connecting` until a worker has answered or failed. */
 	engineMode(): 'none' | 'connecting' | 'worker' | 'local';
+	/**
+	 * Calls `handler` with every `ChartError`; returns a function that stops it. Without a handler,
+	 * `engine` and `worker` errors are reported as uncaught errors of the page, and `refused` ones
+	 * are not reported at all.
+	 */
+	subscribe(event: 'error', handler: (error: ChartError) => void): () => void;
 	/**
 	 * The state of the chart as plain JSON: what was configured, without bars. It holds the options
 	 * applied (not the size, `worker`, `memoryLimit`, `markRenderer`, accessibility settings or formatter functions), the series and indicators
