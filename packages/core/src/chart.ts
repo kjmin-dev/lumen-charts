@@ -1,4 +1,4 @@
-import type { ChartApi, ChartError, LogicalRange, TimeScaleApi } from './api';
+import type { ChartApi, ChartError, ChartPointerEvent, LogicalRange, TimeScaleApi } from './api';
 import type { EngineClient, IndicatorInfo } from '@lumen-charts/engine';
 import { DataFlow } from './data/data-flow';
 import { DatafeedFetches } from './data/datafeed';
@@ -12,8 +12,15 @@ import type { HeatmapSeriesApi, MarkSeriesApi, ScatterSeriesApi } from './marks/
 import { type MarkSeriesPlan, isMarkType, planMarkSeries } from './marks/state';
 import { ChartReadout } from './input/chart-readout';
 import { ChartAccessibility } from './input/chart-accessibility';
+import { ChartEvents } from './input/chart-events';
 import { type AxisTarget, Interaction, type InteractionHost, type PointerDelegate } from './input/interaction';
-import { INVALIDATE_FULL, INVALIDATE_LIGHT, INVALIDATE_NONE, type Invalidation } from './model/invalidation';
+import {
+	INVALIDATE_CURSOR,
+	INVALIDATE_FULL,
+	INVALIDATE_LIGHT,
+	INVALIDATE_NONE,
+	type Invalidation,
+} from './model/invalidation';
 import { Crosshair } from './model/crosshair';
 import { FrameModel } from './model/frame-model';
 import type { SessionInfo } from './model/sessions';
@@ -34,12 +41,12 @@ import {
 	resolveOptions,
 } from './options';
 import { type PriceAxis, PriceAxes, type PriceAxisHost, type PriceScaleApi } from './price-axes';
-import type { PanePrimitive } from './primitives';
+import type { PanePrimitive, PaneView } from './primitives';
 import { AxisRenderer } from './render/axes';
 import { ChartLayout } from './render/layout';
 import { OverlayRenderer } from './render/overlay';
 import { PaneRenderer } from './render/pane';
-import { Series, type SeriesApi, type SeriesCreateOptions, type SeriesType } from './series';
+import { Series, type SeriesApi, type SeriesCreateOptions, type SeriesType, type TimeRange } from './series';
 import { type ChartState, type ChartStateSelection } from './state';
 import { ChartSettings } from './settings';
 import { StateIo } from './state-io';
@@ -67,11 +74,12 @@ import { observeVisibility, unobserveVisibility } from './shared/observers';
  * - `PaneRenderer`, `AxisRenderer`, `OverlayRenderer` (render/): the series layer, axes, overlay.
  * - `StateIo` (state-io.ts): save and restore, and the view of a restored state.
  * - `ChartMarks` (marks/chart-marks.ts): heatmap and scatter series, drawn through pixel buffers.
+ * - `ChartEvents` (input/chart-events.ts): the crosshair, click and visible range events.
  *
  * Parts get the parts and callbacks they need rather than the chart, and nothing here runs per
  * item: a frame makes a handful of calls into them.
  */
-class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, PriceAxisHost {
+class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 	public readonly scale: TimeScale;
 	/** Whether the chart waits for the shared animation frame (see `FrameClient`). */
 	public frameQueued = false;
@@ -107,6 +115,10 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private readonly _stateIo: StateIo;
 	/** Heatmap and scatter series. */
 	private readonly _marks: ChartMarks;
+	/** Events of the crosshair, clicks and the visible range, and the crosshair the application places. */
+	private readonly _events: ChartEvents;
+	/** What `timeScale()` returns. */
+	private readonly _timeScale: TimeScaleApi;
 	/** The heatmap and scatter series of a state being restored, checked, until the restore applies them. */
 	private _markPlans: MarkSeriesPlan[] | null = null;
 	/** What draws the series layer, the axes and the overlay. */
@@ -216,9 +228,21 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._primitives,
 			this._crosshair,
 		);
+		this._events = new ChartEvents(
+			this.scale,
+			this._crosshair,
+			this._model,
+			this._series,
+			this._indicators,
+			this._times,
+			this._axes,
+			this._onInvalidate,
+		);
+		this._timeScale = this._createTimeScale();
 		this._times.listener = () => {
 			this._stateIo.resolveView();
 			this._primitives.timelineChanged();
+			this._events.timelineChanged();
 		};
 		this._applyResolved(this._settings.options);
 	}
@@ -291,6 +315,43 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			this._times,
 			this._primitives,
 		);
+	}
+
+	/** The time scale API: the view methods of the chart, its conversions and its range events. */
+	private _createTimeScale(): TimeScaleApi {
+		return {
+			fitContent: () => this.fitContent(),
+			scrollToRealTime: () => this.scrollToRealTime(),
+			setVisibleLogicalRange: range => this.setVisibleLogicalRange(range),
+			getVisibleLogicalRange: () => this.getVisibleLogicalRange(),
+			setVisibleRange: range => this._setVisibleRange(range),
+			getVisibleRange: () => {
+				this._syncView();
+				return this._events.visibleTimes();
+			},
+			timeToCoordinate: time => this._timeToCoordinate(time),
+			coordinateToTime: x => {
+				const view = this._paneView();
+				return view === null ? null : finite(view.xToTime(x));
+			},
+			logicalToCoordinate: logical => {
+				const view = this._paneView();
+				return view === null ? null : finite(view.logicalToX(logical));
+			},
+			coordinateToLogical: x => {
+				const view = this._paneView();
+				return view === null ? null : finite(view.xToLogical(x));
+			},
+			isInSession: time => this.isInSession(time),
+			sessionAt: time => this.sessionAt(time),
+			subscribe: ((event: string, handler: (range: LogicalRange | null) => void) => {
+				const unsubscribe = this._events.subscribeRange(event, handler);
+				if (unsubscribe === null) {
+					throw new Error(`lumen-charts: the time scale has no event "${String(event)}"`);
+				}
+				return unsubscribe;
+			}) as TimeScaleApi['subscribe'],
+		};
 	}
 
 	private _createMarks(): ChartMarks {
@@ -446,7 +507,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	}
 
 	public timeScale(): TimeScaleApi {
-		return this;
+		return this._timeScale;
 	}
 
 	public saveState(selection: ChartStateSelection = {}): ChartState {
@@ -563,11 +624,37 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		return this._data.engine === null ? 'none' : this._data.engine.mode;
 	}
 
-	public subscribe(event: 'error', handler: (error: ChartError) => void): () => void {
+	public subscribe(event: 'error', handler: (error: ChartError) => void): () => void;
+	public subscribe(event: 'crosshairMove' | 'click', handler: (event: ChartPointerEvent) => void): () => void;
+	public subscribe(
+		event: 'error' | 'crosshairMove' | 'click',
+		handler: ((error: ChartError) => void) | ((event: ChartPointerEvent) => void),
+	): () => void {
 		if (event === 'error') {
-			return this._errors.add(handler);
+			return this._errors.add(handler as (error: ChartError) => void);
 		}
-		throw new Error(`lumen-charts: the chart has no event "${String(event)}"`);
+		const unsubscribe = this._events.subscribePointer(event, handler as (event: ChartPointerEvent) => void);
+		if (unsubscribe === null) {
+			throw new Error(`lumen-charts: the chart has no event "${String(event)}"`);
+		}
+		return unsubscribe;
+	}
+
+	public setCrosshairPosition(time: number, price: number | null, scaleId: string = DEFAULT_PRICE_SCALE_ID): void {
+		if (this._destroyed) {
+			return;
+		}
+		// The keyboard navigator gives the crosshair up, as it does to the pointer.
+		this._accessibility.pointerMoved();
+		this._events.setCrosshairPosition(time, price, scaleId);
+	}
+
+	public clearCrosshairPosition(): void {
+		if (this._destroyed) {
+			return;
+		}
+		this._accessibility.pointerMoved();
+		this._events.clearCrosshairPosition();
 	}
 
 	public destroy(): void {
@@ -576,6 +663,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 		this._destroyed = true;
 		this._errors.clear();
+		this._events.clear();
 		this._accessibility.destroy();
 		this._layout.destroy();
 		this._data.close();
@@ -627,6 +715,42 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		return scale.isEmpty || scale.width <= 0 ? null : { from: scale.from, to: scale.to };
 	}
 
+	private _setVisibleRange(range: TimeRange): void {
+		const { from, to } = range;
+		if (!(Number.isFinite(from) && Number.isFinite(to) && to > from)) {
+			return;
+		}
+		this._data.afterData(() => this._stateIo.showTimes(from, to));
+	}
+
+	/**
+	 * The view primitives are drawn with, which maps what the last frame drew; null without bars or
+	 * before the pane has a size.
+	 */
+	private _paneView(): PaneView | null {
+		if (this.scale.isEmpty) {
+			return null;
+		}
+		this._primitives.syncPaneView();
+		const view = this._primitives.view;
+		return view.width > 0 ? view : null;
+	}
+
+	private _timeToCoordinate(time: number): number | null {
+		const view = this._paneView();
+		if (view === null || time !== time) {
+			return null;
+		}
+		this._times.active = true;
+		const x = view.timeToX(time);
+		if (x !== x) {
+			// The engine is asked in the next frame; once the answer is in, the time has a place.
+			this.invalidate(INVALIDATE_CURSOR);
+			return null;
+		}
+		return x;
+	}
+
 	public isInSession(time: number): boolean {
 		return this._time.isInSession(time);
 	}
@@ -651,11 +775,21 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	public setCrosshair(x: number, y: number, visible: boolean): void {
 		this._accessibility.pointerMoved();
+		this._events.pointerMoved();
 		const crosshair = this._crosshair;
 		crosshair.x = x;
 		crosshair.y = y;
 		crosshair.visible = visible;
+		crosshair.source = 'pointer';
 		crosshair.hoverDirty = true;
+	}
+
+	public clicksWanted(): boolean {
+		return this._events.click.active;
+	}
+
+	public click(x: number, y: number): void {
+		this._events.clicked(x, y);
 	}
 
 	public pointerDelegate(): PointerDelegate | null {
@@ -989,6 +1123,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 				pane.stale = true;
 			}
 		}
+		// On its bar in the view just computed, before drawings are hovered and the overlay drawn.
+		this._events.place();
 		if (layout.paneWidth > 0 && layout.paneHeight > 0) {
 			if (primitives.drawings !== null) {
 				// Tools place points with the view of this frame, also before the first drawing exists.
@@ -1010,8 +1146,15 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		if (animating) {
 			this.invalidate(INVALIDATE_LIGHT);
 		}
+		// Last, so handlers see this frame on screen; what they change goes into the next one.
+		this._events.deliver();
 		this._settle();
 	}
+}
+
+/** A number, or null for NaN and infinities. */
+function finite(value: number): number | null {
+	return Number.isFinite(value) ? value : null;
 }
 
 /** Creates a chart inside `container`. */

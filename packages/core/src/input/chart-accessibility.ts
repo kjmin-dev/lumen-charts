@@ -188,6 +188,7 @@ export class ChartAccessibility {
 			this.crosshair.x = this.scale.indexToX(this.index);
 			this.crosshair.y = this.readout.cursorY(row, this.layout.pixelRatio, this.layout.paneHeight / 2);
 			this.crosshair.visible = true;
+			this.crosshair.source = 'keyboard';
 			this.crosshair.hoverDirty = true;
 		}
 		// A live tick may change the selected close hundreds of times. Announce a
@@ -288,6 +289,7 @@ export class ChartAccessibility {
 	private clearCrosshair() {
 		if (this.ownsCrosshair) {
 			this.crosshair.visible = false;
+			this.crosshair.source = 'keyboard';
 			this.crosshair.hoverDirty = true;
 		}
 	}

@@ -265,6 +265,12 @@ export class StateIo {
 		}
 	}
 
+	/** Shows the times `from` to `to` as soon as the timeline can place them, as a restored view. */
+	public showTimes(from: number, to: number): void {
+		this._pendingView = { from, to };
+		this.resolveView();
+	}
+
 	/**
 	 * Shows the times of a restored view as soon as the timeline can place them: at once when the
 	 * bars around them are held, otherwise when the engine's answer is in, or when there are bars.
