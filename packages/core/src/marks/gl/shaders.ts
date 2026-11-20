@@ -100,3 +100,30 @@ void main() {
 	}
 	pixel = color(styleWord(slot));
 }`;
+
+// Palette slots (see `quantize`), four to a word with the first cell in the low byte: the highest
+// slot of the cells a pixel covers picks its color, without a search.
+export const heatSlotsFragment =
+	header +
+	`
+uniform int rows;
+out vec4 pixel;
+void main() {
+	int x = int(gl_FragCoord.x) * 2;
+	int y = (pane.x + pane.y - 1 - int(gl_FragCoord.y)) * 2;
+	int from = int(rangeWord(x)), to = int(rangeWord(x+1));
+	int low = int(rangeWord(y)), high = int(rangeWord(y+1));
+	uint best = 0u;
+	if (low < high) {
+		for (int c = from; c < to; ++c) {
+			// Cells [a, b) lie in words [a >> 2, (b - 1) >> 2]; bytes of other cells are masked off.
+			int a = c*rows+low, b = c*rows+high;
+			for (int i = a >> 2, last = (b - 1) >> 2; i <= last; ++i) {
+				int lo = max(a - (i << 2), 0), hi = min(b - (i << 2), 4);
+				uint bits = recordWord(i) & (0xffffffffu << uint(lo << 3)) & (0xffffffffu >> uint((4 - hi) << 3));
+				best = max(best, max(max(bits & 255u, (bits >> 8u) & 255u), max((bits >> 16u) & 255u, bits >> 24u)));
+			}
+		}
+	}
+	pixel = color(styleWord(int(best)));
+}`;

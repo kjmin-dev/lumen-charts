@@ -1,7 +1,7 @@
 import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
-import type { MarkFrame, MarkRendererReason } from '../backend';
+import type { HeatSlots, MarkFrame, MarkRendererReason } from '../backend';
 import { heatStyle, scatterBounds, scatterRecords } from '../gpu/geometry';
-import { heatEdge } from '../render';
+import { heatEdge, slotColors } from '../render';
 import { HeatRanges } from '../heat-ranges';
 import type { ScatterOptions } from '../options';
 import { parseColor } from '../palette';
@@ -25,6 +25,12 @@ class GlLayer {
 	private mapping = '';
 	private palette: Uint32Array | null = null;
 	private fallback = '';
+	/** Whether the records hold the heatmap's palette slots, four to a word, rather than its values. */
+	public slots = false;
+	/** The slots buffer the records were uploaded from, and the columns uploaded: `[slotsFrom, slotsTo)`. */
+	private slotsBuffer: Uint8Array | null = null;
+	private slotsFrom = 0;
+	private slotsTo = 0;
 	constructor(
 		private pool: GlContext,
 		private listener: () => void,
@@ -98,24 +104,74 @@ class GlLayer {
 		this.copy(left, right, height);
 	}
 
-	private heatmap(f: MarkFrame, p: GlProgram, full: boolean, styleChanged: boolean) {
+	/**
+	 * Uploads the slots of the columns in view that the records lack, and of those a patch changed.
+	 * The records hold the slots of columns `[slotsFrom, slotsTo)`, a range that grows with the view
+	 * and starts over when the view leaves it: a pan uploads the columns that come into view.
+	 */
+	private uploadSlots(f: MarkFrame, slots: HeatSlots, mappingChanged: boolean): boolean {
+		const w = f.window,
+			rows = w.rows;
+		const cells = slots.update(f.from, f.to);
+		const fresh =
+			this.records.bind(Math.ceil((w.capacity * rows) / 4)) ||
+			w.version !== this.version ||
+			!this.slots ||
+			mappingChanged ||
+			cells !== this.slotsBuffer ||
+			!slots.holds(this.slotsFrom, this.slotsTo);
+		const words = new Uint32Array(cells.buffer, cells.byteOffset, cells.length >> 2);
+		const upload = (from: number, to: number) => {
+			if (to > from) this.records.write(words, Math.floor((from * rows) / 4), Math.ceil((to * rows) / 4));
+		};
+		if (fresh || f.to <= this.slotsFrom || f.from >= this.slotsTo) {
+			upload(f.from, f.to);
+			this.slotsFrom = f.from;
+			this.slotsTo = f.to;
+		} else {
+			upload(Math.max(w.dirtyFrom, this.slotsFrom), Math.min(w.dirtyTo, this.slotsTo));
+			if (f.from < this.slotsFrom) upload(f.from, this.slotsFrom);
+			if (f.to > this.slotsTo) upload(this.slotsTo, f.to);
+			this.slotsFrom = Math.min(this.slotsFrom, f.from);
+			this.slotsTo = Math.max(this.slotsTo, f.to);
+		}
+		this.slotsBuffer = cells;
+		return fresh;
+	}
+
+	private heatmap(f: MarkFrame, p: GlProgram, full: boolean, styleChanged: boolean, mappingChanged: boolean) {
 		const { window: w, width, height } = f;
-		const fresh = this.records.bind(w.capacity * w.rows) || w.version !== this.version;
+		const slots = f.slots ?? null;
+		const modeChanged = (slots !== null) !== this.slots;
+		// Slots take a quarter of the words of values: the records are made again at their size.
+		if (modeChanged) this.records.release();
+		let fresh: boolean;
+		if (slots) {
+			fresh = this.uploadSlots(f, slots, mappingChanged);
+		} else {
+			fresh = this.records.bind(w.capacity * w.rows) || w.version !== this.version || modeChanged;
+			const from = fresh ? 0 : w.dirtyFrom,
+				to = fresh ? w.count : w.dirtyTo;
+			if (to > from) {
+				const data = new Uint32Array(w.values.buffer as ArrayBuffer, w.values.byteOffset, w.values.length);
+				this.records.write(data, from * w.rows, to * w.rows);
+			}
+			this.slotsBuffer = null;
+		}
+		this.slots = slots !== null;
 		const from = fresh ? 0 : w.dirtyFrom,
 			to = fresh ? w.count : w.dirtyTo;
-		if (to > from) {
-			const data = new Uint32Array(w.values.buffer as ArrayBuffer, w.values.byteOffset, w.values.length);
-			this.records.write(data, from * w.rows, to * w.rows);
-		}
 		const n = (width + height) * 2;
 		const sameGrid = !this.ranges.bind(n) && !full && !fresh && w.count === this.count;
 		if (!sameGrid) {
 			this.heat.project(f);
 			this.ranges.write(this.heat.data, 0, n);
 		}
-		if (this.style.bind(512) || styleChanged) {
-			heatStyle(f.palette, f.mapping, this.colors);
-			this.style.write(this.colors, 0, 512);
+		if (this.style.bind(512) || styleChanged || modeChanged) {
+			// Slots need only their colors; values the first value of each slot too.
+			if (slots) slotColors(f.palette, this.colors);
+			else heatStyle(f.palette, f.mapping, this.colors);
+			this.style.write(this.colors, 0, slots ? 256 : 512);
 		}
 		let left = 0,
 			right = width;
@@ -156,13 +212,15 @@ class GlLayer {
 	paint(f: MarkFrame, target: CanvasRenderingContext2D, full: boolean) {
 		const { width, height, window: w } = f;
 		if (full || this.version !== w.version || this.revision !== w.revision) {
-			const program = this.pool.begin(this.listener, f.type, width, height);
+			const kind = f.type === 'scatter' ? 'scatter' : f.slots ? 'heatmap-slots' : 'heatmap';
+			const program = this.pool.begin(this.listener, kind, width, height);
 			full = this.resize(width, height) || full;
 			const mapping = [f.mapping.min, f.mapping.factor, f.mapping.log].join(',');
-			const styleChanged = this.palette !== f.palette || mapping !== this.mapping;
+			const mappingChanged = mapping !== this.mapping;
+			const styleChanged = this.palette !== f.palette || mappingChanged;
 			this.pool.gl.enable(this.pool.gl.SCISSOR_TEST);
 			if (f.type === 'scatter') this.scatter(f, program, full, styleChanged);
-			else this.heatmap(f, program, full, styleChanged);
+			else this.heatmap(f, program, full, styleChanged, mappingChanged);
 			this.count = w.count;
 			this.version = w.version;
 			this.revision = w.revision;
@@ -177,6 +235,10 @@ class GlLayer {
 			target.drawImage(this.cache.canvas, 0, 0);
 			target.restore();
 		}
+	}
+	/** Frames were drawn without this layer: the records may have missed patches. */
+	stale() {
+		this.version = -1;
 	}
 	release() {
 		this.records.release();
@@ -206,6 +268,14 @@ export class GlMarkClient {
 	}
 	get bytes() {
 		return this.layer?.bytes ?? 0;
+	}
+	/** What the last heatmap paint drew from: its values or its palette slots. */
+	get heatPath(): 'values' | 'slots' | null {
+		return this.layer ? (this.layer.slots ? 'slots' : 'values') : null;
+	}
+	/** A frame drew the series another way, and cleared the patches the layer would have uploaded. */
+	stale() {
+		this.layer?.stale();
 	}
 	paint(f: MarkFrame, target: CanvasRenderingContext2D, full: boolean): MarkRendererReason | null {
 		if (this.failure) return this.failure;

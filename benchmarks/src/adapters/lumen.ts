@@ -140,7 +140,12 @@ class LumenAdapter
 	}
 
 	public markBackend() {
-		return (this._scatter ?? this._heatmap)?.renderer?.();
+		const series = this._scatter ?? this._heatmap;
+		const status = series?.renderer?.();
+		// Internal to the library, and absent from older versions: whether a WebGL2 heatmap was drawn
+		// from its palette slots rather than its values.
+		const heat = (series as { glHeatPath?(): string | null } | null)?.glHeatPath?.();
+		return status && heat === 'slots' ? { ...status, path: 'webgl2-slots' } : status;
 	}
 	public marksDrawn(): { level: number; marks: number } {
 		return (this._scatter ?? this._heatmap)?.drawn() ?? { level: 0, marks: 0 };

@@ -1,6 +1,13 @@
 import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
-import type { MarkSeriesType } from '../options';
-import { heatFragment, heatVertex, scatterFragment, scatterVertex } from './shaders';
+import { heatFragment, heatSlotsFragment, heatVertex, scatterFragment, scatterVertex } from './shaders';
+
+/** The programs: a scatter, a heatmap from its values, a heatmap from its palette slots. */
+export type GlProgramKind = 'scatter' | 'heatmap' | 'heatmap-slots';
+const SOURCES: Record<GlProgramKind, [string, string]> = {
+	scatter: [scatterVertex, scatterFragment],
+	heatmap: [heatVertex, heatFragment],
+	'heatmap-slots': [heatVertex, heatSlotsFragment],
+};
 
 export class GlBudget extends Error {}
 
@@ -51,7 +58,7 @@ export type GlProgram = ReturnType<typeof program>;
 const pools = new WeakMap<Document, GlContext>();
 export class GlContext {
 	private readonly listeners = new Map<() => void, { width: number; height: number }>();
-	private readonly programs = new Map<MarkSeriesType, ReturnType<typeof program>>();
+	private readonly programs = new Map<GlProgramKind, ReturnType<typeof program>>();
 	public readonly limit: number;
 	private pixels = 0;
 	private corners: WebGLBuffer | null = null;
@@ -110,7 +117,7 @@ export class GlContext {
 		this.pixels = width * height;
 	}
 
-	begin(listener: () => void, type: MarkSeriesType, width: number, height: number) {
+	begin(listener: () => void, type: GlProgramKind, width: number, height: number) {
 		if (width > this.limit || height > this.limit) throw new GlBudget();
 		const size = this.listeners.get(listener)!;
 		if (
@@ -141,8 +148,7 @@ export class GlContext {
 		}
 		let pipeline = this.programs.get(type);
 		if (!pipeline) {
-			pipeline =
-				type === 'scatter' ? program(gl, scatterVertex, scatterFragment) : program(gl, heatVertex, heatFragment);
+			pipeline = program(gl, ...SOURCES[type]);
 			this.programs.set(type, pipeline);
 		}
 		gl.useProgram(pipeline.p);
