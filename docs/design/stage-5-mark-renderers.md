@@ -1,6 +1,6 @@
 # Canvas 2D and WebGPU roadmap for scatter and heatmap
 
-**Implementation status.** Canvas 2D, explicit WebGPU and opt-in adaptive selection are integrated in the chart. The six steps below record the original delivery plan. Desktop qualification is complete for the configurations in the [chart report](../benchmarks/integrated-mark-renderers.md). Physical Android qualification remains open. The WebGPU measurements come from isolated mark layers on Apple M1 in headless Chromium. Canvas 2D is the default and fallback for both series. Candles, axes, labels, drawings and custom primitives continue through the existing pane compositor. WebGL2 supplies a benchmark control. [Current implementation](stage-5-heatmap-scatter.md) · [Prototype results](../benchmarks/mark-fast-paths.md)
+The chart now offers three explicit mark backends. WebGL2 is the default, WebGPU falls back to WebGL2, and Canvas 2D is the final fallback. The host can also select Canvas 2D directly. The guide describes the current per-instance contract. The delivery plan and measurements below document the original Canvas 2D and WebGPU integration, including its former adaptive policy. [Renderer selection](../guide/heatmap-scatter.md#choosing-a-renderer) · [Original chart measurements](../benchmarks/integrated-mark-renderers.md)
 
 | Delivery step           | Current result                                                                                                                                                            |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -11,7 +11,7 @@
 | 5. Explicit selection   | Desktop implementation, guide, example and package verification complete. Android emulator fallback passed. Physical mid-range Android performance qualification is open. |
 | 6. Automatic selection  | Opt-in policy implemented and calibrated with complete desktop charts. Mobile crossover and performance claims await device results.                                      |
 
-## 3. Architecture and public contract
+## 3. Original architecture and public contract
 
 - The chart-level runtime preference `markRenderer` accepts `'canvas2d'`, `'webgpu'` and `'auto'`. Each mark series exposes the requested preference, effective backend and fallback reason through `renderer()`. A WebGPU series may use a 2D dirty patch. Diagnostics should distinguish the series backend from that per-frame shortcut. Treat the preference as host configuration across save and restore.
 - Keep the engine's mark window, level of detail (LOD), autoscale and hit queries shared. Give both renderers the same visible rows, dirty ranges, time and price projections, palette, pane dimensions and pixel ratio. Select a backend at the mark-series draw boundary. The existing pane owns compositing and layer order. [Mark series](../../packages/core/src/marks/series.ts) · [Time mapping](../../packages/core/src/marks/time-map.ts)
@@ -43,7 +43,7 @@ The 100k–300k tile and 1M column results are prototype test cases. The release
 - **Performance.** Apply the existing whole-chart frame JS p95 budgets of 8 ms for pan/zoom and 4 ms for update frames. Prioritize 300k dispersed scatter zoom and 1.44M-cell heatmap pan/zoom, where the current chart exceeds budget. Record GPU pass time separately, plus compositor cadence, first usable frame, cold index build, deferred flush and peak bytes. Compare both backends with the same cache and patch opportunities. [Production baseline and budgets](../benchmarks/stage-5-heatmap-scatter.md)
 - **Resource use and recovery.** Charge retained bitmaps and GPU resources against explicit budgets. Exercise several charts sharing a device, loss during a burst, rapid destroy/recreate and memory pressure. Verify that the latest chart data survives and released charts relinquish their resources.
 
-## Implementation decisions
+## Original implementation decisions
 
 - The shared heatmap geometry supplies the same integer boundaries and subpixel reduction ranges to both backends. Canvas and GPU can translate an existing image only after checking the overlapping source columns and every price-row range. Exposed columns are redrawn. A fixed camera and dirty data update their affected region.
 - The integrated scatter uses the CPU time map and binary64 boundary checks before handing row indices to the GPU. Prices use the same JS projection and rounding as the Canvas oracle. The two compute kernels cover clipped square stamps and original row order. Indexing considers the size of the held window and concentration on the visible time axis. Unsupported styles render with Canvas.

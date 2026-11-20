@@ -83,7 +83,7 @@ class LumenAdapter
 	public constructor(container: HTMLElement, size: ChartSize | 'auto', worker: boolean) {
 		this._chart = createChart(container, {
 			...(size === 'auto' ? { worker } : { width: size.width, height: size.height, autoSize: false, worker }),
-			...(this._markRenderer ? { markRenderer: this._markRenderer as 'canvas2d' | 'webgpu' | 'auto' } : {}),
+			...(this._markRenderer ? { markRenderer: this._markRenderer as 'canvas2d' | 'webgl2' | 'webgpu' } : {}),
 		});
 	}
 

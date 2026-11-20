@@ -4,7 +4,7 @@ const start = 1_731_000_000_000;
 const barTime = (i: number) => start + i * 60_000 + (i >= 48 ? 2 * 86400000 : 0);
 const raf = () => new Promise<void>(done => requestAnimationFrame(() => done()));
 
-function fixture(pref: MarkRenderer, worker: boolean) {
+function fixture(pref: MarkRenderer | undefined, worker: boolean) {
 	const host = document.createElement('div');
 	document.body.append(host);
 	const chart = createChart(host, {
@@ -115,12 +115,15 @@ function differences(a: Fixture, b: Fixture) {
 	return { different, largest, first };
 }
 
-async function check(mode: 'hardware' | 'unavailable' | 'rejected' | 'native-fallback', worker: boolean) {
+async function check(
+	mode: 'hardware' | 'unavailable' | 'rejected' | 'native-fallback' | 'webgl2' | 'canvas-only' | 'pending',
+	worker: boolean,
+) {
 	const memory = canvasPixelsInUse(),
 		budget = getCanvasBudget(),
 		begin = performance.now();
 	const a = fixture('canvas2d', worker),
-		b = fixture('webgpu', worker);
+		b = fixture(mode === 'webgl2' ? undefined : 'webgpu', worker);
 	const results: { name: string; different: number; largest: number; first: string; heat: string; scatter: string }[] =
 		[];
 	async function compare(name: string, change: (s: Fixture) => void = () => {}) {
@@ -146,6 +149,8 @@ async function check(mode: 'hardware' | 'unavailable' | 'rejected' | 'native-fal
 				throw Error('GPU did not activate: ' + JSON.stringify([b.heat.renderer(), b.scatter.renderer()]));
 		}
 		await compare('initial fractional range');
+		if (mode === 'webgl2' && [b.heat, b.scatter].some(series => series.renderer().effective !== 'webgl2'))
+			throw Error('Default WebGL2 did not activate: ' + JSON.stringify([b.heat.renderer(), b.scatter.renderer()]));
 		const readyMs = performance.now() - begin;
 		for (let i = 0; i < 16; i++)
 			await compare('fractional zoom ' + i, s =>
@@ -168,15 +173,20 @@ async function check(mode: 'hardware' | 'unavailable' | 'rejected' | 'native-fal
 		await compare('changed last column', s => s.heat.update({ time: barTime(95) + 24000, values: s.column }));
 		await compare('new heat column', s => s.heat.update({ time: barTime(95) + 45000, values: s.column }));
 		await compare('show dirty tail', s => s.chart.timeScale().setVisibleLogicalRange({ from: 75.2, to: 98.1 }));
-		await compare('circle fallback', s => s.scatter.applyOptions({ shape: 'circle', pointSize: 5 }));
+		await compare('circle marker', s => s.scatter.applyOptions({ shape: 'circle', pointSize: 5 }));
 		if (mode === 'hardware' && b.scatter.renderer().reason !== 'unsupported-style')
 			throw Error('Missing shape fallback');
+		if ((mode === 'webgl2' || window.testMarkGlAvailable) && b.scatter.renderer().effective !== 'webgl2')
+			throw Error('WebGL2 circle marker was not exercised');
 		const state = a.chart.saveState();
 		await compare('restore', s => {
 			s.chart.restoreState(state);
 			s.scatter.applyOptions({ shape: 'square', pointSize: 2 });
 		});
-		if (b.chart.options().markRenderer !== 'webgpu' || JSON.stringify(state).includes('markRenderer'))
+		if (
+			b.chart.options().markRenderer !== (mode === 'webgl2' ? 'webgl2' : 'webgpu') ||
+			JSON.stringify(state).includes('markRenderer')
+		)
 			throw Error('Renderer preference leaked into state');
 		const readPrice = 80;
 		const readTime = barTime(91);
@@ -185,8 +195,8 @@ async function check(mode: 'hardware' | 'unavailable' | 'rejected' | 'native-fal
 			a.scatter.priceToCoordinate(readPrice) !== b.scatter.priceToCoordinate(readPrice)
 		)
 			throw Error('Mark data queries differ');
-		if (mode === 'hardware') {
-			await compare('dense column kernel', s => {
+		if (mode === 'hardware' || mode === 'webgl2') {
+			await compare('dense scatter', s => {
 				const n = 390000;
 				const time = new Float64Array(n),
 					price = new Float64Array(n),
@@ -205,13 +215,15 @@ async function check(mode: 'hardware' | 'unavailable' | 'rejected' | 'native-fal
 				s.chart.priceScale().applyOptions({ mode: 'normal' });
 				s.chart.timeScale().setVisibleLogicalRange({ from: 77.3, to: 85.1 });
 			});
-			if (b.scatter.renderer().path !== 'scatter-columns')
+			if (b.scatter.renderer().path !== (mode === 'hardware' ? 'scatter-columns' : 'webgl2'))
 				throw Error('Dense column kernel not exercised: ' + JSON.stringify(b.scatter.drawn()));
 			await compare('runtime canvas preference', s => s.chart.applyOptions({ markRenderer: 'canvas2d' }));
-			b.chart.applyOptions({ markRenderer: 'webgpu' });
+			const requested = mode === 'hardware' ? 'webgpu' : 'webgl2';
+			b.chart.applyOptions({ markRenderer: requested });
 			await b.chart.whenIdle();
-			for (let i = 0; i < 150 && b.scatter.renderer().effective !== 'webgpu'; i++) await raf();
+			for (let i = 0; i < 150 && b.scatter.renderer().effective !== requested; i++) await raf();
 			await compare('runtime GPU selection');
+			if (b.scatter.renderer().effective !== requested) throw Error('Runtime selection failed');
 		}
 		// Force coarse heatmap LOD, including subpixel bins, missing values and a
 		// high isolated cell. Compare the public readout as well as the final RGBA layers.
@@ -261,13 +273,62 @@ async function check(mode: 'hardware' | 'unavailable' | 'rejected' | 'native-fal
 			live.destroy();
 			await live.lost;
 			for (let i = 0; i < 90 && b.heat.renderer().reason !== 'device-lost'; i++) await raf();
-			await compare('recovered on Canvas');
-			if (b.heat.renderer().reason !== 'device-lost')
+			await compare('WebGPU device loss');
+			if (
+				b.heat.renderer().reason !== 'device-lost' ||
+				b.heat.renderer().effective !== (window.testMarkGlAvailable ? 'webgl2' : 'canvas2d')
+			)
 				throw Error('Missing device-loss fallback: ' + JSON.stringify(b.heat.renderer()));
+		} else if (mode === 'webgl2') {
+			const live = window.testMarkContexts.filter(gl => !gl.isContextLost());
+			if (live.length !== 1) throw Error('Mark series did not share a WebGL2 context');
+			const other = fixture('webgl2', worker);
+			try {
+				other.chart.resize(424, 260);
+				await other.chart.whenIdle();
+				if (
+					other.heat.renderer().effective !== 'webgl2' ||
+					window.testMarkContexts.filter(gl => !gl.isContextLost()).length !== 1
+				)
+					throw Error('Charts did not share the GL context');
+			} finally {
+				other.dispose();
+			}
+			await compare('shared WebGL2 context after sibling teardown', s => s.heat.applyOptions({ opacity: 0.5 }));
+			const extension = live[0]!.getExtension('WEBGL_lose_context')!;
+			extension.loseContext();
+			for (let i = 0; i < 90 && b.heat.renderer().reason !== 'context-lost'; i++) await raf();
+			await compare('WebGL2 context loss and update', s =>
+				s.heat.update({ time: barTime(95) + 45000, values: s.column }),
+			);
+			if ([b.scatter, b.heat].some(series => series.renderer().effective !== 'canvas2d'))
+				throw Error('GL loss fallback failed');
+			extension.restoreContext();
+			for (let i = 0; i < 120 && b.heat.renderer().effective !== 'webgl2'; i++) await raf();
+			await compare('WebGL2 context restored');
+			if ([b.scatter, b.heat].some(series => series.renderer().effective !== 'webgl2'))
+				throw Error('GL restoration failed');
+			setCanvasBudget(0);
+			await compare('WebGL2 budget pressure', s => s.chart.resize(390, 251));
+			if (b.heat.renderer().reason !== 'budget' || b.heat.renderer().effective !== 'canvas2d')
+				throw Error('Missing GL budget fallback');
+			setCanvasBudget(budget);
+			await compare('WebGL2 budget restored', s => s.heat.applyOptions({ opacity: 0.54 }));
+			if (b.heat.renderer().effective !== 'webgl2') throw Error('GL budget recovery failed');
 		} else {
+			if (mode === 'pending') {
+				for (const series of [b.heat, b.scatter]) {
+					const status = series.renderer();
+					if (status.effective !== 'webgl2' || status.reason !== 'initializing')
+						throw Error('Waiting for WebGPU did not use WebGL2');
+				}
+				window.finishMarkAdapter();
+				for (let i = 0; i < 90 && b.heat.renderer().reason === 'initializing'; i++) await raf();
+				await compare('pending WebGPU adapter unavailable');
+			}
 			const status = b.heat.renderer();
 			const reason = mode === 'rejected' ? 'initialization-failed' : 'unavailable';
-			if (status.effective !== 'canvas2d' || status.reason !== reason)
+			if (status.effective !== (window.testMarkGlAvailable ? 'webgl2' : 'canvas2d') || status.reason !== reason)
 				throw Error('Unexpected fallback: ' + JSON.stringify(status));
 		}
 		report = {
@@ -292,6 +353,9 @@ declare global {
 	interface Window {
 		checkMarkRenderers: typeof check;
 		testMarkDevices: GPUDevice[];
+		finishMarkAdapter: () => void;
+		testMarkContexts: WebGL2RenderingContext[];
+		testMarkGlAvailable: boolean;
 	}
 }
 window.checkMarkRenderers = check;
@@ -303,6 +367,9 @@ if (new URLSearchParams(location.search).has('run')) {
 	document.body.append(result);
 	void (async () => {
 		window.testMarkDevices = [];
+		const gl = document.createElement('canvas').getContext('webgl2');
+		window.testMarkGlAvailable = !!gl;
+		gl?.getExtension('WEBGL_lose_context')?.loseContext();
 		const adapter = await navigator.gpu?.requestAdapter();
 		const available = Boolean(adapter && !adapter.info?.isFallbackAdapter);
 		if (available) {

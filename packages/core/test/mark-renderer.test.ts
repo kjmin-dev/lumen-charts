@@ -1,52 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { AutoMarks } from '../src/marks/auto';
 import { heatStyle } from '../src/marks/gpu/geometry';
 import { buildPalette, setValueMapping } from '../src/marks/palette';
 import { quantize } from '../src/marks/render';
 import { resolveOptions } from '../src/options';
 
 describe('mark renderer selection', () => {
-	it('defaults to Canvas and validates the preference', () => {
-		expect(resolveOptions({}, false).markRenderer).toBe('canvas2d');
+	it('defaults to WebGL2, accepts explicit backends and resolves the legacy auto setting', () => {
+		expect(resolveOptions({}, false).markRenderer).toBe('webgl2');
+		expect(resolveOptions({ markRenderer: 'auto' }, false).markRenderer).toBe('webgl2');
+		for (const markRenderer of ['webgl2', 'webgpu', 'canvas2d'] as const)
+			expect(resolveOptions({ markRenderer }, false).markRenderer).toBe(markRenderer);
 		expect(() => resolveOptions({ markRenderer: 'no' as 'auto' }, false)).toThrow(RangeError);
-	});
-	it('requires repeated costly eligible frames, compares GPU costs and cools down after a failed trial', () => {
-		const policy = new AutoMarks();
-		for (let i = 0; i < 20; i++) policy.canvas(0.2, true);
-		expect(policy.wants(true, false, true)).toBe(false);
-		for (let i = 0; i < 10; i++) policy.canvas(12, false);
-		expect(policy.wants(true, false, true)).toBe(false);
-		for (let i = 0; i < 3; i++) policy.canvas(11, true);
-		expect(policy.wants(true, false, true)).toBe(true);
-		policy.gpu(90);
-		for (let i = 0; i < 24; i++) policy.gpu(15);
-		for (let i = 0; i < 25; i++) {
-			policy.canvas(11, true);
-			expect(policy.wants(true, false, true)).toBe(false);
-		}
-	});
-	it('latches initialization across cheap interim frames and tolerates a single expensive window upload', () => {
-		const p = new AutoMarks();
-		for (let i = 0; i < 3; i++) p.canvas(10, true);
-		expect(p.wants(true, false, true)).toBe(true);
-		for (let i = 0; i < 8; i++) {
-			p.canvas(0.1, true);
-			expect(p.wants(true, false, true)).toBe(true);
-		}
-		p.gpu(35);
-		for (let i = 0; i < 60; i++) {
-			p.gpu(i === 14 ? 80 : 1);
-			expect(p.wants(true, false, true)).toBe(true);
-		}
-	});
-	it('keeps the fast path across single sparse frames and leaves after sustained low density', () => {
-		const policy = new AutoMarks();
-		for (let i = 0; i < 3; i++) policy.canvas(10, true);
-		expect(policy.wants(true, false, true)).toBe(true);
-		policy.gpu(50);
-		for (let i = 0; i < 10; i++) policy.gpu(1);
-		for (let i = 0; i < 7; i++) expect(policy.wants(false, true, true)).toBe(true);
-		expect(policy.wants(false, true, true)).toBe(false);
 	});
 });
 

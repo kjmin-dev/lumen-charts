@@ -36,8 +36,14 @@ import {
 	slotColors,
 } from './render';
 import { CanvasMarkBackend } from './canvas-backend';
-import { MarkGpuClient, type MarkRenderer, type MarkRendererStatus, type MarkRendererReason } from './backend';
-import { AutoMarks } from './auto';
+import {
+	MarkGpuClient,
+	type MarkFrame,
+	type MarkRenderer,
+	type MarkRendererStatus,
+	type MarkRendererReason,
+} from './backend';
+import { GlMarkClient } from './gl/renderer';
 import type { TimeMap } from './time-map';
 import { MarksWindow } from './window';
 
@@ -162,7 +168,7 @@ export abstract class MarkSeries {
 	public readonly window = new MarksWindow();
 	public readonly surface: CanvasMarkBackend;
 	private readonly _gpu = new MarkGpuClient();
-	private _auto = new AutoMarks();
+	private readonly _gl: GlMarkClient;
 	private _effective: MarkRendererStatus['path'] = 'canvas2d';
 	private _reason: MarkRendererReason | null = null;
 	private _peakBytes = 0;
@@ -170,6 +176,11 @@ export abstract class MarkSeries {
 		this.forget();
 		this._primitiveHost?.requestUpdate();
 		this._host.optionsChanged(this);
+	};
+	private readonly _webgpuChanged = () => {
+		// Make room for the requested device before it allocates its first frame.
+		if (this._gpu.backend) this._gl.release();
+		this._invalidateBackend();
 	};
 	private readonly _canvasAll = () => this._drawAll(this._host.map);
 	private readonly _canvasRows = (from: number, to: number, box: PixelBox) =>
@@ -225,6 +236,7 @@ export abstract class MarkSeries {
 		this.seriesOptions = merged;
 		this.engineId = host.engine()?.addMarks(type) ?? -1;
 		this.surface = new CanvasMarkBackend(host.document());
+		this._gl = new GlMarkClient(host.document(), this._invalidateBackend);
 	}
 
 	// API
@@ -330,10 +342,10 @@ export abstract class MarkSeries {
 	public renderer(): MarkRendererStatus {
 		return {
 			requested: this._host.markRenderer(),
-			effective: this._effective === 'canvas2d' ? 'canvas2d' : 'webgpu',
+			effective: this._effective === 'canvas2d' || this._effective === 'webgl2' ? this._effective : 'webgpu',
 			path: this._effective,
 			reason: this._reason,
-			bytes: this._gpu.backend?.bytes ?? 0,
+			bytes: (this._gpu.backend?.bytes ?? 0) + this._gl.bytes,
 			peakBytes: this._peakBytes,
 		};
 	}
@@ -341,12 +353,57 @@ export abstract class MarkSeries {
 		this._gpu.release();
 		this._effective = 'canvas2d';
 		this._reason = null;
-		this._auto = new AutoMarks();
+		this._gl.release();
 		this._invalidateBackend();
 	}
 	public release(): void {
 		this._gpu.release();
+		this._gl.release();
 		this.surface.release();
+	}
+
+	private paintAccelerated(
+		pref: MarkRenderer,
+		frame: MarkFrame,
+		target: CanvasRenderingContext2D,
+		changed: boolean,
+	): MarkRendererStatus['path'] {
+		if (pref === 'webgpu') {
+			const options = frame.options as ScatterOptions;
+			const supported =
+				frame.type !== 'scatter' || (options.shape === 'square' && Math.round(options.pointSize * frame.ratio) <= 9);
+			if (supported) {
+				this._gpu.start(this._host.document(), this._webgpuChanged);
+				const backend = this._gpu.backend;
+				if (backend) {
+					try {
+						const result = backend.paint(
+							frame,
+							target,
+							changed || this._effective === 'webgl2' || this._effective === 'canvas2d',
+						);
+						if (result !== 'budget') {
+							this._gl.release();
+							return result;
+						}
+						this._reason = 'budget';
+					} catch {
+						this._gpu.release();
+						this._gpu.disable('render-failed');
+						this._reason = 'render-failed';
+					}
+				} else {
+					this._reason = this._gpu.reason;
+				}
+			} else {
+				this._gpu.release();
+				this._reason = 'unsupported-style';
+			}
+		}
+		const failure = this._gl.paint(frame, target, changed || this._effective !== 'webgl2');
+		if (!failure) return 'webgl2';
+		this._reason ??= failure;
+		return 'canvas2d';
 	}
 
 	public draw(target: DrawTarget): void {
@@ -409,60 +466,34 @@ export abstract class MarkSeries {
 		const pref = host.markRenderer();
 		const wasGpu = this._effective !== 'canvas2d';
 		let path: MarkRendererStatus['path'] = 'canvas2d';
-		let reason: MarkRendererReason | null = null;
-		let eligible = false;
+		this._reason = null;
 		if (pref !== 'canvas2d' && shown && width > 0 && height > 0) {
 			const scatter = this.type === 'scatter';
-			const so = options as ScatterOptions;
-			const size = scatter ? Math.max(1, Math.round(so.pointSize * ratio)) : 1;
-			const supported = !scatter || (so.shape === 'square' && size <= 9);
 			const from = scatter ? window.lowerBound(this.viewFrom) : Math.max(0, window.upperBound(this.viewFrom) - 1);
 			const to = scatter ? window.upperBound(this.viewTo) : Math.min(window.count, window.upperBound(this.viewTo) + 1);
-			const marks = Math.max(0, to - from) * (scatter ? 1 : window.rows);
-			const floor = scatter ? 100_000 : 240_000;
-			eligible = supported && marks >= floor;
-			const wants = pref === 'webgpu' || this._auto.wants(eligible, marks < floor / 2, !same);
-			if (!supported) reason = 'unsupported-style';
-			else if (!wants) reason = 'auto-canvas';
-			else {
-				this._gpu.start(host.document(), this._invalidateBackend);
-				const backend = this._gpu.backend;
-				if (backend) {
-					const start = pref === 'auto' && !same ? performance.now() : 0;
-					try {
-						const result = backend.paint(
-							{
-								type: this.type,
-								window,
-								map: host.map,
-								projection,
-								mapping: this._mapping,
-								palette: this._palette,
-								options,
-								width,
-								height,
-								ratio,
-								from,
-								to,
-							},
-							target.context,
-							!same || !wasGpu,
-						);
-						if (result === 'budget') reason = result;
-						else {
-							path = result;
-							this._peakBytes = Math.max(this._peakBytes, backend.bytes);
-							this._marks = marks;
-							if (start) this._auto.gpu(performance.now() - start);
-						}
-					} catch {
-						this._gpu.release();
-						this._gpu.disable('render-failed');
-						reason = 'render-failed';
-					}
-				} else reason = this._gpu.reason;
+			path = this.paintAccelerated(
+				pref,
+				{
+					type: this.type,
+					window,
+					map: host.map,
+					projection,
+					mapping: this._mapping,
+					palette: this._palette,
+					options,
+					width,
+					height,
+					ratio,
+					from,
+					to,
+				},
+				target.context,
+				!same,
+			);
+			if (path !== 'canvas2d') {
+				this._marks = Math.max(0, to - from) * (scatter ? 1 : window.rows);
+				this._peakBytes = Math.max(this._peakBytes, (this._gpu.backend?.bytes ?? 0) + this._gl.bytes);
 			}
-			if (!wants || !supported) this._gpu.release();
 		}
 		if (path === 'canvas2d') {
 			const fresh = surface.resize(width, height);
@@ -472,7 +503,6 @@ export abstract class MarkSeries {
 				!same ||
 				(this.type === 'scatter' && window.level > 0 && this._drawnRevision !== window.revision);
 			if (full) this._marks = 0;
-			const start = pref === 'auto' && full && eligible ? performance.now() : 0;
 			const reuse =
 				full &&
 				shown &&
@@ -495,10 +525,8 @@ export abstract class MarkSeries {
 				this._canvasRows,
 				this._box,
 			);
-			if (start) this._auto.canvas(performance.now() - start, true);
 		} else if (!wasGpu) surface.release();
 		this._effective = path;
-		this._reason = reason;
 		if (!same) {
 			drawn.set(current);
 			this._drawnOptions = options;

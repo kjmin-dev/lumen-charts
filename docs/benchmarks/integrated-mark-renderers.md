@@ -1,5 +1,7 @@
 # Integrated mark renderer qualification
 
+These measurements record the original Canvas 2D and WebGPU implementation and its former adaptive policy. The current choices are documented in the [renderer guide](../guide/heatmap-scatter.md#choosing-a-renderer).
+
 The public chart API renders a candlestick series, a drawing and either a scatter or heatmap series. The worker supplies real level-of-detail windows. Pan and zoom move the chart's time scale. A scatter tick appends after the final timestamp in the generated dataset. A heatmap tick replaces the last column. The mixed case issues seven updates and moves the visible range on the eighth frame.
 
 ## Desktop capability and correctness
@@ -47,6 +49,6 @@ node benchmarks/runner/mark-charts.mjs --browser firefox --mode native --dpr 1,2
 pnpm bench --scenario scatter,heatmap --lib lumen-worker --mark-renderer webgpu --repeats 3 --budget 2
 ```
 
-Select `canvas2d` or `auto` with the same fixtures for a paired comparison. Add `--mark-gpu-timers` in a separate WebGPU run to sample the mark compute pass on devices supporting timestamp queries. Uploads, cache composition and the rest of the chart fall outside that counter. Frame JS and compositor/animation cadence are distinct metrics. Headless Chromium has a virtual display.
+For current comparisons, run the same fixtures with `canvas2d` and `webgl2`. Add `--mark-gpu-timers` in a separate WebGPU run to sample the mark compute pass on devices supporting timestamp queries. Uploads, cache composition and the rest of the chart fall outside that counter. Frame JS and compositor/animation cadence are distinct metrics. Headless Chromium has a virtual display.
 
 On a physical phone, serve the harness with `pnpm bench:serve`, forward the printed port to device localhost (for example `adb reverse tcp:4173 tcp:4173`) and open `http://localhost:4173/mark-renderers.html?run` in the device browser. The page uses its native DPR and emits a JSON correctness report. Record the phone model, browser, power mode, thermal state and repeated motion measurements before making a mobile performance claim.

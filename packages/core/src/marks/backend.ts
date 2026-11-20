@@ -4,7 +4,8 @@ import type { PriceProjection } from './render';
 import type { TimeMap } from './time-map';
 import type { MarksWindow } from './window';
 
-export type MarkRenderer = 'canvas2d' | 'webgpu' | 'auto';
+/** The legacy 'auto' preference resolves to the WebGL2 default. */
+export type MarkRenderer = 'canvas2d' | 'webgl2' | 'webgpu' | 'auto';
 export type MarkRendererReason =
 	| 'initializing'
 	| 'unavailable'
@@ -13,13 +14,13 @@ export type MarkRendererReason =
 	| 'render-failed'
 	| 'unsupported-style'
 	| 'budget'
-	| 'auto-canvas';
+	| 'context-lost';
 export interface MarkRendererStatus {
 	requested: MarkRenderer;
-	effective: 'canvas2d' | 'webgpu';
+	effective: 'canvas2d' | 'webgl2' | 'webgpu';
 	reason: MarkRendererReason | null;
-	path: 'canvas2d' | 'heatmap' | 'scatter-tiles' | 'scatter-columns';
-	/** Estimated live GPU buffers and the two backend canvas bitmaps. */
+	path: 'canvas2d' | 'webgl2' | 'heatmap' | 'scatter-tiles' | 'scatter-columns';
+	/** Estimated per-series GPU storage and backend bitmaps, excluding shared GL resources. */
 	bytes: number;
 	/** Highest observed allocation after a completed draw on this series. */
 	peakBytes: number;

@@ -93,3 +93,5 @@ The JSON files beside each document are the runs its numbers come from.
 - [Scatter rendering paths](scatter-paths.md) compares the instanced-quad WebGPU renderer with a compute shader and WebGL2 native points across densities.
 
 - [Integrated mark renderers](integrated-mark-renderers.md) compares complete charts with real engine windows and documents browser coverage.
+
+- [Per-chart mark renderers](explicit-mark-renderers.md) records WebGL2 integration timings and the cross-browser fallback and image comparisons.

@@ -68,7 +68,7 @@ Selection
                        0 measures all 10,000 ticks and 300 frames, as the stage 0 baseline did)
   --max-workers <list> worker limits to run the multi scenario with, one case each: numbers, or
                        default for the library's own limit (default: default)
-  --mark-renderer <id>  run the chart mark workload with canvas2d, webgpu or auto and a drawing
+  --mark-renderer <id>  run the chart mark workload with canvas2d, webgl2 or webgpu and a drawing
   --mark-gpu-timers     collect separate WebGPU pass samples where timestamp queries are available
   --packages <dir>     measure the packages/ directory of another checkout instead of this
                        workspace's, with this harness: for comparing two versions of the library
@@ -507,7 +507,7 @@ async function newPage(session: Session): Promise<BenchPage> {
 	}
 	const query = new URLSearchParams({ auto: '', width: String(chart.width), height: String(chart.height) });
 	if (args['mark-renderer'])
-		query.set('markRenderer', oneOf(['canvas2d', 'webgpu', 'auto'], args['mark-renderer'], '--mark-renderer'));
+		query.set('markRenderer', oneOf(['canvas2d', 'webgl2', 'webgpu'], args['mark-renderer'], '--mark-renderer'));
 	await page.goto(`${session.baseUrl}?${query.toString()}`);
 	await page.waitForFunction(() => window.bench !== undefined);
 	return { context, page, sampled: () => sampled };

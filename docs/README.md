@@ -43,4 +43,4 @@ The documents are split so that two pull requests rarely edit the same lines. Ke
 - [design/stage-5.md](design/stage-5.md): the optional steps: partial redraw, the min/max loops, and what was rejected or deferred (sections 4.2, 5, 6.2, 9, 10).
 - [design/stage-4-follow-ups.md](design/stage-4-follow-ups.md): handles derived from a drawing's points, primitives and drawings in autoscale, and restore by id (sections 7.1, 7.2, 8).
 
-- [Canvas 2D and WebGPU for mark series](design/stage-5-mark-renderers.md) covers the integrated backends, runtime selection and device qualification.
+- [Rendering backends for mark series](design/stage-5-mark-renderers.md) covers the integrated backends, runtime selection and device qualification.

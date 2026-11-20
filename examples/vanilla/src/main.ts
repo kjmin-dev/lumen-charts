@@ -40,7 +40,7 @@ const chart = createChart(container, {
 	theme: theme === 'light' || theme === 'dark' ? theme : 'auto',
 	watermark: { visible: true, text: 'DEMO · 1m' },
 	worker: params.get('worker') !== '0',
-	markRenderer: renderer === 'webgpu' || renderer === 'auto' ? renderer : 'canvas2d',
+	markRenderer: renderer === 'webgpu' || renderer === 'canvas2d' ? renderer : 'webgl2',
 });
 const candles = lineOnly ? null : chart.addSeries('candlestick');
 const line = chart.addSeries('line', { color: '#f5b83d', lineWidth: lineOnly ? 1 : 1.5 });
@@ -65,10 +65,10 @@ if (params.has('marks') && count > 0) {
 	scatter.setData({ time: times, price: close.subarray(count - times.length) });
 	const picker = document.createElement('select');
 	picker.setAttribute('aria-label', 'Mark renderer');
-	for (const choice of ['canvas2d', 'webgpu', 'auto']) picker.add(new Option(choice, choice));
+	for (const choice of ['canvas2d', 'webgl2', 'webgpu']) picker.add(new Option(choice, choice));
 	picker.value = chart.options().markRenderer;
 	picker.addEventListener('change', () =>
-		chart.applyOptions({ markRenderer: picker.value as 'canvas2d' | 'webgpu' | 'auto' }),
+		chart.applyOptions({ markRenderer: picker.value as 'canvas2d' | 'webgl2' | 'webgpu' }),
 	);
 	document.getElementById('tools')?.append(picker);
 }
