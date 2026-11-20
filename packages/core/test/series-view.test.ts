@@ -33,6 +33,22 @@ function items(view: SeriesView) {
 	};
 }
 
+/** The first item whose coordinates or prices differ between two views, bit for bit; -1 for none. */
+function differentItem(a: SeriesView, b: SeriesView): number {
+	for (let k = 0; k < a.count; k++) {
+		if (
+			!Object.is(a.x[k], b.x[k]) ||
+			!Object.is(a.open[k], b.open[k]) ||
+			!Object.is(a.high[k], b.high[k]) ||
+			!Object.is(a.low[k], b.low[k]) ||
+			!Object.is(a.close[k], b.close[k])
+		) {
+			return k;
+		}
+	}
+	return -1;
+}
+
 describe('SeriesView', () => {
 	it('makes one item per bar while bars are at least a pixel wide', () => {
 		const data = randomWalk(1000);
@@ -280,7 +296,7 @@ describe('SeriesView', () => {
 					const fresh = new SeriesView();
 					fresh.update(geometry, open, high, low, close, 0, version, Infinity, -Infinity);
 					expect(view.count).toBe(fresh.count);
-					expect(items(view)).toEqual(items(fresh));
+					expect(differentItem(view, fresh)).toBe(-1);
 					expect([view.min, view.max]).toEqual([fresh.min, fresh.max]);
 					if (held._keptTo > held._keptFrom) {
 						kept++;
