@@ -176,7 +176,7 @@ Moved to [design/stage-4-save-restore.md](design/stage-4-save-restore.md).
 - Price axes: multiple axes; logarithmic, percentage and indexed-to-100 modes; formatting by tick size. Section 8.1 describes what stage 4 built.
 - Plugins: custom series, plus pane and series primitives. As built: custom indicators in [stage 3](design/stage-3-indicators.md) (section 5.1), primitives and custom renderers in [stage 4](design/stage-4-drawings.md#8-external-contract-and-scope).
 - The core has no framework dependency: strict TypeScript, ESM, tree-shakeable.
-- Accessibility: keyboard control and a data summary for screen readers are in scope.
+- Keyboard data navigation and screen reader summaries are available on each chart. [Accessibility guide](guide/accessibility.md).
 - Out of scope: a user scripting language like Pine. The isolated engine leaves room for one later.
 
 ### 8.1 As built in stage 4: price axes

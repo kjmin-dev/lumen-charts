@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Keyboard and screen reader chart checks</title>
+	</head>
+	<body>
+		<main>
+			<h1>Chart navigation</h1>
+			<button tabindex="0" id="before">Before charts</button>
+			<div id="north"></div>
+			<div id="south"></div>
+			<button tabindex="0" id="after">After charts</button>
+		</main>
+		<script type="module">
+			import { createChart } from '@lumen-charts/core';
+			function fixture(id, label, worker) {
+				const chart = createChart(document.getElementById(id), {
+					autoSize: false,
+					width: 520,
+					height: 260,
+					worker,
+					accessibility: { label, description: 'Hourly market prices.' },
+				});
+				const prices = chart.addSeries('candlestick', { id: 'Bid', precision: 2 });
+				prices.setData(
+					Array.from({ length: 300 }, (_, i) => ({
+						time: Date.UTC(2025, 0, 1, i),
+						open: 90 + i,
+						high: 95 + i,
+						low: 88 + i,
+						close: 93 + i,
+					})),
+				);
+				chart.timeScale().setVisibleLogicalRange({ from: 150, to: 195 });
+				return chart;
+			}
+			window.charts = [fixture('north', 'North market', true), fixture('south', 'South market', false)];
+			await Promise.all(window.charts.map(chart => chart.whenIdle()));
+			window.chartsReady = true;
+		</script>
+	</body>
+</html>

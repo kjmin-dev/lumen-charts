@@ -10,6 +10,8 @@ import { ChartMarks } from './marks/chart-marks';
 import type { AnyMarkOptions, MarkSeriesType } from './marks/options';
 import type { HeatmapSeriesApi, MarkSeriesApi, ScatterSeriesApi } from './marks/series';
 import { type MarkSeriesPlan, isMarkType, planMarkSeries } from './marks/state';
+import { ChartReadout } from './input/chart-readout';
+import { ChartAccessibility } from './input/chart-accessibility';
 import { type AxisTarget, Interaction, type InteractionHost, type PointerDelegate } from './input/interaction';
 import { INVALIDATE_FULL, INVALIDATE_LIGHT, INVALIDATE_NONE, type Invalidation } from './model/invalidation';
 import { Crosshair } from './model/crosshair';
@@ -28,6 +30,7 @@ import {
 	type PriceScaleOptions,
 	mergeOptions,
 	optionsEqual,
+	prepareChartKeymap,
 	resolveOptions,
 } from './options';
 import { type PriceAxis, PriceAxes, type PriceAxisHost, type PriceScaleApi } from './price-axes';
@@ -96,6 +99,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	/** What the frame draws: the rows in view, their place, and the ticks. */
 	private readonly _model: FrameModel;
 	private readonly _interaction: Interaction;
+	private readonly _accessibility: ChartAccessibility;
 	/** The primitives and drawings of the pane, and their layer. */
 	private readonly _primitives: PanePrimitives;
 	/** Saves and restores the state of the chart, and holds a restored view until it can be shown. */
@@ -127,7 +131,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	private _unwatchPixelRatio: (() => void) | null = null;
 
 	public constructor(container: HTMLElement, options: DeepPartial<ChartOptions>) {
-		const input = mergeOptions({}, options);
+		const input = mergeOptions<DeepPartial<ChartOptions>>({}, options);
+		const keymap = prepareChartKeymap(input);
 		// Throws a RangeError for an unknown time zone or locale, or a malformed session schedule.
 		this._time.apply(resolveOptions(input, false));
 		this._settings = new ChartSettings(container, input, this._onScheme);
@@ -177,6 +182,15 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		this._stateIo = this._createStateIo();
 		this._marks = this._createMarks();
 		this._model.marks = this._marks;
+		this._accessibility = new ChartAccessibility(
+			keymap,
+			this._layout,
+			this.scale,
+			this._model,
+			new ChartReadout(this._model, this._time, this._series, this._indicators, this._marks),
+			this._crosshair,
+			this._onInvalidate,
+		);
 		this._paneRenderer = new PaneRenderer(
 			this._settings,
 			this._layout,
@@ -298,11 +312,13 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		}
 		checkMarkRenderer(options.markRenderer);
 		const input = mergeOptions(this._settings.input, options);
+		const keymap = options.accessibility?.keyBindings === undefined ? undefined : prepareChartKeymap(input);
 		if (options.localization !== undefined || options.sessions !== undefined) {
 			// Throws before anything changes.
 			this._applyTime(resolveOptions(input, false));
 		}
 		this._settings.apply(input);
+		if (keymap) this._accessibility.setKeymap(keymap);
 		this._update();
 	}
 
@@ -354,6 +370,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		);
 		series.datafeed = (datafeed as Series['datafeed'] | undefined) ?? null;
 		this._series.push(series);
+		this.invalidate(INVALIDATE_LIGHT);
 		return series as unknown as SeriesApi;
 	}
 
@@ -546,6 +563,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			return;
 		}
 		this._destroyed = true;
+		this._accessibility.destroy();
 		this._layout.destroy();
 		this._data.close();
 		unobserveVisibility(this._layout.root);
@@ -619,6 +637,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	}
 
 	public setCrosshair(x: number, y: number, visible: boolean): void {
+		this._accessibility.pointerMoved();
 		const crosshair = this._crosshair;
 		crosshair.x = x;
 		crosshair.y = y;
@@ -795,6 +814,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 
 	/** Pushes resolved options into the parts that keep their own copy. */
 	private _applyResolved(options: ChartOptions): void {
+		this._accessibility.apply(options.accessibility);
 		this._axes.sync(options);
 		this._paneRenderer.applyOptions(options);
 		this._layout.timeAxis.setVisible(options.timeScale.visible);
@@ -909,6 +929,7 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			if (layout.dirty) {
 				this._placeLayers();
 			}
+			this._accessibility.frame();
 			if (layout.paneWidth > 0 && layout.paneHeight > 0) {
 				pane.render();
 				this._axisRenderer.render();

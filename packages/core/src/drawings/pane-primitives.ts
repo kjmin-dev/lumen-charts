@@ -164,6 +164,15 @@ export class PanePrimitives {
 	}
 
 	private readonly _onKey = (event: KeyboardEvent): void => {
+		if (
+			event.target !== this._layout.root ||
+			event.defaultPrevented ||
+			event.isComposing ||
+			event.altKey ||
+			event.metaKey ||
+			event.ctrlKey
+		)
+			return;
 		if (this.drawings?.key(event.key) === true) {
 			event.preventDefault();
 		}

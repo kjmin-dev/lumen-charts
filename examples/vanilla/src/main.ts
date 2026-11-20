@@ -36,14 +36,19 @@ for (let i = 0; i < count; i++) {
 const theme = params.get('theme');
 const renderer = params.get('markRenderer');
 const chart = createChart(container, {
+	accessibility: { label: 'Demo market, one-minute prices' },
 	// `?theme=light` or `?theme=dark` pins a theme; by default the chart follows the system setting.
 	theme: theme === 'light' || theme === 'dark' ? theme : 'auto',
 	watermark: { visible: true, text: 'DEMO · 1m' },
 	worker: params.get('worker') !== '0',
 	markRenderer: renderer === 'webgpu' || renderer === 'canvas2d' ? renderer : 'webgl2',
 });
-const candles = lineOnly ? null : chart.addSeries('candlestick');
-const line = chart.addSeries('line', { color: '#f5b83d', lineWidth: lineOnly ? 1 : 1.5 });
+const candles = lineOnly ? null : chart.addSeries('candlestick', { id: 'Price' });
+const line = chart.addSeries('line', {
+	id: lineOnly ? 'Price' : 'Moving average',
+	color: '#f5b83d',
+	lineWidth: lineOnly ? 1 : 1.5,
+});
 candles?.setData({ time, open, high, low, close });
 line.setData({ time, value: lineOnly ? close : average });
 // Indicators computed in the data engine and updated with every tick; `?indicators=0` leaves them out.

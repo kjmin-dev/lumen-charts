@@ -1,3 +1,4 @@
+import { type ChartKeyBindings, ChartKeymap, defaultChartKeymap } from './input/chart-key-bindings';
 import type { MarkRenderer } from './marks/backend';
 import type { SessionSchedule } from './model/sessions';
 import type { TickMarkFormatter, TimeFormatter } from './model/time-format';
@@ -180,7 +181,17 @@ export interface SessionOptions {
 	extendedHours: { visible: boolean; color: string };
 }
 
+export interface ChartAccessibilityOptions {
+	/** Accessible name of this chart instance, for example "EUR/USD hourly". */
+	label: string;
+	/** Optional context read with the generated data summary. */
+	description: string;
+	/** Navigator chords by action. Native navigation accepts aliases. Other actions accept replacements. */
+	keyBindings: Required<ChartKeyBindings>;
+}
+
 export interface ChartOptions {
+	accessibility: ChartAccessibilityOptions;
 	/** Width in CSS pixels. Ignored while `autoSize` is on. */
 	width: number;
 	/** Height in CSS pixels. Ignored while `autoSize` is on. */
@@ -313,6 +324,7 @@ function crosshairLine(): CrosshairLineOptions {
 
 /** Defaults without colors; `resolveOptions` lays a theme over them. */
 export const BASE_OPTIONS: ChartOptions = {
+	accessibility: { label: 'Financial chart', description: '', keyBindings: defaultChartKeymap.bindings },
 	width: 600,
 	height: 300,
 	autoSize: true,
@@ -352,6 +364,15 @@ export const BASE_OPTIONS: ChartOptions = {
 	redraw: 'auto',
 	markRenderer: 'webgl2',
 };
+
+/** Validate before mounting or applying the patch, and keep an owned copy of the effective bindings. */
+export function prepareChartKeymap(input: DeepPartial<ChartOptions>): ChartKeymap {
+	const keys = input.accessibility?.keyBindings;
+	if (keys === undefined) return defaultChartKeymap;
+	const keymap = new ChartKeymap(keys);
+	input.accessibility = { ...input.accessibility, keyBindings: keymap.bindings };
+	return keymap;
+}
 
 export function checkMarkRenderer(value: MarkRenderer | undefined): void {
 	if (value !== undefined && value !== 'canvas2d' && value !== 'webgl2' && value !== 'webgpu' && value !== 'auto')

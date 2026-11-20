@@ -38,6 +38,7 @@ primitives, and save and restore of the chart's state.
 
 Each has a guide:
 
+- [Keyboard navigation and screen readers](docs/guide/accessibility.md) covers the chart navigator and its data summaries.
 - [Several charts on one page](docs/guide/several-charts.md): shared workers, frames and observers.
 - [Level of detail](docs/guide/level-of-detail.md): wide views draw from buckets, not bars.
 - [History on demand: datafeed and memory limit](docs/guide/datafeed.md): bars let go and fetched again, corrections, deletions, resolution changes.
