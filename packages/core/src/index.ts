@@ -26,6 +26,7 @@ export type {
 export {
 	type CandlestickOptions,
 	type ChartOptions,
+	type ChartAccessibilityOptions,
 	type CrosshairLineOptions,
 	type CrosshairMode,
 	type CrosshairOptions,

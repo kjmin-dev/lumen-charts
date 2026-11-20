@@ -29,6 +29,8 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm --filter @lumen-charts/benchmarks exec playwright install --with-deps chromium
+      - name: Check keyboard navigation and the accessibility tree
+        run: node benchmarks/runner/accessibility.mjs
       - name: Compare mark renderers and exercise GPU fallback
         run: node benchmarks/runner/mark-charts.mjs --software-gl --mode webgl2,pending,canvas-only --dpr 1
       - run: pnpm build

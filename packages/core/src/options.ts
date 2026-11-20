@@ -180,7 +180,15 @@ export interface SessionOptions {
 	extendedHours: { visible: boolean; color: string };
 }
 
+export interface ChartAccessibilityOptions {
+	/** Accessible name of this chart instance, for example "EUR/USD hourly". */
+	label: string;
+	/** Optional context read with the generated data summary. */
+	description: string;
+}
+
 export interface ChartOptions {
+	accessibility: ChartAccessibilityOptions;
 	/** Width in CSS pixels. Ignored while `autoSize` is on. */
 	width: number;
 	/** Height in CSS pixels. Ignored while `autoSize` is on. */
@@ -313,6 +321,7 @@ function crosshairLine(): CrosshairLineOptions {
 
 /** Defaults without colors; `resolveOptions` lays a theme over them. */
 export const BASE_OPTIONS: ChartOptions = {
+	accessibility: { label: 'Financial chart', description: '' },
 	width: 600,
 	height: 300,
 	autoSize: true,

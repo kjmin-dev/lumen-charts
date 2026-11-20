@@ -15,6 +15,7 @@ export class Layer {
 
 	public constructor(doc: Document, opaque: boolean) {
 		const canvas = doc.createElement('canvas');
+		canvas.setAttribute('aria-hidden', 'true');
 		canvas.style.position = 'absolute';
 		canvas.style.display = 'block';
 		this.canvas = canvas;
