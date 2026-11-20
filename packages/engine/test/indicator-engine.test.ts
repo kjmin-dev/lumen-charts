@@ -548,4 +548,18 @@ describe('indicator engine', () => {
 		expect(notice.plugins![0]!.error).toBeTypeOf('string');
 		expect(notice.plugins![0]!.indicators).toBeUndefined();
 	});
+
+	it('forgets the rows a recomputation was reading when the timeline is replaced', () => {
+		const core = new EngineCore();
+		run(core, { type: 'add', series: 1, kind: 'ohlcv' });
+		run(core, { type: 'set', series: 1, count: 20_000, data: candles(20_000, 3) });
+		run(core, { type: 'indicator', id: 2, name: 'sma', params: [5], inputs: [{ series: 1, column: 4 }], outputs: [3] });
+		// Part of the recomputation runs; it names the rows it reads next.
+		core.backgroundStep();
+		core.backgroundStep();
+		// A shorter history, as after a change of resolution: those rows no longer exist.
+		run(core, { type: 'set', series: 1, count: 50, data: candles(50, 4) });
+		const event = run(core, { type: 'window', level: 0, start: 0, count: 50, capacity: 50 });
+		expect(event.window!.count).toBe(50);
+	});
 });

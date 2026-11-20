@@ -560,6 +560,10 @@ export class EngineCore {
 		this._indicators.timelineChanged();
 		this._pinFrom = NaN;
 		this._pinTo = NaN;
+		// The rows a recomputation was reading are old indexes, possibly past the new timeline; the
+		// recomputation starts over and names the rows it reads again.
+		this._readFrom = NaN;
+		this._readTo = NaN;
 		const deferred = this._deferred;
 		if (deferred !== null) {
 			this._deferred = null;
