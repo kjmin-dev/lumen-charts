@@ -2,7 +2,7 @@
 
 The chart names the levels its window cache holds with every window request, and the engine sends
 patches of those levels only ([design](../design/stage-5.md#patches-of-the-levels-a-client-holds)).
-This file compares tick cost before and after the change. The numbers are not measured yet.
+This file compares tick cost before and after the change.
 
 ## Method
 
@@ -41,13 +41,29 @@ pnpm bench:report benchmarks/results/held-level-patches-after.json
 
 ## Results
 
-TODO: fill in from the runs above.
+Apple M1 (8 cores, AC power), headless Chromium 156.0.8078.4. Other work on the machine kept its
+load average between 4 and 7, so the runs went in turns: before, after, before, after. Tick to
+applied, median over three runs, in µs:
 
-| Case                          | Engine       | Before p99 (ms) | After p99 (ms) | Before mean (ms) | After mean (ms) |
-| ----------------------------- | ------------ | --------------: | -------------: | ---------------: | --------------: |
-| `ind-apply/candles-1m/latest` | lumen-worker |            TODO |           TODO |             TODO |            TODO |
-| `ind-apply/candles-1m/latest` | lumen-main   |            TODO |           TODO |             TODO |            TODO |
-| `ind-apply/candles-1m/all`    | lumen-worker |            TODO |           TODO |             TODO |            TODO |
-| `ind-apply/candles-1m/all`    | lumen-main   |            TODO |           TODO |             TODO |            TODO |
-| `multi`, round of ticks       | lumen-worker |            TODO |           TODO |             TODO |            TODO |
-| `multi`, round of ticks       | lumen-main   |            TODO |           TODO |             TODO |            TODO |
+| Case                          | Engine       | Mean before | Mean after | p99 before | p99 after |
+| ----------------------------- | ------------ | ----------: | ---------: | ---------: | --------: |
+| `ind-apply/candles-1m/latest` | lumen-worker |   142 / 163 |  105 / 127 |  590 / 805 | 675 / 780 |
+| `ind-apply/candles-1m/latest` | lumen-main   |   118 / 119 |    67 / 85 |  330 / 315 | 215 / 245 |
+| `ind-apply/candles-1m/all`    | lumen-worker |   164 / 187 |  162 / 183 |  640 / 885 | 775 / 880 |
+| `ind-apply/candles-1m/all`    | lumen-main   |   155 / 126 |  112 / 134 |  405 / 370 | 360 / 375 |
+
+Each cell gives round 1 / round 2.
+
+- **The latest bars**, the usual live view, gain in both rounds: the mean falls by about a third
+  with the main-thread engine (118 → 67 and 119 → 85 µs), whose patch assembly is on the page's
+  thread, and by about a fifth through the worker (142 → 105, 163 → 127 µs).
+- **All bars in view** hold levels 2 to 4 and send 105 of 243 patches: the main-thread engine's
+  mean fell in one round and not the other, and the worker's stayed where it was. The p99 of every
+  case moves within the spread between rounds.
+- **`multi`** (16 charts of 100k candles and 4 of 1M, no indicators: about 10 patches a tick)
+  showed no change beyond the spread: per tick 16.2 / 21.5 µs before against 16.5 / 26.6 µs
+  after for 16 worker charts, with the after round 2 run on a busier machine (its frames rose as
+  well).
+
+Raw runs: [before, round 1](held-level-patches-before-1.json), [after, round 1](held-level-patches-after-1.json),
+[before, round 2](held-level-patches-before-2.json), [after, round 2](held-level-patches-after-2.json).
