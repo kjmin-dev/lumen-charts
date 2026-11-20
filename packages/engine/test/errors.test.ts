@@ -163,3 +163,90 @@ describe('a worker that fails after it started', () => {
 		engine.destroy();
 	});
 });
+
+/** Makes the first background step of an engine that has some throw `error`. */
+function throwInBackground(error: unknown): void {
+	const step = EngineCore.prototype.backgroundStep;
+	let thrown = false;
+	vi.spyOn(EngineCore.prototype, 'backgroundStep').mockImplementation(function (this: EngineCore) {
+		if (!thrown && this.busy) {
+			thrown = true;
+			throw error;
+		}
+		return step.call(this);
+	});
+}
+
+describe('background work that throws', () => {
+	it('stops the background work of its engine alone and tells it, in a worker', async () => {
+		FakeWorker.created = [];
+		vi.stubGlobal('Worker', FakeWorker);
+		setMaxWorkers(1);
+		const first = createEngine({ worker: factory });
+		const second = createEngine({ worker: factory });
+		const firstEvents = collect(first);
+		const lost: string[] = [];
+		first.onlost = message => lost.push(message);
+		second.onlost = message => lost.push(message);
+		throwInBackground(new Error('kernel exploded'));
+		// Levels of detail of a large history are left to the background.
+		const series = first.addSeries('ohlcv');
+		first.setData(series, ohlcv(600_000), 600_000);
+		await first.whenIdle();
+		const settle = async (remaining: number): Promise<void> => {
+			await new Promise(resolve => setTimeout(resolve, 5));
+			if (!firstEvents.some(event => event.failed === true) && remaining > 0) {
+				await settle(remaining - 1);
+			}
+		};
+		await settle(200);
+		const failure = firstEvents.find(event => event.failed === true);
+		expect(failure).toMatchObject({ failed: true, error: 'kernel exploded', computing: 0, stale: false });
+		// The worker and the other engine on it go on.
+		expect(lost).toEqual([]);
+		expect(FakeWorker.created[0]!.terminated).toBe(false);
+		const other = second.addSeries('line');
+		second.setData(other, line([0, 60_000, 120_000], [1, 2, 3]), 3);
+		await second.whenIdle();
+		expect(second.lost).toBe(false);
+		// The engine whose background work threw still answers commands.
+		const answered = firstEvents.length;
+		first.requestWindow(0, 100, 128);
+		await first.whenIdle();
+		expect(firstEvents.length).toBe(answered + 1);
+		expect(firstEvents.at(-1)!.window).toBeDefined();
+		first.destroy();
+		second.destroy();
+	});
+
+	it('stops the background work and tells the client on the calling thread', async () => {
+		// Idle time comes as soon as the thread is free.
+		vi.stubGlobal('requestIdleCallback', undefined);
+		// The engine has background work after its first command, however fast the thread is.
+		const error = new Error('kernel exploded');
+		let thrown = false;
+		const busy = Object.getOwnPropertyDescriptor(EngineCore.prototype, 'busy')!.get!;
+		vi.spyOn(EngineCore.prototype, 'busy', 'get').mockImplementation(function (this: EngineCore) {
+			return !thrown || busy.call(this);
+		});
+		vi.spyOn(EngineCore.prototype, 'backgroundStep').mockImplementation(() => {
+			thrown = true;
+			throw error;
+		});
+		const engine = createEngine({ worker: false });
+		const events = collect(engine);
+		engine.addSeries('ohlcv');
+		await engine.whenIdle();
+		const settle = async (remaining: number): Promise<void> => {
+			await new Promise(resolve => setTimeout(resolve, 5));
+			if (!events.some(event => event.failed === true) && remaining > 0) {
+				await settle(remaining - 1);
+			}
+		};
+		await settle(200);
+		const failure = events.find(event => event.failed === true);
+		expect(failure).toMatchObject({ failed: true, error: 'kernel exploded', computing: 0 });
+		expect(failure!.cause).toBe(error);
+		engine.destroy();
+	});
+});

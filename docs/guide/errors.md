@@ -25,6 +25,13 @@ kinds:
   relies on, and the next commands run as usual. `message` is what was thrown. When the engine runs
   on the page's thread, `cause` is the value thrown, with its stack; from a worker only the message
   arrives.
+
+  Work the engine does between commands can throw too: a custom indicator kernel during a
+  recomputation, say. Then that chart's engine runs no more of that work (it would throw again):
+  indicators still computing are left as they are, and nobody waits for them. Commands go on as
+  usual, and the other charts on the same worker do not notice. To compute again, recreate the
+  chart (see "After a worker error" for keeping its state).
+
 - **`worker`**: the engine's worker failed after it had started: it fired an `error` event (an error
   it did not handle) or a `messageerror` event (a message from it could not be read). A command may
   never be answered then, so the worker is stopped. Every chart on that worker gets an error of its

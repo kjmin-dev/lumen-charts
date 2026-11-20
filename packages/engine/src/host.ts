@@ -185,8 +185,17 @@ export function attachEngineHost(scope: EngineScope): void {
 		while (idle < ring.length) {
 			backgroundTurn = (backgroundTurn + 1) % ring.length;
 			const hosted = ring[backgroundTurn]!;
-			const more = hosted.core.backgroundStep();
-			notify(hosted);
+			let more: boolean;
+			try {
+				more = hosted.core.backgroundStep();
+				notify(hosted);
+			} catch (error) {
+				// Thrown out of here it would be an error of the worker, which loses every engine on it.
+				more = false;
+				const notice = hosted.core.stopBackground(error);
+				notice.engine = hosted.id;
+				scope.postMessage(notice, transferables(notice));
+			}
 			if (more) {
 				idle = 0;
 				if (performance.now() >= deadline) {
@@ -415,15 +424,27 @@ export class LocalTransport implements EngineTransport {
 		}
 		const remaining = deadline === undefined || deadline.didTimeout ? SLICE_MS : deadline.timeRemaining();
 		const end = performance.now() + Math.min(SLICE_MS, Math.max(1, remaining));
-		while (this._core.backgroundStep()) {
-			if (performance.now() >= end) {
-				this._notify();
-				this._scheduleIdle();
-				return;
+		try {
+			while (this._core.backgroundStep()) {
+				if (performance.now() >= end) {
+					this._notify();
+					this._scheduleIdle();
+					return;
+				}
 			}
+		} catch (error) {
+			this._stopBackground(error);
+			return;
 		}
 		this._notify();
 	};
+
+	/** A step of background work threw: the engine stops it and the client is told (see `EngineCore.stopBackground`). */
+	private _stopBackground(error: unknown): void {
+		const notice = this._core.stopBackground(error);
+		notice.cause = error;
+		this.onevent?.(notice);
+	}
 
 	private _notify(): void {
 		const notice = this._core.takeNotice();
@@ -443,9 +464,14 @@ export class LocalTransport implements EngineTransport {
 					// Indicator values the chart waits for are computed in tasks like commands, not in idle
 					// time; at least one step per task, so they get there however busy the thread is.
 					if (this._core.urgent) {
-						do {
-							this._core.backgroundStep();
-						} while (this._core.urgent && performance.now() < deadline);
+						try {
+							do {
+								this._core.backgroundStep();
+							} while (this._core.urgent && performance.now() < deadline);
+						} catch (error) {
+							this._stopBackground(error);
+							return;
+						}
 					}
 					this._notify();
 					if (this._core.urgent) {

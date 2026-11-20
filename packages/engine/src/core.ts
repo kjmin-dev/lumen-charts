@@ -254,6 +254,8 @@ export class EngineCore {
 	private readonly _marks = new MarksEngine();
 	/** `seq` of the last command answered, which a notice repeats. */
 	private _lastAck = 0;
+	/** Background work threw once: this engine runs none any more (see `stopBackground`). */
+	private _backgroundStopped = false;
 	/** Collects fetch requests made and cancelled between commands, which the next notice carries. */
 	private readonly _background: EngineEvent = { ack: 0, epoch: 0, first: 0, end: 0, stale: false, rejected: 0 };
 	private _readScratch = new Float64Array(0);
@@ -412,6 +414,9 @@ export class EngineCore {
 	 * chunks to be let go.
 	 */
 	public get busy(): boolean {
+		if (this._backgroundStopped) {
+			return false;
+		}
 		return this._pending.size > 0 || this._indicators.busy || this._overLimit;
 	}
 
@@ -420,7 +425,7 @@ export class EngineCore {
 	 * show, which a host on the main thread should not leave to idle time.
 	 */
 	public get urgent(): boolean {
-		return this._indicators.busy;
+		return !this._backgroundStopped && this._indicators.busy;
 	}
 
 	/** Bytes held by every store and pyramid, indicators included. */
@@ -458,6 +463,9 @@ export class EngineCore {
 	 * commands that need the buckets finish the build themselves.
 	 */
 	public backgroundStep(): boolean {
+		if (this._backgroundStopped) {
+			return false;
+		}
 		if (this._indicators.step() || this._buildStep()) {
 			return true;
 		}
@@ -498,6 +506,29 @@ export class EngineCore {
 		}
 		this._finish(event);
 		return event;
+	}
+
+	/**
+	 * Stops the background work of this engine after a step of it threw `error` (a custom indicator
+	 * kernel, say), and returns the notice that tells the client: a failure that answers no command,
+	 * and no indicator computing any more, so nobody waits for values that will not come. What the
+	 * step was doing would throw again, so the engine runs no background work from here on; commands
+	 * go on, and a command that needs levels of detail builds them itself.
+	 */
+	public stopBackground(error: unknown): EngineEvent {
+		this._backgroundStopped = true;
+		const main = this._main;
+		return {
+			ack: this._lastAck,
+			epoch: this._epoch,
+			first: main === null ? 0 : main.store.first,
+			end: main === null ? 0 : main.store.end,
+			stale: false,
+			rejected: 0,
+			failed: true,
+			computing: 0,
+			error: error instanceof Error ? error.message : String(error),
+		};
 	}
 
 	/**
