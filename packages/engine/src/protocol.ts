@@ -55,6 +55,17 @@ export function levelColumnCount(kind: SeriesKind): number {
 	return kind === 'ohlcv' ? 5 : 4;
 }
 
+/**
+ * A set of levels as a bitmask: bit `k` stands for level `k`. `MAX_LEVEL` is below 31, so every
+ * level fits in the 32 bits of a bitwise operation. `ALL_LEVELS` has every bit set.
+ */
+export const ALL_LEVELS = -1;
+
+/** Whether the set of levels `levels` (see `ALL_LEVELS`) has `level`. */
+export function hasLevel(levels: number, level: number): boolean {
+	return ((levels >>> level) & 1) === 1;
+}
+
 /** Value columns of a series in a window or patch at `level`. */
 export function columnCount(kind: SeriesKind, level: number): number {
 	return level === 0 ? valueColumnCount(kind) : levelColumnCount(kind);
@@ -91,8 +102,23 @@ type EngineOperation =
 	| { type: 'ticks'; seq: number; count: number; data: Float64Array }
 	/** Removes the bars of a series with times in `[from, to]` (UTC milliseconds, inclusive). */
 	| { type: 'delete'; seq: number; series: number; from: number; to: number }
-	/** Rows (level 0) or buckets (level >= 1) `[start, start + count)` of one level. */
-	| { type: 'window'; seq: number; level: number; start: number; count: number; capacity: number }
+	/**
+	 * Rows (level 0) or buckets (level >= 1) `[start, start + count)` of one level.
+	 *
+	 * `levels` is the set of levels whose windows the client holds or still awaits (a bitmask, see
+	 * `ALL_LEVELS`). From this command on, patches of the coarse levels outside it are left out of
+	 * events; raw rows and the level asked for are always sent. A command without it asks for every
+	 * level, which is what clients that never send it get.
+	 */
+	| {
+			type: 'window';
+			seq: number;
+			level: number;
+			start: number;
+			count: number;
+			capacity: number;
+			levels?: number;
+	  }
 	/** Memory the engine aims to stay under, in bytes; `Infinity` for no limit. */
 	| { type: 'limit'; seq: number; bytes: number }
 	/**
@@ -395,7 +421,10 @@ export interface EngineEvent {
 	 */
 	cause?: unknown;
 	window?: WindowSnapshot;
-	/** Changed rows of the raw level and the changed buckets of every coarse level. */
+	/**
+	 * Changed rows of the raw level and the changed buckets of every coarse level the client holds
+	 * (see `levels` of the `window` command).
+	 */
 	patches?: Patch[];
 	/** Packed representation when requested by the client. */
 	packedPatches?: Patches;

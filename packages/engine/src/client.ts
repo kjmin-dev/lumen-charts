@@ -265,9 +265,19 @@ export class EngineClient {
 	 * Asks for a snapshot of main-timeline rows `[start, start + count)` in buffers of `capacity`
 	 * rows. At a coarse `level`, the range and the capacity count buckets of that level instead.
 	 * Returns the command's `seq`, which the snapshot carries as `request`.
+	 *
+	 * `levels`, a bitmask with bit `k` for level `k` (see `ALL_LEVELS`), names every level whose window
+	 * the caller holds or still awaits; later events then carry patches of those coarse levels only.
+	 * Without it every level is patched. A worker built before this option ignores it and patches
+	 * every level, which is never wrong: patches of a level nobody holds are skipped.
 	 */
-	public requestWindow(start: number, count: number, capacity: number, level = 0): number {
-		return this._send({ type: 'window', level, start, count, capacity }, NO_TRANSFER);
+	public requestWindow(start: number, count: number, capacity: number, level = 0, levels?: number): number {
+		return this._send(
+			levels === undefined
+				? { type: 'window', level, start, count, capacity }
+				: { type: 'window', level, start, count, capacity, levels },
+			NO_TRANSFER,
+		);
 	}
 
 	/**

@@ -3,7 +3,7 @@ import { knownFailure } from '../../src/adapters/index.ts';
 import { type CandleColumns, generateSeries } from '../../src/data.ts';
 import type { PlanOptions } from '../../src/jobs.ts';
 import { planJobs } from '../../src/plan.ts';
-import { generateHeatmap, generateScatter } from '../../src/scenarios/marks.ts';
+import { type HeatmapJob, generateHeatmap, generateScatter } from '../../src/scenarios/marks.ts';
 
 const base: PlanOptions = {
 	scenarios: [],
@@ -59,6 +59,15 @@ describe('scatter and heatmap scenarios', () => {
 			'heatmap/candles-2400/1200x200/tick',
 			'heatmap/candles-4800/2400x600/tick',
 			'heatmap/candles-4800/2400x600/tick-redraw',
+			'heatmap/candles-4800/2400x600-fixed/pan',
+			'heatmap/candles-4800/2400x600-fixed/zoom',
+			'heatmap/candles-4800/2400x600-fixed/tick',
+		]);
+		const fixed = planJobs({ ...base, scenarios: ['heatmap'], cases: ['heatmap/candles-4800/2400x600-fixed'] }).jobs;
+		expect(fixed.map(p => (p.job as HeatmapJob).valueRange)).toEqual([
+			{ min: 0, max: 200 },
+			{ min: 0, max: 200 },
+			{ min: 0, max: 200 },
 		]);
 		expect(planJobs({ ...base, quick: true, scenarios: ['scatter', 'heatmap'] }).jobs.length).toBe(4);
 	});

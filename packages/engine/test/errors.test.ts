@@ -220,30 +220,22 @@ describe('background work that throws', () => {
 	});
 
 	it('stops the background work and tells the client on the calling thread', async () => {
-		// Idle time comes as soon as the thread is free.
-		vi.stubGlobal('requestIdleCallback', undefined);
-		// The engine has background work after its first command, however fast the thread is.
+		const requestIdle = vi.fn<typeof requestIdleCallback>();
+		vi.stubGlobal('requestIdleCallback', requestIdle);
 		const error = new Error('kernel exploded');
-		let thrown = false;
-		const busy = Object.getOwnPropertyDescriptor(EngineCore.prototype, 'busy')!.get!;
-		vi.spyOn(EngineCore.prototype, 'busy', 'get').mockImplementation(function (this: EngineCore) {
-			return !thrown || busy.call(this);
-		});
-		vi.spyOn(EngineCore.prototype, 'backgroundStep').mockImplementation(() => {
-			thrown = true;
-			throw error;
-		});
 		const engine = createEngine({ worker: false });
 		const events = collect(engine);
-		engine.addSeries('ohlcv');
+		const series = engine.addSeries('ohlcv');
+		// Leave levels of detail for the idle callback, as in the worker case above.
+		engine.setData(series, ohlcv(600_000), 600_000);
 		await engine.whenIdle();
-		const settle = async (remaining: number): Promise<void> => {
-			await new Promise(resolve => setTimeout(resolve, 5));
-			if (!events.some(event => event.failed === true) && remaining > 0) {
-				await settle(remaining - 1);
-			}
-		};
-		await settle(200);
+		expect(requestIdle).toHaveBeenCalledOnce();
+		const [idle] = requestIdle.mock.calls[0]!;
+		// Install the mock just for this callback. Fake workers share the same prototype.
+		vi.spyOn(EngineCore.prototype, 'backgroundStep').mockImplementationOnce(() => {
+			throw error;
+		});
+		idle({ didTimeout: false, timeRemaining: () => 4 });
 		const failure = events.find(event => event.failed === true);
 		expect(failure).toMatchObject({ failed: true, error: 'kernel exploded', computing: 0 });
 		expect(failure!.cause).toBe(error);

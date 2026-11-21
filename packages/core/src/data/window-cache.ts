@@ -89,6 +89,17 @@ export class LevelWindow {
 		return this._requested;
 	}
 
+	/**
+	 * Whether the engine has to send this level's patches: the window holds items, or a snapshot of
+	 * it may still arrive, as after the last event answered command `ack`. A snapshot answers its
+	 * command at the latest in the event acknowledging it, except a raw one waiting for rows let go,
+	 * and raw patches always come. A late answer to a request the cache stopped waiting for (one
+	 * superseded, or cancelled by a failure) lands here all the same, so `loading` alone is not enough.
+	 */
+	public patched(ack: number): boolean {
+		return this.capacity > 0 || this._requested || this._requestSeq > ack;
+	}
+
 	public get stale(): boolean {
 		return this._stale;
 	}
@@ -311,6 +322,8 @@ export class LevelWindow {
 export class WindowCache {
 	public epoch = -1;
 	private readonly _windows: (LevelWindow | undefined)[] = [];
+	/** `ack` of the last event applied. */
+	private _ack = 0;
 
 	/** Window of a level, created empty on first use. */
 	public level(level: number): LevelWindow {
@@ -340,6 +353,9 @@ export class WindowCache {
 			event = { ...event, packedPatches: packPatches(event.patches) };
 		}
 		const windows = this._windows;
+		if (event.ack > this._ack) {
+			this._ack = event.ack;
+		}
 		if (event.epoch !== this.epoch) {
 			// Indexes mean different rows now; nothing held here can be shown.
 			this.epoch = event.epoch;
@@ -370,6 +386,24 @@ export class WindowCache {
 				window?.applyPatches(event, columnCount);
 			}
 		}
+	}
+
+	/**
+	 * The levels whose patches the engine has to send, as a bitmask with bit `k` for level `k` (the
+	 * `levels` of a `window` command): the raw rows, and every level a window holds or awaits. A
+	 * window released here can still get a snapshot in flight, so it counts until that has landed.
+	 * A level is added only by a window request, which carries the set, so patches of every level
+	 * held reach it; one dropped stays in the set until the next request, which is only extra work.
+	 */
+	public patchedLevels(): number {
+		const windows = this._windows;
+		let levels = 1;
+		for (let k = 1; k < windows.length; k++) {
+			if (windows[k]?.patched(this._ack) === true) {
+				levels |= 1 << k;
+			}
+		}
+		return levels;
 	}
 
 	/** Plans a snapshot of `level` for the visible logical range `[from, to]`; see `LevelWindow.plan`. */

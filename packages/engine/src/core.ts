@@ -2,9 +2,11 @@ import { CHUNK_MASK, CHUNK_ROWS, CHUNK_SHIFT, TIME } from './chunk';
 import { IndicatorEngine } from './indicators/engine';
 import { MarksEngine } from './marks/engine';
 import {
+	ALL_LEVELS,
 	type Command,
 	type EngineEvent,
 	type FetchRequest,
+	MAX_LEVEL,
 	PATCH_COLUMNS,
 	PATCH_COUNT,
 	PATCH_LEVEL,
@@ -25,6 +27,7 @@ import {
 	TIME_PATCH,
 	type TimelineResolution,
 	type WindowSnapshot,
+	hasLevel,
 	levelColumnCount,
 	levelCount,
 	levelShift,
@@ -205,6 +208,12 @@ export class EngineCore {
 	private _packedPatches = false;
 	private readonly _specs = new PatchSpecs();
 	private readonly _ranges: number[] = [];
+	/**
+	 * Coarse levels whose patches the client gets (see `levels` of the `window` command): the ones
+	 * its window cache holds or awaits. The buckets of every level are kept current regardless, so a
+	 * window asked for later is right; only copying changes nobody holds is left out.
+	 */
+	private _patchLevels = ALL_LEVELS;
 	/** State before a batch of changes, see `_beginChanges`. */
 	private _changeMain: SeriesState | null = null;
 	private _changeEnd = 0;
@@ -362,6 +371,13 @@ export class EngineCore {
 				yield* this._ticks(command.seq, command.data, command.count, event);
 				break;
 			case 'window': {
+				const levels = command.levels;
+				// The level asked for is held from here on, whatever the client says. An older client
+				// sends no set and gets every level, as before.
+				this._patchLevels =
+					typeof levels === 'number'
+						? levels | 1 | (command.level >= 0 && command.level <= MAX_LEVEL ? 1 << command.level : 0)
+						: ALL_LEVELS;
 				const main = this._main;
 				if (command.level > 0 || main === null || this._takeover) {
 					if (command.level > 0) {
@@ -603,6 +619,10 @@ export class EngineCore {
 		this._indicators.timelineChanged();
 		this._pinFrom = NaN;
 		this._pinTo = NaN;
+		// The rows a recomputation was reading are old indexes, possibly past the new timeline; the
+		// recomputation starts over and names the rows it reads again.
+		this._readFrom = NaN;
+		this._readTo = NaN;
 		const deferred = this._deferred;
 		if (deferred !== null) {
 			this._deferred = null;
@@ -738,7 +758,7 @@ export class EngineCore {
 				yield* this._drain();
 				this._beginChanges();
 				this._tick(op.state, op.data, 0, op.seq, op.row, event, op);
-				this._endChanges(event);
+				this._endChanges(event, true);
 				// A tick reports itself once it takes effect.
 				return;
 		}
@@ -948,7 +968,7 @@ export class EngineCore {
 			}
 			this._tick(state, data, offset + 1, seq, i, event, null);
 		}
-		this._endChanges(event);
+		this._endChanges(event, true);
 		if (this._busyWaiting()) {
 			yield* this._progress(event);
 		}
@@ -1121,8 +1141,11 @@ export class EngineCore {
 		this._changeEnd = main === null ? 0 : main.store.end;
 	}
 
-	/** Rebuilds the buckets of the rows changed since `_beginChanges` and emits their patches. */
-	private _endChanges(event: EngineEvent): void {
+	/**
+	 * Rebuilds the buckets of the rows changed since `_beginChanges` and emits their patches. `ticks`
+	 * says the changes were ticks alone, which change no time of a row they do not append.
+	 */
+	private _endChanges(event: EngineEvent, ticks = false): void {
 		const main = this._main;
 		if (main === null || main !== this._changeMain) {
 			// A new main timeline: every pyramid is built again and the client asks for new windows.
@@ -1153,8 +1176,16 @@ export class EngineCore {
 				this._specRuns(other, false);
 			}
 		}
+		const held = this._patchLevels;
+		// A bucket's time is the time of its first row, so without a new bar ticks leave it as it was.
+		const times = !ticks || end > endBefore;
 		for (let level = 1; level <= this._levels; level++) {
-			this._specLevel(level, TIME_PATCH, main.runs, 0, 0);
+			if (!hasLevel(held, level)) {
+				continue;
+			}
+			if (times) {
+				this._specLevel(level, TIME_PATCH, main.runs, 0, 0);
+			}
 			this._specLevel(level, main.id, main.runs, 0, 0);
 			for (const other of series.values()) {
 				if (other !== main) {
@@ -1164,7 +1195,7 @@ export class EngineCore {
 		}
 		// Indicator values change with their inputs and travel in the same message: new bars, ticks,
 		// and corrections, also those that waited for rows let go or came back changed at the source.
-		this._indicators.ticks(endBefore, specs);
+		this._indicators.ticks(endBefore, specs, held);
 		this._emit(event);
 	}
 
@@ -1225,7 +1256,7 @@ export class EngineCore {
 		for (let level = 1; level <= this._levels; level++) {
 			const shift = levelShift(level);
 			// A prepend that is a multiple of the bucket size only adds whole buckets.
-			if ((oldFirst & ((1 << shift) - 1)) === 0) {
+			if ((oldFirst & ((1 << shift) - 1)) === 0 || !hasLevel(this._patchLevels, level)) {
 				continue;
 			}
 			const bucket = oldFirst >> shift;
@@ -2021,7 +2052,7 @@ export class EngineCore {
 			yield* this._drain();
 			this._beginChanges();
 			this._tick(op.state, op.data, 0, op.seq, op.row, event, op);
-			this._endChanges(event);
+			this._endChanges(event, true);
 		}
 		return changed;
 	}
