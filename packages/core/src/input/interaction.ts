@@ -29,6 +29,10 @@ export interface InteractionHost {
 	invalidate(level: Invalidation): void;
 	/** Position of the crosshair in CSS pixels relative to the pane, or hidden. */
 	setCrosshair(x: number, y: number, visible: boolean): void;
+	/** Whether anyone listens for clicks; without listeners they are not looked for. */
+	clicksWanted(): boolean;
+	/** A click or tap in the pane that no drawing took, in CSS pixels relative to the pane. */
+	click(x: number, y: number): void;
 	/** The price axis drawn on `target` (the element under the pointer), or null. */
 	priceAxisAt(target: EventTarget | null): AxisTarget | null;
 	/** Moves the price scales that do not autoscale with a drag of `dy` CSS pixels. */
@@ -56,6 +60,12 @@ const KINETIC_WINDOW = 100;
 const WHEEL_ZOOM_RATE = 0.002;
 const PINCH_ZOOM_RATE = 0.01;
 const LINE_HEIGHT = 16;
+/**
+ * Farthest a press may move, in CSS pixels, and still be a click when released: as far as a press
+ * on a drawing may move and still select it rather than drag it.
+ */
+const CLICK_SLOP_MOUSE = 3;
+const CLICK_SLOP_TOUCH = 8;
 
 /** Kinds of pending input, see `Interaction._ops`. */
 const OP_PAN = 0;
@@ -125,6 +135,20 @@ export class Interaction {
 	private _gestureY = 0;
 	private _pressClientY = 0;
 	private _delegatePressY = 0;
+	/** The pointer whose press may still be a click, or -1; where it was pressed, and how far it may move. */
+	private _clickPointer = -1;
+	private _clickX = 0;
+	private _clickY = 0;
+	private _clickSlop = 0;
+	/** Whether that press went to the delegate, which may take it. */
+	private _clickDelegated = false;
+	/** Whether the delegate took the last press it was asked about. */
+	private _pressTaken = false;
+	/** A click released and waiting for the element's rectangle, at its client position. */
+	private _clickPending = false;
+	private _clickPendingDelegated = false;
+	private _clickPendingX = 0;
+	private _clickPendingY = 0;
 
 	public constructor(element: HTMLElement, host: InteractionHost) {
 		this._element = element;
@@ -157,6 +181,8 @@ export class Interaction {
 		this._hoverPending = false;
 		this._gestureCount = 0;
 		this._gesturePointer = -1;
+		this._clickPointer = -1;
+		this._clickPending = false;
 	}
 
 	/**
@@ -164,7 +190,7 @@ export class Interaction {
 	 * Runs in the read phase of a frame, and before anything that depends on the view being current.
 	 */
 	public resolve(): void {
-		if (this._opCount === 0 && !this._hoverPending && this._gestureCount === 0) {
+		if (this._opCount === 0 && !this._hoverPending && this._gestureCount === 0 && !this._clickPending) {
 			return;
 		}
 		const host = this._host;
@@ -194,6 +220,17 @@ export class Interaction {
 			const inside = x >= 0 && y >= 0 && x < host.paneWidth() && y < host.paneHeight();
 			host.setCrosshair(x, y, inside);
 		}
+		if (this._clickPending) {
+			this._clickPending = false;
+			// The press it ended went to the delegate, which answered above at the latest.
+			if (!this._clickPendingDelegated || !this._pressTaken) {
+				const x = this._clickPendingX - rect.left - host.paneLeft();
+				const y = this._clickPendingY - rect.top;
+				if (x >= 0 && y >= 0 && x < host.paneWidth() && y < host.paneHeight()) {
+					host.click(x, y);
+				}
+			}
+		}
 	}
 
 	/**
@@ -218,6 +255,7 @@ export class Interaction {
 			if (kind === GESTURE_PRESS) {
 				this._delegatePressY = clientY;
 				taken = delegate !== null && delegate.press(x, y, gestures[i + 3] === 0 ? 'mouse' : 'touch');
+				this._pressTaken = taken;
 			} else if (taken && delegate !== null) {
 				if (kind === GESTURE_MOVE) {
 					delegate.drag(x, y);
@@ -297,6 +335,8 @@ export class Interaction {
 			return;
 		}
 		this._velocity = 0;
+		// A second pointer makes a pinch or a pan of the first, not a click.
+		this._clickPointer = -1;
 		if (this._pointers.size === 0) this._pressClientY = event.clientY;
 		if (this._gesturePointer >= 0) {
 			if (this._gestureStart < 0) {
@@ -331,6 +371,13 @@ export class Interaction {
 		}
 		this._pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 		this._axis = this._pointers.size === 1 ? this._host.priceAxisAt(event.target) : null;
+		if (this._pointers.size === 1 && this._axis === null) {
+			this._clickPointer = event.pointerId;
+			this._clickX = event.clientX;
+			this._clickY = event.clientY;
+			this._clickSlop = event.pointerType === 'mouse' ? CLICK_SLOP_MOUSE : CLICK_SLOP_TOUCH;
+			this._clickDelegated = this._gesturePointer === event.pointerId;
+		}
 		this._element.setPointerCapture?.(event.pointerId);
 		this._pinchDistance = this._distance();
 		this._sampleTime = event.timeStamp;
@@ -352,6 +399,14 @@ export class Interaction {
 		const dy = event.clientY - pointer.y;
 		pointer.x = event.clientX;
 		pointer.y = event.clientY;
+		if (event.pointerId === this._clickPointer) {
+			const fromX = event.clientX - this._clickX;
+			const fromY = event.clientY - this._clickY;
+			if (fromX * fromX + fromY * fromY > this._clickSlop * this._clickSlop) {
+				// A drag.
+				this._clickPointer = -1;
+			}
+		}
 		if (event.pointerId === this._gesturePointer) {
 			this._pushGesture(GESTURE_MOVE, event);
 			if (event.pointerType !== 'touch') {
@@ -402,6 +457,17 @@ export class Interaction {
 		}
 		this._element.releasePointerCapture?.(event.pointerId);
 		this._pinchDistance = this._distance();
+		if (event.pointerId === this._clickPointer) {
+			this._clickPointer = -1;
+			if (event.type === 'pointerup' && this._host.clicksWanted()) {
+				// Where it is in the pane, and whether a drawing took it, is known in the next frame.
+				this._clickPending = true;
+				this._clickPendingDelegated = this._clickDelegated;
+				this._clickPendingX = event.clientX;
+				this._clickPendingY = event.clientY;
+				this._host.invalidate(INVALIDATE_CURSOR);
+			}
+		}
 		if (event.pointerId === this._gesturePointer) {
 			this._pushGesture(event.type === 'pointerup' ? GESTURE_RELEASE : GESTURE_CANCEL, event);
 			this._gesturePointer = -1;

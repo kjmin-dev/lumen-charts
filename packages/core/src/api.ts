@@ -5,7 +5,7 @@ import type { SessionInfo } from './model/sessions';
 import type { ChartOptions, DeepPartial } from './options';
 import type { PriceScaleApi } from './price-axes';
 import type { PanePrimitive } from './primitives';
-import type { SeriesApi, SeriesCreateOptions, SeriesType } from './series';
+import type { SeriesApi, SeriesCreateOptions, SeriesType, TimeRange } from './series';
 import type { HeatmapOptions, ScatterOptions } from './marks/options';
 import type { HeatmapSeriesApi, MarkSeriesApi, ScatterSeriesApi } from './marks/series';
 import type { ChartState, ChartStateSelection } from './state';
@@ -19,6 +19,10 @@ export interface LogicalRange {
 /**
  * Controls the visible part of the timeline. Data is applied asynchronously by the engine, so a
  * call made after `setData` or `update` takes effect once that data has arrived.
+ *
+ * Coordinates are CSS pixels from the left edge of the pane. The conversions map what is on screen:
+ * the view of the last frame drawn, which is current in the handlers of the chart's events. They
+ * return null while the chart has no bars, and where there is no answer.
  */
 export interface TimeScaleApi {
 	/** Shows every bar. */
@@ -28,6 +32,40 @@ export interface TimeScaleApi {
 	setVisibleLogicalRange(range: LogicalRange): void;
 	/** The range on screen right now, or null while there is no data. */
 	getVisibleLogicalRange(): LogicalRange | null;
+	/**
+	 * Shows the times `from` to `to` (UTC milliseconds) across the pane: at once when the bars around
+	 * them are held, otherwise once the data engine has placed them, or once there are bars.
+	 */
+	setVisibleRange(range: TimeRange): void;
+	/**
+	 * The times (UTC milliseconds) at the left and right edge of the pane: between bars and beyond
+	 * the ends as the timeline places times there. Null without bars, and where the rows at an edge
+	 * are not held.
+	 */
+	getVisibleRange(): TimeRange | null;
+	/**
+	 * x of a time (UTC milliseconds): of its bar, between two bars for a time between theirs, beyond
+	 * the ends at the spacing of the bars there. A time far from the bars held is asked of the data
+	 * engine: null until the answer is in, which takes a frame or two.
+	 */
+	timeToCoordinate(time: number): number | null;
+	/** The time at x: of a bar, between bars, or beyond the ends. Null where the rows are not held. */
+	coordinateToTime(x: number): number | null;
+	/** x of a logical position (bar `i` is centered on `i`). */
+	logicalToCoordinate(logical: number): number | null;
+	/** The logical position at x, with fractions between bars. */
+	coordinateToLogical(x: number): number | null;
+	/**
+	 * Calls `handler` once per frame in which the visible range changed (a pan, a zoom, a resize, a
+	 * new bar while following the last one), with the range or null without bars; returns a
+	 * function that stops it.
+	 */
+	subscribe(event: 'visibleLogicalRangeChange', handler: (range: LogicalRange | null) => void): () => void;
+	/**
+	 * As `visibleLogicalRangeChange`, with the range of `getVisibleRange`. While the rows at an edge
+	 * are on their way, it waits for them rather than report null.
+	 */
+	subscribe(event: 'visibleTimeRangeChange', handler: (range: TimeRange | null) => void): () => void;
 	/**
 	 * Whether `time` (UTC milliseconds) falls in a session of the schedule (`sessions.schedule`),
 	 * extended hours included. Always true without a schedule.
@@ -62,6 +100,38 @@ export interface ChartError {
 	/** Bars or points refused, for `refused`. */
 	count?: number;
 	cause?: unknown;
+}
+
+/**
+ * What a series shows at the crosshair or a click: its bar for a candlestick series, its value for a
+ * line or a histogram (and an indicator output).
+ */
+export type SeriesValue = { open: number; high: number; low: number; close: number } | { value: number };
+
+/** The crosshair or a click, as `crosshairMove` and `click` report them. */
+export interface ChartPointerEvent {
+	/**
+	 * What moved the crosshair: the pointer, the keyboard navigator, or `setCrosshairPosition` and
+	 * `clearCrosshairPosition` (so code that syncs charts can ignore its own echoes). A click is
+	 * always `pointer`.
+	 */
+	source: 'pointer' | 'keyboard' | 'api';
+	/**
+	 * CSS pixels from the pane's top left corner; null once the crosshair is hidden. `y` is NaN for
+	 * a crosshair set without a price.
+	 */
+	point: { x: number; y: number } | null;
+	/** The bar index at `point.x`, also beyond the bars; null without bars or a point. */
+	logical: number | null;
+	/** Time of the bar at `logical` (UTC milliseconds); null outside the bars and where none is held. */
+	time: number | null;
+	/**
+	 * The value of every series with a value at `logical`, by series id; an indicator's outputs as
+	 * `<indicator id>.<output name>`. Zoomed out so far that bars are merged into buckets, `time` and
+	 * the values are those of the bucket drawn there: its first time, and its open, high, low and
+	 * close (a line's value is the bucket's last).
+	 */
+	values: ReadonlyMap<string, SeriesValue>;
 }
 
 export interface ChartApi {
@@ -161,6 +231,28 @@ export interface ChartApi {
 	 * are not reported at all.
 	 */
 	subscribe(event: 'error', handler: (error: ChartError) => void): () => void;
+	/**
+	 * Calls `handler` once per frame in which the crosshair moved on screen, moved onto another bar,
+	 * appeared or was hidden, after the frame was drawn. What the event carries is built only while
+	 * someone listens.
+	 */
+	subscribe(event: 'crosshairMove', handler: (event: ChartPointerEvent) => void): () => void;
+	/**
+	 * Calls `handler` for a press and release of the primary button, or a tap, in the pane that did
+	 * not move (a drag pans instead) and that no drawing took: not one that selects or moves a
+	 * drawing, or places a point of a drawing tool.
+	 */
+	subscribe(event: 'click', handler: (event: ChartPointerEvent) => void): () => void;
+	/**
+	 * Puts the crosshair on the bar at or before `time` (UTC milliseconds), the last bar for a later
+	 * time, and hides it for a time before the first bar. With a price, the horizontal line sits at
+	 * that price on the price scale `scaleId` (the default scale). It follows its bar and price as the
+	 * view moves, until the pointer moves the crosshair or `clearCrosshairPosition` hides it. For
+	 * charts that show each other's crosshair: the `crosshairMove` it causes says `api`.
+	 */
+	setCrosshairPosition(time: number, price: number | null, scaleId?: string): void;
+	/** Hides the crosshair, until the pointer moves it again. */
+	clearCrosshairPosition(): void;
 	/**
 	 * The state of the chart as plain JSON: what was configured, without bars. It holds the options
 	 * applied (not the size, `worker`, `memoryLimit`, `markRenderer`, accessibility settings or formatter functions), the series and indicators

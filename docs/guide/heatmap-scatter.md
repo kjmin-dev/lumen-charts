@@ -20,7 +20,7 @@ book.setData({
 	values, // rows values per column, one column after the other; NaN: no value
 });
 book.update({ time: snapshotTime, values: sizes }); // replaces the last column at its time, or adds one
-book.valueAt(time, price); // the value drawn there, for a readout at the crosshair
+book.valueAt(time, price); // the value drawn there; at the crosshair, see docs/guide/events.md
 
 chart.markSeries(); // [trades, book]: these two kinds are listed apart from `chart.series()`
 chart.removeSeries(book);
