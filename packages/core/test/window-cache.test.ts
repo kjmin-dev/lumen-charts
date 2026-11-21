@@ -339,4 +339,26 @@ describe('WindowCache by level', () => {
 		expect(cache.held(0)).not.toBeNull();
 		expect(cache.held(1)).toBeNull();
 	});
+
+	it('names the levels it holds or awaits, for the engine to patch', () => {
+		const cache = new WindowCache();
+		cache.apply(event({ ack: 1, end: 1_000_000, stale: true }), columns);
+		// The raw rows always.
+		expect(cache.patchedLevels()).toBe(0b1);
+		cache.plan(3, 0, 500_000, 0, 1_000_000);
+		cache.level(3).sent(5);
+		expect(cache.patchedLevels()).toBe(0b1001);
+		cache.apply({ ...levelEvent(1, 0, 63, 63, 1_000_000), ack: 2 }, columns);
+		expect(cache.patchedLevels()).toBe(0b1011);
+		// Released while its snapshot is on its way, and even after a failure ended the wait for it,
+		// level 3 counts until the event answering its request is in: the snapshot can still land.
+		cache.retain(1, 1);
+		cache.apply(event({ ack: 4, end: 1_000_000, failed: true }), columns);
+		expect(cache.level(3).loading).toBe(false);
+		expect(cache.patchedLevels()).toBe(0b1011);
+		cache.apply(event({ ack: 5, end: 1_000_000 }), columns);
+		expect(cache.patchedLevels()).toBe(0b0011);
+		cache.retain(5, 5);
+		expect(cache.patchedLevels()).toBe(0b0001);
+	});
 });
