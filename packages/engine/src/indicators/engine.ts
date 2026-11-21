@@ -1,9 +1,11 @@
 import { CHUNK_ROWS, CHUNK_SHIFT } from '../chunk';
 import {
+	ALL_LEVELS,
 	type IndicatorInputRef,
 	type PatchSpecs,
 	type PluginResult,
 	type SeriesBlock,
+	hasLevel,
 	levelCount,
 	levelShift,
 } from '../protocol';
@@ -481,9 +483,10 @@ export class IndicatorEngine {
 	/**
 	 * Applies the rows changed by a tick batch (see `IndicatorHost.runs`) and adds the patch specs of
 	 * every changed output to `specs` (series, level, start, count, columns). `endBefore` is the end of
-	 * the main timeline before the batch.
+	 * the main timeline before the batch. Coarse levels outside `levels` (see `ALL_LEVELS`) are kept
+	 * current but get no specs.
 	 */
-	public ticks(endBefore: number, specs: PatchSpecs | number[]): void {
+	public ticks(endBefore: number, specs: PatchSpecs | number[], levels = ALL_LEVELS): void {
 		const host = this._host;
 		const end = host.end();
 		for (const instance of this._instances) {
@@ -531,7 +534,7 @@ export class IndicatorEngine {
 			instance.changed = from;
 			this._ensureLevels(instance.pyramid, instance.store);
 			this._refreshLevels(instance.pyramid, instance.store, from, end);
-			this._specs(instance, from, end, specs);
+			this._specs(instance, from, end, specs, levels);
 		}
 	}
 
@@ -911,12 +914,15 @@ export class IndicatorEngine {
 		}
 	}
 
-	/** Adds the patch specs of every output of an instance for rows `[from, end)`. */
-	private _specs(instance: Instance, from: number, end: number, specs: PatchSpecs | number[]): void {
+	/** Adds the patch specs of every output of an instance for rows `[from, end)` at the raw level and `held`. */
+	private _specs(instance: Instance, from: number, end: number, specs: PatchSpecs | number[], held: number): void {
 		const levels = instance.pyramid.levels.length;
 		for (const series of instance.outputs) {
 			specs.push(series, 0, from, end - from, 1);
 			for (let level = 1; level <= levels; level++) {
+				if (!hasLevel(held, level)) {
+					continue;
+				}
 				const shift = levelShift(level);
 				const lo = from >> shift;
 				specs.push(series, level, lo, ((end - 1) >> shift) + 1 - lo, 4);

@@ -48,6 +48,7 @@ export {
 export { type IndicatorHost, IndicatorEngine } from './indicators/engine';
 export { type InputReader, Runner, computeIndicator } from './indicators/runner';
 export {
+	ALL_LEVELS,
 	type Command,
 	type EngineEvent,
 	type FetchRequest,
@@ -80,6 +81,7 @@ export {
 	MAX_LEVEL,
 	type WindowSnapshot,
 	columnCount,
+	hasLevel,
 	levelColumnCount,
 	levelCount,
 	levelFor,
