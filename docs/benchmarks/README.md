@@ -99,3 +99,4 @@ The JSON files beside each document are the runs its numbers come from.
 - [background-start.md](background-start.md): a worker starts background work right after a command instead of 20 ms later; prepends and loads with indicators settle sooner.
 - [merged-pan.md](merged-pan.md): a pan keeps the merged pixel columns of every series instead of merging them again; pan frames with 20 indicators take 12–21% less JavaScript.
 - [held-level-patches.md](held-level-patches.md): ticks send patches of the levels the chart's window cache holds only; `ind-apply` on 1M candles and `multi` before and after (measurements pending).
+- [WebGL2 heatmap](webgl2-heatmap.md) measures shift-and-mask word lookups and palette-slot heatmaps for a fixed value range, with WebGL2 GPU timer queries.

@@ -29,14 +29,23 @@ export interface HeatmapInput {
 	values: Float32Array;
 }
 
+/** Values that map to the ends of a heatmap's palette. */
+export interface ValueRange {
+	min: number;
+	max: number;
+}
+
 /** A library with scatter and heatmap series beside its bars. */
 export interface MarksAdapter {
 	/** Adds a scatter series to the chart and gives it its points. */
 	setScatter(points: ScatterInput, pointSize: number): void;
 	/** Adds a point at or after the last one. */
 	appendScatter(time: number, price: number, value: number): void;
-	/** Adds a heatmap to the chart and gives it its columns. */
-	setHeatmap(data: HeatmapInput): void;
+	/**
+	 * Adds a heatmap to the chart and gives it its columns. With `range`, values map to the palette
+	 * from `range.min` to `range.max` whatever the columns hold; without, over the values held.
+	 */
+	setHeatmap(data: HeatmapInput, range?: ValueRange): void;
 	/** Replaces the last column of the heatmap (at its time), or adds one after it. */
 	updateHeatmap(time: number, values: Float32Array): void;
 	/** The level of detail the series was last drawn from (0: as given) and the marks in view at it. */
@@ -83,6 +92,11 @@ export interface HeatmapJob extends MarksJobBase {
 	readonly scenario: 'heatmap';
 	/** Cells per column. Columns are one per bar, so `visibleBars` of them are in view at the start. */
 	readonly rows: number;
+	/**
+	 * Values that map to the ends of the palette, fixed by the options; absent: the range of the
+	 * values held, which changes with the data and the view.
+	 */
+	readonly valueRange?: ValueRange;
 }
 
 export interface MarksRun {
@@ -215,7 +229,7 @@ async function runMarks(job: ScatterJob | HeatmapJob, { factory, container }: Ru
 		} else {
 			heat = generateHeatmap(candles, job.rows, job.seed + 5);
 			total = n * job.rows;
-			marks.setHeatmap(heat);
+			marks.setHeatmap(heat, job.valueRange);
 		}
 		await adapter.settle();
 		const start = { from: n - visibleBars, to: n - 1 };
@@ -372,6 +386,7 @@ function marksSection<J extends ScatterJob | HeatmapJob>(
 			cell(c, 'jsTime.p50', MS),
 			cell(c, 'jsTime.p95', MS),
 			cell(c, 'jsTime.max', MS),
+			cell(c, 'gpuPass.p95', MS),
 			cell(c, 'marks'),
 			cell(c, 'level'),
 			cell(c, 'total'),
@@ -387,6 +402,7 @@ function marksSection<J extends ScatterJob | HeatmapJob>(
 			'p50',
 			'p95',
 			'max',
+			'GPU pass p95',
 			'Marks in view',
 			'Level',
 			'Marks held',
@@ -475,7 +491,11 @@ interface HeatmapCase {
 	readonly columns: number;
 	readonly rows: number;
 	readonly variant: MarksVariant;
+	readonly fixed?: boolean;
 }
+
+/** The fixed range of the `-fixed` cases: about the values `generateHeatmap` and the ticks give. */
+const FIXED_RANGE: ValueRange = { min: 0, max: 200 };
 
 const HEATMAP_CASES: readonly HeatmapCase[] = [
 	...(
@@ -489,6 +509,7 @@ const HEATMAP_CASES: readonly HeatmapCase[] = [
 	{ columns: 1200, rows: 200, variant: 'tick' },
 	{ columns: 2400, rows: 600, variant: 'tick' },
 	{ columns: 2400, rows: 600, variant: 'tick-redraw' },
+	...(['pan', 'zoom', 'tick'] as const).map(variant => ({ columns: 2400, rows: 600, variant, fixed: true })),
 ];
 const QUICK_HEATMAP_CASES: readonly HeatmapCase[] = [
 	{ columns: 240, rows: 60, variant: 'pan' },
@@ -501,7 +522,7 @@ export const heatmap = defineScenario<HeatmapJob, MarksRun>({
 	requires: REQUIRES,
 	plan({ quick, chart, seed, budgetMs, warmupBudgetMs, keep }) {
 		const cases: JobCase<HeatmapJob>[] = [];
-		for (const { columns, rows, variant } of quick ? QUICK_HEATMAP_CASES : HEATMAP_CASES) {
+		for (const { columns, rows, variant, fixed } of quick ? QUICK_HEATMAP_CASES : HEATMAP_CASES) {
 			const dataset: DatasetSpec = { kind: 'candles', size: 2 * columns };
 			if (keep(dataset)) {
 				cases.push({
@@ -512,6 +533,7 @@ export const heatmap = defineScenario<HeatmapJob, MarksRun>({
 					variant,
 					rows,
 					visibleBars: columns,
+					...(fixed ? { valueRange: FIXED_RANGE } : {}),
 					budgetMs,
 					warmupBudgetMs,
 					...frameBudgets(quick),
@@ -520,7 +542,7 @@ export const heatmap = defineScenario<HeatmapJob, MarksRun>({
 		}
 		return cases;
 	},
-	caseParts: job => [`${job.visibleBars}x${job.rows}`, job.variant],
+	caseParts: job => [`${job.visibleBars}x${job.rows}${job.valueRange ? '-fixed' : ''}`, job.variant],
 	run: runMarks,
 	headline: marksHeadline,
 	sections: [
@@ -530,7 +552,9 @@ export const heatmap = defineScenario<HeatmapJob, MarksRun>({
 				marksSection<HeatmapJob>(
 					report,
 					'heatmap',
-					job => `${job.variant}, ${job.visibleBars} x ${job.rows} cells in view`,
+					job =>
+						`${job.variant}, ${job.visibleBars} x ${job.rows} cells in view` +
+						(job.valueRange ? `, values ${job.valueRange.min} to ${job.valueRange.max}` : ''),
 				),
 		},
 	],

@@ -25,6 +25,20 @@ export interface MarkRendererStatus {
 	/** Highest observed allocation after a completed draw on this series. */
 	peakBytes: number;
 }
+/**
+ * The palette slots of a heatmap's cells (see `quantize`), the ones its Canvas 2D path draws: one
+ * byte per cell, in the window's order, in a buffer a multiple of four bytes long.
+ */
+export interface HeatSlots {
+	/** Brings the slots of columns `[from, to)` up to date and returns the slots of the window. */
+	update(from: number, to: number): Uint8Array<ArrayBuffer>;
+	/**
+	 * Whether the slots of columns `[from, to)` are up to date. Later updates keep them so until a
+	 * new window, a new mapping of values, or a range that does not touch theirs.
+	 */
+	holds(from: number, to: number): boolean;
+}
+
 export interface MarkFrame {
 	type: MarkSeriesType;
 	window: MarksWindow;
@@ -38,6 +52,11 @@ export interface MarkFrame {
 	ratio: number;
 	from: number;
 	to: number;
+	/**
+	 * A heatmap's slots, given when the options fix the mapping of values (`valueMin` and
+	 * `valueMax`): a change of the data cannot then change the slots of other cells.
+	 */
+	slots?: HeatSlots | null;
 }
 
 export interface GpuBackend {

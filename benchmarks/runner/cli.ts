@@ -69,7 +69,9 @@ Selection
   --max-workers <list> worker limits to run the multi scenario with, one case each: numbers, or
                        default for the library's own limit (default: default)
   --mark-renderer <id>  run the chart mark workload with canvas2d, webgl2 or webgpu and a drawing
-  --mark-gpu-timers     collect separate WebGPU pass samples where timestamp queries are available
+  --mark-gpu-timers     collect GPU time samples of the mark renderer in a separate run: the WebGPU
+                       pass where timestamp queries are available, the WebGL2 clear and draw of a
+                       series where EXT_disjoint_timer_query_webgl2 is
   --packages <dir>     measure the packages/ directory of another checkout instead of this
                        workspace's, with this harness: for comparing two versions of the library
   --quick              smoke test: small data sets, short runs, one repeat
