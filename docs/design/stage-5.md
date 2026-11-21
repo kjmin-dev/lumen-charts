@@ -211,6 +211,45 @@ Two limits of the partial redraw above are closed, and a third is decided
 
 The indicator benchmark created a message channel for each turn of its wait loop. An idle worker wait removes most of those allocations. Packing the changed rows of all indicators into two transferred buffers further reduces library allocations on the main thread. Charts request packed patches on their first engine command. Direct clients get object patches by default, including clients using an older worker. See the [allocation profiles and gate measurement](../benchmarks/gc-floor.md).
 
+## Background work right after a command
+
+A worker host waited 20 ms after a command before it started background work, so that the window
+request that follows the answer to a load or a prepend would not wait behind a slice of it. The
+worker sat idle meanwhile, and a prepend that needs no window request (the bars land outside the
+view) waited the whole 20 ms for nothing: a worker's 10k prepend settled at 52 ms against the main
+thread's 28 ms (stage 3).
+
+- **As built.** Background work starts in a task of its own right after a command, behind the
+  messages that have arrived by then. For 20 ms after each command it runs in slices of 1 ms
+  instead of 4 ms, so a window request that arrives meanwhile waits at most a short slice. Every
+  command opens those 20 ms again.
+- **Measured** ([background-start.md](../benchmarks/background-start.md)): a 10k prepend's
+  indicators are shown after 18.6–18.8 instead of 51.8 ms with 1M bars, a load of 1M bars with 20
+  indicators settles after 283 instead of 316 ms. The bars of a prepend reach the screen about
+  0.8 ms later, the wait for the slice under way. Ticks are unchanged.
+
+## Merged columns kept across a pan
+
+Below a pixel per bar, `SeriesView.update` merges the rows of each device column into one item
+(section 6.2, "Cheaper wide-view frames"). A pan merged every column again, for every series.
+
+- **Why it can keep them.** In that range the origin is on a whole device pixel (`FrameModel`), so a
+  pan moves it by a whole number of pixels, and both ends of a column are computed from the column
+  minus the origin, whole numbers both: the column that held a row before is that many columns away
+  now and holds the same rows.
+- **As built.** With the same window (`version`), spacing and level, the view moves the items it
+  holds into place (`copyWithin`) and merges only the columns the pan uncovered, the first and the
+  last column of the view (they take whatever lies beyond them up to the ends of the visible
+  elements), and the columns of elements changed in place since the last frame. Anything else (a
+  zoom, another level, a replaced window) merges everything as before. Prices are projected again
+  in full, as the price range usually changes with the pan.
+- **Tested** against a full rebuild of the same geometry over random pans, zooms, replaced windows
+  and changes in place in the same frame, with gaps in the data, coarse levels and the start of the
+  data in view; a variant that ignores the changes in place fails it.
+- **Measured** ([merged-pan.md](../benchmarks/merged-pan.md)): pan frames with 20 indicators on 1M
+  candles take 3.4 instead of 4.3 ms of JavaScript at p50 with 20,000 bars in view, 3.5 instead of
+  4.0 ms with all of them; zooms are unchanged.
+
 ## Patches of the levels a client holds
 
 A tick changes the last bucket of every level of every series, and the engine used to send all of them: with 20 indicators on 1M candles, 243 patches and 879 values per tick over eight coarse levels. The chart's window cache keeps at most the level it draws and its neighbours and skipped the rest.
