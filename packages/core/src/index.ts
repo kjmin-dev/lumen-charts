@@ -1,5 +1,5 @@
 export type { ChartKeyBindings, ChartKeyboardAction } from './input/chart-key-bindings';
-export type { ChartApi, LogicalRange, TimeScaleApi } from './api';
+export type { ChartApi, ChartError, LogicalRange, TimeScaleApi } from './api';
 export { createChart } from './chart';
 export type { LineColumns, LinePoint, OhlcBar, OhlcColumns } from './data/input';
 export {

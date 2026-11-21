@@ -402,8 +402,24 @@ export interface EngineEvent {
 	stale: boolean;
 	/** Rows the command could not apply (out-of-order times, unknown series). */
 	rejected: number;
+	/**
+	 * `rejected` by series, as pairs of a series id and the number of its rows that were not applied;
+	 * absent when none were. The id is that of a series, a marks series, or an id the engine does not
+	 * know. Operations that waited and were refused (see `refused`) count here too.
+	 */
+	rejectedSeries?: number[];
 	/** The engine failed while running the command; nothing else in this event can be relied on. */
 	failed?: boolean;
+	/**
+	 * What the engine threw while running the command, as text; set with `failed`. Engines older
+	 * than this field leave it out.
+	 */
+	error?: string;
+	/**
+	 * The value the engine threw, set with `error` by an engine on the calling thread only: it does
+	 * not cross to another thread, where only the text of `error` arrives.
+	 */
+	cause?: unknown;
 	window?: WindowSnapshot;
 	/**
 	 * Changed rows of the raw level and the changed buckets of every coarse level the client holds

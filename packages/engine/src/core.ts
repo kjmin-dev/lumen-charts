@@ -263,6 +263,8 @@ export class EngineCore {
 	private readonly _marks = new MarksEngine();
 	/** `seq` of the last command answered, which a notice repeats. */
 	private _lastAck = 0;
+	/** Background work threw once: this engine runs none any more (see `stopBackground`). */
+	private _backgroundStopped = false;
 	/** Collects fetch requests made and cancelled between commands, which the next notice carries. */
 	private readonly _background: EngineEvent = { ack: 0, epoch: 0, first: 0, end: 0, stale: false, rejected: 0 };
 	private _readScratch = new Float64Array(0);
@@ -342,7 +344,9 @@ export class EngineCore {
 			case 'delete': {
 				const state = this._series.get(command.series);
 				if (state === undefined) {
-					event.rejected = command.type === 'delete' ? 0 : command.count;
+					if (command.type !== 'delete') {
+						reject(event, command.series, command.count);
+					}
 					break;
 				}
 				const deletion = command.type === 'delete';
@@ -411,6 +415,9 @@ export class EngineCore {
 				break;
 			case 'marks':
 				yield* this._marks.change(command.series, command.change, event);
+				if (event.rejected > 0) {
+					event.rejectedSeries = [command.series, event.rejected];
+				}
 				break;
 			case 'marksWindow':
 				this._marks.window(command.series, command.seq, command.request, event);
@@ -423,6 +430,9 @@ export class EngineCore {
 	 * chunks to be let go.
 	 */
 	public get busy(): boolean {
+		if (this._backgroundStopped) {
+			return false;
+		}
 		return this._pending.size > 0 || this._indicators.busy || this._overLimit;
 	}
 
@@ -431,7 +441,7 @@ export class EngineCore {
 	 * show, which a host on the main thread should not leave to idle time.
 	 */
 	public get urgent(): boolean {
-		return this._indicators.busy;
+		return !this._backgroundStopped && this._indicators.busy;
 	}
 
 	/** Bytes held by every store and pyramid, indicators included. */
@@ -469,6 +479,9 @@ export class EngineCore {
 	 * commands that need the buckets finish the build themselves.
 	 */
 	public backgroundStep(): boolean {
+		if (this._backgroundStopped) {
+			return false;
+		}
 		if (this._indicators.step() || this._buildStep()) {
 			return true;
 		}
@@ -511,11 +524,37 @@ export class EngineCore {
 		return event;
 	}
 
-	/** Event for a command that threw: it tells the client the command is over and what still holds. */
-	public failure(command: Command): EngineEvent {
+	/**
+	 * Stops the background work of this engine after a step of it threw `error` (a custom indicator
+	 * kernel, say), and returns the notice that tells the client: a failure that answers no command,
+	 * and no indicator computing any more, so nobody waits for values that will not come. What the
+	 * step was doing would throw again, so the engine runs no background work from here on; commands
+	 * go on, and a command that needs levels of detail builds them itself.
+	 */
+	public stopBackground(error: unknown): EngineEvent {
+		this._backgroundStopped = true;
+		const main = this._main;
+		return {
+			ack: this._lastAck,
+			epoch: this._epoch,
+			first: main === null ? 0 : main.store.first,
+			end: main === null ? 0 : main.store.end,
+			stale: false,
+			rejected: 0,
+			failed: true,
+			computing: 0,
+			error: error instanceof Error ? error.message : String(error),
+		};
+	}
+
+	/**
+	 * Event for a command that threw `error`: it tells the client the command is over, what still
+	 * holds, and what was thrown, as text so it can cross to another thread.
+	 */
+	public failure(command: Command, error?: unknown): EngineEvent {
 		const main = this._main;
 		this._lastAck = command.seq;
-		return {
+		const event: EngineEvent = {
 			ack: command.seq,
 			epoch: this._epoch,
 			first: main === null ? 0 : main.store.first,
@@ -524,6 +563,10 @@ export class EngineCore {
 			rejected: 0,
 			failed: true,
 		};
+		if (error !== undefined) {
+			event.error = error instanceof Error ? error.message : String(error);
+		}
+		return event;
 	}
 
 	// Timeline
@@ -695,7 +738,7 @@ export class EngineCore {
 	private *_apply(op: Held, event: EngineEvent, held: boolean): Generator<undefined, void, undefined> {
 		switch (op.type) {
 			case 'set':
-				event.rejected += yield* this._set(op.state, op.data, op.count, op.fetchable, event);
+				reject(event, op.state.id, yield* this._set(op.state, op.data, op.count, op.fetchable, event));
 				event.stale = true;
 				break;
 			case 'prepend':
@@ -815,7 +858,7 @@ export class EngineCore {
 		event: EngineEvent,
 	): Generator<undefined, void, undefined> {
 		if (state.store.length === 0) {
-			event.rejected += yield* this._set(state, data, count, undefined, event);
+			reject(event, state.id, yield* this._set(state, data, count, undefined, event));
 			event.stale = true;
 			return;
 		}
@@ -823,7 +866,7 @@ export class EngineCore {
 		const store = state.store;
 		const oldFirst = store.first;
 		const oldFirstTime = store.firstTime();
-		event.rejected += yield* this._prependRows(store, data, count);
+		reject(event, state.id, yield* this._prependRows(store, data, count));
 		if (state === this._main) {
 			// Prepending to the main series keeps every existing index, so the client's windows stay
 			// valid, except for the first bucket of each level, which can gain rows.
@@ -920,7 +963,7 @@ export class EngineCore {
 			}
 			const time = data[offset + 1]!;
 			if (state === undefined || time !== time) {
-				event.rejected++;
+				reject(event, tickSeries, 1);
 				continue;
 			}
 			this._tick(state, data, offset + 1, seq, i, event, null);
@@ -973,7 +1016,7 @@ export class EngineCore {
 				// A correction of an older bar. Inserting a bar in the middle would shift indexes, so it is refused.
 				const verdict = this._correction(state, time);
 				if (verdict === REFUSE) {
-					event.rejected++;
+					reject(event, state.id, 1);
 					if (op !== null) {
 						(event.refused ??= []).push(seq, index);
 					}
@@ -1682,7 +1725,7 @@ export class EngineCore {
 			return;
 		}
 		if (plan.mode === 'all') {
-			event.rejected += yield* this._set(state, EMPTY, 0, undefined, event);
+			reject(event, state.id, yield* this._set(state, EMPTY, 0, undefined, event));
 			event.stale = true;
 			return;
 		}
@@ -2002,7 +2045,7 @@ export class EngineCore {
 			list.splice(i, 1);
 			changed = true;
 			if (verdict === REFUSE) {
-				event.rejected++;
+				reject(event, op.state.id, 1);
 				(event.refused ??= []).push(op.seq, op.row);
 				continue;
 			}
@@ -3103,6 +3146,22 @@ function markDirty(state: SeriesState, index: number): void {
 	} else if (index >= runs[r + 1]!) {
 		runs[r + 1] = index + 1;
 	}
+}
+
+/** Counts `count` rows of series `series` that were not applied, in all and for the series. */
+function reject(event: EngineEvent, series: number, count: number): void {
+	if (count <= 0) {
+		return;
+	}
+	event.rejected += count;
+	const list = (event.rejectedSeries ??= []);
+	for (let i = 0; i < list.length; i += 2) {
+		if (list[i] === series) {
+			list[i + 1] = list[i + 1]! + count;
+			return;
+		}
+	}
+	list.push(series, count);
 }
 
 /** A copy of one tick, to wait with. */

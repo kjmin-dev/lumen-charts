@@ -126,9 +126,10 @@ export function attachEngineHost(scope: EngineScope): void {
 					if (step.done === true) {
 						event = step.value;
 					}
-				} catch {
-					// Every command is answered, or the client would wait for this one forever.
-					event = hosted.core.failure(hosted.command!);
+				} catch (error) {
+					// Every command is answered, or the client would wait for this one forever. What was
+					// thrown goes along as text: it may not survive the copy to the other thread.
+					event = hosted.core.failure(hosted.command!, error);
 				}
 				if (event !== null) {
 					hosted.command = null;
@@ -188,8 +189,17 @@ export function attachEngineHost(scope: EngineScope): void {
 		while (idle < ring.length) {
 			backgroundTurn = (backgroundTurn + 1) % ring.length;
 			const hosted = ring[backgroundTurn]!;
-			const more = hosted.core.backgroundStep();
-			notify(hosted);
+			let more: boolean;
+			try {
+				more = hosted.core.backgroundStep();
+				notify(hosted);
+			} catch (error) {
+				// Thrown out of here it would be an error of the worker, which loses every engine on it.
+				more = false;
+				const notice = hosted.core.stopBackground(error);
+				notice.engine = hosted.id;
+				scope.postMessage(notice, transferables(notice));
+			}
 			if (more) {
 				idle = 0;
 				if (performance.now() >= deadline) {
@@ -269,17 +279,40 @@ export function attachEngineHost(scope: EngineScope): void {
 /** Carries commands to an engine and events back. The engine may live in a worker or on this thread. */
 export interface EngineTransport {
 	onevent: ((event: EngineEvent) => void) | null;
+	/**
+	 * Called once if the engine stops for good, with a message and what reported it: the worker it
+	 * runs in failed after it started. No event comes after it, also none for commands sent before.
+	 */
+	onlost?: ((message: string, cause: unknown) => void) | null;
 	post(command: Command, transfer: ArrayBuffer[]): void;
 	close(): void;
 }
 
+/**
+ * The message for a worker that failed after it started: an error it did not handle, after which
+ * its state is unknown, or a message from it that could not be read, which was lost.
+ */
+export function workerFailure(event: Event): string {
+	if (event.type === 'messageerror') {
+		return 'The data engine worker sent a message that could not be read';
+	}
+	const message = (event as ErrorEvent).message;
+	return typeof message === 'string' && message !== ''
+		? `The data engine worker failed: ${message}`
+		: 'The data engine worker failed';
+}
+
+/** A worker of its own for one engine. A worker that fails after it started is stopped (see `onlost`). */
 export class WorkerTransport implements EngineTransport {
 	public onevent: ((event: EngineEvent) => void) | null = null;
+	public onlost: ((message: string, cause: unknown) => void) | null = null;
 	private readonly _worker: Worker;
 
 	public constructor(worker: Worker) {
 		this._worker = worker;
 		worker.addEventListener('message', this._onMessage);
+		worker.addEventListener('error', this._onFailure);
+		worker.addEventListener('messageerror', this._onFailure);
 	}
 
 	public post(command: Command, transfer: ArrayBuffer[]): void {
@@ -288,11 +321,21 @@ export class WorkerTransport implements EngineTransport {
 
 	public close(): void {
 		this._worker.removeEventListener('message', this._onMessage);
+		this._worker.removeEventListener('error', this._onFailure);
+		this._worker.removeEventListener('messageerror', this._onFailure);
 		this._worker.terminate();
 	}
 
 	private readonly _onMessage = (message: MessageEvent<EngineEvent>): void => {
 		this.onevent?.(message.data);
+	};
+
+	private readonly _onFailure = (event: Event): void => {
+		const lost = this.onlost;
+		this.onevent = null;
+		this.onlost = null;
+		this.close();
+		lost?.(workerFailure(event), event);
 	};
 }
 
@@ -385,15 +428,27 @@ export class LocalTransport implements EngineTransport {
 		}
 		const remaining = deadline === undefined || deadline.didTimeout ? SLICE_MS : deadline.timeRemaining();
 		const end = performance.now() + Math.min(SLICE_MS, Math.max(1, remaining));
-		while (this._core.backgroundStep()) {
-			if (performance.now() >= end) {
-				this._notify();
-				this._scheduleIdle();
-				return;
+		try {
+			while (this._core.backgroundStep()) {
+				if (performance.now() >= end) {
+					this._notify();
+					this._scheduleIdle();
+					return;
+				}
 			}
+		} catch (error) {
+			this._stopBackground(error);
+			return;
 		}
 		this._notify();
 	};
+
+	/** A step of background work threw: the engine stops it and the client is told (see `EngineCore.stopBackground`). */
+	private _stopBackground(error: unknown): void {
+		const notice = this._core.stopBackground(error);
+		notice.cause = error;
+		this.onevent?.(notice);
+	}
 
 	private _notify(): void {
 		const notice = this._core.takeNotice();
@@ -413,9 +468,14 @@ export class LocalTransport implements EngineTransport {
 					// Indicator values the chart waits for are computed in tasks like commands, not in idle
 					// time; at least one step per task, so they get there however busy the thread is.
 					if (this._core.urgent) {
-						do {
-							this._core.backgroundStep();
-						} while (this._core.urgent && performance.now() < deadline);
+						try {
+							do {
+								this._core.backgroundStep();
+							} while (this._core.urgent && performance.now() < deadline);
+						} catch (error) {
+							this._stopBackground(error);
+							return;
+						}
 					}
 					this._notify();
 					if (this._core.urgent) {
@@ -434,9 +494,11 @@ export class LocalTransport implements EngineTransport {
 				if (step.done === true) {
 					event = step.value;
 				}
-			} catch {
-				// Every command is answered, or the client would wait for this one forever.
-				event = this._core.failure(this._command!);
+			} catch (error) {
+				// Every command is answered, or the client would wait for this one forever. On this thread
+				// the client gets what was thrown as it is.
+				event = this._core.failure(this._command!, error);
+				event.cause = error;
 			}
 			if (event !== null) {
 				this._current = null;

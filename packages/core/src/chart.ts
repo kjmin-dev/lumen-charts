@@ -1,4 +1,4 @@
-import type { ChartApi, LogicalRange, TimeScaleApi } from './api';
+import type { ChartApi, ChartError, LogicalRange, TimeScaleApi } from './api';
 import type { EngineClient, IndicatorInfo } from '@lumen-charts/engine';
 import { DataFlow } from './data/data-flow';
 import { DatafeedFetches } from './data/datafeed';
@@ -43,7 +43,8 @@ import { Series, type SeriesApi, type SeriesCreateOptions, type SeriesType } fro
 import { type ChartState, type ChartStateSelection } from './state';
 import { ChartSettings } from './settings';
 import { StateIo } from './state-io';
-import { type FrameClient, cancelFrame, requestFrame } from './shared/frame';
+import { type FrameClient, cancelFrame, report, requestFrame } from './shared/frame';
+import { Listeners } from './shared/listeners';
 import { watchPixelRatio } from './shared/media';
 import { observeVisibility, unobserveVisibility } from './shared/observers';
 
@@ -128,6 +129,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 	/** Who waits for the chart to be idle (`whenIdle`), and for its data to be applied (`whenApplied`). */
 	private _idle: (() => void)[] = [];
 	private _applied: (() => void)[] = [];
+	/** Handlers of `subscribe('error')`. */
+	private readonly _errors = new Listeners<ChartError>();
 	private _unwatchPixelRatio: (() => void) | null = null;
 
 	public constructor(container: HTMLElement, options: DeepPartial<ChartOptions>) {
@@ -250,6 +253,8 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 				},
 				resolveView: () => this._stateIo.resolveView(),
 				settled: this._onDataSettled,
+				failed: (kind, message, cause) => this._failed(kind, message, cause),
+				refused: (id, count) => this._refused(id, count),
 			},
 			this._settings,
 			this._layout,
@@ -558,11 +563,19 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 		return this._data.engine === null ? 'none' : this._data.engine.mode;
 	}
 
+	public subscribe(event: 'error', handler: (error: ChartError) => void): () => void {
+		if (event === 'error') {
+			return this._errors.add(handler);
+		}
+		throw new Error(`lumen-charts: the chart has no event "${String(event)}"`);
+	}
+
 	public destroy(): void {
 		if (this._destroyed) {
 			return;
 		}
 		this._destroyed = true;
+		this._errors.clear();
 		this._accessibility.destroy();
 		this._layout.destroy();
 		this._data.close();
@@ -746,6 +759,43 @@ class Chart implements ChartApi, InteractionHost, TimeScaleApi, FrameClient, Pri
 			}
 		}
 		return undefined;
+	}
+
+	// Errors
+
+	/** An error of the engine or its worker goes to the handlers, or else to the page. */
+	private _failed(kind: 'engine' | 'worker', message: string, cause: unknown): void {
+		if (this._errors.active) {
+			const error: ChartError = { kind, message };
+			if (cause !== undefined) {
+				error.cause = cause;
+			}
+			this._errors.emit(error);
+		} else if (kind === 'engine' && cause instanceof Error) {
+			// The engine ran on this thread: what it threw, with its stack.
+			report(cause);
+		} else {
+			report(new Error(`lumen-charts: ${message}`, { cause }));
+		}
+	}
+
+	/** Refused rows go to the handlers only: a feed may send them routinely. */
+	private _refused(id: number, count: number): void {
+		if (!this._errors.active) {
+			return;
+		}
+		const series =
+			this._series.find(entry => entry.engineId === id) ?? this._marks.list.find(entry => entry.engineId === id);
+		const name = series === undefined ? 'a series the chart no longer has' : `series "${series.id}"`;
+		const error: ChartError = {
+			kind: 'refused',
+			message: `The data engine refused ${count} ${count === 1 ? 'update' : 'updates'} of ${name}: a time out of order, or between two bars.`,
+			count,
+		};
+		if (series !== undefined) {
+			error.seriesId = series.id;
+		}
+		this._errors.emit(error);
 	}
 
 	// Waiting for the chart

@@ -55,6 +55,12 @@ export class EngineClient {
 	public onevent: ((event: EngineEvent) => void) | null = null;
 	/** Receives the rows of marks series an event carries, before `onevent` gets the event. */
 	public onmarks: ((updates: MarksUpdate[]) => void) | null = null;
+	/**
+	 * Called once if the engine stops for good, with a message and what reported it: the worker it
+	 * ran in failed after it started. What the engine held is gone with it. Commands it had not
+	 * answered count as answered from then on, so `whenIdle` resolves, and later commands are dropped.
+	 */
+	public onlost: ((message: string, cause: unknown) => void) | null = null;
 	private _transport: EngineTransport | null = null;
 	/** Commands issued before the transport is known. Buffers are transferred only once it is. */
 	private _held: Held[] = [];
@@ -68,6 +74,8 @@ export class EngineClient {
 	private _tickCount = 0;
 	private _flushQueued = false;
 	private _destroyed = false;
+	/** The engine stopped (see `onlost`): nothing is sent any more. */
+	private _lost = false;
 	private _idle: (() => void)[] = [];
 	private _mode: 'connecting' | 'worker' | 'local' = 'connecting';
 	/** Gives back the engine's place on a worker that has not answered yet. */
@@ -98,6 +106,11 @@ export class EngineClient {
 				this._abortConnect = release;
 			}
 		}
+	}
+
+	/** Whether the engine stopped for good (see `onlost`). */
+	public get lost(): boolean {
+		return this._lost;
 	}
 
 	/** `connecting` until the worker has answered or failed. */
@@ -224,7 +237,7 @@ export class EngineClient {
 	 * Ticks issued in the same task travel to the engine as one message.
 	 */
 	public tick(series: number, time: number, a: number, b = NaN, c = NaN, d = NaN, e = NaN): void {
-		if (this._destroyed) {
+		if (this._destroyed || this._lost) {
 			return;
 		}
 		let ticks = this._ticks;
@@ -353,7 +366,7 @@ export class EngineClient {
 	};
 
 	private _send(body: CommandBody, transfer: ArrayBuffer[]): number {
-		if (this._destroyed) {
+		if (this._destroyed || this._lost) {
 			return -1;
 		}
 		// Buffered ticks were issued first, so they go first.
@@ -392,6 +405,7 @@ export class EngineClient {
 		this._mode = mode;
 		this._transport = transport;
 		transport.onevent = this._receive;
+		transport.onlost = this._lose;
 		const held = this._held;
 		this._held = [];
 		for (const { command, transfer } of held) {
@@ -412,6 +426,20 @@ export class EngineClient {
 		if (this.pending === 0) {
 			this._resolveIdle();
 		}
+	};
+
+	private readonly _lose = (message: string, cause: unknown): void => {
+		if (this._destroyed || this._lost) {
+			return;
+		}
+		this._lost = true;
+		this._transport = null;
+		this._held = [];
+		this._tickCount = 0;
+		// No answer comes any more: whoever waits for one waits for nothing.
+		this._acked = this._seq;
+		this.onlost?.(message, cause);
+		this._resolveIdle();
 	};
 
 	private _resolveIdle(): void {

@@ -1,4 +1,4 @@
-import type { EngineTransport } from './host';
+import { type EngineTransport, workerFailure } from './host';
 import type { Command, EngineEvent, HostMessage, ReadyMessage } from './protocol';
 
 /**
@@ -9,6 +9,10 @@ import type { Command, EngineEvent, HostMessage, ReadyMessage } from './protocol
  * worker each, up to the limit, and every further engine joins the worker that serves the fewest.
  * Up to the limit nothing changes for a page, since each chart still has a thread of its own; past
  * it the number of threads stays put. A worker stops when its last engine is destroyed.
+ *
+ * A worker that fails after it started (an error it does not handle, or a message from it that
+ * cannot be read) is stopped, and every engine on it is lost (see `EngineTransport.onlost`): a
+ * command may never be answered, and what the engines held cannot be trusted any more.
  */
 
 const NO_TRANSFER: Transferable[] = [];
@@ -61,6 +65,7 @@ export function setMaxWorkers(count: number): void {
 /** One engine's share of a pooled worker: commands go out tagged with its id, events come back by it. */
 class WorkerChannel implements EngineTransport {
 	public onevent: ((event: EngineEvent) => void) | null = null;
+	public onlost: ((message: string, cause: unknown) => void) | null = null;
 	public readonly onReady: (transport: EngineTransport) => void;
 	public readonly onFailed: () => void;
 	private readonly _pooled: PooledWorker;
@@ -85,6 +90,18 @@ class WorkerChannel implements EngineTransport {
 		}
 		(command as HostMessage).engine = this._id;
 		this._pooled.worker.postMessage(command, transfer);
+	}
+
+	/** The worker failed: nothing more comes for this engine, and nothing more is sent. */
+	public lose(message: string, cause: unknown): void {
+		if (this._closed) {
+			return;
+		}
+		this._closed = true;
+		const lost = this.onlost;
+		this.onevent = null;
+		this.onlost = null;
+		lost?.(message, cause);
 	}
 
 	/** Lets the engine go. The worker stops with its last engine. */
@@ -160,6 +177,19 @@ function start(factory: () => Worker, timeout: number, siblings: PooledWorker[])
 			channel.onFailed();
 		}
 	};
+	// Once it runs, a failure loses every engine on the worker; each is told on its own.
+	const lost = (event: Event): void => {
+		if (!pooled.siblings.includes(pooled)) {
+			return;
+		}
+		retire(pooled);
+		const message = workerFailure(event);
+		const channels = Array.from(pooled.channels.values());
+		pooled.channels.clear();
+		for (const channel of channels) {
+			channel.lose(message, event);
+		}
+	};
 	const onReady = (message: MessageEvent<ReadyMessage>): void => {
 		if (message.data.ready !== true || !pooled.settle()) {
 			return;
@@ -168,6 +198,8 @@ function start(factory: () => Worker, timeout: number, siblings: PooledWorker[])
 		worker.addEventListener('message', (event: MessageEvent<EngineEvent>) => {
 			pooled.channels.get(event.data.engine ?? 0)?.onevent?.(event.data);
 		});
+		worker.addEventListener('error', lost);
+		worker.addEventListener('messageerror', lost);
 		// An engine may leave or join while the others are told; the map takes both.
 		for (const channel of Array.from(pooled.channels.values())) {
 			channel.onReady(channel);

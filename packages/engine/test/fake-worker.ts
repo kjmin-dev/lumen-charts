@@ -86,6 +86,11 @@ export class FakeWorker {
 		this.terminated = true;
 	}
 
+	/** Fires an `error` (an error the worker did not handle) or a `messageerror` at the worker's listeners. */
+	public crash(type: 'error' | 'messageerror' = 'error', message = 'boom'): void {
+		this._emit(type, { type, message } as unknown as MessageEvent);
+	}
+
 	private _emit(type: string, event: MessageEvent): void {
 		if (this.terminated) {
 			return;
