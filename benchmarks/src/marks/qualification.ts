@@ -104,6 +104,10 @@ async function uploadBytes(gl: WebGL2RenderingContext | undefined, operation: ()
 }
 
 type Fixture = ReturnType<typeof fixture>;
+/** Internal to the library: whether WebGL2 drew the heatmap from its values or its palette slots. */
+function heatPath(s: Fixture): string | null {
+	return (s.heat as unknown as { glHeatPath(): string | null }).glHeatPath();
+}
 function read(source: HTMLCanvasElement) {
 	const copy = document.createElement('canvas');
 	copy.width = source.width;
@@ -186,6 +190,22 @@ async function check(
 		await compare('palette and gain', s =>
 			s.heat.applyOptions({ palette: 'viridis', valueMin: 1, valueMax: 73, valueScale: 'log', opacity: 0.55 }),
 		);
+		// A fixed value range draws from palette slots; one that follows the values from the values.
+		const heatGl = mode === 'webgl2' ? window.testMarkContexts.find(context => !context.isContextLost()) : undefined;
+		if (heatGl && heatPath(b) !== 'slots') throw Error('Fixed value range did not draw from slots: ' + heatPath(b));
+		await compare('automatic value range', s => s.heat.applyOptions({ valueMin: null, valueMax: null }));
+		if (heatGl && heatPath(b) !== 'values') throw Error('Automatic value range did not draw from values');
+		await compare('changed last column, automatic value range', s =>
+			s.heat.update({ time: barTime(95) + 24000, values: s.column.map(value => value * 1.5) }),
+		);
+		await compare('fixed value range again', s => s.heat.applyOptions({ valueMin: 1, valueMax: 73 }));
+		if (heatGl && heatPath(b) !== 'slots') throw Error('Fixed value range did not draw from slots again');
+		const paletteBytes = await uploadBytes(heatGl, () =>
+			compare('palette only', s => s.heat.applyOptions({ palette: 'inferno' })),
+		);
+		// The pixel ranges are projected again with every change of the options; the slots stay.
+		if (heatGl && (paletteBytes[0] || paletteBytes[2] !== 1024))
+			throw Error('Palette-only change uploaded slots, or more than the colors: ' + paletteBytes);
 		await compare('center and duplicate times', s => {
 			s.scatter.applyOptions({ barAlign: 'start', opacity: 0.66 });
 			s.scatter.append([
@@ -206,6 +226,8 @@ async function check(
 			}),
 		);
 		if (liveGL && (!columnBytes[0] || columnBytes[1])) throw Error('Value-only heatmap upload ' + columnBytes);
+		// Slots of one column of 141 rows: 37 words, 38 where the column starts within a word.
+		if (liveGL && columnBytes[0]! > 4 * 38) throw Error('Slot column upload ' + columnBytes);
 
 		await compare('partial heatmap transparency', s => {
 			s.heat.update({ time: barTime(95) + 45000, values: s.column.map(() => NaN) });

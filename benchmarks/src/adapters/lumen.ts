@@ -17,7 +17,7 @@ import type { DrawingAutoscaleAdapter } from '../scenarios/draw-autoscale.ts';
 import type { DrawingsAdapter } from '../scenarios/drawings.ts';
 import type { AppliedAdapter, IndicatorAdapter } from '../scenarios/indicators.ts';
 import type { LineStyleAdapter, LineTickStyle } from '../scenarios/line-ticks.ts';
-import type { HeatmapInput, MarksAdapter, ScatterInput } from '../scenarios/marks.ts';
+import type { HeatmapInput, MarksAdapter, ScatterInput, ValueRange } from '../scenarios/marks.ts';
 import type { IdleAdapter, WorkerLimitFactory } from '../scenarios/multi.ts';
 import type { DatafeedAdapter, HistoryOperationsAdapter, SeveralDatafeedsAdapter } from '../scenarios/refetch.ts';
 import type { StateAdapter } from '../scenarios/state.ts';
@@ -125,8 +125,8 @@ class LumenAdapter
 		this._scatter?.update({ time, price, value });
 	}
 
-	public setHeatmap(data: HeatmapInput): void {
-		this._heatmap ??= this._chart.addSeries('heatmap');
+	public setHeatmap(data: HeatmapInput, range?: ValueRange): void {
+		this._heatmap ??= this._chart.addSeries('heatmap', range ? { valueMin: range.min, valueMax: range.max } : {});
 		this._heatmap.setData(data);
 		if (this._markRenderer)
 			this._chart.drawings().add({
@@ -140,7 +140,12 @@ class LumenAdapter
 	}
 
 	public markBackend() {
-		return (this._scatter ?? this._heatmap)?.renderer?.();
+		const series = this._scatter ?? this._heatmap;
+		const status = series?.renderer?.();
+		// Internal to the library, and absent from older versions: whether a WebGL2 heatmap was drawn
+		// from its palette slots rather than its values.
+		const heat = (series as { glHeatPath?(): string | null } | null)?.glHeatPath?.();
+		return status && heat === 'slots' ? { ...status, path: 'webgl2-slots' } : status;
 	}
 	public marksDrawn(): { level: number; marks: number } {
 		return (this._scatter ?? this._heatmap)?.drawn() ?? { level: 0, marks: 0 };

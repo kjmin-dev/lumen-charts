@@ -1,4 +1,5 @@
 import { type ChartApi, type DatafeedRequest, createChart, themes } from '@lumen-charts/core';
+import { EngineClient } from '@lumen-charts/engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { timeZone } from '../src/model/time-zone';
 
@@ -316,6 +317,32 @@ describe('chart with series', () => {
 		expect(rects.some(rect => rect.fillStyle === UP)).toBe(true);
 		expect(rects.some(rect => rect.fillStyle === DOWN)).toBe(true);
 		expect(priceAxis().calls.filter(call => call.name === 'fillText').length).toBeGreaterThan(2);
+	});
+
+	it('names the levels it holds or awaits with every window request', async () => {
+		const requests = vi.spyOn(EngineClient.prototype, 'requestWindow');
+		const series = chart.addSeries('candlestick');
+		const count = 50_000;
+		series.setData(candles(count));
+		await settle();
+		// Out to every bar (a coarse level), ticks there, and back to the latest bars.
+		chart.timeScale().fitContent();
+		await settle();
+		const bar = { time: count * MINUTE, open: 100, high: 102, low: 98, close: 101 };
+		series.update(bar);
+		series.update({ ...bar, close: 100 });
+		await settle();
+		chart.timeScale().setVisibleLogicalRange({ from: count - 100, to: count });
+		await settle();
+		const levels = requests.mock.calls.map(([, , , level = 0, mask]) => ({ level, mask }));
+		expect(levels.some(({ level }) => level > 0)).toBe(true);
+		expect(levels.some(({ level }) => level === 0)).toBe(true);
+		for (const { level, mask } of levels) {
+			// The raw rows and the level asked for are always among them.
+			expect(mask).toBeTypeOf('number');
+			expect(mask! & 1).toBe(1);
+			expect((mask! >>> level) & 1).toBe(1);
+		}
 	});
 
 	it('applies time scale calls after the data they follow', async () => {

@@ -39,6 +39,7 @@ import {
 } from './render';
 import { CanvasMarkBackend } from './canvas-backend';
 import {
+	type HeatSlots,
 	MarkGpuClient,
 	type MarkFrame,
 	type MarkRenderer,
@@ -362,6 +363,13 @@ export abstract class MarkSeries {
 			peakBytes: this._peakBytes,
 		};
 	}
+	/**
+	 * Internal, read by the benchmark harness: what the WebGL2 renderer drew a heatmap from last,
+	 * its values or its palette slots; null for a scatter or on another path.
+	 */
+	public glHeatPath(): 'values' | 'slots' | null {
+		return this.type === 'heatmap' && this._effective === 'webgl2' ? this._gl.heatPath : null;
+	}
 	public preferenceChanged(): void {
 		this._gpu.release();
 		this._effective = 'canvas2d';
@@ -525,6 +533,7 @@ export abstract class MarkSeries {
 					ratio,
 					from,
 					to,
+					slots: this._fixedSlots(),
 				},
 				target.context,
 				!same,
@@ -565,6 +574,8 @@ export abstract class MarkSeries {
 				this._box,
 			);
 		} else if (!wasGpu) surface.release();
+		// The patches of this frame are cleared below: a WebGL2 layer kept for later uploads anew.
+		if (path !== 'webgl2') this._gl.stale();
 		this._effective = path;
 		if (!same) {
 			drawn.set(current);
@@ -577,6 +588,11 @@ export abstract class MarkSeries {
 
 	protected reusePan(_compatible: boolean): boolean {
 		return false;
+	}
+
+	/** The slots of a heatmap whose options fix the mapping of values; null otherwise. */
+	protected _fixedSlots(): HeatSlots | null {
+		return null;
 	}
 
 	/** Writes the rows in view into the surface, which is empty, and sets its box. */
@@ -875,7 +891,8 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 			this._slots.length < cells
 		) {
 			if (this._slots.length < cells) {
-				this._slots = new Uint8Array(cells);
+				// Whole words: the WebGL2 renderer uploads the slots four to a word.
+				this._slots = new Uint8Array((cells + 3) & ~3);
 			}
 			this._slotsVersion = window.version;
 			this._slotsMin = mapping.min;
@@ -908,6 +925,24 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 			quantize(window.values, this._slots, rows, this._slotsTo, to, mapping);
 			this._slotsTo = to;
 		}
+	}
+
+	private readonly _heatSlots: HeatSlots = {
+		update: (from, to) => {
+			this._quantize(from, to);
+			return this._slots;
+		},
+		holds: (from, to) => to <= from || (from >= this._slotsFrom && to <= this._slotsTo),
+	};
+
+	/**
+	 * With `valueMin` and `valueMax` set, a value's slot depends on the value alone: renderers can
+	 * keep the slots of cells and update those of the cells that change. Otherwise a change of the
+	 * value range would change the slots of every cell.
+	 */
+	protected override _fixedSlots(): HeatSlots | null {
+		const options = this.seriesOptions as HeatmapOptions;
+		return options.valueMin !== null && options.valueMax !== null ? this._heatSlots : null;
 	}
 
 	private readonly panRanges = new HeatRanges();

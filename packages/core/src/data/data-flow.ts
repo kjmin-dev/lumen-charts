@@ -305,8 +305,14 @@ export class DataFlow {
 			const level = this.levelFor(scale.barSpacing * ratio);
 			const cache = this._cache;
 			const request = cache.plan(level, scale.from, scale.to, scale.first, scale.end);
+			// Each request names the levels the cache holds or awaits (the one planned just now among
+			// them), so the engine patches only those; see `WindowCache.patchedLevels`.
 			if (request !== null) {
-				cache.level(level).sent(engine.requestWindow(request.start, request.count, request.capacity, request.level));
+				cache
+					.level(level)
+					.sent(
+						engine.requestWindow(request.start, request.count, request.capacity, request.level, cache.patchedLevels()),
+					);
 			}
 			// While the raw rows for the view are on their way (a fast scroll left the window, or they
 			// are fetched again) or could not be fetched, the finest level is drawn instead of nothing.
@@ -320,7 +326,17 @@ export class DataFlow {
 			if (level === 0 && !covered && (raw.capacity > 0 || raw.incomplete) && scale.end - scale.first >= 16) {
 				const fallback = cache.plan(1, scale.from, scale.to, scale.first, scale.end);
 				if (fallback !== null) {
-					cache.level(1).sent(engine.requestWindow(fallback.start, fallback.count, fallback.capacity, fallback.level));
+					cache
+						.level(1)
+						.sent(
+							engine.requestWindow(
+								fallback.start,
+								fallback.count,
+								fallback.capacity,
+								fallback.level,
+								cache.patchedLevels(),
+							),
+						);
 				}
 			}
 		}

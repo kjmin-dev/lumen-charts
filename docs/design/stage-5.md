@@ -210,3 +210,54 @@ Two limits of the partial redraw above are closed, and a third is decided
 ## Allocations between ticks
 
 The indicator benchmark created a message channel for each turn of its wait loop. An idle worker wait removes most of those allocations. Packing the changed rows of all indicators into two transferred buffers further reduces library allocations on the main thread. Charts request packed patches on their first engine command. Direct clients get object patches by default, including clients using an older worker. See the [allocation profiles and gate measurement](../benchmarks/gc-floor.md).
+
+## Background work right after a command
+
+A worker host waited 20 ms after a command before it started background work, so that the window
+request that follows the answer to a load or a prepend would not wait behind a slice of it. The
+worker sat idle meanwhile, and a prepend that needs no window request (the bars land outside the
+view) waited the whole 20 ms for nothing: a worker's 10k prepend settled at 52 ms against the main
+thread's 28 ms (stage 3).
+
+- **As built.** Background work starts in a task of its own right after a command, behind the
+  messages that have arrived by then. For 20 ms after each command it runs in slices of 1 ms
+  instead of 4 ms, so a window request that arrives meanwhile waits at most a short slice. Every
+  command opens those 20 ms again.
+- **Measured** ([background-start.md](../benchmarks/background-start.md)): a 10k prepend's
+  indicators are shown after 18.6–18.8 instead of 51.8 ms with 1M bars, a load of 1M bars with 20
+  indicators settles after 283 instead of 316 ms. The bars of a prepend reach the screen about
+  0.8 ms later, the wait for the slice under way. Ticks are unchanged.
+
+## Merged columns kept across a pan
+
+Below a pixel per bar, `SeriesView.update` merges the rows of each device column into one item
+(section 6.2, "Cheaper wide-view frames"). A pan merged every column again, for every series.
+
+- **Why it can keep them.** In that range the origin is on a whole device pixel (`FrameModel`), so a
+  pan moves it by a whole number of pixels, and both ends of a column are computed from the column
+  minus the origin, whole numbers both: the column that held a row before is that many columns away
+  now and holds the same rows.
+- **As built.** With the same window (`version`), spacing and level, the view moves the items it
+  holds into place (`copyWithin`) and merges only the columns the pan uncovered, the first and the
+  last column of the view (they take whatever lies beyond them up to the ends of the visible
+  elements), and the columns of elements changed in place since the last frame. Anything else (a
+  zoom, another level, a replaced window) merges everything as before. Prices are projected again
+  in full, as the price range usually changes with the pan.
+- **Tested** against a full rebuild of the same geometry over random pans, zooms, replaced windows
+  and changes in place in the same frame, with gaps in the data, coarse levels and the start of the
+  data in view; a variant that ignores the changes in place fails it.
+- **Measured** ([merged-pan.md](../benchmarks/merged-pan.md)): pan frames with 20 indicators on 1M
+  candles take 3.4 instead of 4.3 ms of JavaScript at p50 with 20,000 bars in view, 3.5 instead of
+  4.0 ms with all of them; zooms are unchanged.
+
+## Patches of the levels a client holds
+
+A tick changes the last bucket of every level of every series, and the engine used to send all of them: with 20 indicators on 1M candles, 243 patches and 879 values per tick over eight coarse levels. The chart's window cache keeps at most the level it draws and its neighbours and skipped the rest.
+
+- **What the client sends.** Each `window` command can carry `levels`, a bitmask with bit `k` for level `k`: every level whose window the cache holds or still awaits. The chart sends it with every request (`WindowCache.patchedLevels`). `MAX_LEVEL` is 13, so every level fits in the bits of one integer; 10M bars have ten coarse levels.
+- **What the engine does with it.** From that command on, it assembles patches for the raw rows, the levels in the mask and the level the command asks for, and leaves out the other coarse levels, also for indicator outputs and after a prepend. It still rebuilds the buckets of every level, so a window asked for later holds every tick. The mask is part of each engine's state, also on a shared worker.
+- **Why no tick is missed.** A level enters the cache only through a snapshot, which answers a `window` command, and the engine adds the level of that command itself. The snapshot reflects every command before it, and every later request names the level while the window holds it. A window let go while its snapshot is on its way still counts until the event acknowledging that request has arrived: a coarse snapshot comes in that event at the latest, also when the request was superseded or a failure ended the wait. Raw rows, whose window can wait for rows the memory limit let go, are always patched. A level dropped from the cache stays in the mask until the next request, which costs only work. A new timeline (a `set`, a deletion that re-bases) changes the epoch and the cache asks again for what it needs.
+- **Compatibility.** A `window` command without `levels` patches every level, as before, so direct clients that never send it are unaffected. A worker from before the change ignores the field and patches every level, which a newer chart skips as it always has.
+- **Bucket times.** A batch of ticks that appends no bar leaves out the time patches of the coarse levels: a bucket's time is the time of its first row, which only an append can add. Raw time patches stay.
+- **Effect.** With 20 indicators on 262,144 candles (the eight levels of 1M), an update of the last bar sends 235 patches and 871 values without a mask, 53 and 136 when the cache holds the raw rows and level 1 (the latest bars), and 105 and 346 when it holds levels 2 to 4 (all of 1M bars at the default chart size), counted by `packages/engine/test/held-levels.test.ts`. Tick to applied with the latest bars in view fell by about a third on the main-thread engine and a fifth through the worker; with all bars in view the change was within the spread of the runs ([measured](../benchmarks/held-level-patches.md)).
+- **Tested** by a fuzz test that drives two engines with the same commands, one client naming its levels and one not, with events delivered late in random batches, windows let go and asked for again, prepends, changes of history, indicators and a memory limit with fetches. After every event both caches hold the same items, and whenever nothing is in flight they match a model. The test also found that replacing the timeline while an indicator recomputation was reading rows left the engine with the old row range, which failed the next window request; the range is now dropped with the timeline.
