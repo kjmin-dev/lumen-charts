@@ -96,3 +96,4 @@ The JSON files beside each document are the runs its numbers come from.
 
 - [Per-chart mark renderers](explicit-mark-renderers.md) records WebGL2 integration timings and the cross-browser fallback and image comparisons.
 - [Live mark composition](mark-update-composition.md) measures heatmap update frames, texture uploads and shared drawing-buffer capacity.
+- [background-start.md](background-start.md): a worker starts background work right after a command instead of 20 ms later; prepends and loads with indicators settle sooner.
