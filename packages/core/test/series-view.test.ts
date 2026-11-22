@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 import { type Geometry, SeriesView, candleWidths } from '../src/views/series-view';
 
 function randomWalk(count: number, seed = 1) {
@@ -195,6 +195,44 @@ describe('SeriesView', () => {
 			fresh.update(geometry, open, high, low, close, 0, 1, Infinity, -Infinity);
 			expect(items(view)).toEqual(items(fresh));
 			expect([view.min, view.max]).toEqual([fresh.min, fresh.max]);
+		}
+	});
+
+	it('keeps the range of the items before a tick, and takes it again when one of them changes', () => {
+		for (const spacing of [4, 0.05]) {
+			const count = 20_000;
+			const data = randomWalk(count, 11);
+			const from = spacing >= 1 ? count - 300 : 0;
+			const geometry: Geometry = { origin: 0.5 - from * spacing, spacing, from, to: count, shift: 0, firstRow: from };
+			const view = new SeriesView();
+			view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
+			const check = (label: string): void => {
+				const fresh = new SeriesView();
+				fresh.update(geometry, data.open, data.high, data.low, data.close, 0, 1, Infinity, -Infinity);
+				assert.deepEqual([view.min, view.max], [fresh.min, fresh.max], label);
+			};
+			// Ticks on the last bar: the range of the rest is kept.
+			for (let tick = 0; tick < 20; tick++) {
+				data.high[count - 1] = data.high[count - 1]! + (tick % 2 === 0 ? 3 : -2);
+				data.low[count - 1] = data.low[count - 1]! - (tick % 3 === 0 ? 2 : -1);
+				view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, count - 1, count);
+				check(`tick ${tick}`);
+			}
+			// A bar before them sets the highest price, then gives it up again: the kept range is not enough.
+			const middle = from + Math.floor((count - from) / 2);
+			const high = data.high[middle]!;
+			data.high[middle] = 1e9;
+			view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, middle, middle + 1);
+			check('a new high before the last bar');
+			expect(view.max).toBe(1e9);
+			// A tick takes the new high into the kept range.
+			data.high[count - 1] = data.high[count - 1]! + 1;
+			view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, count - 1, count);
+			check('a tick after it');
+			data.high[middle] = high;
+			view.update(geometry, data.open, data.high, data.low, data.close, 0, 1, middle, middle + 1);
+			check('the high given up');
+			expect(view.max).toBeLessThan(1e9);
 		}
 	});
 

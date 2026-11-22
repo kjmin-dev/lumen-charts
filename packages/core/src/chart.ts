@@ -1165,8 +1165,10 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 		}
 		const animating = this._interaction.step(now);
 		if (level >= INVALIDATE_LIGHT) {
-			// Price lines and value labels follow the series: the overlay draws them again.
-			this._overlayRenderer.stale = true;
+			// Price lines and value labels follow the series: the overlay compares them, or draws
+			// everything again after a change of options.
+			this._overlayRenderer.changed = true;
+			if (level === INVALIDATE_FULL) this._overlayRenderer.stale = true;
 		}
 		if (level === INVALIDATE_FULL || layout.font === '') {
 			this._placeLayers();

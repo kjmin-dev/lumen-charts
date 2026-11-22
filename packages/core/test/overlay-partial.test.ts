@@ -5,6 +5,7 @@ import {
 	type DrawingInput,
 	type DrawTarget,
 	type PanePrimitive,
+	type SeriesApi,
 	createChart,
 } from '@lumen-charts/core';
 import { afterEach, assert, describe, expect, it, vi } from 'vitest';
@@ -351,6 +352,11 @@ class Harness {
 	public partial = 0;
 	public full = 0;
 	public kept = 0;
+	public series: {
+		bars: SeriesApi<'candlestick'>;
+		near: SeriesApi<'line'>;
+		left: SeriesApi<'line'>;
+	} | null = null;
 
 	public constructor(options: DeepPartial<ChartOptions>, ratio: number) {
 		vi.spyOn(window, 'devicePixelRatio', 'get').mockImplementation(() => ratio);
@@ -458,14 +464,14 @@ class Harness {
 async function setup(options: DeepPartial<ChartOptions>, ratio: number): Promise<Harness> {
 	const h = new Harness(options, ratio);
 	const data = candles(COUNT);
-	h.chart.addSeries('candlestick').setData(data);
+	const bars = h.chart.addSeries('candlestick');
+	bars.setData(data);
 	const close = data.close;
-	h.chart
-		.addSeries('line', { color: 'rgba(30, 120, 220, 0.8)' })
-		.setData({ time: data.time, value: close.map(value => value + 1.5) });
-	h.chart
-		.addSeries('line', { priceScaleId: 'left', color: '#d08020', priceLineStyle: 'dotted' })
-		.setData({ time: data.time, value: close.map((value, i) => value * 10 + i) });
+	const near = h.chart.addSeries('line', { color: 'rgba(30, 120, 220, 0.8)' });
+	near.setData({ time: data.time, value: close.map(value => value + 1.5) });
+	const left = h.chart.addSeries('line', { priceScaleId: 'left', color: '#d08020', priceLineStyle: 'dotted' });
+	left.setData({ time: data.time, value: close.map((value, i) => value * 10 + i) });
+	h.series = { bars, near, left };
 	h.chart.timeScale().setVisibleLogicalRange({ from: 440, to: 610 });
 	await h.settle();
 	const set = h.chart.drawings();
@@ -565,7 +571,10 @@ describe.each([1, 1.5, 2])('a cursor frame of the overlay at pixel ratio %s', { 
 			{ timeScale: { visible: false }, crosshair: { vertLine: { visible: false } } },
 		],
 	] as [string, DeepPartial<ChartOptions>][])('%s', async (_name, options) => {
-		h = await setup({ leftPriceScale: { visible: true }, ...options } as DeepPartial<ChartOptions>, ratio);
+		h = await setup(
+			{ priceScales: { left: { visible: true, position: 'left' } }, ...options } as DeepPartial<ChartOptions>,
+			ratio,
+		);
 		await walk(h, 1);
 		assert.isAbove(h.partial, 10, 'cursor frames clear part of the overlay');
 		await walk(h, 4);
@@ -660,6 +669,47 @@ describe.each([1, 1.5, 2])('a cursor frame of the overlay at pixel ratio %s', { 
 		harness.pointer('pointermove', at.x, at.y);
 		await harness.settle();
 		expect(harness.classify()).toBe('partial');
+	});
+
+	it('compares price lines and value labels in frames of new data', async () => {
+		h = await setup({ priceScales: { left: { visible: true, position: 'left' } } }, ratio);
+		const harness = h;
+		const { bars, near, left } = harness.series!;
+		const at = harness.at(560, 100);
+		harness.pointer('pointermove', at.x, at.y);
+		await harness.settle();
+		await harness.redraw();
+		const data = candles(COUNT + 4);
+		let partial = 0;
+		for (let k = 0; k < 12; k++) {
+			// Ticks on the last bar, a new bar every fourth, the lines with them; once a price beyond the
+			// range, which moves the scale.
+			const i = COUNT - 1 + Math.floor(k / 4);
+			const close = data.close[i]! + (k % 4) * 0.37 + (k === 9 ? 30 : 0);
+			bars.update({
+				time: data.time[i]!,
+				open: data.open[i]!,
+				high: Math.max(data.high[i]!, close),
+				low: data.low[i]!,
+				close,
+			});
+			near.update({ time: data.time[i]!, value: close + 1.5 });
+			if (k % 2 === 0) left.update({ time: data.time[i]!, value: close * 10 + i });
+			// oxlint-disable-next-line no-await-in-loop
+			await harness.settle();
+			if (harness.classify() === 'partial') partial++;
+			const frame = harness.pixels();
+			// oxlint-disable-next-line no-await-in-loop
+			const full = await harness.redraw();
+			assert.isNull(harness.difference(frame, full), `tick ${k}`);
+		}
+		assert.isAbove(partial, 6, 'ticks compare the labels instead of drawing all of them');
+		// A price line that goes, a label that comes back alone.
+		near.applyOptions({ priceLineVisible: false });
+		await harness.settle();
+		harness.classify();
+		const frame = harness.pixels();
+		assert.isNull(harness.difference(frame, await harness.redraw()), 'price line hidden');
 	});
 
 	it('leaves the overlay alone when nothing on it moved', async () => {

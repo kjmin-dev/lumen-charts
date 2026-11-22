@@ -113,21 +113,26 @@ const MAX_BOXES = 2 * 8 * 4;
  * Draws the layer above everything else: price lines and value labels of the series, primitives
  * and drawings on top, and the crosshair with its labels and markers.
  *
- * A frame asked for by the crosshair alone (a cursor frame: the pointer moved, a drawing was
- * hovered or selected) draws only what changed. The price lines and value labels change only with
- * frames that redraw the series (`stale`), so it keeps them; it compares the crosshair's lines,
- * markers and labels and the highlighted drawings' handles with those it drew, clears the boxes of
- * those that changed, the old and the new, and draws everything that reaches into those boxes
- * again, in the order of a full redraw and clipped to them, so the layer ends up as a full redraw
- * would leave it. What it cannot bound is drawn in full every frame: primitives on top, a drawing
- * being edited, the highlight of a primitive of the application.
+ * A frame draws only what changed. It compares the price lines and value labels (in frames that
+ * may have changed them: `changed`), the crosshair's lines, markers and labels and the highlighted
+ * drawings' handles with those it drew, clears the boxes of those that changed, the old and the
+ * new, and draws everything that reaches into those boxes again, in the order of a full redraw, so
+ * the layer ends up as a full redraw would leave it. A frame after the canvas was sized or the
+ * options changed (`stale`) draws everything, and so does every frame while something cannot be
+ * bounded: primitives on top, a drawing being edited, the highlight of a primitive of the
+ * application.
  */
 export class OverlayRenderer {
 	/**
-	 * The price lines and value labels may have changed, or the canvas was cleared: the next frame is
-	 * a full one. Set by the chart for frames that redraw the series or size the canvases.
+	 * The canvas was sized or cleared, or the options changed: the next frame draws everything. Set
+	 * by the chart.
 	 */
 	public stale = true;
+	/**
+	 * The price lines and value labels may have changed: the next frame compares them with those it
+	 * drew. Set by the chart for frames that redraw the series.
+	 */
+	public changed = true;
 	private readonly tags = new Map<PriceAxis, { items: ValueTag[]; count: number }>();
 	private readonly _settings: ChartSettings;
 	private readonly _layout: ChartLayout;
@@ -138,8 +143,9 @@ export class OverlayRenderer {
 	private readonly _time: TimeDisplay;
 	private readonly _primitives: PanePrimitives;
 	private readonly _crosshair: Crosshair;
-	/** Price lines and value labels, as drawn by the last full frame. */
-	private readonly _static = new ItemList();
+	/** Price lines and value labels as drawn, and the list a frame that compares them builds its own in. */
+	private _static = new ItemList();
+	private _nextStatic = new ItemList();
 	/** The crosshair as drawn, and the list the next frame builds its own in. */
 	private _drawn = new ItemList();
 	private _next = new ItemList();
@@ -217,18 +223,16 @@ export class OverlayRenderer {
 		} else {
 			const damage = this._damage;
 			damage.length = 0;
-			this._crosshairItems(this._next);
-			const last = this._drawn;
-			const next = this._next;
-			for (let i = 0; i < last.count || i < next.count; i++) {
-				const before = i < last.count ? last.items[i]! : null;
-				const after = i < next.count ? next.items[i]! : null;
-				if (before !== null && after !== null && before.same(after)) {
-					continue;
-				}
-				if (before !== null) this._addDamage(before.x0, before.y0, before.x1, before.y1);
-				if (after !== null) this._addDamage(after.x0, after.y0, after.x1, after.y1);
+			if (this.changed) {
+				this.changed = false;
+				this._staticItems(ctx, this._nextStatic);
+				this._compare(this._static, this._nextStatic);
+				const kept = this._static;
+				this._static = this._nextStatic;
+				this._nextStatic = kept;
 			}
+			this._crosshairItems(this._next);
+			this._compare(this._drawn, this._next);
 			let highlightChanged =
 				hover !== this._hover ||
 				selected !== this._selected ||
@@ -266,16 +270,30 @@ export class OverlayRenderer {
 		}
 	}
 
-	/** Clears the layer and draws everything; keeps the price lines and labels for cursor frames. */
+	/** Adds to the damage the boxes of the items that differ between two lists, in their order. */
+	private _compare(last: ItemList, next: ItemList): void {
+		for (let i = 0; i < last.count || i < next.count; i++) {
+			const before = i < last.count ? last.items[i]! : null;
+			const after = i < next.count ? next.items[i]! : null;
+			if (before !== null && after !== null && before.same(after)) {
+				continue;
+			}
+			if (before !== null) this._addDamage(before.x0, before.y0, before.x1, before.y1);
+			if (after !== null) this._addDamage(after.x0, after.y0, after.x1, after.y1);
+		}
+	}
+
+	/** Clears the layer and draws everything. */
 	private _renderFull(ctx: CanvasRenderingContext2D): void {
 		const layer = this._layout.overlay;
 		ctx.clearRect(0, 0, layer.width, layer.height);
 		this.stale = false;
+		this.changed = false;
 		this._width = layer.width;
 		this._height = layer.height;
 		this._ratio = this._layout.pixelRatio;
 		this._labelTime = NaN;
-		this._staticItems(ctx);
+		this._staticItems(ctx, this._static);
 		const items = this._static;
 		for (let i = 0; i < items.count; i++) {
 			this._drawItem(ctx, items.items[i]!);
@@ -662,7 +680,8 @@ export class OverlayRenderer {
 
 	/**
 	 * A label on a price axis. Its box takes in its text wherever the text may reach: to the outer
-	 * edge of the layer beside the axis, and half the font size above and below.
+	 * edge of the layer beside the axis, and above and below the label as far as glyphs reach from
+	 * its middle (see `_inkMargin`).
 	 */
 	private _tag(list: ItemList, axis: PriceAxis, top: number, height: number, background: string, text: string): void {
 		const ratio = this._layout.pixelRatio;
@@ -674,7 +693,7 @@ export class OverlayRenderer {
 		item.d = 0;
 		item.color = background;
 		item.text = text;
-		const margin = this._textMargin();
+		const margin = this._inkMargin(height);
 		if (axis.settings.position === 'left') {
 			item.x0 = 0;
 			item.x1 = Math.round((axis.axisLeft + axis.axisWidth) * ratio);
@@ -686,14 +705,18 @@ export class OverlayRenderer {
 		item.y1 = top + height + margin;
 	}
 
-	/** How far text may reach above or below its label, in device pixels: half the font size. */
-	private _textMargin(): number {
-		return Math.ceil((this._settings.options.layout.fontSize * this._layout.pixelRatio) / 2);
+	/**
+	 * How far the text of a label `height` device pixels high may reach above or below it, in device
+	 * pixels. Text is drawn on the middle of the label; the glyphs of a font reach less than 0.8 of
+	 * its size from the middle of its em square, accents included.
+	 */
+	private _inkMargin(height: number): number {
+		const reach = 0.8 * this._settings.options.layout.fontSize * this._layout.pixelRatio;
+		return Math.max(0, Math.ceil(reach - height / 2));
 	}
 
-	/** The price lines and value labels of the series, in the order they are drawn. */
-	private _staticItems(ctx: CanvasRenderingContext2D): void {
-		const list = this._static;
+	/** The price lines and value labels of the series, in the order they are drawn, into `list`. */
+	private _staticItems(ctx: CanvasRenderingContext2D, list: ItemList): void {
 		list.count = 0;
 		const ratio = this._layout.pixelRatio;
 		const options = this._settings.options;
@@ -894,7 +917,7 @@ export class OverlayRenderer {
 			// The text may be wider than its estimate: the whole strip under the pane.
 			item.x0 = 0;
 			item.x1 = layer.width;
-			item.y0 = paneHeight - this._textMargin();
+			item.y0 = paneHeight - this._inkMargin(item.d);
 			item.y1 = layer.height;
 		}
 	}
