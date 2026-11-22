@@ -178,6 +178,7 @@ try {
 						'FAILED',
 						message,
 					);
+					break;
 				} finally {
 					await within(page.close());
 					if (context) await context.browser()?.close();
