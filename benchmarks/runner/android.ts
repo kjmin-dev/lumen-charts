@@ -47,6 +47,14 @@ export interface AndroidConnection {
 	close(): Promise<void>;
 }
 
+/**
+ * Waits for `promise` at most `ms` milliseconds. A DevTools connection that an adb server restart
+ * silenced never answers, so closing pages or the connection must not wait for it.
+ */
+function within(promise: Promise<unknown>, ms = 10_000): Promise<unknown> {
+	return Promise.race([promise.catch(() => undefined), sleep(ms)]);
+}
+
 /** `adb` from `$ADB`, else from the `PATH`. */
 function adbPath(): string {
 	return process.env['ADB'] ?? 'adb';
@@ -115,7 +123,7 @@ export async function connectAndroid(serial: string, port: number, cdpPort = 922
 	const closeHarnessTabs = async (browser: Browser): Promise<void> => {
 		for (const page of browser.contexts()[0]?.pages() ?? []) {
 			if (page.url().startsWith(pageUrl)) {
-				await page.close().catch(() => undefined);
+				await within(page.close());
 			}
 		}
 	};
@@ -163,17 +171,21 @@ export async function connectAndroid(serial: string, port: number, cdpPort = 922
 			}
 		},
 		async reconnect() {
-			await connection.browser.close().catch(() => undefined);
+			await within(connection.browser.close());
 			connection.browser = await connect();
 			return connection.browser;
 		},
 		async close() {
+			if (!connection.mapped()) {
+				// The connection went silent: a new one closes the tabs left open.
+				await within(connection.reconnect(), 30_000);
+			}
 			for (const page of opened) {
-				await page.close().catch(() => undefined);
+				await within(page.close());
 			}
 			await closeHarnessTabs(connection.browser);
 			// Disconnects only: Chrome keeps running with the tabs it had before.
-			await connection.browser.close().catch(() => undefined);
+			await within(connection.browser.close());
 			for (const args of [
 				['reverse', '--remove', `tcp:${port}`],
 				['forward', '--remove', `tcp:${cdpPort}`],
