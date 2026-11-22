@@ -1,0 +1,6877 @@
+{
+	"schema": 2,
+	"createdAt": "2026-11-22T08:28:31.226Z",
+	"environment": {
+		"runner": {
+			"arguments": [
+				"--android",
+				"<serial>",
+				"--lib",
+				"lumen-worker,lumen-main",
+				"--case",
+				"tick/candles-1m,ind-apply/candles-1m,drawings/candles-1m/1000/hover",
+				"--repeats",
+				"3",
+				"--budget",
+				"1.5",
+				"--timeout",
+				"180",
+				"--out",
+				"<runs>/phone/gates.json"
+			],
+			"node": "v26.13.1",
+			"durationSeconds": 123.68522566700001,
+			"skipped": []
+		},
+		"machine": {
+			"platform": "darwin",
+			"release": "25.5.0",
+			"arch": "arm64",
+			"cpuModel": "Apple M1",
+			"cpuCores": 8,
+			"totalMemoryBytes": 17179869184,
+			"power": "Now drawing from 'AC Power'",
+			"loadAverageStart": [52.04931640625, 58.6728515625, 51.439453125],
+			"loadAverageEnd": [89.77685546875, 74.29296875, 59.0107421875]
+		},
+		"browser": {
+			"engine": "chromium",
+			"version": "157.0.8103.78",
+			"channel": "android",
+			"headless": false,
+			"commandLine": "--flag-switches-begin --flag-switches-end --use-mobile-user-agent --use-mobile-user-agent --enable-viewport --enable-desktop-android-scrollbars --validate-input-event-stream --enable-longpress-drag-selection --touch-selection-strategy=direction --disable-composited-antialiasing --enable-dom-distiller --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --top-controls-show-threshold=0.5 --top-controls-hide-threshold=0.5",
+			"gpuStatus": ""
+		},
+		"viewport": {
+			"width": 1200,
+			"height": 2470
+		},
+		"deviceScaleFactor": 2.625,
+		"device": {
+			"serial": "<serial>",
+			"manufacturer": "samsung",
+			"model": "SM-F966N",
+			"soc": "SM8750",
+			"android": "17",
+			"sdk": "37",
+			"chrome": "157.0.8103.78",
+			"display": "Physical size: 1080x2520; Physical density: 420"
+		},
+		"chart": {
+			"width": 1200,
+			"height": 600
+		},
+		"page": {
+			"userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Mobile Safari/537.36",
+			"userAgentData": {
+				"architecture": "",
+				"brands": [
+					{
+						"brand": "Not-A.Brand",
+						"version": "99"
+					},
+					{
+						"brand": "Google Chrome",
+						"version": "157"
+					},
+					{
+						"brand": "Chromium",
+						"version": "157"
+					}
+				],
+				"fullVersionList": [
+					{
+						"brand": "Not-A.Brand",
+						"version": "99.0.0.0"
+					},
+					{
+						"brand": "Google Chrome",
+						"version": "157.0.8103.78"
+					},
+					{
+						"brand": "Chromium",
+						"version": "157.0.8103.78"
+					}
+				],
+				"mobile": true,
+				"model": "SM-F966N",
+				"platform": "Android",
+				"platformVersion": "17.0.0"
+			},
+			"devicePixelRatio": 2.625,
+			"viewport": {
+				"width": 1200,
+				"height": 2470
+			},
+			"screen": {
+				"width": 412,
+				"height": 960
+			},
+			"chart": {
+				"width": 1200,
+				"height": 600
+			},
+			"hardwareConcurrency": 8,
+			"deviceMemoryGb": 8,
+			"crossOriginIsolated": true,
+			"timer": {
+				"minStepMs": 0.004999995231628418,
+				"medianStepMs": 0.004999995231628418,
+				"steps": 2000
+			},
+			"idleFrameInterval": {
+				"count": 120,
+				"mean": 16.713791666666665,
+				"min": 15.914999999999964,
+				"p50": 16.579999999999927,
+				"p90": 16.580000000000382,
+				"p95": 16.585000000000036,
+				"p99": 24.634999999999764,
+				"max": 25.175000000000182
+			},
+			"webgl": {
+				"vendor": "Google Inc. (Qualcomm)",
+				"renderer": "ANGLE (Qualcomm, Adreno (TM) 830, OpenGL ES 3.2)"
+			},
+			"buildMode": "production",
+			"probes": {
+				"garbageCollection": "runner: CDP HeapProfiler.collectGarbage",
+				"memory": "runner: CDP Runtime.getHeapUsage of the page and of each dedicated worker"
+			}
+		},
+		"git": {
+			"commit": "ece4cd9d70c211643ef2d1bfda6cb2d0b11633ca",
+			"dirty": true
+		},
+		"sources": "workspace",
+		"packages": {
+			"lightweight-charts": "5.3.0",
+			"playwright": "1.64.1",
+			"vite": "8.3.8"
+		}
+	},
+	"cases": [
+		{
+			"caseId": "tick/candles-1m/latest",
+			"adapter": "lumen-worker",
+			"job": {
+				"scenario": "tick",
+				"dataset": {
+					"kind": "candles",
+					"size": 1000000
+				},
+				"seed": 1,
+				"chart": {
+					"width": 1200,
+					"height": 600
+				},
+				"view": "latest",
+				"ticks": 10000,
+				"minTicks": 500,
+				"budgetMs": 1500,
+				"warmupTicks": 500,
+				"warmupBudgetMs": 1500,
+				"roundSize": 100,
+				"newBarEvery": 10,
+				"adapter": "lumen-worker"
+			},
+			"library": {
+				"library": {
+					"name": "@lumen-charts/core",
+					"version": "workspace"
+				},
+				"options": {
+					"worker": true
+				}
+			},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"sync": {
+							"count": 9100,
+							"mean": 0.0021653846070006652,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.010000109672546387,
+							"max": 0.17500007152557373
+						},
+						"syncUpdate": {
+							"count": 8190,
+							"mean": 0.0022039072126404853,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.010000109672546387,
+							"max": 0.17500007152557373
+						},
+						"syncNewBar": {
+							"count": 910,
+							"mean": 0.0018186811562422868,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.03000009059906006
+						},
+						"syncPerRound": {
+							"count": 91,
+							"mean": 0.0021653846070006652,
+							"min": 0.0004000008106231689,
+							"p50": 0.0022000002861022948,
+							"p90": 0.002699999809265137,
+							"p95": 0.0031500005722045897,
+							"p99": 0.004800000190734863,
+							"max": 0.004800000190734863
+						},
+						"settle": {
+							"count": 91,
+							"mean": 16.374010989954183,
+							"min": 13.524999976158142,
+							"p50": 16.325000047683716,
+							"p90": 17.360000014305115,
+							"p95": 17.975000023841858,
+							"p99": 20.289999961853027,
+							"max": 20.289999961853027
+						},
+						"settleJs": {
+							"count": 91,
+							"mean": 0.5728571441147353,
+							"min": 0.26499998569488525,
+							"p50": 0.5199999809265137,
+							"p90": 0.7899999618530273,
+							"p95": 0.8550000190734863,
+							"p99": 1.0149999856948853,
+							"max": 1.0149999856948853
+						},
+						"mainThreadPerTick": {
+							"count": 91,
+							"mean": 0.007893956048148021,
+							"min": 0.004049999713897705,
+							"p50": 0.007649999856948852,
+							"p90": 0.010299999713897705,
+							"p95": 0.010850000381469726,
+							"p99": 0.012200000286102295,
+							"max": 0.012200000286102295
+						},
+						"visibleBars": 200,
+						"warmupTicks": 500
+					},
+					"durationMs": 2951.895416000003,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 69.38232421875,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.3,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 32.8,
+										"BAT": 30.2,
+										"CP": 32.4,
+										"PA": 32.6,
+										"SKIN": 33.8,
+										"SUBBAT": 29.5,
+										"USB": 29.7
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.3,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 32.8,
+										"BAT": 30.2,
+										"CP": 32.4,
+										"PA": 32.6,
+										"SKIN": 33.8,
+										"SUBBAT": 29.5,
+										"USB": 29.7
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"sync": {
+							"count": 9100,
+							"mean": 0.0022098900983621786,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.2549999952316284
+						},
+						"syncUpdate": {
+							"count": 8190,
+							"mean": 0.002188644551823282,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.0700000524520874
+						},
+						"syncNewBar": {
+							"count": 910,
+							"mean": 0.0024011000172122496,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.2549999952316284
+						},
+						"syncPerRound": {
+							"count": 91,
+							"mean": 0.002209890098362178,
+							"min": 0.0004499995708465576,
+							"p50": 0.0021000003814697268,
+							"p90": 0.0030500006675720213,
+							"p95": 0.0037000000476837156,
+							"p99": 0.0050999999046325685,
+							"max": 0.0050999999046325685
+						},
+						"settle": {
+							"count": 91,
+							"mean": 16.325274728156707,
+							"min": 14.820000052452087,
+							"p50": 16.335000038146973,
+							"p90": 17.0349999666214,
+							"p95": 17.240000009536743,
+							"p99": 17.889999985694885,
+							"max": 17.889999985694885
+						},
+						"settleJs": {
+							"count": 91,
+							"mean": 0.5612637341677488,
+							"min": 0.24000000953674316,
+							"p50": 0.5149999856948853,
+							"p90": 0.7749999761581421,
+							"p95": 0.9800000190734863,
+							"p99": 1.209999918937683,
+							"max": 1.209999918937683
+						},
+						"mainThreadPerTick": {
+							"count": 91,
+							"mean": 0.00782252744003967,
+							"min": 0.00309999942779541,
+							"p50": 0.0074500000476837155,
+							"p90": 0.010250000953674317,
+							"p95": 0.013400000333786011,
+							"p99": 0.01584999918937683,
+							"max": 0.01584999918937683
+						},
+						"visibleBars": 200,
+						"warmupTicks": 500
+					},
+					"durationMs": 2689.970459,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 74.71044921875,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.3,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 33.9,
+										"BAT": 30.2,
+										"CP": 33.1,
+										"PA": 33.3,
+										"SKIN": 33.9,
+										"SUBBAT": 29.4,
+										"USB": 29.7
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.3,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 33.9,
+										"BAT": 30.2,
+										"CP": 33.1,
+										"PA": 33.3,
+										"SKIN": 33.9,
+										"SUBBAT": 29.4,
+										"USB": 29.7
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"sync": {
+							"count": 9100,
+							"mean": 0.002185164912716373,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.010000109672546387,
+							"max": 0.17499995231628418
+						},
+						"syncUpdate": {
+							"count": 8190,
+							"mean": 0.002172771827641861,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.010000109672546387,
+							"max": 0.12999999523162842
+						},
+						"syncNewBar": {
+							"count": 910,
+							"mean": 0.002296702678386982,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.17499995231628418
+						},
+						"syncPerRound": {
+							"count": 91,
+							"mean": 0.002185164912716373,
+							"min": 0.0004499995708465576,
+							"p50": 0.0021000003814697268,
+							"p90": 0.002900000810623169,
+							"p95": 0.00375,
+							"p99": 0.005700000524520874,
+							"max": 0.005700000524520874
+						},
+						"settle": {
+							"count": 91,
+							"mean": 16.327527466711107,
+							"min": 14.534999966621399,
+							"p50": 16.319999933242798,
+							"p90": 16.99500000476837,
+							"p95": 17.710000038146973,
+							"p99": 18.080000042915344,
+							"max": 18.080000042915344
+						},
+						"settleJs": {
+							"count": 91,
+							"mean": 0.5770879132407052,
+							"min": 0.19499993324279785,
+							"p50": 0.5049999952316284,
+							"p90": 0.8299999237060547,
+							"p95": 1.034999966621399,
+							"p99": 1.7950000762939453,
+							"max": 1.7950000762939453
+						},
+						"mainThreadPerTick": {
+							"count": 91,
+							"mean": 0.007956044045123426,
+							"min": 0.0024999988079071043,
+							"p50": 0.0072500002384185795,
+							"p90": 0.010650000572204589,
+							"p95": 0.014049999713897705,
+							"p99": 0.020450000762939454,
+							"max": 0.020450000762939454
+						},
+						"visibleBars": 200,
+						"warmupTicks": 500
+					},
+					"durationMs": 3033.2741249999963,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 81.4326171875,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 33.9,
+										"BAT": 30.2,
+										"CP": 33.1,
+										"PA": 33.3,
+										"SKIN": 33.9,
+										"SUBBAT": 29.4,
+										"USB": 29.7
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 34.4,
+										"BAT": 30.2,
+										"CP": 33.5,
+										"PA": 33.7,
+										"SKIN": 34.2,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				}
+			],
+			"summary": {
+				"sync.count": {
+					"median": 9100,
+					"min": 9100,
+					"max": 9100,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.mean": {
+					"median": 0.002185164912716373,
+					"min": 0.0021653846070006652,
+					"max": 0.0022098900983621786,
+					"relativeRange": 0.020367108725990245,
+					"runs": 3
+				},
+				"sync.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p50": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p90": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p95": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p99": {
+					"median": 0.010000109672546387,
+					"min": 0.009999990463256836,
+					"max": 0.010000109672546387,
+					"relativeRange": 1.1920798216648587e-5,
+					"runs": 3
+				},
+				"sync.max": {
+					"median": 0.17500007152557373,
+					"min": 0.17499995231628418,
+					"max": 0.2549999952316284,
+					"relativeRange": 0.45714291553105674,
+					"runs": 3
+				},
+				"syncUpdate.count": {
+					"median": 8190,
+					"min": 8190,
+					"max": 8190,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.mean": {
+					"median": 0.002188644551823282,
+					"min": 0.002172771827641861,
+					"max": 0.0022039072126404853,
+					"relativeRange": 0.014225875541410606,
+					"runs": 3
+				},
+				"syncUpdate.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.p50": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.p90": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.p95": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.p99": {
+					"median": 0.010000109672546387,
+					"min": 0.009999990463256836,
+					"max": 0.010000109672546387,
+					"relativeRange": 1.1920798216648587e-5,
+					"runs": 3
+				},
+				"syncUpdate.max": {
+					"median": 0.12999999523162842,
+					"min": 0.0700000524520874,
+					"max": 0.17500007152557373,
+					"relativeRange": 0.807692484037417,
+					"runs": 3
+				},
+				"syncNewBar.count": {
+					"median": 910,
+					"min": 910,
+					"max": 910,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.mean": {
+					"median": 0.002296702678386982,
+					"min": 0.0018186811562422868,
+					"max": 0.0024011000172122496,
+					"relativeRange": 0.25358914170771407,
+					"runs": 3
+				},
+				"syncNewBar.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.p50": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.p90": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.p95": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.p99": {
+					"median": 0.009999990463256836,
+					"min": 0.009999990463256836,
+					"max": 0.009999990463256836,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.max": {
+					"median": 0.17499995231628418,
+					"min": 0.03000009059906006,
+					"max": 0.2549999952316284,
+					"relativeRange": 1.2857140910868212,
+					"runs": 3
+				},
+				"syncPerRound.count": {
+					"median": 91,
+					"min": 91,
+					"max": 91,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncPerRound.mean": {
+					"median": 0.002185164912716373,
+					"min": 0.0021653846070006652,
+					"max": 0.002209890098362178,
+					"relativeRange": 0.020367108725990048,
+					"runs": 3
+				},
+				"syncPerRound.min": {
+					"median": 0.0004499995708465576,
+					"min": 0.0004000008106231689,
+					"max": 0.0004499995708465576,
+					"relativeRange": 0.11110846201326141,
+					"runs": 3
+				},
+				"syncPerRound.p50": {
+					"median": 0.0021000003814697268,
+					"min": 0.0021000003814697268,
+					"max": 0.0022000002861022948,
+					"relativeRange": 0.0476189935558874,
+					"runs": 3
+				},
+				"syncPerRound.p90": {
+					"median": 0.002900000810623169,
+					"min": 0.002699999809265137,
+					"max": 0.0030500006675720213,
+					"relativeRange": 0.12068991740442796,
+					"runs": 3
+				},
+				"syncPerRound.p95": {
+					"median": 0.0037000000476837156,
+					"min": 0.0031500005722045897,
+					"max": 0.00375,
+					"relativeRange": 0.16216200542241166,
+					"runs": 3
+				},
+				"syncPerRound.p99": {
+					"median": 0.0050999999046325685,
+					"min": 0.004800000190734863,
+					"max": 0.005700000524520874,
+					"relativeRange": 0.17647065698344394,
+					"runs": 3
+				},
+				"syncPerRound.max": {
+					"median": 0.0050999999046325685,
+					"min": 0.004800000190734863,
+					"max": 0.005700000524520874,
+					"relativeRange": 0.17647065698344394,
+					"runs": 3
+				},
+				"settle.count": {
+					"median": 91,
+					"min": 91,
+					"max": 91,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"settle.mean": {
+					"median": 16.327527466711107,
+					"min": 16.325274728156707,
+					"max": 16.374010989954183,
+					"relativeRange": 0.002984913784211388,
+					"runs": 3
+				},
+				"settle.min": {
+					"median": 14.534999966621399,
+					"min": 13.524999976158142,
+					"max": 14.820000052452087,
+					"relativeRange": 0.08909529269128459,
+					"runs": 3
+				},
+				"settle.p50": {
+					"median": 16.325000047683716,
+					"min": 16.319999933242798,
+					"max": 16.335000038146973,
+					"relativeRange": 0.0009188425641875024,
+					"runs": 3
+				},
+				"settle.p90": {
+					"median": 17.0349999666214,
+					"min": 16.99500000476837,
+					"max": 17.360000014305115,
+					"relativeRange": 0.02142647550642377,
+					"runs": 3
+				},
+				"settle.p95": {
+					"median": 17.710000038146973,
+					"min": 17.240000009536743,
+					"max": 17.975000023841858,
+					"relativeRange": 0.0415019770029328,
+					"runs": 3
+				},
+				"settle.p99": {
+					"median": 18.080000042915344,
+					"min": 17.889999985694885,
+					"max": 20.289999961853027,
+					"relativeRange": 0.1327433611980871,
+					"runs": 3
+				},
+				"settle.max": {
+					"median": 18.080000042915344,
+					"min": 17.889999985694885,
+					"max": 20.289999961853027,
+					"relativeRange": 0.1327433611980871,
+					"runs": 3
+				},
+				"settleJs.count": {
+					"median": 91,
+					"min": 91,
+					"max": 91,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"settleJs.mean": {
+					"median": 0.5728571441147353,
+					"min": 0.5612637341677488,
+					"max": 0.5770879132407052,
+					"relativeRange": 0.027623255178933492,
+					"runs": 3
+				},
+				"settleJs.min": {
+					"median": 0.24000000953674316,
+					"min": 0.19499993324279785,
+					"max": 0.26499998569488525,
+					"relativeRange": 0.2916668736272306,
+					"runs": 3
+				},
+				"settleJs.p50": {
+					"median": 0.5149999856948853,
+					"min": 0.5049999952316284,
+					"max": 0.5199999809265137,
+					"relativeRange": 0.029126186624346982,
+					"runs": 3
+				},
+				"settleJs.p90": {
+					"median": 0.7899999618530273,
+					"min": 0.7749999761581421,
+					"max": 0.8299999237060547,
+					"relativeRange": 0.06962019013128112,
+					"runs": 3
+				},
+				"settleJs.p95": {
+					"median": 0.9800000190734863,
+					"min": 0.8550000190734863,
+					"max": 1.034999966621399,
+					"relativeRange": 0.18367341229042886,
+					"runs": 3
+				},
+				"settleJs.p99": {
+					"median": 1.209999918937683,
+					"min": 1.0149999856948853,
+					"max": 1.7950000762939453,
+					"relativeRange": 0.6446282172348073,
+					"runs": 3
+				},
+				"settleJs.max": {
+					"median": 1.209999918937683,
+					"min": 1.0149999856948853,
+					"max": 1.7950000762939453,
+					"relativeRange": 0.6446282172348073,
+					"runs": 3
+				},
+				"mainThreadPerTick.count": {
+					"median": 91,
+					"min": 91,
+					"max": 91,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"mainThreadPerTick.mean": {
+					"median": 0.007893956048148021,
+					"min": 0.00782252744003967,
+					"max": 0.007956044045123426,
+					"relativeRange": 0.01691377609267027,
+					"runs": 3
+				},
+				"mainThreadPerTick.min": {
+					"median": 0.00309999942779541,
+					"min": 0.0024999988079071043,
+					"max": 0.004049999713897705,
+					"relativeRange": 0.5000003845461664,
+					"runs": 3
+				},
+				"mainThreadPerTick.p50": {
+					"median": 0.0074500000476837155,
+					"min": 0.0072500002384185795,
+					"max": 0.007649999856948852,
+					"relativeRange": 0.053691223620144404,
+					"runs": 3
+				},
+				"mainThreadPerTick.p90": {
+					"median": 0.010299999713897705,
+					"min": 0.010250000953674317,
+					"max": 0.010650000572204589,
+					"relativeRange": 0.038834915499129166,
+					"runs": 3
+				},
+				"mainThreadPerTick.p95": {
+					"median": 0.013400000333786011,
+					"min": 0.010850000381469726,
+					"max": 0.014049999713897705,
+					"relativeRange": 0.23880591438193327,
+					"runs": 3
+				},
+				"mainThreadPerTick.p99": {
+					"median": 0.01584999918937683,
+					"min": 0.012200000286102295,
+					"max": 0.020450000762939454,
+					"relativeRange": 0.5205047885659558,
+					"runs": 3
+				},
+				"mainThreadPerTick.max": {
+					"median": 0.01584999918937683,
+					"min": 0.012200000286102295,
+					"max": 0.020450000762939454,
+					"relativeRange": 0.5205047885659558,
+					"runs": 3
+				},
+				"visibleBars": {
+					"median": 200,
+					"min": 200,
+					"max": 200,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"warmupTicks": {
+					"median": 500,
+					"min": 500,
+					"max": 500,
+					"relativeRange": 0,
+					"runs": 3
+				}
+			}
+		},
+		{
+			"caseId": "tick/candles-1m/latest",
+			"adapter": "lumen-main",
+			"job": {
+				"scenario": "tick",
+				"dataset": {
+					"kind": "candles",
+					"size": 1000000
+				},
+				"seed": 1,
+				"chart": {
+					"width": 1200,
+					"height": 600
+				},
+				"view": "latest",
+				"ticks": 10000,
+				"minTicks": 500,
+				"budgetMs": 1500,
+				"warmupTicks": 500,
+				"warmupBudgetMs": 1500,
+				"roundSize": 100,
+				"newBarEvery": 10,
+				"adapter": "lumen-main"
+			},
+			"library": {
+				"library": {
+					"name": "@lumen-charts/core",
+					"version": "workspace"
+				},
+				"options": {
+					"worker": false
+				}
+			},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"sync": {
+							"count": 9100,
+							"mean": 0.002302747231263381,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.24000000953674316
+						},
+						"syncUpdate": {
+							"count": 8190,
+							"mean": 0.0022545787149878794,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.010000109672546387,
+							"max": 0.24000000953674316
+						},
+						"syncNewBar": {
+							"count": 910,
+							"mean": 0.002736263877742893,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.17499995231628418
+						},
+						"syncPerRound": {
+							"count": 91,
+							"mean": 0.00230274723126338,
+							"min": 0.0007500004768371582,
+							"p50": 0.0021000003814697268,
+							"p90": 0.003450000286102295,
+							"p95": 0.004499999284744263,
+							"p99": 0.005199999809265137,
+							"max": 0.005199999809265137
+						},
+						"settle": {
+							"count": 91,
+							"mean": 16.32230769932925,
+							"min": 13.855000019073486,
+							"p50": 16.28500008583069,
+							"p90": 17.350000023841858,
+							"p95": 17.674999952316284,
+							"p99": 18.244999885559082,
+							"max": 18.244999885559082
+						},
+						"settleJs": {
+							"count": 91,
+							"mean": 0.5663186783318991,
+							"min": 0.21999990940093994,
+							"p50": 0.5200001001358032,
+							"p90": 0.7749999761581421,
+							"p95": 1.0049999952316284,
+							"p99": 1.1399999856948853,
+							"max": 1.1399999856948853
+						},
+						"mainThreadPerTick": {
+							"count": 91,
+							"mean": 0.007965934014582376,
+							"min": 0.0031000006198883055,
+							"p50": 0.0075,
+							"p90": 0.01059999942779541,
+							"p95": 0.012600001096725464,
+							"p99": 0.015899999141693114,
+							"max": 0.015899999141693114
+						},
+						"visibleBars": 200,
+						"warmupTicks": 500
+					},
+					"durationMs": 2829.1579999999994,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 74.71044921875,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.3,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 32.8,
+										"BAT": 30.2,
+										"CP": 32.4,
+										"PA": 32.6,
+										"SKIN": 33.8,
+										"SUBBAT": 29.5,
+										"USB": 29.7
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.3,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 33.9,
+										"BAT": 30.2,
+										"CP": 33.1,
+										"PA": 33.3,
+										"SKIN": 33.9,
+										"SUBBAT": 29.4,
+										"USB": 29.7
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"sync": {
+							"count": 9100,
+							"mean": 0.0022851647911490973,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.010000109672546387,
+							"max": 0.24000000953674316
+						},
+						"syncUpdate": {
+							"count": 8190,
+							"mean": 0.0023089132902823087,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.010000109672546387,
+							"max": 0.24000000953674316
+						},
+						"syncNewBar": {
+							"count": 910,
+							"mean": 0.0020714282989501955,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.14500010013580322
+						},
+						"syncPerRound": {
+							"count": 91,
+							"mean": 0.0022851647911490973,
+							"min": 0.000700000524520874,
+							"p50": 0.0021000003814697268,
+							"p90": 0.0035500001907348634,
+							"p95": 0.003949999809265137,
+							"p99": 0.005049999952316284,
+							"max": 0.005049999952316284
+						},
+						"settle": {
+							"count": 91,
+							"mean": 16.326263743442492,
+							"min": 13.490000009536743,
+							"p50": 16.27999997138977,
+							"p90": 17.455000042915344,
+							"p95": 17.75499999523163,
+							"p99": 19.039999961853027,
+							"max": 19.039999961853027
+						},
+						"settleJs": {
+							"count": 91,
+							"mean": 0.5729670341198261,
+							"min": 0.26999998092651367,
+							"p50": 0.5249999761581421,
+							"p90": 0.7699999809265137,
+							"p95": 0.934999942779541,
+							"p99": 1.0499999523162842,
+							"max": 1.0499999523162842
+						},
+						"mainThreadPerTick": {
+							"count": 91,
+							"mean": 0.008014835132347357,
+							"min": 0.003400000333786011,
+							"p50": 0.00755000114440918,
+							"p90": 0.011050000190734863,
+							"p95": 0.011949999332427979,
+							"p99": 0.013949999809265137,
+							"max": 0.013949999809265137
+						},
+						"visibleBars": 200,
+						"warmupTicks": 500
+					},
+					"durationMs": 3454.978291999996,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 80.3388671875,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.3,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 33.9,
+										"BAT": 30.2,
+										"CP": 33.1,
+										"PA": 33.3,
+										"SKIN": 33.9,
+										"SUBBAT": 29.4,
+										"USB": 29.7
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.3,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 33.9,
+										"BAT": 30.2,
+										"CP": 33.1,
+										"PA": 33.3,
+										"SKIN": 33.9,
+										"SUBBAT": 29.4,
+										"USB": 29.7
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"sync": {
+							"count": 9100,
+							"mean": 0.002241208723613194,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.1650000810623169
+						},
+						"syncUpdate": {
+							"count": 8190,
+							"mean": 0.002259462671547728,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.1650000810623169
+						},
+						"syncNewBar": {
+							"count": 910,
+							"mean": 0.00207692319220239,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.06999993324279785
+						},
+						"syncPerRound": {
+							"count": 91,
+							"mean": 0.0022412087236131943,
+							"min": 0.0009000003337860107,
+							"p50": 0.0021000003814697268,
+							"p90": 0.002799999713897705,
+							"p95": 0.003249999284744263,
+							"p99": 0.005450000762939453,
+							"max": 0.005450000762939453
+						},
+						"settle": {
+							"count": 91,
+							"mean": 16.34510989503546,
+							"min": 15.21999990940094,
+							"p50": 16.37000000476837,
+							"p90": 17.18500006198883,
+							"p95": 17.384999990463257,
+							"p99": 17.610000014305115,
+							"max": 17.610000014305115
+						},
+						"settleJs": {
+							"count": 91,
+							"mean": 0.5651098869659088,
+							"min": 0.23500001430511475,
+							"p50": 0.5,
+							"p90": 0.7949999570846558,
+							"p95": 0.8500000238418579,
+							"p99": 1.0049999952316284,
+							"max": 1.0049999952316284
+						},
+						"mainThreadPerTick": {
+							"count": 91,
+							"mean": 0.007892307593272285,
+							"min": 0.004450000524520874,
+							"p50": 0.007399998903274536,
+							"p90": 0.01019999861717224,
+							"p95": 0.01100000023841858,
+							"p99": 0.013799999952316283,
+							"max": 0.013799999952316283
+						},
+						"visibleBars": 200,
+						"warmupTicks": 500
+					},
+					"durationMs": 2565.9051670000044,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 81.4326171875,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 34.4,
+										"BAT": 30.2,
+										"CP": 33.5,
+										"PA": 33.7,
+										"SKIN": 34.2,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 34.4,
+										"BAT": 30.2,
+										"CP": 33.5,
+										"PA": 33.7,
+										"SKIN": 34.2,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				}
+			],
+			"summary": {
+				"sync.count": {
+					"median": 9100,
+					"min": 9100,
+					"max": 9100,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.mean": {
+					"median": 0.0022851647911490973,
+					"min": 0.002241208723613194,
+					"max": 0.002302747231263381,
+					"relativeRange": 0.026929571070120614,
+					"runs": 3
+				},
+				"sync.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p50": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p90": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p95": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p99": {
+					"median": 0.009999990463256836,
+					"min": 0.009999990463256836,
+					"max": 0.010000109672546387,
+					"relativeRange": 1.192094032377274e-5,
+					"runs": 3
+				},
+				"sync.max": {
+					"median": 0.24000000953674316,
+					"min": 0.1650000810623169,
+					"max": 0.24000000953674316,
+					"relativeRange": 0.31249968955915414,
+					"runs": 3
+				},
+				"syncUpdate.count": {
+					"median": 8190,
+					"min": 8190,
+					"max": 8190,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.mean": {
+					"median": 0.002259462671547728,
+					"min": 0.0022545787149878794,
+					"max": 0.0023089132902823087,
+					"relativeRange": 0.024047564927111745,
+					"runs": 3
+				},
+				"syncUpdate.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.p50": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.p90": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.p95": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.p99": {
+					"median": 0.010000109672546387,
+					"min": 0.009999990463256836,
+					"max": 0.010000109672546387,
+					"relativeRange": 1.1920798216648587e-5,
+					"runs": 3
+				},
+				"syncUpdate.max": {
+					"median": 0.24000000953674316,
+					"min": 0.1650000810623169,
+					"max": 0.24000000953674316,
+					"relativeRange": 0.31249968955915414,
+					"runs": 3
+				},
+				"syncNewBar.count": {
+					"median": 910,
+					"min": 910,
+					"max": 910,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.mean": {
+					"median": 0.00207692319220239,
+					"min": 0.0020714282989501955,
+					"max": 0.002736263877742893,
+					"relativeRange": 0.3201060016512693,
+					"runs": 3
+				},
+				"syncNewBar.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.p50": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.p90": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.p95": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.p99": {
+					"median": 0.009999990463256836,
+					"min": 0.009999990463256836,
+					"max": 0.009999990463256836,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.max": {
+					"median": 0.14500010013580322,
+					"min": 0.06999993324279785,
+					"max": 0.17499995231628418,
+					"relativeRange": 0.7241375624923438,
+					"runs": 3
+				},
+				"syncPerRound.count": {
+					"median": 91,
+					"min": 91,
+					"max": 91,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncPerRound.mean": {
+					"median": 0.0022851647911490973,
+					"min": 0.0022412087236131943,
+					"max": 0.00230274723126338,
+					"relativeRange": 0.026929571070120045,
+					"runs": 3
+				},
+				"syncPerRound.min": {
+					"median": 0.0007500004768371582,
+					"min": 0.000700000524520874,
+					"max": 0.0009000003337860107,
+					"relativeRange": 0.26666624281168444,
+					"runs": 3
+				},
+				"syncPerRound.p50": {
+					"median": 0.0021000003814697268,
+					"min": 0.0021000003814697268,
+					"max": 0.0021000003814697268,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncPerRound.p90": {
+					"median": 0.003450000286102295,
+					"min": 0.002799999713897705,
+					"max": 0.0035500001907348634,
+					"relativeRange": 0.21739142453361537,
+					"runs": 3
+				},
+				"syncPerRound.p95": {
+					"median": 0.003949999809265137,
+					"min": 0.003249999284744263,
+					"max": 0.004499999284744263,
+					"relativeRange": 0.31645571148332585,
+					"runs": 3
+				},
+				"syncPerRound.p99": {
+					"median": 0.005199999809265137,
+					"min": 0.005049999952316284,
+					"max": 0.005450000762939453,
+					"relativeRange": 0.07692323563367527,
+					"runs": 3
+				},
+				"syncPerRound.max": {
+					"median": 0.005199999809265137,
+					"min": 0.005049999952316284,
+					"max": 0.005450000762939453,
+					"relativeRange": 0.07692323563367527,
+					"runs": 3
+				},
+				"settle.count": {
+					"median": 91,
+					"min": 91,
+					"max": 91,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"settle.mean": {
+					"median": 16.326263743442492,
+					"min": 16.32230769932925,
+					"max": 16.34510989503546,
+					"relativeRange": 0.0013966573163665566,
+					"runs": 3
+				},
+				"settle.min": {
+					"median": 13.855000019073486,
+					"min": 13.490000009536743,
+					"max": 15.21999990940094,
+					"relativeRange": 0.12486466239499043,
+					"runs": 3
+				},
+				"settle.p50": {
+					"median": 16.28500008583069,
+					"min": 16.27999997138977,
+					"max": 16.37000000476837,
+					"relativeRange": 0.005526560202901603,
+					"runs": 3
+				},
+				"settle.p90": {
+					"median": 17.350000023841858,
+					"min": 17.18500006198883,
+					"max": 17.455000042915344,
+					"relativeRange": 0.015561958533457503,
+					"runs": 3
+				},
+				"settle.p95": {
+					"median": 17.674999952316284,
+					"min": 17.384999990463257,
+					"max": 17.75499999523163,
+					"relativeRange": 0.02093352224987608,
+					"runs": 3
+				},
+				"settle.p99": {
+					"median": 18.244999885559082,
+					"min": 17.610000014305115,
+					"max": 19.039999961853027,
+					"relativeRange": 0.07837763532570684,
+					"runs": 3
+				},
+				"settle.max": {
+					"median": 18.244999885559082,
+					"min": 17.610000014305115,
+					"max": 19.039999961853027,
+					"relativeRange": 0.07837763532570684,
+					"runs": 3
+				},
+				"settleJs.count": {
+					"median": 91,
+					"min": 91,
+					"max": 91,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"settleJs.mean": {
+					"median": 0.5663186783318991,
+					"min": 0.5651098869659088,
+					"max": 0.5729670341198261,
+					"relativeRange": 0.013874073828997892,
+					"runs": 3
+				},
+				"settleJs.min": {
+					"median": 0.23500001430511475,
+					"min": 0.21999990940093994,
+					"max": 0.26999998092651367,
+					"relativeRange": 0.21276624885926862,
+					"runs": 3
+				},
+				"settleJs.p50": {
+					"median": 0.5200001001358032,
+					"min": 0.5,
+					"max": 0.5249999761581421,
+					"relativeRange": 0.04807686796908904,
+					"runs": 3
+				},
+				"settleJs.p90": {
+					"median": 0.7749999761581421,
+					"min": 0.7699999809265137,
+					"max": 0.7949999570846558,
+					"relativeRange": 0.03225803474481751,
+					"runs": 3
+				},
+				"settleJs.p95": {
+					"median": 0.934999942779541,
+					"min": 0.8500000238418579,
+					"max": 1.0049999952316284,
+					"relativeRange": 0.16577538061552285,
+					"runs": 3
+				},
+				"settleJs.p99": {
+					"median": 1.0499999523162842,
+					"min": 1.0049999952316284,
+					"max": 1.1399999856948853,
+					"relativeRange": 0.12857142532763824,
+					"runs": 3
+				},
+				"settleJs.max": {
+					"median": 1.0499999523162842,
+					"min": 1.0049999952316284,
+					"max": 1.1399999856948853,
+					"relativeRange": 0.12857142532763824,
+					"runs": 3
+				},
+				"mainThreadPerTick.count": {
+					"median": 91,
+					"min": 91,
+					"max": 91,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"mainThreadPerTick.mean": {
+					"median": 0.007965934014582376,
+					"min": 0.007892307593272285,
+					"max": 0.008014835132347357,
+					"relativeRange": 0.015381440374822818,
+					"runs": 3
+				},
+				"mainThreadPerTick.min": {
+					"median": 0.003400000333786011,
+					"min": 0.0031000006198883055,
+					"max": 0.004450000524520874,
+					"relativeRange": 0.39705875649997346,
+					"runs": 3
+				},
+				"mainThreadPerTick.p50": {
+					"median": 0.0075,
+					"min": 0.007399998903274536,
+					"max": 0.00755000114440918,
+					"relativeRange": 0.020000298817952438,
+					"runs": 3
+				},
+				"mainThreadPerTick.p90": {
+					"median": 0.01059999942779541,
+					"min": 0.01019999861717224,
+					"max": 0.011050000190734863,
+					"relativeRange": 0.08018883202330565,
+					"runs": 3
+				},
+				"mainThreadPerTick.p95": {
+					"median": 0.011949999332427979,
+					"min": 0.01100000023841858,
+					"max": 0.012600001096725464,
+					"relativeRange": 0.13389129269363728,
+					"runs": 3
+				},
+				"mainThreadPerTick.p99": {
+					"median": 0.013949999809265137,
+					"min": 0.013799999952316283,
+					"max": 0.015899999141693114,
+					"relativeRange": 0.15053757835767703,
+					"runs": 3
+				},
+				"mainThreadPerTick.max": {
+					"median": 0.013949999809265137,
+					"min": 0.013799999952316283,
+					"max": 0.015899999141693114,
+					"relativeRange": 0.15053757835767703,
+					"runs": 3
+				},
+				"visibleBars": {
+					"median": 200,
+					"min": 200,
+					"max": 200,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"warmupTicks": {
+					"median": 500,
+					"min": 500,
+					"max": 500,
+					"relativeRange": 0,
+					"runs": 3
+				}
+			}
+		},
+		{
+			"caseId": "tick/candles-1m/all",
+			"adapter": "lumen-worker",
+			"job": {
+				"scenario": "tick",
+				"dataset": {
+					"kind": "candles",
+					"size": 1000000
+				},
+				"seed": 1,
+				"chart": {
+					"width": 1200,
+					"height": 600
+				},
+				"view": "all",
+				"ticks": 10000,
+				"minTicks": 500,
+				"budgetMs": 1500,
+				"warmupTicks": 500,
+				"warmupBudgetMs": 1500,
+				"roundSize": 100,
+				"newBarEvery": 10,
+				"adapter": "lumen-worker"
+			},
+			"library": {
+				"library": {
+					"name": "@lumen-charts/core",
+					"version": "workspace"
+				},
+				"options": {
+					"worker": true
+				}
+			},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"sync": {
+							"count": 9100,
+							"mean": 0.002201098858655154,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.010000109672546387,
+							"max": 0.09500002861022949
+						},
+						"syncUpdate": {
+							"count": 8190,
+							"mean": 0.0021941391102996938,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.010000109672546387,
+							"max": 0.09000003337860107
+						},
+						"syncNewBar": {
+							"count": 910,
+							"mean": 0.002263736593854296,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.010000109672546387,
+							"max": 0.09500002861022949
+						},
+						"syncPerRound": {
+							"count": 91,
+							"mean": 0.0022010988586551533,
+							"min": 0.0005500006675720215,
+							"p50": 0.0021500003337860106,
+							"p90": 0.0026499998569488527,
+							"p95": 0.0030000007152557375,
+							"p99": 0.003799999952316284,
+							"max": 0.003799999952316284
+						},
+						"settle": {
+							"count": 91,
+							"mean": 16.356208797339555,
+							"min": 14.024999976158142,
+							"p50": 16.2849999666214,
+							"p90": 17.240000009536743,
+							"p95": 17.40499997138977,
+							"p99": 20.05999994277954,
+							"max": 20.05999994277954
+						},
+						"settleJs": {
+							"count": 91,
+							"mean": 0.825000001833989,
+							"min": 0.3349999189376831,
+							"p50": 0.7949999570846558,
+							"p90": 1.024999976158142,
+							"p95": 1.0749999284744263,
+							"p99": 1.3049999475479126,
+							"max": 1.3049999475479126
+						},
+						"mainThreadPerTick": {
+							"count": 91,
+							"mean": 0.010451098876995043,
+							"min": 0.0038999998569488525,
+							"p50": 0.010399999618530274,
+							"p90": 0.012400000095367432,
+							"p95": 0.013799999952316283,
+							"p99": 0.014950000047683716,
+							"max": 0.014950000047683716
+						},
+						"visibleBars": 1000000,
+						"warmupTicks": 500
+					},
+					"durationMs": 3073.1543329999986,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 80.75732421875,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 34.4,
+										"BAT": 30.2,
+										"CP": 33.5,
+										"PA": 33.7,
+										"SKIN": 34.2,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 34.4,
+										"BAT": 30.2,
+										"CP": 33.5,
+										"PA": 33.7,
+										"SKIN": 34.2,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"sync": {
+							"count": 9100,
+							"mean": 0.002140659342755328,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.125
+						},
+						"syncUpdate": {
+							"count": 8190,
+							"mean": 0.0021452992099254267,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.125
+						},
+						"syncNewBar": {
+							"count": 910,
+							"mean": 0.00209890053822444,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.0849999189376831
+						},
+						"syncPerRound": {
+							"count": 91,
+							"mean": 0.002140659342755327,
+							"min": 0.0005000007152557374,
+							"p50": 0.0021000003814697268,
+							"p90": 0.0029499995708465575,
+							"p95": 0.0037000000476837156,
+							"p99": 0.005450000762939453,
+							"max": 0.005450000762939453
+						},
+						"settle": {
+							"count": 91,
+							"mean": 16.32115384379586,
+							"min": 12.134999990463257,
+							"p50": 16.364999890327454,
+							"p90": 17.644999980926514,
+							"p95": 18.1599999666214,
+							"p99": 20.645000100135803,
+							"max": 20.645000100135803
+						},
+						"settleJs": {
+							"count": 91,
+							"mean": 0.7840109853954106,
+							"min": 0.25999999046325684,
+							"p50": 0.7900000810623169,
+							"p90": 1.0049999952316284,
+							"p95": 1.100000023841858,
+							"p99": 1.440000057220459,
+							"max": 1.440000057220459
+						},
+						"mainThreadPerTick": {
+							"count": 91,
+							"mean": 0.009980769196709434,
+							"min": 0.003250000476837158,
+							"p50": 0.010299999713897705,
+							"p90": 0.0125,
+							"p95": 0.01375,
+							"p99": 0.01705000042915344,
+							"max": 0.01705000042915344
+						},
+						"visibleBars": 1000000,
+						"warmupTicks": 500
+					},
+					"durationMs": 2478.6185419999965,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 86.3818359375,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 34.4,
+										"BAT": 30.2,
+										"CP": 33.5,
+										"PA": 33.7,
+										"SKIN": 34.2,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 34.9,
+										"BAT": 30.2,
+										"CP": 34.1,
+										"PA": 34.3,
+										"SKIN": 34.4,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"sync": {
+							"count": 9100,
+							"mean": 0.002297802141734532,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.2250000238418579
+						},
+						"syncUpdate": {
+							"count": 8190,
+							"mean": 0.0023070817028646505,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.2250000238418579
+						},
+						"syncNewBar": {
+							"count": 910,
+							"mean": 0.0022142860915634658,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.059999942779541016
+						},
+						"syncPerRound": {
+							"count": 91,
+							"mean": 0.002297802141734532,
+							"min": 0.0011000001430511474,
+							"p50": 0.0021499991416931152,
+							"p90": 0.0028999996185302733,
+							"p95": 0.0033000004291534424,
+							"p99": 0.004450000524520874,
+							"max": 0.004450000524520874
+						},
+						"settle": {
+							"count": 91,
+							"mean": 16.330494512568464,
+							"min": 14.759999990463257,
+							"p50": 16.325000047683716,
+							"p90": 16.795000076293945,
+							"p95": 16.924999952316284,
+							"p99": 18.56500005722046,
+							"max": 18.56500005722046
+						},
+						"settleJs": {
+							"count": 91,
+							"mean": 0.8162637385693226,
+							"min": 0.48500001430511475,
+							"p50": 0.7649999856948853,
+							"p90": 0.9900000095367432,
+							"p95": 1.0600000619888306,
+							"p99": 1.3949999809265137,
+							"max": 1.3949999809265137
+						},
+						"mainThreadPerTick": {
+							"count": 91,
+							"mean": 0.010460439527427756,
+							"min": 0.006100000143051148,
+							"p50": 0.009950000047683715,
+							"p90": 0.012250000238418579,
+							"p95": 0.013050000667572021,
+							"p99": 0.017699999809265135,
+							"max": 0.017699999809265135
+						},
+						"visibleBars": 1000000,
+						"warmupTicks": 500
+					},
+					"durationMs": 2634.1880829999936,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 90.51513671875,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 34.9,
+										"BAT": 30.2,
+										"CP": 34.1,
+										"PA": 34.3,
+										"SKIN": 34.4,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 34.9,
+										"BAT": 30.2,
+										"CP": 34.1,
+										"PA": 34.3,
+										"SKIN": 34.4,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				}
+			],
+			"summary": {
+				"sync.count": {
+					"median": 9100,
+					"min": 9100,
+					"max": 9100,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.mean": {
+					"median": 0.002201098858655154,
+					"min": 0.002140659342755328,
+					"max": 0.002297802141734532,
+					"relativeRange": 0.07139288558589153,
+					"runs": 3
+				},
+				"sync.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p50": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p90": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p95": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p99": {
+					"median": 0.009999990463256836,
+					"min": 0.009999990463256836,
+					"max": 0.010000109672546387,
+					"relativeRange": 1.192094032377274e-5,
+					"runs": 3
+				},
+				"sync.max": {
+					"median": 0.125,
+					"min": 0.09500002861022949,
+					"max": 0.2250000238418579,
+					"relativeRange": 1.0399999618530273,
+					"runs": 3
+				},
+				"syncUpdate.count": {
+					"median": 8190,
+					"min": 8190,
+					"max": 8190,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.mean": {
+					"median": 0.0021941391102996938,
+					"min": 0.0021452992099254267,
+					"max": 0.0023070817028646505,
+					"relativeRange": 0.07373392697837021,
+					"runs": 3
+				},
+				"syncUpdate.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.p50": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.p90": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.p95": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.p99": {
+					"median": 0.009999990463256836,
+					"min": 0.009999990463256836,
+					"max": 0.010000109672546387,
+					"relativeRange": 1.192094032377274e-5,
+					"runs": 3
+				},
+				"syncUpdate.max": {
+					"median": 0.125,
+					"min": 0.09000003337860107,
+					"max": 0.2250000238418579,
+					"relativeRange": 1.0799999237060547,
+					"runs": 3
+				},
+				"syncNewBar.count": {
+					"median": 910,
+					"min": 910,
+					"max": 910,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.mean": {
+					"median": 0.0022142860915634658,
+					"min": 0.00209890053822444,
+					"max": 0.002263736593854296,
+					"relativeRange": 0.07444207695558813,
+					"runs": 3
+				},
+				"syncNewBar.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.p50": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.p90": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.p95": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.p99": {
+					"median": 0.009999990463256836,
+					"min": 0.009999990463256836,
+					"max": 0.010000109672546387,
+					"relativeRange": 1.192094032377274e-5,
+					"runs": 3
+				},
+				"syncNewBar.max": {
+					"median": 0.0849999189376831,
+					"min": 0.059999942779541016,
+					"max": 0.09500002861022949,
+					"relativeRange": 0.4117661083459204,
+					"runs": 3
+				},
+				"syncPerRound.count": {
+					"median": 91,
+					"min": 91,
+					"max": 91,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncPerRound.mean": {
+					"median": 0.0022010988586551533,
+					"min": 0.002140659342755327,
+					"max": 0.002297802141734532,
+					"relativeRange": 0.07139288558589195,
+					"runs": 3
+				},
+				"syncPerRound.min": {
+					"median": 0.0005500006675720215,
+					"min": 0.0005000007152557374,
+					"max": 0.0011000001430511474,
+					"relativeRange": 1.0909067264301844,
+					"runs": 3
+				},
+				"syncPerRound.p50": {
+					"median": 0.0021499991416931152,
+					"min": 0.0021000003814697268,
+					"max": 0.0021500003337860106,
+					"relativeRange": 0.023255801059022297,
+					"runs": 3
+				},
+				"syncPerRound.p90": {
+					"median": 0.0028999996185302733,
+					"min": 0.0026499998569488527,
+					"max": 0.0029499995708465575,
+					"relativeRange": 0.10344819081381308,
+					"runs": 3
+				},
+				"syncPerRound.p95": {
+					"median": 0.0033000004291534424,
+					"min": 0.0030000007152557375,
+					"max": 0.0037000000476837156,
+					"relativeRange": 0.2121209822410692,
+					"runs": 3
+				},
+				"syncPerRound.p99": {
+					"median": 0.004450000524520874,
+					"min": 0.003799999952316284,
+					"max": 0.005450000762939453,
+					"relativeRange": 0.37078665531187155,
+					"runs": 3
+				},
+				"syncPerRound.max": {
+					"median": 0.004450000524520874,
+					"min": 0.003799999952316284,
+					"max": 0.005450000762939453,
+					"relativeRange": 0.37078665531187155,
+					"runs": 3
+				},
+				"settle.count": {
+					"median": 91,
+					"min": 91,
+					"max": 91,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"settle.mean": {
+					"median": 16.330494512568464,
+					"min": 16.32115384379586,
+					"max": 16.356208797339555,
+					"relativeRange": 0.0021465947351880094,
+					"runs": 3
+				},
+				"settle.min": {
+					"median": 14.024999976158142,
+					"min": 12.134999990463257,
+					"max": 14.759999990463257,
+					"relativeRange": 0.18716577571924276,
+					"runs": 3
+				},
+				"settle.p50": {
+					"median": 16.325000047683716,
+					"min": 16.2849999666214,
+					"max": 16.364999890327454,
+					"relativeRange": 0.004900454730314413,
+					"runs": 3
+				},
+				"settle.p90": {
+					"median": 17.240000009536743,
+					"min": 16.795000076293945,
+					"max": 17.644999980926514,
+					"relativeRange": 0.049303938756517944,
+					"runs": 3
+				},
+				"settle.p95": {
+					"median": 17.40499997138977,
+					"min": 16.924999952316284,
+					"max": 18.1599999666214,
+					"relativeRange": 0.07095662259897731,
+					"runs": 3
+				},
+				"settle.p99": {
+					"median": 20.05999994277954,
+					"min": 18.56500005722046,
+					"max": 20.645000100135803,
+					"relativeRange": 0.10368893563551708,
+					"runs": 3
+				},
+				"settle.max": {
+					"median": 20.05999994277954,
+					"min": 18.56500005722046,
+					"max": 20.645000100135803,
+					"relativeRange": 0.10368893563551708,
+					"runs": 3
+				},
+				"settleJs.count": {
+					"median": 91,
+					"min": 91,
+					"max": 91,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"settleJs.mean": {
+					"median": 0.8162637385693226,
+					"min": 0.7840109853954106,
+					"max": 0.825000001833989,
+					"relativeRange": 0.050215407719103745,
+					"runs": 3
+				},
+				"settleJs.min": {
+					"median": 0.3349999189376831,
+					"min": 0.25999999046325684,
+					"max": 0.48500001430511475,
+					"relativeRange": 0.6716420247364674,
+					"runs": 3
+				},
+				"settleJs.p50": {
+					"median": 0.7900000810623169,
+					"min": 0.7649999856948853,
+					"max": 0.7949999570846558,
+					"relativeRange": 0.03797464343222522,
+					"runs": 3
+				},
+				"settleJs.p90": {
+					"median": 1.0049999952316284,
+					"min": 0.9900000095367432,
+					"max": 1.024999976158142,
+					"relativeRange": 0.034825837599464136,
+					"runs": 3
+				},
+				"settleJs.p95": {
+					"median": 1.0749999284744263,
+					"min": 1.0600000619888306,
+					"max": 1.100000023841858,
+					"relativeRange": 0.0372092693157597,
+					"runs": 3
+				},
+				"settleJs.p99": {
+					"median": 1.3949999809265137,
+					"min": 1.3049999475479126,
+					"max": 1.440000057220459,
+					"relativeRange": 0.09677427348987037,
+					"runs": 3
+				},
+				"settleJs.max": {
+					"median": 1.3949999809265137,
+					"min": 1.3049999475479126,
+					"max": 1.440000057220459,
+					"relativeRange": 0.09677427348987037,
+					"runs": 3
+				},
+				"mainThreadPerTick.count": {
+					"median": 91,
+					"min": 91,
+					"max": 91,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"mainThreadPerTick.mean": {
+					"median": 0.010451098876995043,
+					"min": 0.009980769196709434,
+					"max": 0.010460439527427756,
+					"relativeRange": 0.04589664076130526,
+					"runs": 3
+				},
+				"mainThreadPerTick.min": {
+					"median": 0.0038999998569488525,
+					"min": 0.003250000476837158,
+					"max": 0.006100000143051148,
+					"relativeRange": 0.7307691719875278,
+					"runs": 3
+				},
+				"mainThreadPerTick.p50": {
+					"median": 0.010299999713897705,
+					"min": 0.009950000047683715,
+					"max": 0.010399999618530274,
+					"relativeRange": 0.04368927993652059,
+					"runs": 3
+				},
+				"mainThreadPerTick.p90": {
+					"median": 0.012400000095367432,
+					"min": 0.012250000238418579,
+					"max": 0.0125,
+					"relativeRange": 0.0201612709402172,
+					"runs": 3
+				},
+				"mainThreadPerTick.p95": {
+					"median": 0.01375,
+					"min": 0.013050000667572021,
+					"max": 0.013799999952316283,
+					"relativeRange": 0.05454540252685544,
+					"runs": 3
+				},
+				"mainThreadPerTick.p99": {
+					"median": 0.01705000042915344,
+					"min": 0.014950000047683716,
+					"max": 0.017699999809265135,
+					"relativeRange": 0.16129030453742696,
+					"runs": 3
+				},
+				"mainThreadPerTick.max": {
+					"median": 0.01705000042915344,
+					"min": 0.014950000047683716,
+					"max": 0.017699999809265135,
+					"relativeRange": 0.16129030453742696,
+					"runs": 3
+				},
+				"visibleBars": {
+					"median": 1000000,
+					"min": 1000000,
+					"max": 1000000,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"warmupTicks": {
+					"median": 500,
+					"min": 500,
+					"max": 500,
+					"relativeRange": 0,
+					"runs": 3
+				}
+			}
+		},
+		{
+			"caseId": "tick/candles-1m/all",
+			"adapter": "lumen-main",
+			"job": {
+				"scenario": "tick",
+				"dataset": {
+					"kind": "candles",
+					"size": 1000000
+				},
+				"seed": 1,
+				"chart": {
+					"width": 1200,
+					"height": 600
+				},
+				"view": "all",
+				"ticks": 10000,
+				"minTicks": 500,
+				"budgetMs": 1500,
+				"warmupTicks": 500,
+				"warmupBudgetMs": 1500,
+				"roundSize": 100,
+				"newBarEvery": 10,
+				"adapter": "lumen-main"
+			},
+			"library": {
+				"library": {
+					"name": "@lumen-charts/core",
+					"version": "workspace"
+				},
+				"options": {
+					"worker": false
+				}
+			},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"sync": {
+							"count": 9100,
+							"mean": 0.001971428564616612,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.18499994277954102
+						},
+						"syncUpdate": {
+							"count": 8190,
+							"mean": 0.001976190410981976,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.18499994277954102
+						},
+						"syncNewBar": {
+							"count": 910,
+							"mean": 0.0019285719473283369,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.07999992370605469
+						},
+						"syncPerRound": {
+							"count": 91,
+							"mean": 0.001971428564616612,
+							"min": 0.0004499995708465576,
+							"p50": 0.0020500004291534426,
+							"p90": 0.002250000238418579,
+							"p95": 0.003649998903274536,
+							"p99": 0.005800000429153442,
+							"max": 0.005800000429153442
+						},
+						"settle": {
+							"count": 91,
+							"mean": 16.372307697495263,
+							"min": 13.865000009536743,
+							"p50": 16.329999923706055,
+							"p90": 17.28000009059906,
+							"p95": 17.554999947547913,
+							"p99": 18.414999961853027,
+							"max": 18.414999961853027
+						},
+						"settleJs": {
+							"count": 91,
+							"mean": 0.730054945736141,
+							"min": 0.2950000762939453,
+							"p50": 0.7400000095367432,
+							"p90": 0.9500000476837158,
+							"p95": 1.0299999713897705,
+							"p99": 1.4000000953674316,
+							"max": 1.4000000953674316
+						},
+						"mainThreadPerTick": {
+							"count": 91,
+							"mean": 0.00927197802197802,
+							"min": 0.0037500011920928956,
+							"p50": 0.009399999380111695,
+							"p90": 0.011600000858306885,
+							"p95": 0.0125,
+							"p99": 0.01765000104904175,
+							"max": 0.01765000104904175
+						},
+						"visibleBars": 1000000,
+						"warmupTicks": 500
+					},
+					"durationMs": 2839.509042000005,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 86.3818359375,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 34.4,
+										"BAT": 30.2,
+										"CP": 33.5,
+										"PA": 33.7,
+										"SKIN": 34.2,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 34.4,
+										"BAT": 30.2,
+										"CP": 33.5,
+										"PA": 33.7,
+										"SKIN": 34.2,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"sync": {
+							"count": 9100,
+							"mean": 0.0022115384746383836,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.18000006675720215
+						},
+						"syncUpdate": {
+							"count": 8190,
+							"mean": 0.0022301587575230116,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.18000006675720215
+						},
+						"syncNewBar": {
+							"count": 910,
+							"mean": 0.002043955928676731,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.08000004291534424
+						},
+						"syncPerRound": {
+							"count": 91,
+							"mean": 0.0022115384746383827,
+							"min": 0.00045000076293945314,
+							"p50": 0.0021000003814697268,
+							"p90": 0.0031500005722045897,
+							"p95": 0.0036999988555908203,
+							"p99": 0.00534999966621399,
+							"max": 0.00534999966621399
+						},
+						"settle": {
+							"count": 91,
+							"mean": 16.306813182411613,
+							"min": 13.040000081062317,
+							"p50": 16.320000052452087,
+							"p90": 17.080000042915344,
+							"p95": 17.3400000333786,
+							"p99": 19.37000000476837,
+							"max": 19.37000000476837
+						},
+						"settleJs": {
+							"count": 91,
+							"mean": 0.8260989071248652,
+							"min": 0.33500003814697266,
+							"p50": 0.7799999713897705,
+							"p90": 1.0250000953674316,
+							"p95": 1.2450000047683716,
+							"p99": 1.7200000286102295,
+							"max": 1.7200000286102295
+						},
+						"mainThreadPerTick": {
+							"count": 91,
+							"mean": 0.010472527545887036,
+							"min": 0.0038499999046325683,
+							"p50": 0.01,
+							"p90": 0.012300001382827759,
+							"p95": 0.015199999809265136,
+							"p99": 0.020150001049041747,
+							"max": 0.020150001049041747
+						},
+						"visibleBars": 1000000,
+						"warmupTicks": 500
+					},
+					"durationMs": 2521.629249999998,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 90.51513671875,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 34.9,
+										"BAT": 30.2,
+										"CP": 34.1,
+										"PA": 34.3,
+										"SKIN": 34.4,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 34.9,
+										"BAT": 30.2,
+										"CP": 34.1,
+										"PA": 34.3,
+										"SKIN": 34.4,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"sync": {
+							"count": 9100,
+							"mean": 0.0020906592987395903,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.18499994277954102
+						},
+						"syncUpdate": {
+							"count": 8190,
+							"mean": 0.002092185489132873,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.18499994277954102
+						},
+						"syncNewBar": {
+							"count": 910,
+							"mean": 0.0020769235852000478,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.004999995231628418,
+							"p95": 0.004999995231628418,
+							"p99": 0.009999990463256836,
+							"max": 0.08000004291534424
+						},
+						"syncPerRound": {
+							"count": 91,
+							"mean": 0.002090659298739591,
+							"min": 0.0005000007152557374,
+							"p50": 0.0021000003814697268,
+							"p90": 0.002250000238418579,
+							"p95": 0.00375,
+							"p99": 0.005850000381469727,
+							"max": 0.005850000381469727
+						},
+						"settle": {
+							"count": 91,
+							"mean": 16.37252747488546,
+							"min": 14.534999966621399,
+							"p50": 16.3400000333786,
+							"p90": 17.050000071525574,
+							"p95": 17.25,
+							"p99": 18.05999994277954,
+							"max": 18.05999994277954
+						},
+						"settleJs": {
+							"count": 91,
+							"mean": 0.7741758233898288,
+							"min": 0.33500003814697266,
+							"p50": 0.755000114440918,
+							"p90": 0.9700000286102295,
+							"p95": 1.149999976158142,
+							"p99": 1.3550000190734863,
+							"max": 1.3550000190734863
+						},
+						"mainThreadPerTick": {
+							"count": 91,
+							"mean": 0.009832417532637878,
+							"min": 0.004399999380111695,
+							"p50": 0.009749999046325683,
+							"p90": 0.011899999380111694,
+							"p95": 0.013849999904632568,
+							"p99": 0.016449999809265137,
+							"max": 0.016449999809265137
+						},
+						"visibleBars": 1000000,
+						"warmupTicks": 500
+					},
+					"durationMs": 2586.455541000003,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 95.5185546875,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 34.9,
+										"BAT": 30.2,
+										"CP": 34.1,
+										"PA": 34.3,
+										"SKIN": 34.4,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 35.5,
+										"BAT": 30.2,
+										"CP": 34.4,
+										"PA": 34.7,
+										"SKIN": 34.6,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				}
+			],
+			"summary": {
+				"sync.count": {
+					"median": 9100,
+					"min": 9100,
+					"max": 9100,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.mean": {
+					"median": 0.0020906592987395903,
+					"min": 0.001971428564616612,
+					"max": 0.0022115384746383836,
+					"relativeRange": 0.1148488948756635,
+					"runs": 3
+				},
+				"sync.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p50": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p90": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p95": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p99": {
+					"median": 0.009999990463256836,
+					"min": 0.009999990463256836,
+					"max": 0.009999990463256836,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.max": {
+					"median": 0.18499994277954102,
+					"min": 0.18000006675720215,
+					"max": 0.18499994277954102,
+					"relativeRange": 0.027026365236756167,
+					"runs": 3
+				},
+				"syncUpdate.count": {
+					"median": 8190,
+					"min": 8190,
+					"max": 8190,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.mean": {
+					"median": 0.002092185489132873,
+					"min": 0.001976190410981976,
+					"max": 0.0022301587575230116,
+					"relativeRange": 0.12138902017062331,
+					"runs": 3
+				},
+				"syncUpdate.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.p50": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.p90": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.p95": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.p99": {
+					"median": 0.009999990463256836,
+					"min": 0.009999990463256836,
+					"max": 0.009999990463256836,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncUpdate.max": {
+					"median": 0.18499994277954102,
+					"min": 0.18000006675720215,
+					"max": 0.18499994277954102,
+					"relativeRange": 0.027026365236756167,
+					"runs": 3
+				},
+				"syncNewBar.count": {
+					"median": 910,
+					"min": 910,
+					"max": 910,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.mean": {
+					"median": 0.002043955928676731,
+					"min": 0.0019285719473283369,
+					"max": 0.0020769235852000478,
+					"relativeRange": 0.07258064412756422,
+					"runs": 3
+				},
+				"syncNewBar.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.p50": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.p90": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.p95": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.p99": {
+					"median": 0.009999990463256836,
+					"min": 0.009999990463256836,
+					"max": 0.009999990463256836,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncNewBar.max": {
+					"median": 0.08000004291534424,
+					"min": 0.07999992370605469,
+					"max": 0.08000004291534424,
+					"relativeRange": 1.4901153200246167e-6,
+					"runs": 3
+				},
+				"syncPerRound.count": {
+					"median": 91,
+					"min": 91,
+					"max": 91,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"syncPerRound.mean": {
+					"median": 0.002090659298739591,
+					"min": 0.001971428564616612,
+					"max": 0.0022115384746383827,
+					"relativeRange": 0.11484889487566302,
+					"runs": 3
+				},
+				"syncPerRound.min": {
+					"median": 0.00045000076293945314,
+					"min": 0.0004499995708465576,
+					"max": 0.0005000007152557374,
+					"relativeRange": 0.11111346585851749,
+					"runs": 3
+				},
+				"syncPerRound.p50": {
+					"median": 0.0021000003814697268,
+					"min": 0.0020500004291534426,
+					"max": 0.0021000003814697268,
+					"relativeRange": 0.023809496777943803,
+					"runs": 3
+				},
+				"syncPerRound.p90": {
+					"median": 0.002250000238418579,
+					"min": 0.002250000238418579,
+					"max": 0.0031500005722045897,
+					"relativeRange": 0.4000001059638017,
+					"runs": 3
+				},
+				"syncPerRound.p95": {
+					"median": 0.0036999988555908203,
+					"min": 0.003649998903274536,
+					"max": 0.00375,
+					"relativeRange": 0.02702733179886226,
+					"runs": 3
+				},
+				"syncPerRound.p99": {
+					"median": 0.005800000429153442,
+					"min": 0.00534999966621399,
+					"max": 0.005850000381469727,
+					"relativeRange": 0.08620701349305179,
+					"runs": 3
+				},
+				"syncPerRound.max": {
+					"median": 0.005800000429153442,
+					"min": 0.00534999966621399,
+					"max": 0.005850000381469727,
+					"relativeRange": 0.08620701349305179,
+					"runs": 3
+				},
+				"settle.count": {
+					"median": 91,
+					"min": 91,
+					"max": 91,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"settle.mean": {
+					"median": 16.372307697495263,
+					"min": 16.306813182411613,
+					"max": 16.37252747488546,
+					"relativeRange": 0.004013746485102967,
+					"runs": 3
+				},
+				"settle.min": {
+					"median": 13.865000009536743,
+					"min": 13.040000081062317,
+					"max": 14.534999966621399,
+					"relativeRange": 0.10782545146273194,
+					"runs": 3
+				},
+				"settle.p50": {
+					"median": 16.329999923706055,
+					"min": 16.320000052452087,
+					"max": 16.3400000333786,
+					"relativeRange": 0.0012247385805238095,
+					"runs": 3
+				},
+				"settle.p90": {
+					"median": 17.080000042915344,
+					"min": 17.050000071525574,
+					"max": 17.28000009059906,
+					"relativeRange": 0.013466043237446513,
+					"runs": 3
+				},
+				"settle.p95": {
+					"median": 17.3400000333786,
+					"min": 17.25,
+					"max": 17.554999947547913,
+					"relativeRange": 0.01758938563787794,
+					"runs": 3
+				},
+				"settle.p99": {
+					"median": 18.414999961853027,
+					"min": 18.05999994277954,
+					"max": 19.37000000476837,
+					"relativeRange": 0.07113766303027516,
+					"runs": 3
+				},
+				"settle.max": {
+					"median": 18.414999961853027,
+					"min": 18.05999994277954,
+					"max": 19.37000000476837,
+					"relativeRange": 0.07113766303027516,
+					"runs": 3
+				},
+				"settleJs.count": {
+					"median": 91,
+					"min": 91,
+					"max": 91,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"settleJs.mean": {
+					"median": 0.7741758233898288,
+					"min": 0.730054945736141,
+					"max": 0.8260989071248652,
+					"relativeRange": 0.12405962377923827,
+					"runs": 3
+				},
+				"settleJs.min": {
+					"median": 0.33500003814697266,
+					"min": 0.2950000762939453,
+					"max": 0.33500003814697266,
+					"relativeRange": 0.11940285760647701,
+					"runs": 3
+				},
+				"settleJs.p50": {
+					"median": 0.755000114440918,
+					"min": 0.7400000095367432,
+					"max": 0.7799999713897705,
+					"relativeRange": 0.052980073893959014,
+					"runs": 3
+				},
+				"settleJs.p90": {
+					"median": 0.9700000286102295,
+					"min": 0.9500000476837158,
+					"max": 1.0250000953674316,
+					"relativeRange": 0.07731963450678694,
+					"runs": 3
+				},
+				"settleJs.p95": {
+					"median": 1.149999976158142,
+					"min": 1.0299999713897705,
+					"max": 1.2450000047683716,
+					"relativeRange": 0.18695655463999364,
+					"runs": 3
+				},
+				"settleJs.p99": {
+					"median": 1.4000000953674316,
+					"min": 1.3550000190734863,
+					"max": 1.7200000286102295,
+					"relativeRange": 0.26071427476649456,
+					"runs": 3
+				},
+				"settleJs.max": {
+					"median": 1.4000000953674316,
+					"min": 1.3550000190734863,
+					"max": 1.7200000286102295,
+					"relativeRange": 0.26071427476649456,
+					"runs": 3
+				},
+				"mainThreadPerTick.count": {
+					"median": 91,
+					"min": 91,
+					"max": 91,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"mainThreadPerTick.mean": {
+					"median": 0.009832417532637878,
+					"min": 0.00927197802197802,
+					"max": 0.010472527545887036,
+					"relativeRange": 0.1221011536505537,
+					"runs": 3
+				},
+				"mainThreadPerTick.min": {
+					"median": 0.0038499999046325683,
+					"min": 0.0037500011920928956,
+					"max": 0.004399999380111695,
+					"relativeRange": 0.1688307023687661,
+					"runs": 3
+				},
+				"mainThreadPerTick.p50": {
+					"median": 0.009749999046325683,
+					"min": 0.009399999380111695,
+					"max": 0.01,
+					"relativeRange": 0.061538531136002265,
+					"runs": 3
+				},
+				"mainThreadPerTick.p90": {
+					"median": 0.011899999380111694,
+					"min": 0.011600000858306885,
+					"max": 0.012300001382827759,
+					"relativeRange": 0.05882357655335472,
+					"runs": 3
+				},
+				"mainThreadPerTick.p95": {
+					"median": 0.013849999904632568,
+					"min": 0.0125,
+					"max": 0.015199999809265136,
+					"relativeRange": 0.1949458359463263,
+					"runs": 3
+				},
+				"mainThreadPerTick.p99": {
+					"median": 0.01765000104904175,
+					"min": 0.016449999809265137,
+					"max": 0.020150001049041747,
+					"relativeRange": 0.20963178582799516,
+					"runs": 3
+				},
+				"mainThreadPerTick.max": {
+					"median": 0.01765000104904175,
+					"min": 0.016449999809265137,
+					"max": 0.020150001049041747,
+					"relativeRange": 0.20963178582799516,
+					"runs": 3
+				},
+				"visibleBars": {
+					"median": 1000000,
+					"min": 1000000,
+					"max": 1000000,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"warmupTicks": {
+					"median": 500,
+					"min": 500,
+					"max": 500,
+					"relativeRange": 0,
+					"runs": 3
+				}
+			}
+		},
+		{
+			"caseId": "ind-apply/candles-1m/latest/20",
+			"adapter": "lumen-worker",
+			"job": {
+				"scenario": "ind-apply",
+				"dataset": {
+					"kind": "candles",
+					"size": 1000000
+				},
+				"seed": 1,
+				"chart": {
+					"width": 1200,
+					"height": 600
+				},
+				"indicators": 20,
+				"view": "latest",
+				"ticks": 10000,
+				"minTicks": 1000,
+				"budgetMs": 1500,
+				"warmupTicks": 200,
+				"warmupBudgetMs": 1500,
+				"newBarEvery": 10,
+				"adapter": "lumen-worker"
+			},
+			"library": {
+				"library": {
+					"name": "@lumen-charts/core",
+					"version": "workspace"
+				},
+				"options": {
+					"worker": true
+				}
+			},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"applied": {
+							"count": 1000,
+							"mean": 0.7434200001955032,
+							"min": 0.10500001907348633,
+							"p50": 0.6499999761581421,
+							"p90": 1.1349999904632568,
+							"p95": 1.2899999618530273,
+							"p99": 4.034999966621399,
+							"max": 4.769999980926514
+						},
+						"appliedUpdate": {
+							"count": 900,
+							"mean": 0.738244444794125,
+							"min": 0.10500001907348633,
+							"p50": 0.6400001049041748,
+							"p90": 1.1299999952316284,
+							"p95": 1.2899999618530273,
+							"p99": 4.034999966621399,
+							"max": 4.769999980926514
+						},
+						"appliedNewBar": {
+							"count": 100,
+							"mean": 0.7899999988079071,
+							"min": 0.12999999523162842,
+							"p50": 0.6700000762939453,
+							"p90": 1.1449999809265137,
+							"p95": 1.2050000429153442,
+							"p99": 2.9100000858306885,
+							"max": 4.070000052452087
+						},
+						"sync": {
+							"count": 1000,
+							"mean": 0.011034999489784241,
+							"min": 0,
+							"p50": 0.009999990463256836,
+							"p90": 0.019999980926513672,
+							"p95": 0.02499997615814209,
+							"p99": 0.03000009059906006,
+							"max": 0.07499992847442627
+						},
+						"visibleBars": 200,
+						"warmupTicks": 200
+					},
+					"durationMs": 3625.8768340000024,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 99.880859375,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 35.5,
+										"BAT": 30.2,
+										"CP": 34.4,
+										"PA": 34.7,
+										"SKIN": 34.6,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 35.5,
+										"BAT": 30.2,
+										"CP": 34.4,
+										"PA": 34.7,
+										"SKIN": 34.6,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"applied": {
+							"count": 1000,
+							"mean": 0.7381900005340576,
+							"min": 0.11000001430511475,
+							"p50": 0.5950000286102295,
+							"p90": 1.1949999332427979,
+							"p95": 1.850000023841858,
+							"p99": 3.7299998998641968,
+							"max": 4.754999995231628
+						},
+						"appliedUpdate": {
+							"count": 900,
+							"mean": 0.7439444447888268,
+							"min": 0.11000001430511475,
+							"p50": 0.5949999094009399,
+							"p90": 1.1949999332427979,
+							"p95": 1.8700000047683716,
+							"p99": 3.7350000143051147,
+							"max": 4.754999995231628
+						},
+						"appliedNewBar": {
+							"count": 100,
+							"mean": 0.6864000022411346,
+							"min": 0.13499999046325684,
+							"p50": 0.6349999904632568,
+							"p90": 1.1049998998641968,
+							"p95": 1.315000057220459,
+							"p99": 2.1700000762939453,
+							"max": 2.399999976158142
+						},
+						"sync": {
+							"count": 1000,
+							"mean": 0.010070001006126404,
+							"min": 0,
+							"p50": 0.009999990463256836,
+							"p90": 0.019999980926513672,
+							"p95": 0.02499997615814209,
+							"p99": 0.02500009536743164,
+							"max": 0.0700000524520874
+						},
+						"visibleBars": 200,
+						"warmupTicks": 200
+					},
+					"durationMs": 3365.119583000007,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 95.00537109375,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 35.5,
+										"BAT": 30.2,
+										"CP": 34.4,
+										"PA": 34.7,
+										"SKIN": 34.6,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.2,
+										"BAT": 30.2,
+										"CP": 35.5,
+										"PA": 35.7,
+										"SKIN": 35,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"applied": {
+							"count": 1000,
+							"mean": 0.7073099986314774,
+							"min": 0.10000002384185791,
+							"p50": 0.5950000286102295,
+							"p90": 1.1200000047683716,
+							"p95": 1.3050000667572021,
+							"p99": 3.5950000286102295,
+							"max": 4.309999942779541
+						},
+						"appliedUpdate": {
+							"count": 900,
+							"mean": 0.700199998749627,
+							"min": 0.10000002384185791,
+							"p50": 0.5900000333786011,
+							"p90": 1.0950000286102295,
+							"p95": 1.284999966621399,
+							"p99": 3.6399999856948853,
+							"max": 4.309999942779541
+						},
+						"appliedNewBar": {
+							"count": 100,
+							"mean": 0.7712999975681305,
+							"min": 0.1549999713897705,
+							"p50": 0.6400001049041748,
+							"p90": 1.2599999904632568,
+							"p95": 2.0950000286102295,
+							"p99": 2.5700000524520874,
+							"max": 3.1999999284744263
+						},
+						"sync": {
+							"count": 1000,
+							"mean": 0.010659999966621399,
+							"min": 0,
+							"p50": 0.009999990463256836,
+							"p90": 0.019999980926513672,
+							"p95": 0.02499997615814209,
+							"p99": 0.02500009536743164,
+							"max": 0.4049999713897705
+						},
+						"visibleBars": 200,
+						"warmupTicks": 200
+					},
+					"durationMs": 3661.390124999991,
+					"host": {
+						"cpuIdle": 0.00033875338753387534,
+						"loadAverage": 94.9755859375,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.2,
+										"BAT": 30.2,
+										"CP": 35.5,
+										"PA": 35.7,
+										"SKIN": 35,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.2,
+										"BAT": 30.2,
+										"CP": 35.5,
+										"PA": 35.7,
+										"SKIN": 35,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				}
+			],
+			"summary": {
+				"applied.count": {
+					"median": 1000,
+					"min": 1000,
+					"max": 1000,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"applied.mean": {
+					"median": 0.7381900005340576,
+					"min": 0.7073099986314774,
+					"max": 0.7434200001955032,
+					"relativeRange": 0.048916947585176465,
+					"runs": 3
+				},
+				"applied.min": {
+					"median": 0.10500001907348633,
+					"min": 0.10000002384185791,
+					"max": 0.11000001430511475,
+					"relativeRange": 0.09523798711177515,
+					"runs": 3
+				},
+				"applied.p50": {
+					"median": 0.5950000286102295,
+					"min": 0.5950000286102295,
+					"max": 0.6499999761581421,
+					"relativeRange": 0.09243688219037342,
+					"runs": 3
+				},
+				"applied.p90": {
+					"median": 1.1349999904632568,
+					"min": 1.1200000047683716,
+					"max": 1.1949999332427979,
+					"relativeRange": 0.06607923269128364,
+					"runs": 3
+				},
+				"applied.p95": {
+					"median": 1.3050000667572021,
+					"min": 1.2899999618530273,
+					"max": 1.850000023841858,
+					"relativeRange": 0.42911879949583154,
+					"runs": 3
+				},
+				"applied.p99": {
+					"median": 3.7299998998641968,
+					"min": 3.5950000286102295,
+					"max": 4.034999966621399,
+					"relativeRange": 0.1179624530357733,
+					"runs": 3
+				},
+				"applied.max": {
+					"median": 4.754999995231628,
+					"min": 4.309999942779541,
+					"max": 4.769999980926514,
+					"relativeRange": 0.09674028151593402,
+					"runs": 3
+				},
+				"appliedUpdate.count": {
+					"median": 900,
+					"min": 900,
+					"max": 900,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"appliedUpdate.mean": {
+					"median": 0.738244444794125,
+					"min": 0.700199998749627,
+					"max": 0.7439444447888268,
+					"relativeRange": 0.059254690431702284,
+					"runs": 3
+				},
+				"appliedUpdate.min": {
+					"median": 0.10500001907348633,
+					"min": 0.10000002384185791,
+					"max": 0.11000001430511475,
+					"relativeRange": 0.09523798711177515,
+					"runs": 3
+				},
+				"appliedUpdate.p50": {
+					"median": 0.5949999094009399,
+					"min": 0.5900000333786011,
+					"max": 0.6400001049041748,
+					"relativeRange": 0.08403374645202046,
+					"runs": 3
+				},
+				"appliedUpdate.p90": {
+					"median": 1.1299999952316284,
+					"min": 1.0950000286102295,
+					"max": 1.1949999332427979,
+					"relativeRange": 0.08849549119871482,
+					"runs": 3
+				},
+				"appliedUpdate.p95": {
+					"median": 1.2899999618530273,
+					"min": 1.284999966621399,
+					"max": 1.8700000047683716,
+					"relativeRange": 0.45348841507456034,
+					"runs": 3
+				},
+				"appliedUpdate.p99": {
+					"median": 3.7350000143051147,
+					"min": 3.6399999856948853,
+					"max": 4.034999966621399,
+					"relativeRange": 0.10575635325666852,
+					"runs": 3
+				},
+				"appliedUpdate.max": {
+					"median": 4.754999995231628,
+					"min": 4.309999942779541,
+					"max": 4.769999980926514,
+					"relativeRange": 0.09674028151593402,
+					"runs": 3
+				},
+				"appliedNewBar.count": {
+					"median": 100,
+					"min": 100,
+					"max": 100,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"appliedNewBar.mean": {
+					"median": 0.7712999975681305,
+					"min": 0.6864000022411346,
+					"max": 0.7899999988079071,
+					"relativeRange": 0.13431867871569808,
+					"runs": 3
+				},
+				"appliedNewBar.min": {
+					"median": 0.13499999046325684,
+					"min": 0.12999999523162842,
+					"max": 0.1549999713897705,
+					"relativeRange": 0.18518502166077097,
+					"runs": 3
+				},
+				"appliedNewBar.p50": {
+					"median": 0.6400001049041748,
+					"min": 0.6349999904632568,
+					"max": 0.6700000762939453,
+					"relativeRange": 0.05468762514645045,
+					"runs": 3
+				},
+				"appliedNewBar.p90": {
+					"median": 1.1449999809265137,
+					"min": 1.1049998998641968,
+					"max": 1.2599999904632568,
+					"relativeRange": 0.13537126042014144,
+					"runs": 3
+				},
+				"appliedNewBar.p95": {
+					"median": 1.315000057220459,
+					"min": 1.2050000429153442,
+					"max": 2.0950000286102295,
+					"relativeRange": 0.6768060433214698,
+					"runs": 3
+				},
+				"appliedNewBar.p99": {
+					"median": 2.5700000524520874,
+					"min": 2.1700000762939453,
+					"max": 2.9100000858306885,
+					"relativeRange": 0.2879377410248279,
+					"runs": 3
+				},
+				"appliedNewBar.max": {
+					"median": 3.1999999284744263,
+					"min": 2.399999976158142,
+					"max": 4.070000052452087,
+					"relativeRange": 0.5218750355066739,
+					"runs": 3
+				},
+				"sync.count": {
+					"median": 1000,
+					"min": 1000,
+					"max": 1000,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.mean": {
+					"median": 0.010659999966621399,
+					"min": 0.010070001006126404,
+					"max": 0.011034999489784241,
+					"relativeRange": 0.09052518636767745,
+					"runs": 3
+				},
+				"sync.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p50": {
+					"median": 0.009999990463256836,
+					"min": 0.009999990463256836,
+					"max": 0.009999990463256836,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p90": {
+					"median": 0.019999980926513672,
+					"min": 0.019999980926513672,
+					"max": 0.019999980926513672,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p95": {
+					"median": 0.02499997615814209,
+					"min": 0.02499997615814209,
+					"max": 0.02499997615814209,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p99": {
+					"median": 0.02500009536743164,
+					"min": 0.02500009536743164,
+					"max": 0.03000009059906006,
+					"relativeRange": 0.19999904632932156,
+					"runs": 3
+				},
+				"sync.max": {
+					"median": 0.07499992847442627,
+					"min": 0.0700000524520874,
+					"max": 0.4049999713897705,
+					"relativeRange": 4.466669845584087,
+					"runs": 3
+				},
+				"visibleBars": {
+					"median": 200,
+					"min": 200,
+					"max": 200,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"warmupTicks": {
+					"median": 200,
+					"min": 200,
+					"max": 200,
+					"relativeRange": 0,
+					"runs": 3
+				}
+			}
+		},
+		{
+			"caseId": "ind-apply/candles-1m/latest/20",
+			"adapter": "lumen-main",
+			"job": {
+				"scenario": "ind-apply",
+				"dataset": {
+					"kind": "candles",
+					"size": 1000000
+				},
+				"seed": 1,
+				"chart": {
+					"width": 1200,
+					"height": 600
+				},
+				"indicators": 20,
+				"view": "latest",
+				"ticks": 10000,
+				"minTicks": 1000,
+				"budgetMs": 1500,
+				"warmupTicks": 200,
+				"warmupBudgetMs": 1500,
+				"newBarEvery": 10,
+				"adapter": "lumen-main"
+			},
+			"library": {
+				"library": {
+					"name": "@lumen-charts/core",
+					"version": "workspace"
+				},
+				"options": {
+					"worker": false
+				}
+			},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"applied": {
+							"count": 1000,
+							"mean": 0.4419050018787384,
+							"min": 0.06999993324279785,
+							"p50": 0.40000009536743164,
+							"p90": 0.6399999856948853,
+							"p95": 0.7050000429153442,
+							"p99": 2.5500000715255737,
+							"max": 4.235000014305115
+						},
+						"appliedUpdate": {
+							"count": 900,
+							"mean": 0.43995000216695995,
+							"min": 0.06999993324279785,
+							"p50": 0.3950001001358032,
+							"p90": 0.6349999904632568,
+							"p95": 0.7000000476837158,
+							"p99": 2.5799999237060547,
+							"max": 4.235000014305115
+						},
+						"appliedNewBar": {
+							"count": 100,
+							"mean": 0.4594999992847443,
+							"min": 0.08500003814697266,
+							"p50": 0.4599999189376831,
+							"p90": 0.6749999523162842,
+							"p95": 0.7949999570846558,
+							"p99": 1.274999976158142,
+							"max": 1.5600000619888306
+						},
+						"sync": {
+							"count": 1000,
+							"mean": 0.010245002031326294,
+							"min": 0,
+							"p50": 0.009999990463256836,
+							"p90": 0.019999980926513672,
+							"p95": 0.02499997615814209,
+							"p99": 0.039999961853027344,
+							"max": 0.1549999713897705
+						},
+						"visibleBars": 200,
+						"warmupTicks": 200
+					},
+					"durationMs": 3137.332665999995,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 99.880859375,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 35.5,
+										"BAT": 30.2,
+										"CP": 34.4,
+										"PA": 34.7,
+										"SKIN": 34.6,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 35.5,
+										"BAT": 30.2,
+										"CP": 34.4,
+										"PA": 34.7,
+										"SKIN": 34.6,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"applied": {
+							"count": 1000,
+							"mean": 0.4539449999332428,
+							"min": 0.029999971389770508,
+							"p50": 0.40500009059906006,
+							"p90": 0.6399999856948853,
+							"p95": 0.744999885559082,
+							"p99": 3.9299999475479126,
+							"max": 4.444999933242798
+						},
+						"appliedUpdate": {
+							"count": 900,
+							"mean": 0.4523888884650336,
+							"min": 0.029999971389770508,
+							"p50": 0.4049999713897705,
+							"p90": 0.6399999856948853,
+							"p95": 0.744999885559082,
+							"p99": 4,
+							"max": 4.444999933242798
+						},
+						"appliedNewBar": {
+							"count": 100,
+							"mean": 0.46795000314712526,
+							"min": 0.05000007152557373,
+							"p50": 0.4649999141693115,
+							"p90": 0.6699999570846558,
+							"p95": 0.7250000238418579,
+							"p99": 1.15500009059906,
+							"max": 2.4800000190734863
+						},
+						"sync": {
+							"count": 1000,
+							"mean": 0.010480000376701356,
+							"min": 0,
+							"p50": 0.009999990463256836,
+							"p90": 0.019999980926513672,
+							"p95": 0.02499997615814209,
+							"p99": 0.039999961853027344,
+							"max": 0.10000002384185791
+						},
+						"visibleBars": 200,
+						"warmupTicks": 200
+					},
+					"durationMs": 3176.625291000004,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 94.3642578125,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.2,
+										"BAT": 30.2,
+										"CP": 35.5,
+										"PA": 35.7,
+										"SKIN": 35,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.2,
+										"BAT": 30.2,
+										"CP": 35.5,
+										"PA": 35.7,
+										"SKIN": 35,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"applied": {
+							"count": 1000,
+							"mean": 0.39420500028133393,
+							"min": 0.06499993801116943,
+							"p50": 0.3799999952316284,
+							"p90": 0.6000000238418579,
+							"p95": 0.6600000858306885,
+							"p99": 1.159999966621399,
+							"max": 4.0899999141693115
+						},
+						"appliedUpdate": {
+							"count": 900,
+							"mean": 0.38668333424462215,
+							"min": 0.06499993801116943,
+							"p50": 0.375,
+							"p90": 0.5950000286102295,
+							"p95": 0.6499999761581421,
+							"p99": 1.0499999523162842,
+							"max": 4.0899999141693115
+						},
+						"appliedNewBar": {
+							"count": 100,
+							"mean": 0.46189999461174014,
+							"min": 0.09000003337860107,
+							"p50": 0.44499993324279785,
+							"p90": 0.6749999523162842,
+							"p95": 0.7999999523162842,
+							"p99": 1.4200000762939453,
+							"max": 2.569999933242798
+						},
+						"sync": {
+							"count": 1000,
+							"mean": 0.009555000424385071,
+							"min": 0,
+							"p50": 0.009999990463256836,
+							"p90": 0.019999980926513672,
+							"p95": 0.020000100135803223,
+							"p99": 0.034999966621398926,
+							"max": 0.12999999523162842
+						},
+						"visibleBars": 200,
+						"warmupTicks": 200
+					},
+					"durationMs": 3672.8121249999967,
+					"host": {
+						"cpuIdle": 0.0003368137420006736,
+						"loadAverage": 94.9755859375,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.2,
+										"BAT": 30.2,
+										"CP": 35.5,
+										"PA": 35.7,
+										"SKIN": 35,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.4,
+										"BAT": 30.2,
+										"CP": 35.8,
+										"PA": 36,
+										"SKIN": 35.4,
+										"SUBBAT": 29.6,
+										"USB": 29.7
+									}
+								}
+							}
+						}
+					}
+				}
+			],
+			"summary": {
+				"applied.count": {
+					"median": 1000,
+					"min": 1000,
+					"max": 1000,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"applied.mean": {
+					"median": 0.4419050018787384,
+					"min": 0.39420500028133393,
+					"max": 0.4539449999332428,
+					"relativeRange": 0.13518742579949772,
+					"runs": 3
+				},
+				"applied.min": {
+					"median": 0.06499993801116943,
+					"min": 0.029999971389770508,
+					"max": 0.06999993324279785,
+					"relativeRange": 0.6153846153846154,
+					"runs": 3
+				},
+				"applied.p50": {
+					"median": 0.40000009536743164,
+					"min": 0.3799999952316284,
+					"max": 0.40500009059906006,
+					"relativeRange": 0.06250022351736462,
+					"runs": 3
+				},
+				"applied.p90": {
+					"median": 0.6399999856948853,
+					"min": 0.6000000238418579,
+					"max": 0.6399999856948853,
+					"relativeRange": 0.06249994179233778,
+					"runs": 3
+				},
+				"applied.p95": {
+					"median": 0.7050000429153442,
+					"min": 0.6600000858306885,
+					"max": 0.744999885559082,
+					"relativeRange": 0.12056708447406471,
+					"runs": 3
+				},
+				"applied.p99": {
+					"median": 2.5500000715255737,
+					"min": 1.159999966621399,
+					"max": 3.9299999475479126,
+					"relativeRange": 1.0862744718549446,
+					"runs": 3
+				},
+				"applied.max": {
+					"median": 4.235000014305115,
+					"min": 4.0899999141693115,
+					"max": 4.444999933242798,
+					"relativeRange": 0.08382526986407467,
+					"runs": 3
+				},
+				"appliedUpdate.count": {
+					"median": 900,
+					"min": 900,
+					"max": 900,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"appliedUpdate.mean": {
+					"median": 0.43995000216695995,
+					"min": 0.38668333424462215,
+					"max": 0.4523888884650336,
+					"relativeRange": 0.14934777564900742,
+					"runs": 3
+				},
+				"appliedUpdate.min": {
+					"median": 0.06499993801116943,
+					"min": 0.029999971389770508,
+					"max": 0.06999993324279785,
+					"relativeRange": 0.6153846153846154,
+					"runs": 3
+				},
+				"appliedUpdate.p50": {
+					"median": 0.3950001001358032,
+					"min": 0.375,
+					"max": 0.4049999713897705,
+					"relativeRange": 0.0759492754038704,
+					"runs": 3
+				},
+				"appliedUpdate.p90": {
+					"median": 0.6349999904632568,
+					"min": 0.5950000286102295,
+					"max": 0.6399999856948853,
+					"relativeRange": 0.07086607521336585,
+					"runs": 3
+				},
+				"appliedUpdate.p95": {
+					"median": 0.7000000476837158,
+					"min": 0.6499999761581421,
+					"max": 0.744999885559082,
+					"relativeRange": 0.13571414704226445,
+					"runs": 3
+				},
+				"appliedUpdate.p99": {
+					"median": 2.5799999237060547,
+					"min": 1.0499999523162842,
+					"max": 4,
+					"relativeRange": 1.1434109050073817,
+					"runs": 3
+				},
+				"appliedUpdate.max": {
+					"median": 4.235000014305115,
+					"min": 4.0899999141693115,
+					"max": 4.444999933242798,
+					"relativeRange": 0.08382526986407467,
+					"runs": 3
+				},
+				"appliedNewBar.count": {
+					"median": 100,
+					"min": 100,
+					"max": 100,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"appliedNewBar.mean": {
+					"median": 0.46189999461174014,
+					"min": 0.4594999992847443,
+					"max": 0.46795000314712526,
+					"relativeRange": 0.018294011606308447,
+					"runs": 3
+				},
+				"appliedNewBar.min": {
+					"median": 0.08500003814697266,
+					"min": 0.05000007152557373,
+					"max": 0.09000003337860107,
+					"relativeRange": 0.470587575312188,
+					"runs": 3
+				},
+				"appliedNewBar.p50": {
+					"median": 0.4599999189376831,
+					"min": 0.44499993324279785,
+					"max": 0.4649999141693115,
+					"relativeRange": 0.04347822706730325,
+					"runs": 3
+				},
+				"appliedNewBar.p90": {
+					"median": 0.6749999523162842,
+					"min": 0.6699999570846558,
+					"max": 0.6749999523162842,
+					"relativeRange": 0.007407400866430838,
+					"runs": 3
+				},
+				"appliedNewBar.p95": {
+					"median": 0.7949999570846558,
+					"min": 0.7250000238418579,
+					"max": 0.7999999523162842,
+					"relativeRange": 0.0943395377648302,
+					"runs": 3
+				},
+				"appliedNewBar.p99": {
+					"median": 1.274999976158142,
+					"min": 1.15500009059906,
+					"max": 1.4200000762939453,
+					"relativeRange": 0.20784312992176598,
+					"runs": 3
+				},
+				"appliedNewBar.max": {
+					"median": 2.4800000190734863,
+					"min": 1.5600000619888306,
+					"max": 2.569999933242798,
+					"relativeRange": 0.4072580094702166,
+					"runs": 3
+				},
+				"sync.count": {
+					"median": 1000,
+					"min": 1000,
+					"max": 1000,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.mean": {
+					"median": 0.010245002031326294,
+					"min": 0.009555000424385071,
+					"max": 0.010480000376701356,
+					"relativeRange": 0.09028792278302124,
+					"runs": 3
+				},
+				"sync.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p50": {
+					"median": 0.009999990463256836,
+					"min": 0.009999990463256836,
+					"max": 0.009999990463256836,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p90": {
+					"median": 0.019999980926513672,
+					"min": 0.019999980926513672,
+					"max": 0.019999980926513672,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p95": {
+					"median": 0.02499997615814209,
+					"min": 0.020000100135803223,
+					"max": 0.02499997615814209,
+					"relativeRange": 0.19999523162387048,
+					"runs": 3
+				},
+				"sync.p99": {
+					"median": 0.039999961853027344,
+					"min": 0.034999966621398926,
+					"max": 0.039999961853027344,
+					"relativeRange": 0.125,
+					"runs": 3
+				},
+				"sync.max": {
+					"median": 0.12999999523162842,
+					"min": 0.10000002384185791,
+					"max": 0.1549999713897705,
+					"relativeRange": 0.4230765351176825,
+					"runs": 3
+				},
+				"visibleBars": {
+					"median": 200,
+					"min": 200,
+					"max": 200,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"warmupTicks": {
+					"median": 200,
+					"min": 200,
+					"max": 200,
+					"relativeRange": 0,
+					"runs": 3
+				}
+			}
+		},
+		{
+			"caseId": "ind-apply/candles-1m/all/20",
+			"adapter": "lumen-worker",
+			"job": {
+				"scenario": "ind-apply",
+				"dataset": {
+					"kind": "candles",
+					"size": 1000000
+				},
+				"seed": 1,
+				"chart": {
+					"width": 1200,
+					"height": 600
+				},
+				"indicators": 20,
+				"view": "all",
+				"ticks": 10000,
+				"minTicks": 1000,
+				"budgetMs": 1500,
+				"warmupTicks": 200,
+				"warmupBudgetMs": 1500,
+				"newBarEvery": 10,
+				"adapter": "lumen-worker"
+			},
+			"library": {
+				"library": {
+					"name": "@lumen-charts/core",
+					"version": "workspace"
+				},
+				"options": {
+					"worker": true
+				}
+			},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"applied": {
+							"count": 1000,
+							"mean": 0.5013899989128113,
+							"min": 0.0849999189376831,
+							"p50": 0.2849999666213989,
+							"p90": 0.7699999809265137,
+							"p95": 0.9950000047683716,
+							"p99": 4.769999980926514,
+							"max": 33.235000014305115
+						},
+						"appliedUpdate": {
+							"count": 900,
+							"mean": 0.5104833315478431,
+							"min": 0.0849999189376831,
+							"p50": 0.2849999666213989,
+							"p90": 0.7700001001358032,
+							"p95": 1.024999976158142,
+							"p99": 4.825000047683716,
+							"max": 33.235000014305115
+						},
+						"appliedNewBar": {
+							"count": 100,
+							"mean": 0.419550005197525,
+							"min": 0.10500001907348633,
+							"p50": 0.309999942779541,
+							"p90": 0.7599999904632568,
+							"p95": 0.7999999523162842,
+							"p99": 1.0600000619888306,
+							"max": 3.399999976158142
+						},
+						"sync": {
+							"count": 1000,
+							"mean": 0.005770000815391541,
+							"min": 0,
+							"p50": 0.004999995231628418,
+							"p90": 0.009999990463256836,
+							"p95": 0.014999985694885254,
+							"p99": 0.020000100135803223,
+							"max": 0.2549999952316284
+						},
+						"visibleBars": 1000000,
+						"warmupTicks": 200
+					},
+					"durationMs": 3389.6749580000032,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 93.7763671875,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.4,
+										"BAT": 30.2,
+										"CP": 35.8,
+										"PA": 36,
+										"SKIN": 35.4,
+										"SUBBAT": 29.6,
+										"USB": 29.7
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.4,
+										"BAT": 30.2,
+										"CP": 35.8,
+										"PA": 36,
+										"SKIN": 35.4,
+										"SUBBAT": 29.6,
+										"USB": 29.7
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"applied": {
+							"count": 1000,
+							"mean": 0.722490001320839,
+							"min": 0.10500001907348633,
+							"p50": 0.5950000286102295,
+							"p90": 1.0750000476837158,
+							"p95": 1.2050000429153442,
+							"p99": 4.389999985694885,
+							"max": 13
+						},
+						"appliedUpdate": {
+							"count": 900,
+							"mean": 0.7189555572138893,
+							"min": 0.10500001907348633,
+							"p50": 0.5899999141693115,
+							"p90": 1.0700000524520874,
+							"p95": 1.2050000429153442,
+							"p99": 4.914999961853027,
+							"max": 13
+						},
+						"appliedNewBar": {
+							"count": 100,
+							"mean": 0.7542999982833862,
+							"min": 0.13499999046325684,
+							"p50": 0.6449999809265137,
+							"p90": 1.100000023841858,
+							"p95": 1.2000000476837158,
+							"p99": 3.1100000143051147,
+							"max": 3.6950000524520874
+						},
+						"sync": {
+							"count": 1000,
+							"mean": 0.009674999594688415,
+							"min": 0,
+							"p50": 0.009999990463256836,
+							"p90": 0.019999980926513672,
+							"p95": 0.020000100135803223,
+							"p99": 0.029999971389770508,
+							"max": 0.09999990463256836
+						},
+						"visibleBars": 1000000,
+						"warmupTicks": 200
+					},
+					"durationMs": 4507.395040999996,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 92.39013671875,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 39.1,
+										"BAT": 30.3,
+										"CP": 37,
+										"PA": 37.2,
+										"SKIN": 35.9,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.4,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 38.8,
+										"BAT": 30.4,
+										"CP": 37.3,
+										"PA": 37.4,
+										"SKIN": 36,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"applied": {
+							"count": 1000,
+							"mean": 0.6078500016927719,
+							"min": 0.0849999189376831,
+							"p50": 0.5300000905990601,
+							"p90": 0.9950000047683716,
+							"p95": 1.184999942779541,
+							"p99": 3.825000047683716,
+							"max": 5.9049999713897705
+						},
+						"appliedUpdate": {
+							"count": 900,
+							"mean": 0.6028111131985983,
+							"min": 0.0849999189376831,
+							"p50": 0.5299999713897705,
+							"p90": 0.9850000143051147,
+							"p95": 1.1750000715255737,
+							"p99": 3.825000047683716,
+							"max": 5.9049999713897705
+						},
+						"appliedNewBar": {
+							"count": 100,
+							"mean": 0.6531999981403351,
+							"min": 0.10000002384185791,
+							"p50": 0.5349999666213989,
+							"p90": 1.0449999570846558,
+							"p95": 1.399999976158142,
+							"p99": 2.944999933242798,
+							"max": 5.560000061988831
+						},
+						"sync": {
+							"count": 1000,
+							"mean": 0.008440000772476195,
+							"min": 0,
+							"p50": 0.004999995231628418,
+							"p90": 0.014999985694885254,
+							"p95": 0.019999980926513672,
+							"p99": 0.02500009536743164,
+							"max": 0.3700000047683716
+						},
+						"visibleBars": 1000000,
+						"warmupTicks": 200
+					},
+					"durationMs": 3572.7715000000026,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 89.48876953125,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.4,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 38.8,
+										"BAT": 30.4,
+										"CP": 37.3,
+										"PA": 37.4,
+										"SKIN": 36,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.4,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 40,
+										"BAT": 30.4,
+										"CP": 37.3,
+										"PA": 37.5,
+										"SKIN": 36.2,
+										"SUBBAT": 29.4,
+										"USB": 29.7
+									}
+								}
+							}
+						}
+					}
+				}
+			],
+			"summary": {
+				"applied.count": {
+					"median": 1000,
+					"min": 1000,
+					"max": 1000,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"applied.mean": {
+					"median": 0.6078500016927719,
+					"min": 0.5013899989128113,
+					"max": 0.722490001320839,
+					"relativeRange": 0.36374105748506536,
+					"runs": 3
+				},
+				"applied.min": {
+					"median": 0.0849999189376831,
+					"min": 0.0849999189376831,
+					"max": 0.10500001907348633,
+					"relativeRange": 0.23529552011062632,
+					"runs": 3
+				},
+				"applied.p50": {
+					"median": 0.5300000905990601,
+					"min": 0.2849999666213989,
+					"max": 0.5950000286102295,
+					"relativeRange": 0.5849056773526905,
+					"runs": 3
+				},
+				"applied.p90": {
+					"median": 0.9950000047683716,
+					"min": 0.7699999809265137,
+					"max": 1.0750000476837158,
+					"relativeRange": 0.3065327289402414,
+					"runs": 3
+				},
+				"applied.p95": {
+					"median": 1.184999942779541,
+					"min": 0.9950000047683716,
+					"max": 1.2050000429153442,
+					"relativeRange": 0.1772152306222021,
+					"runs": 3
+				},
+				"applied.p99": {
+					"median": 4.389999985694885,
+					"min": 3.825000047683716,
+					"max": 4.769999980926514,
+					"relativeRange": 0.21526194449251587,
+					"runs": 3
+				},
+				"applied.max": {
+					"median": 13,
+					"min": 5.9049999713897705,
+					"max": 33.235000014305115,
+					"relativeRange": 2.1023076956088724,
+					"runs": 3
+				},
+				"appliedUpdate.count": {
+					"median": 900,
+					"min": 900,
+					"max": 900,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"appliedUpdate.mean": {
+					"median": 0.6028111131985983,
+					"min": 0.5104833315478431,
+					"max": 0.7189555572138893,
+					"relativeRange": 0.34583341464934847,
+					"runs": 3
+				},
+				"appliedUpdate.min": {
+					"median": 0.0849999189376831,
+					"min": 0.0849999189376831,
+					"max": 0.10500001907348633,
+					"relativeRange": 0.23529552011062632,
+					"runs": 3
+				},
+				"appliedUpdate.p50": {
+					"median": 0.5299999713897705,
+					"min": 0.2849999666213989,
+					"max": 0.5899999141693115,
+					"relativeRange": 0.5754716302118642,
+					"runs": 3
+				},
+				"appliedUpdate.p90": {
+					"median": 0.9850000143051147,
+					"min": 0.7700001001358032,
+					"max": 1.0700000524520874,
+					"relativeRange": 0.3045684750856824,
+					"runs": 3
+				},
+				"appliedUpdate.p95": {
+					"median": 1.1750000715255737,
+					"min": 1.024999976158142,
+					"max": 1.2050000429153442,
+					"relativeRange": 0.15319153685114006,
+					"runs": 3
+				},
+				"appliedUpdate.p99": {
+					"median": 4.825000047683716,
+					"min": 3.825000047683716,
+					"max": 4.914999961853027,
+					"relativeRange": 0.2259067157299979,
+					"runs": 3
+				},
+				"appliedUpdate.max": {
+					"median": 13,
+					"min": 5.9049999713897705,
+					"max": 33.235000014305115,
+					"relativeRange": 2.1023076956088724,
+					"runs": 3
+				},
+				"appliedNewBar.count": {
+					"median": 100,
+					"min": 100,
+					"max": 100,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"appliedNewBar.mean": {
+					"median": 0.6531999981403351,
+					"min": 0.419550005197525,
+					"max": 0.7542999982833862,
+					"relativeRange": 0.5124770270038224,
+					"runs": 3
+				},
+				"appliedNewBar.min": {
+					"median": 0.10500001907348633,
+					"min": 0.10000002384185791,
+					"max": 0.13499999046325684,
+					"relativeRange": 0.333332954891213,
+					"runs": 3
+				},
+				"appliedNewBar.p50": {
+					"median": 0.5349999666213989,
+					"min": 0.309999942779541,
+					"max": 0.6449999809265137,
+					"relativeRange": 0.6261683346684032,
+					"runs": 3
+				},
+				"appliedNewBar.p90": {
+					"median": 1.0449999570846558,
+					"min": 0.7599999904632568,
+					"max": 1.100000023841858,
+					"relativeRange": 0.32535889697750253,
+					"runs": 3
+				},
+				"appliedNewBar.p95": {
+					"median": 1.2000000476837158,
+					"min": 0.7999999523162842,
+					"max": 1.399999976158142,
+					"relativeRange": 0.5,
+					"runs": 3
+				},
+				"appliedNewBar.p99": {
+					"median": 2.944999933242798,
+					"min": 1.0600000619888306,
+					"max": 3.1100000143051147,
+					"relativeRange": 0.6960950759883341,
+					"runs": 3
+				},
+				"appliedNewBar.max": {
+					"median": 3.6950000524520874,
+					"min": 3.399999976158142,
+					"max": 5.560000061988831,
+					"relativeRange": 0.584573763239127,
+					"runs": 3
+				},
+				"sync.count": {
+					"median": 1000,
+					"min": 1000,
+					"max": 1000,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.mean": {
+					"median": 0.008440000772476195,
+					"min": 0.005770000815391541,
+					"max": 0.009674999594688415,
+					"relativeRange": 0.46267753813856516,
+					"runs": 3
+				},
+				"sync.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p50": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.009999990463256836,
+					"relativeRange": 1,
+					"runs": 3
+				},
+				"sync.p90": {
+					"median": 0.014999985694885254,
+					"min": 0.009999990463256836,
+					"max": 0.019999980926513672,
+					"relativeRange": 0.6666666666666666,
+					"runs": 3
+				},
+				"sync.p95": {
+					"median": 0.019999980926513672,
+					"min": 0.014999985694885254,
+					"max": 0.020000100135803223,
+					"relativeRange": 0.2500059604701619,
+					"runs": 3
+				},
+				"sync.p99": {
+					"median": 0.02500009536743164,
+					"min": 0.020000100135803223,
+					"max": 0.029999971389770508,
+					"relativeRange": 0.3999933243052509,
+					"runs": 3
+				},
+				"sync.max": {
+					"median": 0.2549999952316284,
+					"min": 0.09999990463256836,
+					"max": 0.3700000047683716,
+					"relativeRange": 1.0588239419006635,
+					"runs": 3
+				},
+				"visibleBars": {
+					"median": 1000000,
+					"min": 1000000,
+					"max": 1000000,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"warmupTicks": {
+					"median": 200,
+					"min": 200,
+					"max": 200,
+					"relativeRange": 0,
+					"runs": 3
+				}
+			}
+		},
+		{
+			"caseId": "ind-apply/candles-1m/all/20",
+			"adapter": "lumen-main",
+			"job": {
+				"scenario": "ind-apply",
+				"dataset": {
+					"kind": "candles",
+					"size": 1000000
+				},
+				"seed": 1,
+				"chart": {
+					"width": 1200,
+					"height": 600
+				},
+				"indicators": 20,
+				"view": "all",
+				"ticks": 10000,
+				"minTicks": 1000,
+				"budgetMs": 1500,
+				"warmupTicks": 200,
+				"warmupBudgetMs": 1500,
+				"newBarEvery": 10,
+				"adapter": "lumen-main"
+			},
+			"library": {
+				"library": {
+					"name": "@lumen-charts/core",
+					"version": "workspace"
+				},
+				"options": {
+					"worker": false
+				}
+			},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"applied": {
+							"count": 1000,
+							"mean": 0.23365500009059906,
+							"min": 0.029999971389770508,
+							"p50": 0.16000008583068848,
+							"p90": 0.49499988555908203,
+							"p95": 0.6000000238418579,
+							"p99": 0.7299998998641968,
+							"max": 3.3100000619888306
+						},
+						"appliedUpdate": {
+							"count": 900,
+							"mean": 0.23152222288979424,
+							"min": 0.029999971389770508,
+							"p50": 0.16000008583068848,
+							"p90": 0.48000001907348633,
+							"p95": 0.5950000286102295,
+							"p99": 0.7299998998641968,
+							"max": 3.3100000619888306
+						},
+						"appliedNewBar": {
+							"count": 100,
+							"mean": 0.25284999489784243,
+							"min": 0.034999966621398926,
+							"p50": 0.1700000762939453,
+							"p90": 0.5249999761581421,
+							"p95": 0.6549999713897705,
+							"p99": 0.7050000429153442,
+							"max": 0.809999942779541
+						},
+						"sync": {
+							"count": 1000,
+							"mean": 0.005159999847412109,
+							"min": 0,
+							"p50": 0.004999995231628418,
+							"p90": 0.009999990463256836,
+							"p95": 0.014999985694885254,
+							"p99": 0.020000100135803223,
+							"max": 0.1499999761581421
+						},
+						"visibleBars": 1000000,
+						"warmupTicks": 200
+					},
+					"durationMs": 3663.443207999997,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 90.7705078125,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.8,
+										"BAT": 30.3,
+										"CP": 36.9,
+										"PA": 37,
+										"SKIN": 35.8,
+										"SUBBAT": 29.3,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.2,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.8,
+										"BAT": 30.3,
+										"CP": 36.9,
+										"PA": 37,
+										"SKIN": 35.8,
+										"SUBBAT": 29.3,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"applied": {
+							"count": 1000,
+							"mean": 0.3463150005340576,
+							"min": 0.034999966621398926,
+							"p50": 0.315000057220459,
+							"p90": 0.5899999141693115,
+							"p95": 0.6649999618530273,
+							"p99": 1.0049999952316284,
+							"max": 6.350000023841858
+						},
+						"appliedUpdate": {
+							"count": 900,
+							"mean": 0.34437222295337255,
+							"min": 0.034999966621398926,
+							"p50": 0.31499993801116943,
+							"p90": 0.5800000429153442,
+							"p95": 0.6600000858306885,
+							"p99": 1.0049999952316284,
+							"max": 6.350000023841858
+						},
+						"appliedNewBar": {
+							"count": 100,
+							"mean": 0.3637999987602234,
+							"min": 0.06999993324279785,
+							"p50": 0.34499990940093994,
+							"p90": 0.5900000333786011,
+							"p95": 0.6800000667572021,
+							"p99": 0.9200000762939453,
+							"max": 3.7649999856948853
+						},
+						"sync": {
+							"count": 1000,
+							"mean": 0.007330002546310424,
+							"min": 0,
+							"p50": 0.004999995231628418,
+							"p90": 0.014999985694885254,
+							"p95": 0.019999980926513672,
+							"p99": 0.02499997615814209,
+							"max": 0.1400001049041748
+						},
+						"visibleBars": 1000000,
+						"warmupTicks": 200
+					},
+					"durationMs": 3819.0724159999954,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 90.83740234375,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.4,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 38.8,
+										"BAT": 30.4,
+										"CP": 37.3,
+										"PA": 37.4,
+										"SKIN": 36,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.4,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 38.8,
+										"BAT": 30.4,
+										"CP": 37.3,
+										"PA": 37.4,
+										"SKIN": 36,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"applied": {
+							"count": 1000,
+							"mean": 0.35242500066757204,
+							"min": 0.034999966621398926,
+							"p50": 0.31999993324279785,
+							"p90": 0.6100000143051147,
+							"p95": 0.6850000619888306,
+							"p99": 1.149999976158142,
+							"max": 5.159999966621399
+						},
+						"appliedUpdate": {
+							"count": 900,
+							"mean": 0.34736666705873276,
+							"min": 0.034999966621398926,
+							"p50": 0.31499993801116943,
+							"p90": 0.6100000143051147,
+							"p95": 0.6799999475479126,
+							"p99": 1.0299999713897705,
+							"max": 5.159999966621399
+						},
+						"appliedNewBar": {
+							"count": 100,
+							"mean": 0.39795000314712525,
+							"min": 0.07500004768371582,
+							"p50": 0.36000001430511475,
+							"p90": 0.6349999904632568,
+							"p95": 0.7400000095367432,
+							"p99": 1.3900001049041748,
+							"max": 3.3049999475479126
+						},
+						"sync": {
+							"count": 1000,
+							"mean": 0.008125001311302185,
+							"min": 0,
+							"p50": 0.004999995231628418,
+							"p90": 0.014999985694885254,
+							"p95": 0.019999980926513672,
+							"p99": 0.02500009536743164,
+							"max": 0.18999993801116943
+						},
+						"visibleBars": 1000000,
+						"warmupTicks": 200
+					},
+					"durationMs": 4232.235084,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 96.015625,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.4,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 38.7,
+										"BAT": 30.5,
+										"CP": 37.7,
+										"PA": 37.8,
+										"SKIN": 36.3,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.4,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 39,
+										"BAT": 30.5,
+										"CP": 37.5,
+										"PA": 37.7,
+										"SKIN": 36.4,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							}
+						}
+					}
+				}
+			],
+			"summary": {
+				"applied.count": {
+					"median": 1000,
+					"min": 1000,
+					"max": 1000,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"applied.mean": {
+					"median": 0.3463150005340576,
+					"min": 0.23365500009059906,
+					"max": 0.35242500066757204,
+					"relativeRange": 0.3429536704844317,
+					"runs": 3
+				},
+				"applied.min": {
+					"median": 0.034999966621398926,
+					"min": 0.029999971389770508,
+					"max": 0.034999966621398926,
+					"relativeRange": 0.14285714285714285,
+					"runs": 3
+				},
+				"applied.p50": {
+					"median": 0.315000057220459,
+					"min": 0.16000008583068848,
+					"max": 0.31999993324279785,
+					"relativeRange": 0.5079359312628008,
+					"runs": 3
+				},
+				"applied.p90": {
+					"median": 0.5899999141693115,
+					"min": 0.49499988555908203,
+					"max": 0.6100000143051147,
+					"relativeRange": 0.19491550080638023,
+					"runs": 3
+				},
+				"applied.p95": {
+					"median": 0.6649999618530273,
+					"min": 0.6000000238418579,
+					"max": 0.6850000619888306,
+					"relativeRange": 0.12781961356827662,
+					"runs": 3
+				},
+				"applied.p99": {
+					"median": 1.0049999952316284,
+					"min": 0.7299998998641968,
+					"max": 1.149999976158142,
+					"relativeRange": 0.417910525658406,
+					"runs": 3
+				},
+				"applied.max": {
+					"median": 5.159999966621399,
+					"min": 3.3100000619888306,
+					"max": 6.350000023841858,
+					"relativeRange": 0.5891472832399107,
+					"runs": 3
+				},
+				"appliedUpdate.count": {
+					"median": 900,
+					"min": 900,
+					"max": 900,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"appliedUpdate.mean": {
+					"median": 0.34437222295337255,
+					"min": 0.23152222288979424,
+					"max": 0.34736666705873276,
+					"relativeRange": 0.33639311317110404,
+					"runs": 3
+				},
+				"appliedUpdate.min": {
+					"median": 0.034999966621398926,
+					"min": 0.029999971389770508,
+					"max": 0.034999966621398926,
+					"relativeRange": 0.14285714285714285,
+					"runs": 3
+				},
+				"appliedUpdate.p50": {
+					"median": 0.31499993801116943,
+					"min": 0.16000008583068848,
+					"max": 0.31499993801116943,
+					"relativeRange": 0.4920631196282486,
+					"runs": 3
+				},
+				"appliedUpdate.p90": {
+					"median": 0.5800000429153442,
+					"min": 0.48000001907348633,
+					"max": 0.6100000143051147,
+					"relativeRange": 0.22413790622874658,
+					"runs": 3
+				},
+				"appliedUpdate.p95": {
+					"median": 0.6600000858306885,
+					"min": 0.5950000286102295,
+					"max": 0.6799999475479126,
+					"relativeRange": 0.1287877392177921,
+					"runs": 3
+				},
+				"appliedUpdate.p99": {
+					"median": 1.0049999952316284,
+					"min": 0.7299998998641968,
+					"max": 1.0299999713897705,
+					"relativeRange": 0.29850753527260554,
+					"runs": 3
+				},
+				"appliedUpdate.max": {
+					"median": 5.159999966621399,
+					"min": 3.3100000619888306,
+					"max": 6.350000023841858,
+					"relativeRange": 0.5891472832399107,
+					"runs": 3
+				},
+				"appliedNewBar.count": {
+					"median": 100,
+					"min": 100,
+					"max": 100,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"appliedNewBar.mean": {
+					"median": 0.3637999987602234,
+					"min": 0.25284999489784243,
+					"max": 0.39795000314712525,
+					"relativeRange": 0.3988455435507482,
+					"runs": 3
+				},
+				"appliedNewBar.min": {
+					"median": 0.06999993324279785,
+					"min": 0.034999966621398926,
+					"max": 0.07500004768371582,
+					"relativeRange": 0.5714302744200462,
+					"runs": 3
+				},
+				"appliedNewBar.p50": {
+					"median": 0.34499990940093994,
+					"min": 0.1700000762939453,
+					"max": 0.36000001430511475,
+					"relativeRange": 0.5507246026269588,
+					"runs": 3
+				},
+				"appliedNewBar.p90": {
+					"median": 0.5900000333786011,
+					"min": 0.5249999761581421,
+					"max": 0.6349999904632568,
+					"relativeRange": 0.18644069166438182,
+					"runs": 3
+				},
+				"appliedNewBar.p95": {
+					"median": 0.6800000667572021,
+					"min": 0.6549999713897705,
+					"max": 0.7400000095367432,
+					"relativeRange": 0.12500004382694038,
+					"runs": 3
+				},
+				"appliedNewBar.p99": {
+					"median": 0.9200000762939453,
+					"min": 0.7050000429153442,
+					"max": 1.3900001049041748,
+					"relativeRange": 0.7445652230250133,
+					"runs": 3
+				},
+				"appliedNewBar.max": {
+					"median": 3.3049999475479126,
+					"min": 0.809999942779541,
+					"max": 3.7649999856948853,
+					"relativeRange": 0.8940998758888802,
+					"runs": 3
+				},
+				"sync.count": {
+					"median": 1000,
+					"min": 1000,
+					"max": 1000,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.mean": {
+					"median": 0.007330002546310424,
+					"min": 0.005159999847412109,
+					"max": 0.008125001311302185,
+					"relativeRange": 0.404502105580102,
+					"runs": 3
+				},
+				"sync.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p50": {
+					"median": 0.004999995231628418,
+					"min": 0.004999995231628418,
+					"max": 0.004999995231628418,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"sync.p90": {
+					"median": 0.014999985694885254,
+					"min": 0.009999990463256836,
+					"max": 0.014999985694885254,
+					"relativeRange": 0.3333333333333333,
+					"runs": 3
+				},
+				"sync.p95": {
+					"median": 0.019999980926513672,
+					"min": 0.014999985694885254,
+					"max": 0.019999980926513672,
+					"relativeRange": 0.25,
+					"runs": 3
+				},
+				"sync.p99": {
+					"median": 0.02499997615814209,
+					"min": 0.020000100135803223,
+					"max": 0.02500009536743164,
+					"relativeRange": 0.2,
+					"runs": 3
+				},
+				"sync.max": {
+					"median": 0.1499999761581421,
+					"min": 0.1400001049041748,
+					"max": 0.18999993801116943,
+					"relativeRange": 0.33333227369503554,
+					"runs": 3
+				},
+				"visibleBars": {
+					"median": 1000000,
+					"min": 1000000,
+					"max": 1000000,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"warmupTicks": {
+					"median": 200,
+					"min": 200,
+					"max": 200,
+					"relativeRange": 0,
+					"runs": 3
+				}
+			}
+		},
+		{
+			"caseId": "drawings/candles-1m/1000/hover",
+			"adapter": "lumen-worker",
+			"job": {
+				"scenario": "drawings",
+				"dataset": {
+					"kind": "candles",
+					"size": 1000000
+				},
+				"seed": 1,
+				"chart": {
+					"width": 1200,
+					"height": 600
+				},
+				"variant": "hover",
+				"drawings": 1000,
+				"visibleBars": 300,
+				"frames": 600,
+				"minFrames": 120,
+				"budgetMs": 1500,
+				"warmupFrames": 60,
+				"warmupBudgetMs": 1500,
+				"adapter": "lumen-worker"
+			},
+			"library": {
+				"library": {
+					"name": "@lumen-charts/core",
+					"version": "workspace"
+				},
+				"options": {
+					"worker": true
+				}
+			},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"frameJs": {
+							"count": 120,
+							"mean": 0.9499999980131785,
+							"min": 0.3200000524520874,
+							"p50": 0.9750000238418579,
+							"p90": 1.1499998569488525,
+							"p95": 1.2549999952316284,
+							"p99": 1.375,
+							"max": 1.5350000858306885
+						},
+						"hitTest": {
+							"count": 120,
+							"mean": 0.027541667222976685,
+							"min": 0,
+							"p50": 0.014999985694885254,
+							"p90": 0.0549999475479126,
+							"p95": 0.07999992370605469,
+							"p99": 0.17500007152557373,
+							"max": 0.3599998950958252
+						},
+						"hitTestMean": 0.01239375000198682,
+						"redraw": {
+							"count": 120,
+							"mean": 0.9224583307902018,
+							"min": 0.2950000762939453,
+							"p50": 0.9549999237060547,
+							"p90": 1.1200000047683716,
+							"p95": 1.184999942779541,
+							"p99": 1.3250000476837158,
+							"max": 1.5250000953674316
+						},
+						"hits": 108,
+						"interval": {
+							"count": 120,
+							"mean": 16.578,
+							"min": 16.565000000000055,
+							"p50": 16.579999999999927,
+							"p90": 16.585000000000036,
+							"p95": 16.589999999999918,
+							"p99": 16.5949999999998,
+							"max": 16.595000000000255
+						},
+						"frames": 120,
+						"warmupFrames": 60,
+						"drawings": 1000,
+						"drawingsInView": 500,
+						"visibleBars": 300
+					},
+					"durationMs": 4375.472750000001,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 96.25439453125,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.4,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 39,
+										"BAT": 30.5,
+										"CP": 37.5,
+										"PA": 37.7,
+										"SKIN": 36.4,
+										"SUBBAT": 29.4,
+										"USB": 29.6
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.4,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.9,
+										"BAT": 30.5,
+										"CP": 37.3,
+										"PA": 37.4,
+										"SKIN": 36.4,
+										"SUBBAT": 29.4,
+										"USB": 29.5
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"frameJs": {
+							"count": 120,
+							"mean": 0.9508333255847295,
+							"min": 0.3250000476837158,
+							"p50": 0.9850000143051147,
+							"p90": 1.1050000190734863,
+							"p95": 1.3000000715255737,
+							"p99": 1.4249999523162842,
+							"max": 1.5399999618530273
+						},
+						"hitTest": {
+							"count": 120,
+							"mean": 0.026708334684371948,
+							"min": 0,
+							"p50": 0.014999985694885254,
+							"p90": 0.0549999475479126,
+							"p95": 0.06499993801116943,
+							"p99": 0.08500003814697266,
+							"max": 0.4500000476837158
+						},
+						"hitTestMean": 0.012072916676600775,
+						"redraw": {
+							"count": 120,
+							"mean": 0.9241249909003576,
+							"min": 0.315000057220459,
+							"p50": 0.9499999284744263,
+							"p90": 1.0850000381469727,
+							"p95": 1.2050000429153442,
+							"p99": 1.404999852180481,
+							"max": 1.534999966621399
+						},
+						"hits": 108,
+						"interval": {
+							"count": 120,
+							"mean": 16.580041666666666,
+							"min": 16.56999999999971,
+							"p50": 16.579999999999927,
+							"p90": 16.585000000000036,
+							"p95": 16.585000000000036,
+							"p99": 16.589999999999918,
+							"max": 16.590000000000146
+						},
+						"frames": 120,
+						"warmupFrames": 60,
+						"drawings": 1000,
+						"drawingsInView": 500,
+						"visibleBars": 300
+					},
+					"durationMs": 3968.7969160000066,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 92.9638671875,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.4,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.6,
+										"BAT": 30.6,
+										"CP": 36.9,
+										"PA": 37.1,
+										"SKIN": 36.4,
+										"SUBBAT": 29.4,
+										"USB": 29.5
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.6,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.4,
+										"BAT": 30.6,
+										"CP": 36.7,
+										"PA": 36.8,
+										"SKIN": 36.3,
+										"SUBBAT": 29.4,
+										"USB": 29.5
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"frameJs": {
+							"count": 120,
+							"mean": 0.9093750019868215,
+							"min": 0.3250000476837158,
+							"p50": 0.9700000286102295,
+							"p90": 1.1299999952316284,
+							"p95": 1.2450000047683716,
+							"p99": 1.2899998426437378,
+							"max": 2.505000114440918
+						},
+						"hitTest": {
+							"count": 120,
+							"mean": 0.02558333377043406,
+							"min": 0,
+							"p50": 0.014999985694885254,
+							"p90": 0.05500006675720215,
+							"p95": 0.0700000524520874,
+							"p99": 0.09500002861022949,
+							"max": 0.3500000238418579
+						},
+						"hitTestMean": 0.012772916654745737,
+						"redraw": {
+							"count": 120,
+							"mean": 0.8837916682163874,
+							"min": 0.2749999761581421,
+							"p50": 0.9500000476837158,
+							"p90": 1.090000033378601,
+							"p95": 1.2249999046325684,
+							"p99": 1.2549998760223389,
+							"max": 2.15500009059906
+						},
+						"hits": 108,
+						"interval": {
+							"count": 120,
+							"mean": 16.580375,
+							"min": 16.564999999999827,
+							"p50": 16.579999999999927,
+							"p90": 16.585000000000036,
+							"p95": 16.585000000000036,
+							"p99": 16.590000000000146,
+							"max": 16.590000000000146
+						},
+						"frames": 120,
+						"warmupFrames": 60,
+						"drawings": 1000,
+						"drawingsInView": 500,
+						"visibleBars": 300
+					},
+					"durationMs": 3997.1108330000134,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 89.58349609375,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.6,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.3,
+										"BAT": 30.6,
+										"CP": 36.5,
+										"PA": 36.6,
+										"SKIN": 36.2,
+										"SUBBAT": 29.4,
+										"USB": 29.5
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.6,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.2,
+										"BAT": 30.6,
+										"CP": 36.3,
+										"PA": 36.5,
+										"SKIN": 36.1,
+										"SUBBAT": 29.4,
+										"USB": 29.5
+									}
+								}
+							}
+						}
+					}
+				}
+			],
+			"summary": {
+				"frameJs.count": {
+					"median": 120,
+					"min": 120,
+					"max": 120,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"frameJs.mean": {
+					"median": 0.9499999980131785,
+					"min": 0.9093750019868215,
+					"max": 0.9508333255847295,
+					"relativeRange": 0.04364034072064588,
+					"runs": 3
+				},
+				"frameJs.min": {
+					"median": 0.3250000476837158,
+					"min": 0.3200000524520874,
+					"max": 0.3250000476837158,
+					"relativeRange": 0.015384598455487992,
+					"runs": 3
+				},
+				"frameJs.p50": {
+					"median": 0.9750000238418579,
+					"min": 0.9700000286102295,
+					"max": 0.9850000143051147,
+					"relativeRange": 0.015384600336500307,
+					"runs": 3
+				},
+				"frameJs.p90": {
+					"median": 1.1299999952316284,
+					"min": 1.1050000190734863,
+					"max": 1.1499998569488525,
+					"relativeRange": 0.03982286554447472,
+					"runs": 3
+				},
+				"frameJs.p95": {
+					"median": 1.2549999952316284,
+					"min": 1.2450000047683716,
+					"max": 1.3000000715255737,
+					"relativeRange": 0.043824754554721006,
+					"runs": 3
+				},
+				"frameJs.p99": {
+					"median": 1.375,
+					"min": 1.2899998426437378,
+					"max": 1.4249999523162842,
+					"relativeRange": 0.0981818979436701,
+					"runs": 3
+				},
+				"frameJs.max": {
+					"median": 1.5399999618530273,
+					"min": 1.5350000858306885,
+					"max": 2.505000114440918,
+					"relativeRange": 0.6298701640505645,
+					"runs": 3
+				},
+				"hitTest.count": {
+					"median": 120,
+					"min": 120,
+					"max": 120,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"hitTest.mean": {
+					"median": 0.026708334684371948,
+					"min": 0.02558333377043406,
+					"max": 0.027541667222976685,
+					"relativeRange": 0.07332293367165715,
+					"runs": 3
+				},
+				"hitTest.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"hitTest.p50": {
+					"median": 0.014999985694885254,
+					"min": 0.014999985694885254,
+					"max": 0.014999985694885254,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"hitTest.p90": {
+					"median": 0.0549999475479126,
+					"min": 0.0549999475479126,
+					"max": 0.05500006675720215,
+					"relativeRange": 2.1674436952314073e-6,
+					"runs": 3
+				},
+				"hitTest.p95": {
+					"median": 0.0700000524520874,
+					"min": 0.06499993801116943,
+					"max": 0.07999992370605469,
+					"relativeRange": 0.21428534935959115,
+					"runs": 3
+				},
+				"hitTest.p99": {
+					"median": 0.09500002861022949,
+					"min": 0.08500003814697266,
+					"max": 0.17500007152557373,
+					"relativeRange": 0.9473684870965394,
+					"runs": 3
+				},
+				"hitTest.max": {
+					"median": 0.3599998950958252,
+					"min": 0.3500000238418579,
+					"max": 0.4500000476837158,
+					"relativeRange": 0.2777779249497831,
+					"runs": 3
+				},
+				"hitTestMean": {
+					"median": 0.01239375000198682,
+					"min": 0.012072916676600775,
+					"max": 0.012772916654745737,
+					"relativeRange": 0.05648007891338348,
+					"runs": 3
+				},
+				"redraw.count": {
+					"median": 120,
+					"min": 120,
+					"max": 120,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"redraw.mean": {
+					"median": 0.9224583307902018,
+					"min": 0.8837916682163874,
+					"max": 0.9241249909003576,
+					"relativeRange": 0.043723734002618406,
+					"runs": 3
+				},
+				"redraw.min": {
+					"median": 0.2950000762939453,
+					"min": 0.2749999761581421,
+					"max": 0.315000057220459,
+					"relativeRange": 0.13559346005883685,
+					"runs": 3
+				},
+				"redraw.p50": {
+					"median": 0.9500000476837158,
+					"min": 0.9499999284744263,
+					"max": 0.9549999237060547,
+					"relativeRange": 0.005263152611222889,
+					"runs": 3
+				},
+				"redraw.p90": {
+					"median": 1.090000033378601,
+					"min": 1.0850000381469727,
+					"max": 1.1200000047683716,
+					"relativeRange": 0.03211006013725692,
+					"runs": 3
+				},
+				"redraw.p95": {
+					"median": 1.2050000429153442,
+					"min": 1.184999942779541,
+					"max": 1.2249999046325684,
+					"relativeRange": 0.03319498790742988,
+					"runs": 3
+				},
+				"redraw.p99": {
+					"median": 1.3250000476837158,
+					"min": 1.2549998760223389,
+					"max": 1.404999852180481,
+					"relativeRange": 0.1132075251018767,
+					"runs": 3
+				},
+				"redraw.max": {
+					"median": 1.534999966621399,
+					"min": 1.5250000953674316,
+					"max": 2.15500009059906,
+					"relativeRange": 0.4104234585869637,
+					"runs": 3
+				},
+				"hits": {
+					"median": 108,
+					"min": 108,
+					"max": 108,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"interval.count": {
+					"median": 120,
+					"min": 120,
+					"max": 120,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"interval.mean": {
+					"median": 16.580041666666666,
+					"min": 16.578,
+					"max": 16.580375,
+					"relativeRange": 0.00014324451335822027,
+					"runs": 3
+				},
+				"interval.min": {
+					"median": 16.565000000000055,
+					"min": 16.564999999999827,
+					"max": 16.56999999999971,
+					"relativeRange": 0.000301841231505086,
+					"runs": 3
+				},
+				"interval.p50": {
+					"median": 16.579999999999927,
+					"min": 16.579999999999927,
+					"max": 16.579999999999927,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"interval.p90": {
+					"median": 16.585000000000036,
+					"min": 16.585000000000036,
+					"max": 16.585000000000036,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"interval.p95": {
+					"median": 16.585000000000036,
+					"min": 16.585000000000036,
+					"max": 16.589999999999918,
+					"relativeRange": 0.00030147723846136597,
+					"runs": 3
+				},
+				"interval.p99": {
+					"median": 16.590000000000146,
+					"min": 16.589999999999918,
+					"max": 16.5949999999998,
+					"relativeRange": 0.0003013863773286149,
+					"runs": 3
+				},
+				"interval.max": {
+					"median": 16.590000000000146,
+					"min": 16.590000000000146,
+					"max": 16.595000000000255,
+					"relativeRange": 0.0003013863773423204,
+					"runs": 3
+				},
+				"frames": {
+					"median": 120,
+					"min": 120,
+					"max": 120,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"warmupFrames": {
+					"median": 60,
+					"min": 60,
+					"max": 60,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"drawings": {
+					"median": 1000,
+					"min": 1000,
+					"max": 1000,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"drawingsInView": {
+					"median": 500,
+					"min": 500,
+					"max": 500,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"visibleBars": {
+					"median": 300,
+					"min": 300,
+					"max": 300,
+					"relativeRange": 0,
+					"runs": 3
+				}
+			}
+		},
+		{
+			"caseId": "drawings/candles-1m/1000/hover",
+			"adapter": "lumen-main",
+			"job": {
+				"scenario": "drawings",
+				"dataset": {
+					"kind": "candles",
+					"size": 1000000
+				},
+				"seed": 1,
+				"chart": {
+					"width": 1200,
+					"height": 600
+				},
+				"variant": "hover",
+				"drawings": 1000,
+				"visibleBars": 300,
+				"frames": 600,
+				"minFrames": 120,
+				"budgetMs": 1500,
+				"warmupFrames": 60,
+				"warmupBudgetMs": 1500,
+				"adapter": "lumen-main"
+			},
+			"library": {
+				"library": {
+					"name": "@lumen-charts/core",
+					"version": "workspace"
+				},
+				"options": {
+					"worker": false
+				}
+			},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"frameJs": {
+							"count": 120,
+							"mean": 0.9586249967416127,
+							"min": 0.3200000524520874,
+							"p50": 0.9899998903274536,
+							"p90": 1.1050000190734863,
+							"p95": 1.1699999570846558,
+							"p99": 1.40500009059906,
+							"max": 1.7850000858306885
+						},
+						"hitTest": {
+							"count": 120,
+							"mean": 0.02799999713897705,
+							"min": 0,
+							"p50": 0.014999985694885254,
+							"p90": 0.059999942779541016,
+							"p95": 0.06500005722045898,
+							"p99": 0.10000002384185791,
+							"max": 0.3700000047683716
+						},
+						"hitTestMean": 0.011281250019868214,
+						"redraw": {
+							"count": 120,
+							"mean": 0.9306249996026357,
+							"min": 0.315000057220459,
+							"p50": 0.9649999141693115,
+							"p90": 1.0649999380111694,
+							"p95": 1.154999852180481,
+							"p99": 1.21999990940094,
+							"max": 1.7700001001358032
+						},
+						"hits": 108,
+						"interval": {
+							"count": 120,
+							"mean": 16.578041666666667,
+							"min": 16.564999999999827,
+							"p50": 16.579999999999927,
+							"p90": 16.58499999999981,
+							"p95": 16.585000000000036,
+							"p99": 16.585000000000036,
+							"max": 16.585000000000036
+						},
+						"frames": 120,
+						"warmupFrames": 60,
+						"drawings": 1000,
+						"drawingsInView": 500,
+						"visibleBars": 300
+					},
+					"durationMs": 3954.370999999999,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 91.82958984375,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.4,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.9,
+										"BAT": 30.5,
+										"CP": 37.3,
+										"PA": 37.4,
+										"SKIN": 36.4,
+										"SUBBAT": 29.4,
+										"USB": 29.5
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.4,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.6,
+										"BAT": 30.6,
+										"CP": 36.9,
+										"PA": 37.1,
+										"SKIN": 36.4,
+										"SUBBAT": 29.4,
+										"USB": 29.5
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"frameJs": {
+							"count": 120,
+							"mean": 0.9569583425919215,
+							"min": 0.3799999952316284,
+							"p50": 0.9700000286102295,
+							"p90": 1.1150000095367432,
+							"p95": 1.1800000667572021,
+							"p99": 1.3350000381469727,
+							"max": 2.165000081062317
+						},
+						"hitTest": {
+							"count": 120,
+							"mean": 0.03479166527589162,
+							"min": 0,
+							"p50": 0.014999985694885254,
+							"p90": 0.060000061988830566,
+							"p95": 0.09500002861022949,
+							"p99": 0.35500001907348633,
+							"max": 0.5900000333786011
+						},
+						"hitTestMean": 0.009189583311478297,
+						"redraw": {
+							"count": 120,
+							"mean": 0.9221666773160299,
+							"min": 0.3599998950958252,
+							"p50": 0.9549999237060547,
+							"p90": 1.0800000429153442,
+							"p95": 1.1600000858306885,
+							"p99": 1.3050000667572021,
+							"max": 2.1600000858306885
+						},
+						"hits": 108,
+						"interval": {
+							"count": 120,
+							"mean": 16.579,
+							"min": 16.559999999999945,
+							"p50": 16.579999999999927,
+							"p90": 16.585000000000036,
+							"p95": 16.585000000000036,
+							"p99": 16.5949999999998,
+							"max": 16.595000000000255
+						},
+						"frames": 120,
+						"warmupFrames": 60,
+						"drawings": 1000,
+						"drawingsInView": 500,
+						"visibleBars": 300
+					},
+					"durationMs": 4081.5168749999866,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 90.24365234375,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.6,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.4,
+										"BAT": 30.6,
+										"CP": 36.7,
+										"PA": 36.8,
+										"SKIN": 36.3,
+										"SUBBAT": 29.4,
+										"USB": 29.5
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.6,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.3,
+										"BAT": 30.6,
+										"CP": 36.5,
+										"PA": 36.6,
+										"SKIN": 36.2,
+										"SUBBAT": 29.4,
+										"USB": 29.5
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"frameJs": {
+							"count": 120,
+							"mean": 0.9699166774749756,
+							"min": 0.30500006675720215,
+							"p50": 0.9850000143051147,
+							"p90": 1.2000000476837158,
+							"p95": 1.28000009059906,
+							"p99": 1.540000081062317,
+							"max": 1.5549999475479126
+						},
+						"hitTest": {
+							"count": 120,
+							"mean": 0.028874995311101277,
+							"min": 0,
+							"p50": 0.014999985694885254,
+							"p90": 0.06499993801116943,
+							"p95": 0.08500003814697266,
+							"p99": 0.11000001430511475,
+							"max": 0.39499998092651367
+						},
+						"hitTestMean": 0.011837500035762788,
+						"redraw": {
+							"count": 120,
+							"mean": 0.9410416821638743,
+							"min": 0.2999999523162842,
+							"p50": 0.9700000286102295,
+							"p90": 1.15500009059906,
+							"p95": 1.2349998950958252,
+							"p99": 1.5250000953674316,
+							"max": 1.5499999523162842
+						},
+						"hits": 108,
+						"interval": {
+							"count": 120,
+							"mean": 16.578416666666666,
+							"min": 16.569999999999936,
+							"p50": 16.579999999999927,
+							"p90": 16.585000000000036,
+							"p95": 16.585000000000036,
+							"p99": 16.585000000000036,
+							"max": 16.585000000000036
+						},
+						"frames": 120,
+						"warmupFrames": 60,
+						"drawings": 1000,
+						"drawingsInView": 500,
+						"visibleBars": 300
+					},
+					"durationMs": 4321.097707999987,
+					"host": {
+						"cpuIdle": 0,
+						"loadAverage": 89.58349609375,
+						"device": {
+							"before": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.6,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.2,
+										"BAT": 30.6,
+										"CP": 36.3,
+										"PA": 36.5,
+										"SKIN": 36.1,
+										"SUBBAT": 29.4,
+										"USB": 29.5
+									}
+								}
+							},
+							"after": {
+								"battery": {
+									"level": 100,
+									"temperatureC": 30.6,
+									"status": "full",
+									"powered": ["usb"]
+								},
+								"thermal": {
+									"status": 0,
+									"temperatures": {
+										"AP": 37.1,
+										"BAT": 30.6,
+										"CP": 36.1,
+										"PA": 36.4,
+										"SKIN": 36.1,
+										"SUBBAT": 29.4,
+										"USB": 29.5
+									}
+								}
+							}
+						}
+					}
+				}
+			],
+			"summary": {
+				"frameJs.count": {
+					"median": 120,
+					"min": 120,
+					"max": 120,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"frameJs.mean": {
+					"median": 0.9586249967416127,
+					"min": 0.9569583425919215,
+					"max": 0.9699166774749756,
+					"relativeRange": 0.013517626733185295,
+					"runs": 3
+				},
+				"frameJs.min": {
+					"median": 0.3200000524520874,
+					"min": 0.30500006675720215,
+					"max": 0.3799999952316284,
+					"relativeRange": 0.23437473806556883,
+					"runs": 3
+				},
+				"frameJs.p50": {
+					"median": 0.9850000143051147,
+					"min": 0.9700000286102295,
+					"max": 0.9899998903274536,
+					"relativeRange": 0.020304427844433454,
+					"runs": 3
+				},
+				"frameJs.p90": {
+					"median": 1.1150000095367432,
+					"min": 1.1050000190734863,
+					"max": 1.2000000476837158,
+					"relativeRange": 0.08520181865262927,
+					"runs": 3
+				},
+				"frameJs.p95": {
+					"median": 1.1800000667572021,
+					"min": 1.1699999570846558,
+					"max": 1.28000009059906,
+					"relativeRange": 0.09322044685700685,
+					"runs": 3
+				},
+				"frameJs.p99": {
+					"median": 1.40500009059906,
+					"min": 1.3350000381469727,
+					"max": 1.540000081062317,
+					"relativeRange": 0.14590749444573836,
+					"runs": 3
+				},
+				"frameJs.max": {
+					"median": 1.7850000858306885,
+					"min": 1.5549999475479126,
+					"max": 2.165000081062317,
+					"relativeRange": 0.3417367530436434,
+					"runs": 3
+				},
+				"hitTest.count": {
+					"median": 120,
+					"min": 120,
+					"max": 120,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"hitTest.mean": {
+					"median": 0.028874995311101277,
+					"min": 0.02799999713897705,
+					"max": 0.03479166527589162,
+					"relativeRange": 0.2352093243216371,
+					"runs": 3
+				},
+				"hitTest.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"hitTest.p50": {
+					"median": 0.014999985694885254,
+					"min": 0.014999985694885254,
+					"max": 0.014999985694885254,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"hitTest.p90": {
+					"median": 0.060000061988830566,
+					"min": 0.059999942779541016,
+					"max": 0.06499993801116943,
+					"relativeRange": 0.08333316776504668,
+					"runs": 3
+				},
+				"hitTest.p95": {
+					"median": 0.08500003814697266,
+					"min": 0.06500005722045898,
+					"max": 0.09500002861022949,
+					"relativeRange": 0.352940681484141,
+					"runs": 3
+				},
+				"hitTest.p99": {
+					"median": 0.11000001430511475,
+					"min": 0.10000002384185791,
+					"max": 0.35500001907348633,
+					"relativeRange": 2.318181473361604,
+					"runs": 3
+				},
+				"hitTest.max": {
+					"median": 0.39499998092651367,
+					"min": 0.3700000047683716,
+					"max": 0.5900000333786011,
+					"relativeRange": 0.5569621246416177,
+					"runs": 3
+				},
+				"hitTestMean": {
+					"median": 0.011281250019868214,
+					"min": 0.009189583311478297,
+					"max": 0.011837500035762788,
+					"relativeRange": 0.23471837957859767,
+					"runs": 3
+				},
+				"redraw.count": {
+					"median": 120,
+					"min": 120,
+					"max": 120,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"redraw.mean": {
+					"median": 0.9306249996026357,
+					"min": 0.9221666773160299,
+					"max": 0.9410416821638743,
+					"relativeRange": 0.020282073720245864,
+					"runs": 3
+				},
+				"redraw.min": {
+					"median": 0.315000057220459,
+					"min": 0.2999999523162842,
+					"max": 0.3599998950958252,
+					"relativeRange": 0.1904759742235503,
+					"runs": 3
+				},
+				"redraw.p50": {
+					"median": 0.9649999141693115,
+					"min": 0.9549999237060547,
+					"max": 0.9700000286102295,
+					"relativeRange": 0.015544151542321277,
+					"runs": 3
+				},
+				"redraw.p90": {
+					"median": 1.0800000429153442,
+					"min": 1.0649999380111694,
+					"max": 1.15500009059906,
+					"relativeRange": 0.0833334713070426,
+					"runs": 3
+				},
+				"redraw.p95": {
+					"median": 1.1600000858306885,
+					"min": 1.154999852180481,
+					"max": 1.2349998950958252,
+					"relativeRange": 0.06896554913446869,
+					"runs": 3
+				},
+				"redraw.p99": {
+					"median": 1.3050000667572021,
+					"min": 1.21999990940094,
+					"max": 1.5250000953674316,
+					"relativeRange": 0.2337166056430843,
+					"runs": 3
+				},
+				"redraw.max": {
+					"median": 1.7700001001358032,
+					"min": 1.5499999523162842,
+					"max": 2.1600000858306885,
+					"relativeRange": 0.34463282429622577,
+					"runs": 3
+				},
+				"hits": {
+					"median": 108,
+					"min": 108,
+					"max": 108,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"interval.count": {
+					"median": 120,
+					"min": 120,
+					"max": 120,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"interval.mean": {
+					"median": 16.578416666666666,
+					"min": 16.578041666666667,
+					"max": 16.579,
+					"relativeRange": 5.780608321059042e-5,
+					"runs": 3
+				},
+				"interval.min": {
+					"median": 16.564999999999827,
+					"min": 16.559999999999945,
+					"max": 16.569999999999936,
+					"relativeRange": 0.0006036824630239064,
+					"runs": 3
+				},
+				"interval.p50": {
+					"median": 16.579999999999927,
+					"min": 16.579999999999927,
+					"max": 16.579999999999927,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"interval.p90": {
+					"median": 16.585000000000036,
+					"min": 16.58499999999981,
+					"max": 16.585000000000036,
+					"relativeRange": 1.370959755461149e-14,
+					"runs": 3
+				},
+				"interval.p95": {
+					"median": 16.585000000000036,
+					"min": 16.585000000000036,
+					"max": 16.585000000000036,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"interval.p99": {
+					"median": 16.585000000000036,
+					"min": 16.585000000000036,
+					"max": 16.5949999999998,
+					"relativeRange": 0.0006029544769227319,
+					"runs": 3
+				},
+				"interval.max": {
+					"median": 16.585000000000036,
+					"min": 16.585000000000036,
+					"max": 16.595000000000255,
+					"relativeRange": 0.0006029544769501512,
+					"runs": 3
+				},
+				"frames": {
+					"median": 120,
+					"min": 120,
+					"max": 120,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"warmupFrames": {
+					"median": 60,
+					"min": 60,
+					"max": 60,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"drawings": {
+					"median": 1000,
+					"min": 1000,
+					"max": 1000,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"drawingsInView": {
+					"median": 500,
+					"min": 500,
+					"max": 500,
+					"relativeRange": 0,
+					"runs": 3
+				},
+				"visibleBars": {
+					"median": 300,
+					"min": 300,
+					"max": 300,
+					"relativeRange": 0,
+					"runs": 3
+				}
+			}
+		}
+	]
+}
