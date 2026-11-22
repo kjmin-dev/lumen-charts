@@ -90,12 +90,22 @@ file differ, this one says what the library does now. The measurements are in
 - **Waiting.** A removal that would read or move marks let go (the shorter side of a gap, the rows
   beside it, the level-1 buckets it rebuilds, and for a heatmap every chunk when the removal leaves no
   level) is queued while they are fetched; later changes of the series wait behind it, and `setData`
-  drops them.
+  drops them. The chunks it needs stay in memory, once back, until the waiting changes have run; a
+  failed fetch is asked for again with the next view the client asks for. A removal that moves rows
+  cancels every request out for the series, since chunk numbers then name other rows; what still
+  needs marks asks again. A removal stands for marks removed at the source: the datafeed must not
+  return them afterwards.
+- **What asks for marks.** The view (cancelled when the view leaves them), a waiting removal, and an
+  indicator recomputation (kept until it is answered, whatever the view does). A prepend keeps chunk
+  numbers; where the client holds the first bucket of a coarse level, which takes prepended marks in,
+  it also changes the generation, so those rows are sent again.
 
 ## 5. Compute layer
 
 ### 5.2 Indicators over marks (new)
 
+- A bar whose times reach into a chunk let go has no value (NaN) until the chunk is back; the
+  recomputation asks for it and waits.
 - An indicator input can name a marks series and a column (`MARK_COLUMNS`): for each bar of the main
   timeline, an aggregate of the marks with times from the bar's to the next bar's (the last bar's on
   to any time). A scatter has `count`, `sum`, `max`, `min`, `mean`, `open`, `high`, `low`, `close` and
@@ -183,8 +193,10 @@ comes back in 5 ms. Counting trades and their VWAP for 16,667 bars over a millio
 17 ms from scratch and 0.2 ms for an appended trade. Byte-for-byte comparisons of heatmaps whose
 grid follows the price, through zooms that merge columns, slots and values, live columns, prepends,
 removals and the switch to slots of an automatic range, pass in Chromium (WebGL2 and WebGPU at
-DPR 1, 1.5 and 2), WebKit (both at 1 and 2) and Firefox (WebGL2 at 1 and 2).
-[measured: [mark history](../benchmarks/mark-history.md)]
+DPR 1, 1.5 and 2), WebKit (both at 1 and 2) and Firefox (WebGL2 at 1 and 2). Against `main`,
+the existing mark cases keep their frame time; a heatmap with an automatic range goes over to palette
+slots after its first frames, its GPU pass p95 a quarter to a third lower on pan and zoom and its
+renderer 8 MiB smaller. [measured: [mark history](../benchmarks/mark-history.md)]
 
 ## 10. Open questions
 

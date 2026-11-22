@@ -510,3 +510,66 @@ describe('a chart whose timeline comes from its marks', () => {
 		}
 	});
 });
+
+describe('restoring a chart with marks', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it('keeps the timeline a heatmap makes through a restore, and lets it go with the heatmap', async () => {
+		vi.stubGlobal('ImageData', FakeImageData);
+		const t = new Chart();
+		try {
+			const depth = t.chart.addSeries('heatmap', { id: 'depth', timeline: true, valueMin: 0, valueMax: 50 });
+			depth.setData({
+				priceStart: 99,
+				priceStep: 0.5,
+				rows: 8,
+				time: Float64Array.from({ length: 120 }, (_, c) => c * 90_000),
+				values: Float32Array.from({ length: 960 }, (_, i) => i % 50),
+			});
+			t.chart.addSeries('line', { id: 'overlay' });
+			await t.settle();
+			t.chart.restoreState(t.chart.saveState());
+			await t.settle();
+			// Still drawn on its own bars: bar 60 is at the time of column 60.
+			const view = t.probe.view!;
+			expect(view.timeToX(60 * 90_000)).toBeCloseTo(view.logicalToX(60), 6);
+			const removed = vi.spyOn(EngineClientPrototype(t), 'removeSeries');
+			t.chart.removeSeries(depth);
+			await t.settle();
+			// The heatmap's own timeline goes with it.
+			expect(removed).toHaveBeenCalledTimes(1);
+		} finally {
+			t.destroy();
+		}
+	});
+
+	it('removes the indicators that read a heatmap or scatter a restore removes', async () => {
+		vi.stubGlobal('ImageData', FakeImageData);
+		const t = new Chart();
+		try {
+			const bars = t.chart.addSeries('candlestick', { id: 'bars' });
+			bars.setData(candles(50));
+			const state = t.chart.saveState();
+			const trades = t.chart.addSeries('scatter', { id: 'trades' });
+			trades.setData({ time: [49 * MINUTE + 1000], price: [100] });
+			bars.addIndicator('sma', { id: 'count', params: { period: 1 }, inputs: [{ series: trades, column: 'count' }] });
+			await t.settle();
+			t.chart.restoreState(state, { parts: ['series'] });
+			await t.settle();
+			expect(t.chart.markSeries()).toEqual([]);
+			expect(t.chart.indicators()).toEqual([]);
+			// What is saved now restores.
+			expect(() => t.chart.restoreState(t.chart.saveState())).not.toThrow();
+		} finally {
+			t.destroy();
+		}
+	});
+});
+
+/** The prototype of the chart's engine client, to watch the commands it sends. */
+function EngineClientPrototype(t: Chart): { removeSeries(id: number): void } {
+	const engine = (t.chart as unknown as { _data: { engine: object } })._data.engine;
+	return engine as { removeSeries(id: number): void };
+}

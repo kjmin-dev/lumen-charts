@@ -379,6 +379,7 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 				settled: this._onDataSettled,
 				addTimeline: () => this._addTimeline(),
 				removeTimeline: engineId => this._removeTimeline(engineId),
+				removing: engineId => this._indicators.removeReadersOf(engineId),
 			},
 			this._layout,
 			this.scale,
@@ -492,11 +493,8 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 	}
 
 	public removeSeries(series: SeriesApi | MarkSeriesApi): void {
-		const mark = this._marks.list.find(entry => entry === series);
-		if (mark !== undefined) {
-			// Indicators that read it go with it, as with any series.
-			this._indicators.removeReadersOf(mark.engineId);
-			this._marks.remove(mark);
+		// Indicators that read a heatmap or scatter go with it, as with any series.
+		if (this._marks.remove(series)) {
 			return;
 		}
 		const index = this._series.indexOf(series as unknown as Series);

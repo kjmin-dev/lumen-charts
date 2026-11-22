@@ -1236,30 +1236,34 @@ export class ScatterStore implements MarksStore {
 	public missingTimes(from: number, to: number, out: number[]): void {
 		const points = this._points;
 		if (points.evictedCount > 0 && to > from) {
-			points.missing(points.lowerBound(from), points.lowerBound(to), out);
+			// From the chunk that holds `from` to the one that holds `to`: a bound in a chunk let go is
+			// that chunk's start (`lowerBound`) or end (`upperBound`), which takes the chunk in.
+			points.missing(points.lowerBound(from), points.upperBound(to), out);
 		}
 	}
 
 	public aggregate(column: number, bounds: Float64Array, n: number, out: Float64Array, offset: number): void {
 		const points = this._points;
-		let a = points.lowerBound(bounds[0]!);
 		const missing: number[] = [];
+		const evicted = points.evictedCount > 0;
 		for (let k = 0; k < n; k++) {
 			const low = bounds[k]!;
 			const high = bounds[k + 1]!;
 			if (!(low <= high)) {
 				// A bar whose time is not known (let go with its chunk of the main series).
 				out[offset + k] = Number.NaN;
-				if (high === high) {
-					a = points.lowerBound(high);
-				}
 				continue;
 			}
-			const b = points.lowerBound(high);
-			missing.length = 0;
-			points.missing(a, b, missing);
-			out[offset + k] = missing.length > 0 ? Number.NaN : pointsColumn(points, column, a, b);
-			a = b;
+			if (evicted) {
+				// Only exact where every chunk the bar's times reach into is held.
+				missing.length = 0;
+				points.missing(points.lowerBound(low), points.upperBound(high), missing);
+				if (missing.length > 0) {
+					out[offset + k] = Number.NaN;
+					continue;
+				}
+			}
+			out[offset + k] = pointsColumn(points, column, points.lowerBound(low), points.lowerBound(high));
 		}
 	}
 

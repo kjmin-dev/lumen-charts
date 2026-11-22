@@ -28,6 +28,8 @@ export interface ChartMarksHost {
 	 */
 	addTimeline(): number;
 	removeTimeline(engineId: number): void;
+	/** A series is about to be removed: the indicators that read it go with it. */
+	removing(engineId: number): void;
 }
 
 /**
@@ -125,6 +127,7 @@ export class ChartMarks implements MarkSeriesHost {
 			return false;
 		}
 		const removed = this.list.splice(index, 1)[0]!;
+		this._host.removing(removed.engineId);
 		this._byEngineId.delete(removed.engineId);
 		this._fetches.abort(removed);
 		this._primitives.layers.detach(removed.primitive);

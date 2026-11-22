@@ -16,6 +16,7 @@ import { ScatterStore } from './scatter-store';
 interface Subscription {
 	generation: number;
 	level: number;
+	start: number;
 	end: number;
 	/** The window ended with the last row of its level, so rows added after it follow on. */
 	live: boolean;
@@ -38,6 +39,14 @@ interface Hosted {
 	deferred: number[] | null;
 	/** Fetch requests out, by chunk. */
 	fetching: Map<number, number>;
+	/** Chunks asked for because the last view needs them, and because an indicator recomputation reads them. */
+	forView: Set<number>;
+	forRead: Set<number>;
+	/**
+	 * Chunks a waiting removal needs, asked for or back: kept in memory until the waiting changes
+	 * have run, so one that came back does not go again before the others are back.
+	 */
+	pinned: Set<number>;
 	/** Changes waiting for chunks let go (a removal that reads or moves them), and those after them. */
 	queue: MarksChange[];
 	/** The line series whose bars the marks make, if any. */
@@ -115,6 +124,9 @@ export class MarksEngine {
 				keepTo: Number.NaN,
 				deferred: null,
 				fetching: new Map(),
+				forView: new Set(),
+				forRead: new Set(),
+				pinned: new Set(),
 				queue: [],
 				timeline: change.timeline ?? null,
 			});
@@ -123,7 +135,7 @@ export class MarksEngine {
 		const hosted = this._series.get(series);
 		if (change.op === 'remove') {
 			if (hosted !== undefined) {
-				this._cancel(hosted, [], outcome);
+				this._forget(hosted, outcome);
 			}
 			this._series.delete(series);
 			return;
@@ -135,8 +147,7 @@ export class MarksEngine {
 		if (change.op === 'set') {
 			// A new history: what waited for the old one, and the requests for it, are dropped.
 			hosted.queue.length = 0;
-			hosted.deferred = null;
-			this._cancel(hosted, [], outcome);
+			this._forget(hosted, outcome);
 			if (change.fetchable !== undefined) {
 				hosted.fetchable = change.fetchable;
 			}
@@ -167,19 +178,27 @@ export class MarksEngine {
 				outcome.rejected = yield* store.set(change.data);
 				store.clearChanges();
 				return;
-			case 'prepend':
+			case 'prepend': {
+				const subscription = hosted.subscription;
+				const head = subscription === null ? Infinity : store.first(subscription.level);
 				outcome.rejected = yield* store.prepend(change.data);
 				store.clearChanges();
+				if (subscription !== null && subscription.level > 0 && subscription.start <= head) {
+					// The first bucket of a coarse level took prepended marks in: the rows the client
+					// holds from there are not the engine's any more.
+					hosted.generation++;
+				}
 				// The rows held keep their indexes, but the view may now reach rows in front of them.
 				this._notice(series, hosted, outcome);
 				return;
+			}
 			case 'delete': {
 				const needed: number[] = [];
 				store.needs(change.from, change.to, needed);
 				if (needed.length > 0) {
 					hosted.queue.unshift(change);
 					outcome.appliedMarks!.pop();
-					this._fetch(series, hosted, needed, outcome);
+					this._fetch(series, hosted, needed, outcome, hosted.pinned);
 					return;
 				}
 				const removed = yield* store.delete(change.from, change.to);
@@ -188,6 +207,8 @@ export class MarksEngine {
 					hosted.generation++;
 					this._notice(series, hosted, outcome);
 					hosted.subscription = null;
+					// Rows moved: chunks asked for are other rows now. What still needs them asks again.
+					this._forget(hosted, outcome);
 				}
 				return;
 			}
@@ -238,17 +259,21 @@ export class MarksEngine {
 		hosted.keepTo = request.to;
 		const missing: number[] = [];
 		store.missing(selection.level, selection.start, selection.end, missing);
-		const keep = missing.slice();
-		for (const change of hosted.queue) {
-			if (change.op === 'delete') {
-				store.needs(change.from, change.to, keep);
+		// Requests the view made for marks it left, and nothing else waits for, are dropped.
+		for (const chunk of hosted.forView) {
+			if (!missing.includes(chunk) && !hosted.forRead.has(chunk) && !hosted.pinned.has(chunk)) {
+				this._cancelChunk(hosted, chunk, outcome);
 			}
 		}
-		// Requests for marks the view left, and nothing waits for, are dropped.
-		this._cancel(hosted, keep, outcome);
+		hosted.forView.clear();
 		hosted.deferred = null;
+		// A waiting removal whose marks failed to come back asks again, with the view.
+		const waiting = this._queueNeeds(hosted);
+		if (waiting.length > 0) {
+			this._fetch(series, hosted, waiting, outcome, hosted.pinned);
+		}
 		if (missing.length > 0) {
-			this._fetch(series, hosted, missing, outcome);
+			this._fetch(series, hosted, missing, outcome, hosted.forView);
 			hosted.deferred = missing;
 			selection = store.select(request, 1);
 		}
@@ -271,6 +296,7 @@ export class MarksEngine {
 			hosted.subscription = {
 				generation: hosted.generation,
 				level: selection.level,
+				start: request.heldStart,
 				end: request.heldEnd,
 				live: request.heldEnd >= end,
 			};
@@ -279,6 +305,7 @@ export class MarksEngine {
 			hosted.subscription = {
 				generation: hosted.generation,
 				level: selection.level,
+				start: selection.start,
 				end: selection.end,
 				live: selection.end >= end,
 			};
@@ -288,9 +315,16 @@ export class MarksEngine {
 
 	// Memory
 
-	/** Asks for the chunks of a series that are not asked for yet. */
-	private _fetch(series: number, hosted: Hosted, chunks: readonly number[], outcome: MarksOutcome): void {
+	/** Asks for the chunks of a series that are not asked for yet, noting them in `purpose`. */
+	private _fetch(
+		series: number,
+		hosted: Hosted,
+		chunks: readonly number[],
+		outcome: MarksOutcome,
+		purpose: Set<number>,
+	): void {
 		for (const chunk of chunks) {
+			purpose.add(chunk);
 			if (hosted.fetching.has(chunk)) {
 				continue;
 			}
@@ -305,15 +339,39 @@ export class MarksEngine {
 		}
 	}
 
-	/** Cancels the requests of a series for chunks other than `keep`. */
-	private _cancel(hosted: Hosted, keep: readonly number[], outcome: MarksOutcome): void {
-		for (const [chunk, id] of hosted.fetching) {
-			if (!keep.includes(chunk)) {
-				hosted.fetching.delete(chunk);
-				this._requests.delete(id);
-				(outcome.marksCancel ??= []).push(id);
-			}
+	/** Cancels the request of a series for a chunk, if one is out. */
+	private _cancelChunk(hosted: Hosted, chunk: number, outcome: MarksOutcome): void {
+		const id = hosted.fetching.get(chunk);
+		if (id !== undefined) {
+			hosted.fetching.delete(chunk);
+			this._requests.delete(id);
+			(outcome.marksCancel ??= []).push(id);
 		}
+	}
+
+	/**
+	 * Cancels every request of a series and forgets why chunks were asked for: its rows were replaced
+	 * or moved, so chunk numbers name other rows. What still needs marks asks for them again.
+	 */
+	private _forget(hosted: Hosted, outcome: MarksOutcome): void {
+		// Deleting the entry being visited is safe while iterating a Map.
+		for (const chunk of hosted.fetching.keys()) {
+			this._cancelChunk(hosted, chunk, outcome);
+		}
+		hosted.forView.clear();
+		hosted.forRead.clear();
+		hosted.pinned.clear();
+		hosted.deferred = null;
+	}
+
+	/** Chunks let go that the changes waiting for marks need first. */
+	private _queueNeeds(hosted: Hosted): number[] {
+		const needed: number[] = [];
+		const first = hosted.queue[0];
+		if (first !== undefined && first.op === 'delete') {
+			hosted.store.needs(first.from, first.to, needed);
+		}
+		return needed;
 	}
 
 	/**
@@ -336,6 +394,10 @@ export class MarksEngine {
 		hosted.fetching.delete(entry.chunk);
 		const store = hosted.store;
 		const restored = data !== null && store.restore(entry.chunk, data);
+		if (restored) {
+			hosted.forView.delete(entry.chunk);
+			hosted.forRead.delete(entry.chunk);
+		}
 		outcome.marksRestored = {
 			request,
 			series: entry.series,
@@ -347,22 +409,22 @@ export class MarksEngine {
 		// The changes that waited, while nothing they read is missing.
 		let applied = 0;
 		while (hosted.queue.length > 0) {
-			const change = hosted.queue[0]!;
-			if (change.op === 'delete') {
-				const needed: number[] = [];
-				store.needs(change.from, change.to, needed);
-				if (needed.length > 0) {
-					this._fetch(entry.series, hosted, needed, outcome);
-					break;
-				}
+			const needed = this._queueNeeds(hosted);
+			if (needed.length > 0) {
+				this._fetch(entry.series, hosted, needed, outcome, hosted.pinned);
+				break;
 			}
-			hosted.queue.shift();
+			const change = hosted.queue.shift()!;
+			applied++;
 			yield* this._apply(
 				entry.series,
 				hosted,
 				change as Exclude<MarksChange, { op: 'add' } | { op: 'remove' }>,
 				outcome,
 			);
+		}
+		if (hosted.queue.length === 0) {
+			hosted.pinned.clear();
 		}
 		const deferred = hosted.deferred;
 		if (deferred !== null) {
@@ -402,16 +464,10 @@ export class MarksEngine {
 			const keepFrom = hosted.keepFrom === hosted.keepFrom ? hosted.keepFrom : Infinity;
 			const keepTo = hosted.keepTo === hosted.keepTo ? hosted.keepTo : -Infinity;
 			hosted.store.evictable(keepFrom, keepTo, out);
-			const waiting: number[] = [];
-			for (const change of hosted.queue) {
-				if (change.op === 'delete') {
-					hosted.store.needs(change.from, change.to, waiting);
-				}
-			}
 			// Marks a recomputation of an indicator has yet to read.
 			const keepAfter = read.has(series) ? readTime : Infinity;
 			for (const chunk of out) {
-				if (hosted.fetching.has(chunk.chunk) || waiting.includes(chunk.chunk) || chunk.to >= keepAfter) {
+				if (hosted.fetching.has(chunk.chunk) || hosted.pinned.has(chunk.chunk) || chunk.to >= keepAfter) {
 					continue;
 				}
 				const distance =
@@ -464,7 +520,7 @@ export class MarksEngine {
 		const missing: number[] = [];
 		hosted.store.missingTimes(from, to, missing);
 		if (missing.length > 0 && outcome !== null) {
-			this._fetch(series, hosted, missing, outcome);
+			this._fetch(series, hosted, missing, outcome, hosted.forRead);
 		}
 		return missing.length === 0;
 	}

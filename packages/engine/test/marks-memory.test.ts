@@ -2,6 +2,7 @@ import {
 	type EngineClient,
 	type EngineEvent,
 	type HeatmapColumns,
+	MARK_COLUMNS,
 	type MarksFetchRequest,
 	type MarksUpdate,
 	MarksEngine,
@@ -299,4 +300,161 @@ describe('marks under a memory limit through the engine client', () => {
 		expect(got.marks.at(-1)!.notice).toBe(true);
 		engine.destroy();
 	}, 30_000);
+});
+
+/** A scatter of `count` points with the view at its end and every chunk it can let go let go. */
+function letGo(count = 400_000): { engine: MarksEngine; data: ScatterRows } {
+	const engine = new MarksEngine();
+	const data = trades(count);
+	drain(engine.change(1, { op: 'add', kind: 'scatter', fetchable: true }, outcome()));
+	drain(engine.change(1, { op: 'set', data: copy(data) }, outcome()));
+	engine.window(1, 1, request(data.time[count - 1000]!, data.time[count - 1]!, 1), outcome());
+	evictAll(engine);
+	return { engine, data };
+}
+
+/** The view at the end of `data`, asked for again. */
+function viewAtEnd(engine: MarksEngine, data: ScatterRows, seq: number): MarksOutcome {
+	const asked = outcome();
+	engine.window(1, seq, request(data.time[data.count - 1000]!, data.time[data.count - 1]!, 1), asked);
+	return asked;
+}
+
+describe('changes waiting for marks under a memory limit', () => {
+	it('asks again for what a waiting removal needs when the view asks after a failure', () => {
+		const { engine, data } = letGo();
+		const asked = outcome();
+		drain(engine.change(1, { op: 'delete', from: data.time[70_000]!, to: data.time[90_000]! }, asked));
+		const fetches = asked.marksFetch!;
+		const failed = outcome();
+		drain(engine.restore(fetches[0]!.id, null, failed));
+		expect(failed.marksRestored!.outcome).toBe('failed');
+		drain(engine.change(1, { op: 'append', data: trades(1, 9, data.time[data.count - 1]! + 1000) }, outcome()));
+		expect(engine.waiting).toBe(2);
+		// The client asks for its view again after its pause: the failed chunk is asked for again.
+		const again = viewAtEnd(engine, data, 10);
+		const retry = again.marksFetch ?? [];
+		expect(retry.map(fetch => fetch.from)).toEqual([fetches[0]!.from]);
+		let pending = [...retry, ...fetches.slice(1)];
+		for (let round = 0; pending.length > 0 && round < 20; round++) {
+			const back = outcome();
+			for (const fetch of pending) {
+				drain(engine.restore(fetch.id, between(data, fetch.from, fetch.to), back));
+			}
+			pending = back.marksFetch ?? [];
+		}
+		expect(engine.waiting).toBe(0);
+	}, 60_000);
+
+	it('keeps the chunks a waiting removal got back while the others come', () => {
+		const { engine, data } = letGo();
+		const asked = outcome();
+		drain(engine.change(1, { op: 'delete', from: data.time[140_000]!, to: data.time[150_000]! }, asked));
+		const fetches = asked.marksFetch!;
+		expect(fetches.length).toBeGreaterThanOrEqual(2);
+		const first = fetches[0]!;
+		drain(engine.restore(first.id, between(data, first.from, first.to), outcome()));
+		const before = engine.evicted;
+		// A pass of the memory limit after the command: the chunk that came back stays.
+		engine.evict(Infinity, Infinity);
+		expect(engine.evicted).toBe(before);
+		let again: MarksFetchRequest[] = [];
+		for (const fetch of fetches.slice(1)) {
+			const last = outcome();
+			drain(engine.restore(fetch.id, between(data, fetch.from, fetch.to), last));
+			again = again.concat(last.marksFetch ?? []);
+		}
+		expect(again).toEqual([]);
+		expect(engine.waiting).toBe(0);
+		// Done waiting: they may go again.
+		engine.evict(Infinity, Infinity);
+		expect(engine.evicted).toBeGreaterThan(0);
+	}, 60_000);
+
+	it('does not cancel what an indicator recomputation asked for when the view asks again', () => {
+		const { engine, data } = letGo();
+		const asked = outcome();
+		expect(engine.held(1, data.time[100_000]!, data.time[200_000]!, asked)).toBe(false);
+		expect(asked.marksFetch!.length).toBeGreaterThan(0);
+		const view = viewAtEnd(engine, data, 5);
+		expect(view.marksCancel).toBeUndefined();
+		expect(engine.requests).toBe(asked.marksFetch!.length);
+	}, 60_000);
+
+	it('cancels what was asked for once a removal moves rows, so no answer is taken for other rows', () => {
+		const { engine, data } = letGo();
+		const asked = outcome();
+		engine.window(1, 2, request(data.time[100_000]!, data.time[100_100]!, 1), asked);
+		const out = asked.marksFetch![0]!;
+		// A removal at the end, which reads nothing let go, moves nothing either: but its generation
+		// changes the client's rows, and requests out are dropped with them.
+		const removal = outcome();
+		drain(engine.change(1, { op: 'delete', from: data.time[data.count - 10]!, to: Infinity }, removal));
+		expect(removal.marksCancel).toEqual([out.id]);
+		const late = outcome();
+		drain(engine.restore(out.id, between(data, out.from, out.to), late));
+		expect(late.marksRestored).toBeUndefined();
+	}, 60_000);
+
+	it('counts no bar as held, nor as empty, whose marks lie in a chunk let go', () => {
+		const engine = new MarksEngine();
+		const data = trades(400_000);
+		drain(engine.change(1, { op: 'add', kind: 'scatter', fetchable: true }, outcome()));
+		drain(engine.change(1, { op: 'set', data: copy(data) }, outcome()));
+		engine.window(1, 1, request(data.time[100_000]!, data.time[100_100]!, 1), outcome());
+		evictAll(engine);
+		// Two bars inside chunk 2 (rows 131,072 to 196,607), which went.
+		const out = new Float64Array(2);
+		engine.aggregate(
+			1,
+			MARK_COLUMNS.count,
+			Float64Array.of(data.time[150_000]!, data.time[150_060]!, data.time[150_120]!),
+			2,
+			out,
+			0,
+		);
+		expect([...out]).toEqual([Number.NaN, Number.NaN]);
+		// A bar from a chunk held into one let go.
+		const t0 = data.time[100_000]!;
+		const t1 = data.time[150_000]!;
+		expect(engine.held(1, t0, t1, null)).toBe(false);
+		const one = new Float64Array(1);
+		engine.aggregate(1, MARK_COLUMNS.count, Float64Array.of(t0, t1), 1, one, 0);
+		expect(one[0]).toBeNaN();
+		// Within the chunk held, exact.
+		engine.aggregate(1, MARK_COLUMNS.count, Float64Array.of(t0, data.time[110_000]!), 1, one, 0);
+		expect(one[0]).toBe(10_000);
+	}, 60_000);
+
+	it('sends the rows a prepend changed in the first bucket of a coarse level the client holds', () => {
+		const engine = new MarksEngine();
+		drain(engine.change(1, { op: 'add', kind: 'heatmap' }, outcome()));
+		drain(engine.change(1, { op: 'set', data: heat(4000, 4, (c, r) => c + r) }, outcome()));
+		drain(engine.change(1, { op: 'prepend', data: heat(100, 4, () => 1, 0, -100) }, outcome()));
+		const ask = (seq: number, held?: MarksUpdate): MarksUpdate => {
+			const asked = outcome();
+			engine.window(
+				1,
+				seq,
+				request(-Infinity, Infinity, 1, {
+					limit: 2000,
+					generation: held?.generation ?? -1,
+					heldLevel: held?.level ?? -1,
+					heldStart: held?.start ?? 0,
+					heldEnd: held === undefined ? 0 : held.start + held.count,
+				}),
+				asked,
+			);
+			return asked.marks![0]!;
+		};
+		const first = ask(1);
+		expect(first.level).toBe(2);
+		const prepend = outcome();
+		drain(engine.change(1, { op: 'prepend', data: heat(10, 4, () => 99, 0, -110) }, prepend));
+		expect(prepend.marks![0]!.notice).toBe(true);
+		expect(prepend.marks![0]!.generation).not.toBe(first.generation);
+		const again = ask(2, first);
+		expect(again.kept).toBeUndefined();
+		expect(again.values[0]).toBe(99);
+	}, 60_000);
 });

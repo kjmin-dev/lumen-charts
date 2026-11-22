@@ -136,7 +136,9 @@ with a console warning, marks that differ in number or in any value. Marks are n
 the fact, so the levels made from them stay right; to change history, `setData` it. A request the
 view no longer needs is aborted through `signal`; a failed or refused one is tried again after a
 pause that grows from 1 s to 30 s. A removal that reads or moves marks let go waits for them, and
-changes after it wait behind it. `chart.whenIdle()` waits for these requests.
+changes after it wait behind it. `removeMarks` stands for marks removed at the source: once it is
+applied, the datafeed must not return those marks again, or the chunks around them are refused when
+they come back. `chart.whenIdle()` waits for these requests.
 
 ## A chart without bars
 

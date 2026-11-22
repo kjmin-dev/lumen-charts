@@ -54,6 +54,36 @@ WebGPU chart drew the heatmap itself (its `renderer()` reported the backend aske
 automatic range went over to palette slots (WebGL2's slot program, WebGPU's `heatmap-slots` kernel).
 [Chromium](heat-grid-chromium.json) · [WebKit](heat-grid-webkit.json) · [Firefox](heat-grid-firefox.json)
 
+## The existing mark cases against `main`
+
+The scatter and heatmap cases of the harness, `main` (`aef336f`) and this branch alternately
+through `--packages` (before, after, after, before), WebGL2, headless Chromium 156, a 1,200 × 600
+CSS-pixel chart at DPR 2, two runs each; load average 18–30. Frame JavaScript p95 of each run, in
+milliseconds, and in a separate set with GPU timers the GPU pass p95 and the renderer's bytes.
+[Frames](marks-history-ab-frames-before-1.json): [after 1](marks-history-ab-frames-after-1.json),
+[after 2](marks-history-ab-frames-after-2.json), [before 2](marks-history-ab-frames-before-2.json);
+GPU: [before](marks-history-ab-gpu-before.json), [after](marks-history-ab-gpu-after.json)
+
+| Case                                 | Before 1    | After 1     | After 2     | Before 2     |
+| ------------------------------------ | ----------- | ----------- | ----------- | ------------ |
+| scatter 1M cloud, zoom               | 3.95 / 4.39 | 3.78 / 4.08 | 3.76 / 8.02 | 3.82 / 18.13 |
+| scatter 1M cloud, tick               | 1.73 / 2.49 | 1.52 / 1.37 | 1.37 / 1.34 | 1.31 / 2.24  |
+| heatmap 2400 × 600, pan              | 0.82 / 0.89 | 0.95 / 0.90 | 0.79 / 1.03 | 1.13 / 0.79  |
+| heatmap 2400 × 600, zoom             | 1.52 / 1.15 | 1.20 / 1.25 | 1.26 / 0.98 | 0.87 / 0.87  |
+| heatmap 2400 × 600, tick             | 0.64 / 0.38 | 0.41 / 0.58 | 0.44 / 0.41 | 0.45 / 0.39  |
+| heatmap 2400 × 600, fixed range, pan | 1.03 / 0.86 | 1.43 / 0.88 | 0.84 / 0.85 | 1.11 / 0.98  |
+
+| Automatic value range | GPU pass p95, before | after         | Renderer bytes, before | after    | Path after     |
+| --------------------- | -------------------- | ------------- | ---------------------- | -------- | -------------- |
+| heatmap, pan          | 1.458 / 1.660        | 1.010 / 1.391 | 20.9 MiB               | 12.7 MiB | `webgl2-slots` |
+| heatmap, zoom         | 1.662 / 1.931        | 1.232 / 1.429 | 20.9 MiB               | 12.7 MiB | `webgl2-slots` |
+
+- Frame JavaScript stays within the spread of the runs on every case; the single slow frames (8 and
+  18 ms in a 1M zoom) fell once on each side.
+- The heatmap with an automatic range drew 3 frames from its values and the remaining 178 from palette
+  slots once the range had stayed the same: GPU pass p95 down a quarter to a third, and two fifths less
+  memory for the renderer, as the fixed range gets.
+
 ## Reproduce
 
 ```sh
@@ -61,4 +91,10 @@ LUMEN_MEASURE_OUT=docs/benchmarks/mark-history-ops.json npx vitest run --config 
 node benchmarks/runner/heat-grid.mjs --out docs/benchmarks/heat-grid-chromium.json
 node benchmarks/runner/heat-grid.mjs --browser webkit --dpr 1,2 --out docs/benchmarks/heat-grid-webkit.json
 node benchmarks/runner/heat-grid.mjs --browser firefox --dpr 1,2 --mode webgl2 --out docs/benchmarks/heat-grid-firefox.json
+git archive aef336f packages | tar -x -C ../lumen-base
+CASES=scatter/candles-2k/cloud-1m/zoom,scatter/candles-2k/cloud-1m/tick,heatmap/candles-4800/2400x600/pan,heatmap/candles-4800/2400x600/zoom,heatmap/candles-4800/2400x600/tick,heatmap/candles-4800/2400x600-fixed/pan
+pnpm bench --case $CASES --lib lumen-worker --mark-renderer webgl2 --repeats 2 --budget 3 --port 4393 \
+  --packages ../lumen-base/packages --out docs/benchmarks/marks-history-ab-frames-before-1.json
+pnpm bench --case heatmap/candles-4800/2400x600/pan,heatmap/candles-4800/2400x600/zoom --lib lumen-worker \
+  --mark-renderer webgl2 --mark-gpu-timers --repeats 2 --budget 3 --port 4393 --out docs/benchmarks/marks-history-ab-gpu-after.json
 ```
