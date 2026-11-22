@@ -101,6 +101,12 @@ Browser
   --viewport <WxH>     page viewport in CSS pixels (default: 1280x720; not with --android)
   --dpr <n>            device pixel ratio (default: 2; not with --android)
   --chart <WxH>        chart size in CSS pixels (default: 1200x600)
+  --cpu-throttle <rate>
+                       slow the page's CPU down by this factor (Chromium on this computer only,
+                       through the DevTools protocol's Emulation.setCPUThrottlingRate; 1 is none),
+                       as a stand-in for a slower device. It slows the page's main thread and its
+                       workers (Chromium throttles the renderer process), not the GPU process or
+                       the rasterizer, and is recorded in the results file
 
 Profiling
   --profile <dir>      trace every run (CPU samples of every thread, frames, tasks, GC) and write
@@ -175,6 +181,7 @@ const { values: args } = parseArgs({
 		viewport: { type: 'string' },
 		dpr: { type: 'string' },
 		chart: { type: 'string', default: '1200x600' },
+		'cpu-throttle': { type: 'string' },
 		timeout: { type: 'string', default: '900' },
 		port: { type: 'string' },
 		out: { type: 'string' },
@@ -207,6 +214,20 @@ if (androidSerial !== null) {
 }
 /** Whether the browser speaks the DevTools protocol: Chromium on the desktop and Chrome on Android. */
 const speaksCdp = engine === 'chromium';
+/** Factor the page's CPU is slowed down by (`--cpu-throttle`), or null for none. */
+const cpuThrottle = args['cpu-throttle'] === undefined ? null : Number(args['cpu-throttle']);
+if (cpuThrottle !== null) {
+	if (!(cpuThrottle >= 1) || !Number.isFinite(cpuThrottle)) {
+		throw new Error(`--cpu-throttle expects a factor of at least 1, got "${args['cpu-throttle']}"`);
+	}
+	if (!speaksCdp) {
+		throw new Error(`--cpu-throttle throttles through Chromium's DevTools protocol: it does not apply to ${engine}`);
+	}
+	if (androidSerial !== null) {
+		// A phone is the slower device itself; throttling it further measures no device.
+		throw new Error('--cpu-throttle stands in for a slower device on this computer: it does not apply with --android');
+	}
+}
 const viewport = parseDimensions(args.viewport ?? '1280x720', '--viewport');
 const chart = parseDimensions(args.chart, '--chart');
 const dpr = Number(args.dpr ?? '2');
@@ -538,6 +559,12 @@ async function newPage(session: Session): Promise<BenchPage> {
 			sampled = record;
 		});
 	}
+	if (cpuThrottle !== null) {
+		// For the whole life of the page, set up and measurement alike, as on a slower device. The
+		// session stays attached until the page closes; the rate holds across its navigation.
+		const cdp = await page.context().newCDPSession(page);
+		await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpuThrottle });
+	}
 	const query = new URLSearchParams({ auto: '', width: String(chart.width), height: String(chart.height) });
 	if (args['mark-renderer'])
 		query.set('markRenderer', oneOf(['canvas2d', 'webgl2', 'webgpu'], args['mark-renderer'], '--mark-renderer'));
@@ -854,6 +881,8 @@ async function main(): Promise<void> {
 					commandLine,
 					gpuStatus,
 				},
+				// The factor the page's CPU was slowed down by (`--cpu-throttle`); 1 for none.
+				cpuThrottlingRate: cpuThrottle ?? 1,
 				// On a device, the page's own viewport and ratio, as it reported them.
 				viewport: session.android !== null ? page.viewport : viewport,
 				deviceScaleFactor: session.android !== null ? page.devicePixelRatio : dpr,
@@ -904,6 +933,7 @@ async function main(): Promise<void> {
 function reportEnvironment(page: PageEnvironment): void {
 	process.stdout.write(
 		`Page: DPR ${page.devicePixelRatio}, chart ${page.chart.width}x${page.chart.height}, ` +
+			(cpuThrottle === null ? '' : `CPU throttled ${cpuThrottle}x, `) +
 			`isolated ${page.crossOriginIsolated}, timer step ${(page.timer.minStepMs * 1000).toFixed(1)} µs, ` +
 			`idle frame interval p50 ${page.idleFrameInterval.p50.toFixed(2)} ms, ` +
 			`WebGL ${page.webgl?.renderer ?? 'none'}, build ${page.buildMode}\n` +
