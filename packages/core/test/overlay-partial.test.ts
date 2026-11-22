@@ -32,6 +32,8 @@ interface State {
 	ty: number;
 	/** Pixels the clip lets through, or null for all. */
 	clip: Uint8Array | null;
+	/** The clip is made of several rectangles, under which a browser rasterizes shapes otherwise. */
+	complex: boolean;
 }
 
 type Shape =
@@ -67,6 +69,7 @@ class ModelContext {
 		tx: 0,
 		ty: 0,
 		clip: null,
+		complex: false,
 	};
 	private readonly _stack: State[] = [];
 	/** Which pixels the current paint has colored, by the stamp of that paint. */
@@ -128,11 +131,16 @@ class ModelContext {
 		}
 	}
 
+	/**
+	 * What a shape is drawn with. Through a clip of several rectangles Chromium antialiases the edges
+	 * of shapes otherwise (by up to a whole value): such a shape colors its pixels otherwise.
+	 */
 	private _style(kind: string): string {
 		const s = this._state;
+		const clip = s.complex ? '|complex clip' : '';
 		return kind === 'fill'
-			? `${s.fillStyle}|${s.globalAlpha}`
-			: `${s.strokeStyle}|${s.globalAlpha}|${s.lineWidth}|${s.lineDash}`;
+			? `${s.fillStyle}|${s.globalAlpha}${clip}`
+			: `${s.strokeStyle}|${s.globalAlpha}|${s.lineWidth}|${s.lineDash}${clip}`;
 	}
 
 	private _fontSize(): number {
@@ -211,6 +219,7 @@ class ModelContext {
 					});
 				}
 				this._state.clip = mask;
+				if (this._path.length > 1) this._state.complex = true;
 			},
 			fill: () => {
 				const id = hash(`fill|${this._style('fill')}|${JSON.stringify(this._path)}`);
@@ -258,7 +267,9 @@ class ModelContext {
 							: x0;
 				// Taller than the glyphs of a font: more than half the size above and below the middle.
 				const top = s.textBaseline === 'middle' ? y0 - size * 0.75 : y0 - size;
-				const id = hash(`text|${text}|${s.fillStyle}|${s.font}|${s.textAlign}|${s.textBaseline}|${x0},${y0}`);
+				const id = hash(
+					`text|${text}|${s.fillStyle}|${s.font}|${s.textAlign}|${s.textBaseline}|${x0},${y0}|${s.complex}`,
+				);
 				this._paint([[left, top, left + width, top + size * 1.5]], id);
 			},
 			// A copy of pixels of another canvas, one to one: each pixel drawn there is drawn here as it

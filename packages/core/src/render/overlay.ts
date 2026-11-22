@@ -248,7 +248,11 @@ export class OverlayRenderer {
 				this._addBoxes(this._nextBoxes, boxes);
 			}
 			if (damage.length > 0) {
-				this._renderDamage(ctx, boxes);
+				if (this._closeDamage(boxes)) {
+					this._renderDamage(ctx, boxes);
+				} else {
+					this._renderFull(ctx);
+				}
 			}
 		}
 		// What this frame drew becomes what the next one compares with.
@@ -310,10 +314,86 @@ export class OverlayRenderer {
 	}
 
 	/**
+	 * Widens the damage until everything it reaches lies inside it: an item that reaches into it
+	 * without lying inside one of its boxes adds its own box, and so do all the highlights when one
+	 * of them reaches in (they are drawn at once), until nothing changes; a line needs only its
+	 * thickness covered where boxes cross it. Everything is then drawn without a clip. A clip of
+	 * several boxes would change how the browser rasterizes what is drawn through it: Chromium
+	 * antialiases the edge of a circle or of text otherwise under it, by up to the whole value of a
+	 * pixel, so a partial frame would differ from a full one.
+	 */
+	private _closeDamage(boxes: number): boolean {
+		const paneLeft = Math.round(this._layout.paneLeft * this._ratio);
+		const highlights = this._nextBoxes;
+		for (let round = 0, changed = true; changed; round++) {
+			if (round === 16) {
+				// Not settled: the frame draws everything instead.
+				return false;
+			}
+			changed = false;
+			for (const list of [this._static, this._next]) {
+				for (let i = 0; i < list.count; i++) {
+					const item = list.items[i]!;
+					if (
+						this._damaged(item.x0, item.y0, item.x1, item.y1) &&
+						!(item.kind === ROW || item.kind === COLUMN
+							? this._across(item)
+							: this._within(item.x0, item.y0, item.x1, item.y1))
+					) {
+						this._addDamage(item.x0, item.y0, item.x1, item.y1);
+						changed = true;
+					}
+				}
+			}
+			let reached = false;
+			let inside = true;
+			for (let i = 0; i < boxes; i += 4) {
+				const x0 = highlights[i]! + paneLeft;
+				const x1 = highlights[i + 2]! + paneLeft;
+				reached ||= this._damaged(x0, highlights[i + 1]!, x1, highlights[i + 3]!);
+				inside &&= this._within(x0, highlights[i + 1]!, x1, highlights[i + 3]!);
+			}
+			if (reached && !inside) {
+				this._addBoxes(highlights, boxes);
+				changed = true;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * Whether the damage takes a line in as pieces: one box holds all of it, or every box that
+	 * reaches it covers its whole thickness, within the layer.
+	 */
+	private _across(item: OverlayItem): boolean {
+		if (this._within(item.x0, item.y0, item.x1, item.y1)) {
+			return true;
+		}
+		const damage = this._damage;
+		const row = item.kind === ROW;
+		const near = Math.max(0, row ? item.y0 : item.x0);
+		const far = Math.min(row ? this._height : this._width, row ? item.y1 : item.x1);
+		for (let i = 0; i < damage.length; i += 4) {
+			if (
+				damage[i]! >= item.x1 ||
+				damage[i + 2]! <= item.x0 ||
+				damage[i + 1]! >= item.y1 ||
+				damage[i + 3]! <= item.y0
+			) {
+				continue;
+			}
+			if ((row ? damage[i + 1]! : damage[i]!) > near || (row ? damage[i + 3]! : damage[i + 2]!) < far) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
 	 * Clears the boxes of `_damage` and draws again everything that reaches into them, in the order
-	 * of a full frame. `boxes` is the number of highlight box numbers of this frame. Lines are drawn
-	 * as the pieces of their dashes inside the boxes; whatever lies inside one box is drawn as it is;
-	 * only the rest goes through a clip to the boxes, which makes every call under it slower.
+	 * of a full frame. `boxes` is the number of highlight box numbers of this frame. After
+	 * `_closeDamage` all of it lies inside the damage: lines are drawn as the pieces of their dashes
+	 * inside the boxes, everything else as it is.
 	 */
 	private _renderDamage(ctx: CanvasRenderingContext2D, boxes: number): void {
 		const damage = this._damage;
@@ -420,11 +500,15 @@ export class OverlayRenderer {
 		return false;
 	}
 
-	/** Whether a box lies inside one box of the damage. */
+	/** Whether a box, within the layer, lies inside one box of the damage. */
 	private _within(x0: number, y0: number, x1: number, y1: number): boolean {
 		const damage = this._damage;
+		const left = Math.max(0, x0);
+		const top = Math.max(0, y0);
+		const right = Math.min(this._width, x1);
+		const bottom = Math.min(this._height, y1);
 		for (let i = 0; i < damage.length; i += 4) {
-			if (x0 >= damage[i]! && y0 >= damage[i + 1]! && x1 <= damage[i + 2]! && y1 <= damage[i + 3]!) {
+			if (left >= damage[i]! && top >= damage[i + 1]! && right <= damage[i + 2]! && bottom <= damage[i + 3]!) {
 				return true;
 			}
 		}
@@ -433,7 +517,7 @@ export class OverlayRenderer {
 
 	/** Draws an item where it reaches into the damage, each pixel of it once. */
 	private _drawDamaged(ctx: CanvasRenderingContext2D, item: OverlayItem): void {
-		if (item.kind === ROW || item.kind === COLUMN) {
+		if ((item.kind === ROW || item.kind === COLUMN) && !this._within(item.x0, item.y0, item.x1, item.y1)) {
 			this._drawLine(ctx, item);
 		} else if (this._damaged(item.x0, item.y0, item.x1, item.y1)) {
 			const inside = this._within(item.x0, item.y0, item.x1, item.y1);
