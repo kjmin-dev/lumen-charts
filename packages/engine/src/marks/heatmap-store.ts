@@ -26,8 +26,12 @@ class HeatChunk {
 	public readonly time: Float64Array;
 	public readonly offset: Int32Array;
 	public readonly length: Int32Array;
-	/** Where the cells of each slot start; `start[size]` is the end of the last. */
+	/**
+	 * Where the cells of each slot start, for slots up to `top`; slots after it have none yet, and
+	 * `start[top]` is the end of the cells. Appending a column to a chunk is then constant work.
+	 */
 	public readonly start: Int32Array;
+	public top = 0;
 	public cells: Float32Array;
 	/**
 	 * Set while the cells are let go under the memory limit: their checksum. The times, rows and
@@ -44,7 +48,7 @@ class HeatChunk {
 	}
 
 	public get used(): number {
-		return this.start[this.start.length - 1]!;
+		return this.start[this.top]!;
 	}
 
 	/** Checksum of the cells of the columns held, in their order. */
@@ -57,21 +61,30 @@ class HeatChunk {
 		return { high: checksum.high, low: checksum.low };
 	}
 
-	/** Replaces the cells of slots `[from, to)` with `n` cells of `source` from `at` on. */
+	/**
+	 * Replaces the cells of slots `[from, to)` with `n` cells of `source` from `at` on; the caller
+	 * sets the starts of those slots from their lengths.
+	 */
 	public splice(from: number, to: number, source: Float32Array, at: number, n: number): void {
 		if (this.summary !== null) {
 			// Written anew: a chunk let go is written only where all of its columns are.
 			this.summary = null;
 			this.cells = new Float32Array(Math.max(n, this.start.length - 1));
 			this.start.fill(0);
+			this.top = 0;
 			this.length.fill(0, 0, from);
 			this.length.fill(0, to);
 		}
 		const start = this.start;
-		const a = start[from]!;
-		const b = start[to]!;
-		const delta = n - (b - a);
 		const used = this.used;
+		if (from > this.top) {
+			// The slots between the last written and these have no cells.
+			start.fill(used, this.top + 1, from + 1);
+			this.top = from;
+		}
+		const a = start[from]!;
+		const b = to <= this.top ? start[to]! : used;
+		const delta = n - (b - a);
 		if (delta !== 0) {
 			if (used + delta > this.cells.length) {
 				const grown = new Float32Array(Math.max(used + delta, Math.ceil(this.cells.length * 1.5)));
@@ -79,9 +92,12 @@ class HeatChunk {
 				this.cells = grown;
 			}
 			this.cells.copyWithin(b + delta, b, used);
-			for (let slot = to; slot < start.length; slot++) {
+			for (let slot = to + 1; slot <= this.top; slot++) {
 				start[slot] = start[slot]! + delta;
 			}
+		}
+		if (to > this.top) {
+			this.top = to;
 		}
 		this.cells.set(source.subarray(at, at + n), a);
 	}
@@ -270,6 +286,10 @@ class HeatmapLevel {
 				chunk.offset[slot + k] = out.offset;
 				chunk.length[slot + k] = out.length;
 				this.fill += out.length;
+			}
+			if (chunk.summary !== null) {
+				// Written anew where its cells were let go (see `HeatChunk.splice`).
+				this.evicted--;
 			}
 			chunk.splice(slot, slot + slots, this._scratch, 0, this.fill);
 			for (let s = slot; s < slot + slots; s++) {
