@@ -1,6 +1,9 @@
 import type { MarkTextureFormat } from './device';
 // All geometry entering the shaders is integer device pixels or sorted window indices.
-// Colors are straight RGBA bytes as in ImageData. The canvas receives premultiplied RGBA.
+// Colors are straight RGBA bytes as in ImageData. The image receives premultiplied RGBA, and holds
+// the pane transposed, as the Canvas 2D and WebGL2 paths retain theirs: pixel (x, y) of the pane is
+// texel (y, x), so every path composites its image with the same transposed drawImage. The lanes of
+// a column kernel then also store neighboring texels of a row.
 const common = (format: MarkTextureFormat) => `
 struct View { width:u32, height:u32, left:u32, right:u32, size:u32, rows:u32, bandCount:u32, spare:u32, table:u32, rowBase:u32, pad0:u32, pad1:u32 }
 @group(0) @binding(0) var<uniform> v:View;
@@ -56,7 +59,7 @@ fn main(@builtin(global_invocation_id) gid:vec3u) {
 		}
 		slot=lo;
 	}
-	textureStore(image,vec2u(x,y),color(style[slot]));
+	textureStore(image,vec2u(y,x),color(style[slot]));
 }`;
 
 // As the heatmap kernel, for a fixed range of values: the cells hold their palette slots, four to
@@ -77,7 +80,7 @@ fn main(@builtin(global_invocation_id) gid:vec3u) {
 			slot=max(slot,(data[i>>2u]>>((i&3u)*8u))&255u);
 		}
 	}
-	textureStore(image,vec2u(x,y),color(style[slot]));
+	textureStore(image,vec2u(y,x),color(style[slot]));
 }`;
 
 // One group owns a vertical strip. Split tall panes into strips fitting the guaranteed
@@ -97,7 +100,7 @@ fn main(@builtin(workgroup_id) g:vec3u,@builtin(local_invocation_index) lane:u32
 	for(var r=lane;r<h;r+=64u){
 		let last=atomicLoad(&winners[r]);
 		var c=vec4f(0); if(last!=0u){c=color(data[(last-1u)*2u+1u]);}
-		textureStore(image,vec2u(x,top+r),c);
+		textureStore(image,vec2u(top+r,x),c);
 	}
 }`;
 
@@ -121,7 +124,7 @@ fn main(@builtin(workgroup_id) g:vec3u,@builtin(local_invocation_index) lane:u32
 		var last=0u;
 		for(var dy=0u;dy<v.size;dy++){last=max(last,atomicLoad(&winners[r+dy]));}
 		var c=vec4f(0); if(last!=0u){c=color(data[(last-1u)*2u+1u]);}
-		textureStore(image,vec2u(x,top+r),c);
+		textureStore(image,vec2u(top+r,x),c);
 	}
 }`;
 
@@ -159,7 +162,7 @@ fn main(@builtin(workgroup_id) g:vec3u,@builtin(local_invocation_index) lane:u32
 		let x=x0+(i&15u);let y=y0+(i>>4u);
 		if(x<end && y<v.height){let last=atomicLoad(&tiles[i]);
 			var c=vec4f(0);if(last!=0u){c=color(data[(last-1u)*2u+1u]);}
-			textureStore(image,vec2u(x,y),c);
+			textureStore(image,vec2u(y,x),c);
 		}
 	}
 }`;

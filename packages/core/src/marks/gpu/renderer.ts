@@ -12,8 +12,9 @@ import { heatStyle, PriceBands, scatterBounds, scatterRecords, fitsTileIndex } f
 const BUFFER_COPY_DST = 0x08,
 	BUFFER_UNIFORM = 0x40,
 	BUFFER_STORAGE = 0x80;
-const TEXTURE_STORAGE = 0x08,
-	TEXTURE_ATTACHMENT = 0x10;
+const TEXTURE_COPY_SRC = 0x01,
+	TEXTURE_COPY_DST = 0x02,
+	TEXTURE_STORAGE = 0x08;
 class Budget extends Error {}
 
 const SPAN = { low: 0, high: 0 };
@@ -122,6 +123,15 @@ export class GpuMarkBackend implements GpuBackend {
 	private width = 0;
 	private height = 0;
 	private gpu: GPUCanvasContext | null = null;
+	/**
+	 * The image the kernels write, kept between frames: the pane transposed (see shaders.ts). A frame
+	 * copies the strip it drew into the canvas's texture, which is configured without storage usage.
+	 * Chrome on Android copies the whole texture of a canvas with storage usage into a second one
+	 * every time it hands out a new texture (and logs, once, that the canvas's format is not the
+	 * preferred one, whatever the format).
+	 */
+	private image: GPUTexture | null = null;
+	private imageView: GPUTextureView | null = null;
 	private cache: CanvasRenderingContext2D | null = null;
 	private version = -1;
 	private revision = -1;
@@ -156,7 +166,7 @@ export class GpuMarkBackend implements GpuBackend {
 	/** The kernel of the last dispatch, read by the benchmark harness. */
 	public kernel: GpuKernel | null = null;
 	public get bytes(): number {
-		return this.width * this.height * 8 + this.slots.reduce((n, s) => n + s.capacity, 0);
+		return this.width * this.height * 12 + this.slots.reduce((n, s) => n + s.capacity, 0);
 	}
 	private readonly doc: Document;
 	private readonly resources: GpuResources;
@@ -179,27 +189,32 @@ export class GpuMarkBackend implements GpuBackend {
 		if (
 			width > this.resources.device.limits.maxTextureDimension2D ||
 			height > this.resources.device.limits.maxTextureDimension2D ||
-			!canvasFits(Math.max(0, pixels - this.width * this.height) * 2)
+			!canvasFits(Math.max(0, pixels - this.width * this.height) * 3)
 		)
 			throw new Budget();
 		if (width === this.width && height === this.height && this.cache) return false;
+		const { device, format } = this.resources;
 		if (!this.gpu) {
 			const context = this.doc.createElement('canvas').getContext('webgpu');
 			this.gpu = context && 'configure' in context ? context : null;
 			this.cache = this.doc.createElement('canvas').getContext('2d');
 			if (!this.gpu || !this.cache) throw new Error('mark canvas unavailable');
 		}
-		this.gpu.canvas.width = width;
-		this.gpu.canvas.height = height;
-		this.gpu.configure({
-			device: this.resources.device,
-			format: this.resources.format,
-			alphaMode: 'premultiplied',
-			usage: TEXTURE_STORAGE | TEXTURE_ATTACHMENT,
+		// Transposed, as the image: the canvas is as wide as the pane is high.
+		this.gpu.canvas.width = height;
+		this.gpu.canvas.height = width;
+		this.gpu.configure({ device, format, alphaMode: 'premultiplied', usage: TEXTURE_COPY_DST });
+		this.image?.destroy();
+		this.image = device.createTexture({
+			label: 'lumen-marks-image',
+			size: [height, width],
+			format,
+			usage: TEXTURE_STORAGE | TEXTURE_COPY_SRC,
 		});
-		this.cache!.canvas.width = width;
-		this.cache!.canvas.height = height;
-		trackCanvas(this.width * this.height * 2, pixels * 2);
+		this.imageView = this.image.createView();
+		this.cache!.canvas.width = height;
+		this.cache!.canvas.height = width;
+		trackCanvas(this.width * this.height * 3, pixels * 3);
 		this.width = width;
 		this.height = height;
 		return true;
@@ -249,7 +264,8 @@ export class GpuMarkBackend implements GpuBackend {
 					Math.round(f.projection.offset - (f.projection.log ? Math.log10(price) : price) * f.projection.scale) -
 					(size >> 1);
 			cache.fillStyle = css;
-			cache.fillRect(x, y, size, size);
+			// Transposed.
+			cache.fillRect(y, x, size, size);
 		}
 		this.pending = Math.min(this.pending, w.dirtyFrom);
 		this.count = w.count;
@@ -299,7 +315,11 @@ export class GpuMarkBackend implements GpuBackend {
 			this.lastPath = path;
 		}
 		if (f.options.opacity > 0) {
+			// As the Canvas 2D and WebGL2 paths draw their transposed images: x and y swapped, pixel
+			// onto pixel.
 			ctx.save();
+			ctx.transform(0, 1, 1, 0, 0, 0);
+			ctx.imageSmoothingEnabled = false;
 			ctx.globalAlpha *= Math.min(1, f.options.opacity);
 			ctx.drawImage(this.cache!.canvas, 0, 0);
 			ctx.restore();
@@ -435,7 +455,8 @@ export class GpuMarkBackend implements GpuBackend {
 				const cache = this.cache!;
 				cache.save();
 				cache.globalCompositeOperation = 'copy';
-				cache.drawImage(cache.canvas, delta, 0);
+				// Transposed: the pane's columns are the image's rows.
+				cache.drawImage(cache.canvas, 0, delta);
 				cache.restore();
 			}
 			if (delta >= 0) right = delta;
@@ -516,7 +537,7 @@ export class GpuMarkBackend implements GpuBackend {
 			{ binding: 0, resource: { buffer: uniform.buffer! } },
 			{ binding: 1, resource: { buffer: data.buffer! } },
 			{ binding: 2, resource: { buffer: spans.buffer! } },
-			{ binding: 4, resource: this.gpu!.getCurrentTexture().createView() },
+			{ binding: 4, resource: this.imageView! },
 		];
 		if (path === 'heatmap') entries.push({ binding: 3, resource: { buffer: style.buffer! } });
 		if (path === 'scatter-tiles')
@@ -534,13 +555,23 @@ export class GpuMarkBackend implements GpuBackend {
 			Math.ceil(f.height / (path === 'scatter-columns' ? 1024 : stride)),
 		);
 		pass.end();
+		// The strip drawn, from the image into the canvas: rows `[left, right)` of both.
+		const width = right - left;
+		encoder.copyTextureToTexture(
+			{ texture: this.image!, origin: { x: 0, y: left } },
+			{ texture: this.gpu!.getCurrentTexture(), origin: { x: 0, y: left } },
+			{ width: f.height, height: width },
+		);
 		device.queue.submit([encoder.finish()]);
 		const cache = this.cache!;
-		cache.clearRect(left, 0, right - left, f.height);
-		cache.drawImage(this.gpu!.canvas, left, 0, right - left, f.height, left, 0, right - left, f.height);
+		cache.clearRect(0, left, f.height, width);
+		cache.drawImage(this.gpu!.canvas, 0, left, f.height, width, 0, left, f.height, width);
 	}
 	public release(): void {
 		for (const slot of this.slots) slot.release();
+		this.image?.destroy();
+		this.image = null;
+		this.imageView = null;
 		this.gpu?.unconfigure();
 		if (this.gpu) {
 			this.gpu.canvas.width = 1;
@@ -550,7 +581,7 @@ export class GpuMarkBackend implements GpuBackend {
 			this.cache.canvas.width = 1;
 			this.cache.canvas.height = 1;
 		}
-		trackCanvas(this.width * this.height * 2, 0);
+		trackCanvas(this.width * this.height * 3, 0);
 		this.width = 0;
 		this.height = 0;
 		this.gpu = null;
