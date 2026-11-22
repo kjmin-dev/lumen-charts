@@ -105,6 +105,12 @@ export class GpuMarkBackend implements GpuBackend {
 	private mapping = '';
 	private palette: Uint32Array | null = null;
 	private fallback = '';
+	/**
+	 * Rows `[projectedFrom, projectedTo)` of a scatter's window have records on the GPU, at the
+	 * projection, style and colors of the last draw. A pan projects the rows that come into view.
+	 */
+	private projectedFrom = 0;
+	private projectedTo = 0;
 	private bandsKey = '';
 	private count = 0;
 	private pending = Infinity;
@@ -257,19 +263,30 @@ export class GpuMarkBackend implements GpuBackend {
 	}
 	private prepareScatter(f: MarkFrame, path: GpuPath, size: number, full: boolean, change: Upload): Strip {
 		const w = f.window;
-		const { data, spans, bands, ids } = this.buffers;
+		const { spans, bands, ids } = this.buffers;
 		const { newWindow, styleChanged, projection, dirtyFrom, dirtyTo } = change;
 		let left = 0,
 			right = f.width;
 
-		const fallback = (f.options as ScatterOptions).color;
-		const all = newWindow || styleChanged || projection !== this.projection || fallback !== this.fallback;
-		const from = all ? 0 : dirtyFrom,
-			to = all ? w.count : dirtyTo;
-		if (this.packed.length < w.capacity * 2) this.packed = new Uint32Array(w.capacity * 2);
-		if (to > from) {
-			scatterRecords(f, this.packed, from, to, parseColor(fallback) ?? 0);
-			data.write(this.packed, from * 2, to * 2);
+		const fallback = (f.options as ScatterOptions).color,
+			color = parseColor(fallback) ?? 0;
+		const grown = this.packed.length < w.capacity * 2;
+		if (grown) this.packed = new Uint32Array(w.capacity * 2);
+		const all = grown || newWindow || styleChanged || projection !== this.projection || fallback !== this.fallback;
+		// The column kernel reads the rows in view only; the tile index is built from all of them.
+		const from = path === 'scatter-tiles' ? 0 : f.from,
+			to = path === 'scatter-tiles' ? w.count : f.to;
+		if (all || this.projectedTo <= from || to <= this.projectedFrom) {
+			this.project(f, from, to, color);
+			this.projectedFrom = from;
+			this.projectedTo = to;
+		} else {
+			// A patch can change rows projected before, in view or not.
+			this.project(f, Math.max(dirtyFrom, this.projectedFrom), Math.min(dirtyTo, this.projectedTo), color);
+			this.project(f, from, this.projectedFrom, color);
+			this.project(f, this.projectedTo, to, color);
+			this.projectedFrom = Math.min(this.projectedFrom, from);
+			this.projectedTo = Math.max(this.projectedTo, to);
 		}
 		if (this.bounds.length < f.width + size) this.bounds = new Uint32Array(f.width + size);
 		scatterBounds(f, size, this.bounds);
@@ -295,6 +312,12 @@ export class GpuMarkBackend implements GpuBackend {
 		}
 		this.fallback = fallback;
 		return { left, right };
+	}
+	/** Projects rows `[from, to)` into their records and uploads them. */
+	private project(f: MarkFrame, from: number, to: number, fallback: number): void {
+		if (to <= from) return;
+		scatterRecords(f, this.packed, from, to, fallback);
+		this.buffers.data.write(this.packed, from * 2, to * 2);
 	}
 	private prepareHeatmap(f: MarkFrame, full: boolean, fresh: boolean, change: Upload): Strip {
 		const w = f.window;
@@ -408,6 +431,8 @@ export class GpuMarkBackend implements GpuBackend {
 		this.palette = null;
 		this.version = -1;
 		this.bandsKey = '';
+		this.projectedFrom = 0;
+		this.projectedTo = 0;
 		this.heatPan = new HeatPan();
 		this.packed = new Uint32Array(0);
 

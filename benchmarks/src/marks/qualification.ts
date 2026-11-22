@@ -299,6 +299,45 @@ async function check(
 			await compare('point appended to large squares', s =>
 				s.scatter.update({ time: barTime(82) + 60000, price: 81, value: 64 }),
 			);
+			// The column kernel reads the rows in view: a pan that overlaps the rows projected adds
+			// those that come into view, one past them starts over, and a point appended out of view
+			// shows when the view reaches it.
+			await compare('dense scatter over many bars, part in view', s => {
+				const n = 1_320_000;
+				const time = new Float64Array(n),
+					price = new Float64Array(n),
+					value = new Float32Array(n);
+				let seed = 23;
+				for (let i = 0; i < n; i++) {
+					const bar = (i / n) * 55;
+					time[i] = barTime(40 + Math.floor(bar)) + Math.floor((bar % 1) * 60000);
+					seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+					price[i] = 70 + (25 * seed) / 4294967296;
+					value[i] = i % 100;
+				}
+				s.scatter.setData({ time, price, value });
+				s.chart.timeScale().setVisibleLogicalRange({ from: 60.3, to: 66.8 });
+			});
+			const pans: [string, number, number][] = [
+				['dense scatter, small pan right', 60.9, 67.4],
+				['dense scatter, small pan left', 59.8, 66.3],
+				['dense scatter, tail out of view', 86.1, 92.6],
+			];
+			for (const [name, from, to] of pans) {
+				await compare(name, s => s.chart.timeScale().setVisibleLogicalRange({ from, to }));
+				if (mode === 'hardware' && b.scatter.renderer().path !== 'scatter-columns')
+					throw Error(name + ' left the column kernel: ' + b.scatter.renderer().path);
+			}
+			await compare('point appended out of view', s =>
+				s.scatter.update({ time: barTime(95) + 30000, price: 79, value: 12 }),
+			);
+			await compare('appended point in view', s =>
+				s.chart.timeScale().setVisibleLogicalRange({ from: 89.7, to: 96.2 }),
+			);
+			await compare('price scale change on part of the rows', s =>
+				s.chart.priceScale().applyOptions({ invertScale: true }),
+			);
+			await compare('price scale restored', s => s.chart.priceScale().applyOptions({ invertScale: false }));
 			await compare('large squares restored', s => {
 				s.chart.resize(365, 231);
 				s.scatter.applyOptions({ pointSize: 2 });
