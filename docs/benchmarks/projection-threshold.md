@@ -56,7 +56,7 @@ On the phone the three runs of one side spread over 1.0–3.1 ms, more than any 
 
 ## Correctness
 
-The image comparisons gained two states for this branch: a view over most of a 1.32M-point scatter, whose draw starts over with more than 0.6 of the held rows in view and projects them all, then a pan inside those rows, which projects none. A copy of the renderer that throws on that branch fails exactly at the first of the two, so the suite reaches it. Headless Chromium on the M1 passes byte for byte with hardware WebGPU (58 checks) and WebGL2 (63) at DPR 1, 1.5 and 2.
+The image comparisons gained two states for this branch: a view over most of a 1.32M-point scatter, whose draw starts over with more than 0.6 of the held rows in view and projects them all, then a pan inside those rows, which projects none. A copy of the renderer that throws on that branch fails exactly at the first of the two, so the suite reaches it. Headless Chromium on the M1 passes byte for byte in every mode at DPR 1, 1.5 and 2: 58 checks with hardware WebGPU and 63 with WebGL2 at each ratio, 834 in all ([results](projection-threshold-mark-charts.json)).
 
 ## Raw runs
 
