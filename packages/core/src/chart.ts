@@ -1135,6 +1135,7 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 	private _placeLayers(): void {
 		// A canvas that changes size is cleared, and the pixel ratio and fonts may differ.
 		this._paneRenderer.stale = true;
+		this._overlayRenderer.stale = true;
 		const layout = this._layout;
 		layout.placePanes();
 		if (this._primitives.placeLayer(layout.pixelRatio)) {
@@ -1163,6 +1164,10 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 			pane.stale = true;
 		}
 		const animating = this._interaction.step(now);
+		if (level >= INVALIDATE_LIGHT) {
+			// Price lines and value labels follow the series: the overlay draws them again.
+			this._overlayRenderer.stale = true;
+		}
 		if (level === INVALIDATE_FULL || layout.font === '') {
 			this._placeLayers();
 		}

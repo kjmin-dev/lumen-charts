@@ -1,5 +1,5 @@
 import type { TimeIndex } from '../model/time-index';
-import { type DrawTarget, HIT_BODY, HIT_NONE } from '../primitives';
+import { type DrawTarget, HIT_BODY, HIT_NONE, type PanePrimitive } from '../primitives';
 import type { HitResult, PaneViewState, PrimitiveEntry, PrimitiveLayers } from '../render/primitive-host';
 import { Drawing, type DrawingOwner, type DrawingStyle } from './drawing';
 import {
@@ -519,6 +519,36 @@ export class Drawings implements DrawingsApi, DrawingOwner {
 			selected.drawHighlight(target, view, false, true);
 			if (clipped) target.context.restore();
 		}
+	}
+
+	/**
+	 * Boxes of the device pixels `drawOverlay` colors while no drawing is edited: the handles of the
+	 * hovered and the selected drawing (see `Drawing.highlightBoxes`), in the pane's coordinates, four
+	 * numbers each from the start of `out`, which holds two drawings' handles. Returns how many
+	 * numbers it wrote, or -1 when what it draws cannot be bounded: a drawing is being edited, or a
+	 * primitive of the application is highlighted.
+	 */
+	public highlightBoxes(ratio: number, out: Float64Array): number {
+		const hovered = this._hovered?.primitive ?? null;
+		if (this._editing !== null || (hovered !== null && !(hovered instanceof Drawing) && hovered.drawHighlight)) {
+			return -1;
+		}
+		let at = hovered instanceof Drawing ? hovered.highlightBoxes(ratio, out, 0) : 0;
+		const selected = this._selected;
+		if (selected !== null && selected !== hovered && selected.alive) {
+			at = selected.highlightBoxes(ratio, out, at);
+		}
+		return at;
+	}
+
+	/** The primitive under the pointer, highlighted on the overlay; null for none. */
+	public get hoveredPrimitive(): PanePrimitive | null {
+		return this._hovered?.primitive ?? null;
+	}
+
+	/** The selected drawing, highlighted on the overlay; null for none. */
+	public get selectedDrawing(): Drawing | null {
+		return this._selected;
 	}
 
 	/** Whether anything is drawn on the overlay. */

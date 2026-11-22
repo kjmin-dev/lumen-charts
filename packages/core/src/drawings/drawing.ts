@@ -685,6 +685,38 @@ export class Drawing implements PanePrimitive, DrawingApi {
 		}
 	}
 
+	/**
+	 * Boxes of the device pixels `drawHighlight` can color, in the pane's coordinates: left, top,
+	 * right and bottom of each handle with its outline and a pixel of antialiasing, written to `out`
+	 * from `at`. Returns where the next box goes. The overlay clears and draws again only there when
+	 * a highlight comes, goes or moves.
+	 */
+	public highlightBoxes(ratio: number, out: Float64Array, at: number): number {
+		if (!this.onScreen) {
+			return at;
+		}
+		const g = this.geometry;
+		const reach = HANDLE_RADIUS * ratio + Math.max(1, Math.round(ratio)) / 2 + 1;
+		const first = this._box ? G_HANDLES : G_POINTS;
+		for (let k = 0; k < this.handleCount; k++) {
+			const x = g[first + 2 * k]! * ratio;
+			const y = g[first + 2 * k + 1]! * ratio;
+			if (x !== x || y !== y) {
+				continue;
+			}
+			out[at++] = Math.floor(x - reach);
+			out[at++] = Math.floor(y - reach);
+			out[at++] = Math.ceil(x + reach);
+			out[at++] = Math.ceil(y + reach);
+		}
+		return at;
+	}
+
+	/** The color `drawHighlight` outlines handles with. */
+	public get highlightColor(): string {
+		return this._options.color;
+	}
+
 	public hitTest(x: number, y: number, tolerance: number): number {
 		if (!this.onScreen) {
 			return HIT_NONE;
