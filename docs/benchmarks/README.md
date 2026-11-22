@@ -29,6 +29,9 @@ pnpm bench:report <results.json>        # Markdown tables from a results file
 pnpm bench:merge <out.json> <a.json> <b.json>   # join runs of the same cases into one file
 pnpm bench:pixels                       # partial redraws against full redraws, pixel for pixel (--dpr, --raster, --redraw, --case)
 pnpm bench:serve                        # production build of the harness page, to run by hand
+pnpm bench --browser firefox --case frames/candles-1m --lib lumen-worker   # headless Firefox: no DevTools protocol, so no memory, traces or forced GC
+pnpm bench --android <serial> --case frames/candles-1m --lib lumen-worker # Chrome on a USB-connected Android device, at its own viewport and ratio
+node benchmarks/runner/mark-charts.mjs --android <serial> --tolerance 2   # image comparisons on the device
 ```
 
 ## Metrics
@@ -104,3 +107,8 @@ The JSON files beside each document are the runs its numbers come from.
 - [WebGPU specialized paths](webgpu-specialized-paths.md) measures the integrated large-square kernel, visible-row scatter projection and heatmap palette slots against `main`, with the 1M cloud A/B of the projection change.
 - [mark-history.md](mark-history.md): what prepending, removing, letting go and fetching back marks, and indicators over them, cost in the engine, and byte-for-byte checks of heatmaps whose grid follows the price in three browsers.
 - [scatter-size-density.md](scatter-size-density.md): frame time of scatters with a size per point and with density coloring on Canvas 2D, WebGL2 and WebGPU, and their whole-chart image comparisons.
+- [Physical Android device](android-physical.md) runs the harness and the image comparisons in Chrome on a USB-connected phone, and records a flagship phone against the mark budgets and the stage gates.
+- [Projection threshold](projection-threshold.md) calibrates when a WebGPU scatter draw that starts over projects every held row.
+- [Firefox on the M1](firefox-frames.md) runs the gate and mark cases in headless Firefox against Chromium.
+- [Automatic renderer selection](mark-renderer-auto.md) compares the three backends on the M1 and the phone and keeps `auto` on WebGL2.
+- [Review experiments](review-remeasure.md) measures the chunked store's scan cost again.

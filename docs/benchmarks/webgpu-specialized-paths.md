@@ -105,7 +105,7 @@ On the raw 1M cloud, the view shows nearly every row held. The mean stayed level
 | pan      |             1.66 (1.51) |                     1.56 (1.86) |
 | zoom     |             2.02 (1.76) |                     1.82 (1.97) |
 
-On this workload, the change moves the projection work rather than reducing it. Before, a frame that started over projected every held row at once; that rare large frame raised the mean but stayed beyond p95. After, that frame projects only the rows in view, and the pans that follow project the rest a little at a time. As a result, p95 rises by 0.1–0.2 ms and the mean falls by 0.2–0.35 ms, both well inside the 8 ms budget. The study proposed a threshold: below a minimum share of held rows saved, project them all. That threshold is not calibrated yet. The 1M cloud stays in the acceptance cases for it.
+On this workload, the change moves the projection work rather than reducing it. Before, a frame that started over projected every held row at once; that rare large frame raised the mean but stayed beyond p95. After, that frame projects only the rows in view, and the pans that follow project the rest a little at a time. As a result, p95 rises by 0.1–0.2 ms and the mean falls by 0.2–0.35 ms, both well inside the 8 ms budget. The study proposed a threshold: below a minimum share of held rows saved, project them all. It is now calibrated at 0.4 ([projection threshold](projection-threshold.md)). The 1M cloud stays in the acceptance cases for it.
 
 Raw runs:
 
