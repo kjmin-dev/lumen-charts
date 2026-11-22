@@ -621,7 +621,7 @@ describe('the WebGL2 scatter kernel, run on the CPU', () => {
 			for (const size of data.sizes) if (size === size) stamp = Math.max(stamp, pointPixels(size, 1));
 			const words = 3;
 			const records = new Uint32Array(data.time.length * words);
-			packScatterRows(frame, records, 0, data.time.length, RED, words, false);
+			packScatterRows(frame, records, new Float32Array(records.buffer), 0, data.time.length, RED, words, false);
 			// Colors of the records are the palette's for each value, as Canvas 2D has them.
 			for (let i = 0; i < data.time.length; i++)
 				expect(records[i * words + 1]).toBe(GREY[paletteIndex(frame.mapping, data.values[i]!)]);
@@ -672,7 +672,7 @@ describe('the WebGL2 scatter kernel, run on the CPU', () => {
 		]);
 		const frame = frameOf(data, map, {}, 2);
 		const records = new Uint32Array(9);
-		packScatterRows(frame, records, 0, 3, RED, 3, true);
+		packScatterRows(frame, records, new Float32Array(records.buffer), 0, 3, RED, 3, true);
 		const counts = new Float32Array(records.buffer);
 		expect([records[0], records[3], records[6]! | 0]).toEqual([10, 12, 32]);
 		expect([counts[1], counts[4], counts[7]]).toEqual([3, 1, 70000]);

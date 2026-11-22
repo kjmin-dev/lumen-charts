@@ -20,6 +20,8 @@ class GlLayer {
 	private heat = new HeatRanges();
 	private bounds = new Uint32Array(0);
 	private packed = new Uint32Array(0);
+	/** `packed` as floats, for the counts of densities. */
+	private packedFloats = new Float32Array(0);
 	private colors = new Uint32Array(512);
 	private version = -1;
 	private count = -1;
@@ -76,10 +78,13 @@ class GlLayer {
 		const from = all ? 0 : w.dirtyFrom,
 			to = all ? w.count : w.dirtyTo;
 		if (to > from) {
-			if (this.packed.length < w.capacity * words) this.packed = new Uint32Array(w.capacity * words);
+			if (this.packed.length < w.capacity * words) {
+				this.packed = new Uint32Array(w.capacity * words);
+				this.packedFloats = new Float32Array(this.packed.buffer);
+			}
 			const fallback = parseColor(options.color) ?? 0;
 			if (words === 2 && !density) scatterRecords(f, this.packed, from, to, fallback);
-			else packScatterRows(f, this.packed, from, to, fallback, words, density);
+			else packScatterRows(f, this.packed, this.packedFloats, from, to, fallback, words, density);
 			this.records.write(this.packed, from * words, to * words);
 		}
 		this.projection = key;

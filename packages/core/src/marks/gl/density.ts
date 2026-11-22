@@ -1,8 +1,8 @@
 import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
 import type { MarkFrame } from '../backend';
 import type { ScatterOptions } from '../options';
-import { PALETTE_SIZE, type ValueMapping, paletteIndex, setValueMapping } from '../palette';
-import { pointPixels } from '../render';
+import { PALETTE_SIZE, type ValueMapping, setValueMapping } from '../palette';
+import { MAX_POINT_PIXELS } from '../render';
 import { DensityScale, exactDensities } from '../scatter-style';
 import { GlBudget, type GlContext, type GlProgram, GlUnsupported } from './context';
 import { WordTexture } from './texture';
@@ -10,19 +10,24 @@ import { WordTexture } from './texture';
 /** Texels of the level below that one texel of a reduction pass takes the largest of, across and down. */
 const TILE = 16;
 
-const bits = new Uint32Array(1);
-const scalar = new Float32Array(bits.buffer);
+/** Rows further above or below the pane than this are as far as a record says. */
+const ROW_LIMIT = 0x3fffffff;
 
 /**
  * The records of scatter rows that have sizes of their own or are summed as densities: per row the
- * pixel row of its center, then its color or, for densities, its count as float bits, then with
- * `words` 3 its width in device pixels (0 for the series' size, which the shader takes from a
- * uniform, so a change of `pointSize` uploads nothing). Rows without either keep the two words of
- * `scatterRecords`, which the WebGPU renderer shares.
+ * pixel row of its center, then its color or, for densities, its count as a float (written through
+ * `floats`, a view of `packed`'s buffer), then with `words` 3 its width in device pixels (0 for the
+ * series' size, which the shader takes from a uniform, so a change of `pointSize` uploads nothing).
+ * Rows without either keep the two words of `scatterRecords`, which the WebGPU renderer shares.
+ *
+ * Every row of a new window is packed in the frame it arrives, a million or more: the loop holds no
+ * call and no store through another view than `floats`, and its branches on the kind of record are
+ * the same for every row.
  */
 export function packScatterRows(
 	f: MarkFrame,
 	packed: Uint32Array,
+	floats: Float32Array,
 	from: number,
 	to: number,
 	fallback: number,
@@ -30,24 +35,38 @@ export function packScatterRows(
 	density: boolean,
 ): void {
 	const { window: w, projection: p, palette, mapping, ratio } = f;
+	const prices = w.price;
+	const values = w.values;
 	const sizes = w.sizes;
 	const counts = w.counts;
 	const counted = counts.length > 0;
-	for (let i = from; i < to; i++) {
-		const price = w.price[i]!;
-		const y = Math.round(p.offset - (p.log ? Math.log10(price) : price) * p.scale);
-		const at = i * words;
-		packed[at] = Number.isNaN(y) ? 0x3fffffff : Math.max(-0x3fffffff, Math.min(0x3fffffff, y));
+	const sized = words > 2;
+	const { offset, scale, log } = p;
+	const valueMin = mapping.min;
+	const factor = mapping.factor;
+	const valueLog = mapping.log;
+	const top = PALETTE_SIZE - 1;
+	for (let i = from, at = from * words; i < to; i++, at += words) {
+		const price = prices[i]!;
+		const y = Math.round(offset - (log ? Math.log10(price) : price) * scale);
+		packed[at] = y === y ? (y > ROW_LIMIT ? ROW_LIMIT : y < -ROW_LIMIT ? -ROW_LIMIT : y) : ROW_LIMIT;
 		if (density) {
-			scalar[0] = counted ? counts[i]! : 1;
-			packed[at + 1] = bits[0]!;
+			floats[at + 1] = counted ? counts[i]! : 1;
 		} else {
-			const value = w.values[i]!;
-			packed[at + 1] = value === value ? palette[paletteIndex(mapping, value)]! : fallback;
+			// As `paletteIndex`, written out.
+			const v = values[i]!;
+			if (v === v) {
+				const index = ((valueLog ? (v > 0 ? Math.log10(v) : -Infinity) : v) - valueMin) * factor + 0.5;
+				packed[at + 1] = palette[index >= top ? top : index > 0 ? index | 0 : 0]!;
+			} else {
+				packed[at + 1] = fallback;
+			}
 		}
-		if (words > 2) {
+		if (sized) {
+			// As `pointPixels`, written out; 0 for the series' size.
 			const css = sizes[i]!;
-			packed[at + 2] = css === css ? pointPixels(css, ratio) : 0;
+			const size = Math.round(css * ratio);
+			packed[at + 2] = css === css ? (size >= 1 ? (size <= MAX_POINT_PIXELS ? size : MAX_POINT_PIXELS) : 1) : 0;
 		}
 	}
 }
