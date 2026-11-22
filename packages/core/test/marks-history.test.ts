@@ -452,3 +452,61 @@ describe('indicators over heatmap and scatter series', () => {
 		}
 	});
 });
+
+describe('a chart whose timeline comes from its marks', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it('draws a heatmap without bars, one bar per column, and lists nothing of its timeline', async () => {
+		vi.stubGlobal('ImageData', FakeImageData);
+		const t = new Chart();
+		try {
+			const depth = t.chart.addSeries('heatmap', { timeline: true, valueMin: 0, valueMax: 50, autoscale: true });
+			const columns = 120;
+			const time = Float64Array.from({ length: columns }, (_, c) => c * 90_000);
+			depth.setData({
+				priceStart: 99,
+				priceStep: 0.5,
+				rows: 8,
+				time,
+				values: Float32Array.from({ length: columns * 8 }, (_, i) => i % 50),
+			});
+			t.chart.timeScale().fitContent();
+			await t.settle();
+			expect(t.lit()).toBeGreaterThan(1000);
+			expect(t.chart.series()).toEqual([]);
+			expect(t.chart.timeScale().getVisibleLogicalRange()!.to).toBeGreaterThanOrEqual(columns - 1);
+			// A bar per column: the column at bar 60 is at the time of column 60.
+			expect(t.probe.view!.timeToX(60 * 90_000)).toBeCloseTo(t.probe.view!.logicalToX(60), 6);
+			depth.update({ time: columns * 90_000, values: new Float32Array(8).fill(7) });
+			await t.settle();
+			expect(t.probe.view!.timeToX(columns * 90_000)).toBeCloseTo(t.probe.view!.logicalToX(columns), 6);
+			expect(JSON.stringify(t.chart.saveState().series)).not.toContain('"line"');
+			t.chart.removeSeries(depth);
+			await t.settle();
+			expect(t.chart.markSeries()).toEqual([]);
+		} finally {
+			t.destroy();
+		}
+	});
+
+	it('draws trades without bars, a bar for each minute that has trades', async () => {
+		vi.stubGlobal('ImageData', FakeImageData);
+		const t = new Chart();
+		try {
+			const trades = t.chart.addSeries('scatter', { timeline: { interval: MINUTE } });
+			trades.setData({ time: [5000, 20_000, 3 * MINUTE, 3 * MINUTE + 1, 7 * MINUTE], price: [100, 101, 102, 103, 99] });
+			t.chart.timeScale().fitContent();
+			await t.settle();
+			expect(t.lit()).toBeGreaterThan(0);
+			const view = t.probe.view!;
+			// Minutes 0, 3 and 7 are bars 0, 1 and 2.
+			expect(view.timeToX(3 * MINUTE)).toBeCloseTo(view.logicalToX(1), 6);
+			expect(view.timeToX(7 * MINUTE)).toBeCloseTo(view.logicalToX(2), 6);
+			expect(() => t.chart.addSeries('scatter', { timeline: { interval: 0 } })).toThrow(RangeError);
+		} finally {
+			t.destroy();
+		}
+	});
+});

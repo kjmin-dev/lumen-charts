@@ -849,6 +849,24 @@ export class HeatmapStore implements MarksStore {
 		raw.missing(b, b + 8, out);
 	}
 
+	// A timeline made from the columns
+
+	public bucketTimes(interval: number, from: number, to: number): number[] {
+		const raw = this._levels[0]!;
+		const times: number[] = [];
+		const end = raw.lowerBound(to);
+		let last = Number.NaN;
+		for (let column = raw.lowerBound(from); column < end; column++) {
+			const time = raw.timeAt(column);
+			const start = interval > 0 ? Math.floor(time / interval) * interval : time;
+			if (start !== last) {
+				times.push(start);
+				last = start;
+			}
+		}
+		return times;
+	}
+
 	// Indicators over the columns
 
 	public missingTimes(from: number, to: number, out: number[]): void {

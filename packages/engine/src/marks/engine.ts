@@ -1,5 +1,6 @@
 import { HeatmapStore } from './heatmap-store';
 import type {
+	MarksTimeline,
 	MarksChange,
 	MarksChunk,
 	MarksData,
@@ -39,11 +40,19 @@ interface Hosted {
 	fetching: Map<number, number>;
 	/** Changes waiting for chunks let go (a removal that reads or moves them), and those after them. */
 	queue: MarksChange[];
+	/** The line series whose bars the marks make, if any. */
+	timeline: MarksTimeline | null;
 }
 
 /** What a change or a window request of a marks series leaves in the event that answers it. */
 export interface MarksOutcome {
 	rejected: number;
+	/**
+	 * The changes that took effect while running the command, in order: those of the command and
+	 * those that waited for marks to come back. For the engine, which follows them with the
+	 * indicators and timelines made from the marks; not sent to the client.
+	 */
+	appliedMarks?: { series: number; change: Exclude<MarksChange, { op: 'add' } | { op: 'remove' }> }[];
 	marks?: MarksUpdate[];
 	marksFetch?: MarksFetchRequest[];
 	marksCancel?: number[];
@@ -107,6 +116,7 @@ export class MarksEngine {
 				deferred: null,
 				fetching: new Map(),
 				queue: [],
+				timeline: change.timeline ?? null,
 			});
 			return;
 		}
@@ -149,6 +159,7 @@ export class MarksEngine {
 		outcome: MarksOutcome,
 	): Generator<undefined, void, undefined> {
 		const store = hosted.store;
+		(outcome.appliedMarks ??= []).push({ series, change });
 		switch (change.op) {
 			case 'set':
 				hosted.generation++;
@@ -167,6 +178,7 @@ export class MarksEngine {
 				store.needs(change.from, change.to, needed);
 				if (needed.length > 0) {
 					hosted.queue.unshift(change);
+					outcome.appliedMarks!.pop();
 					this._fetch(series, hosted, needed, outcome);
 					return;
 				}
@@ -462,6 +474,16 @@ export class MarksEngine {
 		const entry = this._requests.get(request);
 		const range = entry === undefined ? null : this._series.get(entry.series)?.store.fetchRange(entry.chunk);
 		return range == null ? null : { from: range.from, to: range.to };
+	}
+
+	/** The line series a marks series makes the bars of, if any. */
+	public timelineOf(series: number): MarksTimeline | null {
+		return this._series.get(series)?.timeline ?? null;
+	}
+
+	/** See `MarksStore.bucketTimes`. */
+	public bucketTimes(series: number, interval: number, from: number, to: number): number[] {
+		return this._series.get(series)?.store.bucketTimes(interval, from, to) ?? [];
 	}
 
 	/** Chunks every series has let go. */

@@ -15,10 +15,20 @@ import type { ChartState, ChartStateSelection } from './state';
 /** A range of logical positions: bar `i` covers `[i - 0.5, i + 0.5)`. */
 /**
  * Options `addSeries` takes for a heatmap or a scatter: the series options, its name in saved state,
- * and a datafeed to fetch its marks from again, which lets the engine let them go under the chart's
- * `memoryLimit`.
+ * a datafeed to fetch its marks from again, which lets the engine let them go under the chart's
+ * `memoryLimit`, and whether its marks make the timeline of a chart without bars.
  */
-export type MarkSeriesCreateOptions<O, D> = Partial<O> & { id?: string; datafeed?: MarksDatafeed<D> };
+export type MarkSeriesCreateOptions<O, D> = Partial<O> & {
+	id?: string;
+	datafeed?: MarksDatafeed<D>;
+	/**
+	 * The marks make the bars of the time axis, for a chart without a series of bars: one bar per
+	 * `interval` milliseconds that holds marks (a minute by default for a scatter), or for a heatmap
+	 * one per column (`true`, or an interval of 0). Like a datafeed, it is not saved with the state.
+	 * Where the chart also has a series of bars, the series that got data first gives the timeline.
+	 */
+	timeline?: boolean | { interval?: number };
+};
 
 export interface LogicalRange {
 	from: number;

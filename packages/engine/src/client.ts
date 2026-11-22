@@ -1,4 +1,4 @@
-import type { MarksChange, MarksData, MarksKind, MarksRequest, MarksUpdate } from './marks/protocol';
+import type { MarksChange, MarksData, MarksKind, MarksRequest, MarksTimeline, MarksUpdate } from './marks/protocol';
 import { type EngineTransport, LocalTransport } from './host';
 import { connectWorker } from './pool';
 import {
@@ -297,10 +297,11 @@ export class EngineClient {
 	/**
 	 * Adds a marks series (a scatter or a heatmap, see `marks/protocol.ts`) and returns its id.
 	 * `fetchable`: its marks can be fetched again, so they may be let go under a memory limit.
+	 * `timeline`: a line series added before whose bars the marks make (see `MarksTimeline`).
 	 */
-	public addMarks(kind: MarksKind, fetchable = false): number {
+	public addMarks(kind: MarksKind, fetchable = false, timeline?: MarksTimeline): number {
 		const series = this._nextSeries++;
-		this._send({ type: 'marks', series, change: { op: 'add', kind, fetchable } }, NO_TRANSFER);
+		this._send({ type: 'marks', series, change: { op: 'add', kind, fetchable, timeline } }, NO_TRANSFER);
 		return series;
 	}
 

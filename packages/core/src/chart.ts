@@ -377,6 +377,8 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 				invalidate: () => this.invalidate(INVALIDATE_LIGHT),
 				dataChanged: this._onDataChanged,
 				settled: this._onDataSettled,
+				addTimeline: () => this._addTimeline(),
+				removeTimeline: engineId => this._removeTimeline(engineId),
 			},
 			this._layout,
 			this.scale,
@@ -434,12 +436,21 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 			const {
 				id: markId,
 				datafeed,
+				timeline,
 				...markOptions
-			} = options as Partial<AnyMarkOptions> & { id?: string; datafeed?: MarksDatafeed<never> };
+			} = options as Partial<AnyMarkOptions> & {
+				id?: string;
+				datafeed?: MarksDatafeed<never>;
+				timeline?: boolean | { interval?: number };
+			};
 			// Throws for options that cannot be drawn, before the series has a name.
-			return this._marks.add(type, this._nameSeries(markId), markOptions, datafeed ?? null) as unknown as
-				| HeatmapSeriesApi
-				| ScatterSeriesApi;
+			return this._marks.add(
+				type,
+				this._nameSeries(markId),
+				markOptions,
+				datafeed ?? null,
+				timeline ?? false,
+			) as unknown as HeatmapSeriesApi | ScatterSeriesApi;
 		}
 		const { datafeed, id, ...style } = options as SeriesCreateOptions<SeriesType>;
 		const name = this._nameSeries(id);
@@ -499,6 +510,38 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 		this._fetches.abort(removed);
 		this._cache.removeSeries(removed.engineId);
 		this._data.engine?.removeSeries(removed.engineId);
+		this.invalidate(INVALIDATE_LIGHT);
+	}
+
+	/**
+	 * The hidden line series a heatmap or scatter makes the bars of (see `MarkSeriesCreateOptions`):
+	 * listed with the series like an indicator's output, which keeps it out of `series()`, saved
+	 * state, readouts and the price scales, and drawn by nobody.
+	 */
+	private _addTimeline(): number {
+		const engine = this._data.ensureEngine();
+		const engineId = engine?.addSeries('line', false) ?? -1;
+		const series = new Series(
+			this,
+			engineId,
+			'line',
+			{ visible: false, priceLineVisible: false, lastValueVisible: false },
+			true,
+			'',
+		);
+		this._series.push(series);
+		return engineId;
+	}
+
+	private _removeTimeline(engineId: number): void {
+		const index = this._series.findIndex(series => series.engineId === engineId);
+		if (index < 0) {
+			return;
+		}
+		const removed = this._series.splice(index, 1)[0]!;
+		this._primitives.detachSeries(removed);
+		this._cache.removeSeries(engineId);
+		this._data.engine?.removeSeries(engineId);
 		this.invalidate(INVALIDATE_LIGHT);
 	}
 

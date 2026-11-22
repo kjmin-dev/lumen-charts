@@ -1211,6 +1211,26 @@ export class ScatterStore implements MarksStore {
 		}
 	}
 
+	// A timeline made from the points
+
+	public bucketTimes(interval: number, from: number, to: number): number[] {
+		const points = this._points;
+		const times: number[] = [];
+		if (!(interval > 0)) {
+			return times;
+		}
+		const end = points.lowerBound(to);
+		let last = Number.NaN;
+		for (let row = points.lowerBound(from); row < end; row++) {
+			const start = Math.floor(points.timeAt(row) / interval) * interval;
+			if (start !== last) {
+				times.push(start);
+				last = start;
+			}
+		}
+		return times;
+	}
+
 	// Indicators over the points
 
 	public missingTimes(from: number, to: number, out: number[]): void {

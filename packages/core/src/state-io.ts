@@ -228,6 +228,10 @@ export class StateIo {
 		const listed = new Set<Indicator>();
 		for (const series of this._series) {
 			const owner = owners.get(series);
+			if (owner === undefined && series.derived) {
+				// The timeline a heatmap or scatter makes, which the series makes again.
+				continue;
+			}
 			if (owner === undefined) {
 				units.push(series);
 			} else if (!listed.has(owner)) {

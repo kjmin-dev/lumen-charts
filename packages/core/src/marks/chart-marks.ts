@@ -1,5 +1,5 @@
 import type { MarkRenderer } from './backend';
-import type { EngineClient, MarksUpdate } from '@lumen-charts/engine';
+import type { EngineClient, MarksTimeline, MarksUpdate } from '@lumen-charts/engine';
 import type { PanePrimitives } from '../drawings/pane-primitives';
 import type { FrameModel } from '../model/frame-model';
 import type { TimeScale } from '../model/time-scale';
@@ -22,6 +22,12 @@ export interface ChartMarksHost {
 	dataChanged(): void;
 	/** A datafeed request ended: whoever waits for the chart to be idle may have nothing left to wait for. */
 	settled(): void;
+	/**
+	 * Adds a line series that draws nothing and is listed nowhere, whose bars a mark series makes:
+	 * the timeline of a chart without bars of its own. Returns its engine id.
+	 */
+	addTimeline(): number;
+	removeTimeline(engineId: number): void;
 }
 
 /**
@@ -89,11 +95,23 @@ export class ChartMarks implements MarkSeriesHost {
 		id: string,
 		options: Partial<AnyMarkOptions>,
 		datafeed: MarksDatafeed<never> | null = null,
+		timeline: boolean | { interval?: number } = false,
 	): MarkSeries {
+		let link: MarksTimeline | null = null;
+		if (timeline !== false) {
+			const interval = timeline === true ? undefined : timeline.interval;
+			const step = interval ?? (type === 'heatmap' ? 0 : DEFAULT_INTERVAL);
+			if (!(step >= 0) || !Number.isFinite(step) || (type === 'scatter' && step === 0)) {
+				throw new RangeError(
+					`lumen-charts: the timeline of a ${type} needs an interval in milliseconds above 0${type === 'heatmap' ? ', or 0 for a bar per column' : ''}`,
+				);
+			}
+			link = { series: this._host.addTimeline(), interval: step };
+		}
 		const series =
 			type === 'heatmap'
-				? new HeatmapSeries(this, id, options as Partial<HeatmapOptions>, datafeed)
-				: new ScatterSeries(this, id, options as Partial<ScatterOptions>, datafeed);
+				? new HeatmapSeries(this, id, options as Partial<HeatmapOptions>, datafeed, link)
+				: new ScatterSeries(this, id, options as Partial<ScatterOptions>, datafeed, link);
 		this.list.push(series);
 		this._byEngineId.set(series.engineId, series);
 		this._attach(series);
@@ -112,6 +130,9 @@ export class ChartMarks implements MarkSeriesHost {
 		this._primitives.layers.detach(removed.primitive);
 		removed.release();
 		this._engine?.changeMarks(removed.engineId, { op: 'remove' });
+		if (removed.timeline !== null) {
+			this._host.removeTimeline(removed.timeline.series);
+		}
 		this._host.invalidate();
 		return true;
 	}
@@ -376,6 +397,9 @@ export class ChartMarks implements MarkSeriesHost {
 }
 
 const EMPTY = new Float64Array(0);
+
+/** Bars of a scatter's timeline, without an interval of its own: a minute. */
+const DEFAULT_INTERVAL = 60_000;
 
 /** Takes the prices `[low, high]` into the range an axis collects, in the values of its scale. */
 function include(axis: PriceAxis, low: number, high: number): void {

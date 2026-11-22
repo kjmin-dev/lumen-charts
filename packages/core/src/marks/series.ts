@@ -1,5 +1,5 @@
 import { HeatRanges, HeatPan } from './heat-ranges';
-import type { EngineClient, HeatmapColumns, MarksData, MarksUpdate } from '@lumen-charts/engine';
+import type { EngineClient, HeatmapColumns, MarksData, MarksTimeline, MarksUpdate } from '@lumen-charts/engine';
 import type { MarksDatafeed } from './fetches';
 import { DEFAULT_PRICE_SCALE_ID, definedOnly } from '../options';
 import type { PriceAxis, PriceScaleApi } from '../price-axes';
@@ -196,6 +196,8 @@ export abstract class MarkSeries {
 	public datafeed: MarksDatafeed<unknown> | null;
 	/** Pause after the last failed datafeed request, which doubles with every failure in a row. */
 	public fetchBackoff = 0;
+	/** The hidden line series whose bars the series makes, for a chart without bars of its own. */
+	public readonly timeline: MarksTimeline | null;
 	public readonly surface: CanvasMarkBackend;
 	private readonly _gpu = new MarkGpuClient();
 	private readonly _gl: GlMarkClient;
@@ -248,6 +250,7 @@ export abstract class MarkSeries {
 		zOrder: PrimitiveZOrder,
 		zIndex: number,
 		datafeed: MarksDatafeed<unknown> | null,
+		timeline: MarksTimeline | null = null,
 	) {
 		this._host = host;
 		this.id = id;
@@ -267,7 +270,8 @@ export abstract class MarkSeries {
 		this._paletteOptions = merged;
 		this.seriesOptions = merged;
 		this.datafeed = datafeed;
-		this.engineId = host.engine()?.addMarks(type, datafeed !== null) ?? -1;
+		this.timeline = timeline;
+		this.engineId = host.engine()?.addMarks(type, datafeed !== null, timeline ?? undefined) ?? -1;
 		this.surface = new CanvasMarkBackend(host.document());
 		this._gl = new GlMarkClient(host.document(), this._invalidateBackend);
 	}
@@ -720,10 +724,11 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 		id: string,
 		options: Partial<ScatterOptions>,
 		datafeed: MarksDatafeed<ScatterData> | null = null,
+		timeline: MarksTimeline | null = null,
 	) {
 		// In the drawings layer, above the series; below the drawings and the primitives of the
 		// application, whose `zIndex` is 0 unless they say otherwise.
-		super(host, id, 'scatter', options, 'normal', -1, datafeed as MarksDatafeed<unknown> | null);
+		super(host, id, 'scatter', options, 'normal', -1, datafeed as MarksDatafeed<unknown> | null, timeline);
 	}
 
 	public override options(): Readonly<ScatterOptions> {
@@ -903,9 +908,10 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		id: string,
 		options: Partial<HeatmapOptions>,
 		datafeed: MarksDatafeed<HeatmapData> | null = null,
+		timeline: MarksTimeline | null = null,
 	) {
 		// In the series layer, below the series.
-		super(host, id, 'heatmap', options, 'bottom', 0, datafeed as MarksDatafeed<unknown> | null);
+		super(host, id, 'heatmap', options, 'bottom', 0, datafeed as MarksDatafeed<unknown> | null, timeline);
 	}
 
 	public override options(): Readonly<HeatmapOptions> {

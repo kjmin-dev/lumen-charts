@@ -52,10 +52,20 @@ export type MarksData = ScatterRows | HeatmapColumns;
  * with times in `[from, to]` (UTC milliseconds, inclusive). The typed arrays are handed over.
  */
 export type MarksChange =
-	| { op: 'add'; kind: MarksKind; fetchable?: boolean }
+	| { op: 'add'; kind: MarksKind; fetchable?: boolean; timeline?: MarksTimeline }
 	| { op: 'remove' }
 	| { op: 'set' | 'append' | 'prepend'; data: MarksData; fetchable?: boolean }
 	| { op: 'delete'; from: number; to: number };
+
+/**
+ * A line series (added before, without data of its own) whose bars the marks series makes: one bar
+ * per heatmap column (`interval` 0), or one per `interval` milliseconds that holds marks. It is the
+ * main timeline of a chart without bars of its own, which the marks are drawn on.
+ */
+export interface MarksTimeline {
+	series: number;
+	interval: number;
+}
 
 /** What a view needs of a marks series. */
 export interface MarksRequest {
@@ -252,6 +262,14 @@ export interface MarksStore {
 	aggregate(column: number, bounds: Float64Array, n: number, out: Float64Array, offset: number): void;
 	/** Chunks let go that hold marks the bars of times `[from, to)` read. */
 	missingTimes(from: number, to: number, out: number[]): void;
+
+	// A timeline made from the marks
+
+	/**
+	 * The starts of the buckets of `interval` milliseconds (heatmap columns for 0) that hold marks
+	 * with times in `[from, to)`, in order.
+	 */
+	bucketTimes(interval: number, from: number, to: number): number[];
 }
 
 /** A chunk of level 0 that could be let go: its number, the times it spans and the bytes it would free. */

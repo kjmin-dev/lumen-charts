@@ -1,6 +1,7 @@
 import { CHUNK_MASK, CHUNK_ROWS, CHUNK_SHIFT, TIME } from './chunk';
 import { IndicatorEngine } from './indicators/engine';
 import { MarksEngine } from './marks/engine';
+import type { MarksOutcome } from './marks/engine';
 import type { MarksChange } from './marks/protocol';
 import {
 	ALL_LEVELS,
@@ -426,20 +427,18 @@ export class EngineCore {
 				if (event.rejected > 0) {
 					event.rejectedSeries = [command.series, event.rejected];
 				}
-				this._marksChanged(command.series, command.change, event);
+				yield* this._followMarks(event);
 				break;
 			case 'marksWindow':
 				this._marks.window(command.series, command.seq, command.request, event);
 				break;
 			case 'marksRows': {
 				const times = this._marks.requestTimes(command.request);
-				const applied = yield* this._marks.restore(command.request, command.data, event);
+				yield* this._marks.restore(command.request, command.data, event);
+				// Changes that waited for the marks ran.
+				yield* this._followMarks(event);
 				const outcome = event.marksRestored;
 				if (outcome !== undefined) {
-					if (applied > 0) {
-						// Changes that waited for the marks ran: the indicators reading them start over.
-						this._indicators.seriesChanged(outcome.series);
-					}
 					if (outcome.outcome === 'restored') {
 						this._indicators.rowsRestored();
 					} else if (times !== null && this._main !== null && this._main.store.length > 0) {
@@ -1254,6 +1253,106 @@ export class EngineCore {
 		for (const series of read) {
 			if (this._marks.has(series)) {
 				this._marksRuns.set(series, [from, to]);
+			}
+		}
+	}
+
+	/**
+	 * Follows the changes of marks series that took effect in the command being run: the timelines
+	 * they make, then the indicators that read them.
+	 */
+	private *_followMarks(event: EngineEvent): Generator<undefined, void, undefined> {
+		const outcome = event as MarksOutcome;
+		const applied = outcome.appliedMarks;
+		if (applied === undefined) {
+			return;
+		}
+		delete outcome.appliedMarks;
+		for (const { series, change } of applied) {
+			yield* this._followTimeline(series, change, event);
+			this._marksChanged(series, change, event);
+		}
+	}
+
+	/**
+	 * Makes the bars of the line series a marks series makes its timeline of (see `MarksTimeline`)
+	 * follow a change of the marks: bars for the buckets that got marks, none for those that lost
+	 * every mark.
+	 */
+	private *_followTimeline(
+		series: number,
+		change: MarksChange,
+		event: EngineEvent,
+	): Generator<undefined, void, undefined> {
+		const link = this._marks.timelineOf(series);
+		const state = link === null ? undefined : this._series.get(link.series);
+		if (link === null || state === undefined) {
+			return;
+		}
+		const interval = link.interval;
+		const store = state.store;
+		const operation = (
+			type: 'set' | 'prepend' | 'delete',
+			data: Float64Array,
+			count: number,
+			from = 0,
+			to = 0,
+		): Held => ({
+			state,
+			seq: event.ack,
+			row: 0,
+			type,
+			data,
+			count,
+			from,
+			to,
+			fetchable: undefined,
+			side: NaN,
+		});
+		switch (change.op) {
+			case 'set': {
+				const times = this._marks.bucketTimes(series, interval, -Infinity, Infinity);
+				yield* this._operation(operation('set', bars(times), times.length), event);
+				return;
+			}
+			case 'prepend': {
+				const first = store.length > 0 ? store.firstTime() : Infinity;
+				const times = this._marks.bucketTimes(series, interval, -Infinity, first);
+				const older = times.filter(time => time < first);
+				if (older.length > 0) {
+					yield* this._operation(operation('prepend', bars(older), older.length), event);
+				}
+				return;
+			}
+			case 'append': {
+				const last = store.length > 0 ? store.lastTime() : -Infinity;
+				const times = this._marks.bucketTimes(series, interval, last, Infinity).filter(time => time > last);
+				if (times.length > 0) {
+					const data = new Float64Array(times.length * TICK_STRIDE).fill(NaN);
+					times.forEach((time, i) => {
+						data[i * TICK_STRIDE] = state.id;
+						data[i * TICK_STRIDE + 1] = time;
+					});
+					yield* this._ticks(event.ack, data, times.length, event);
+				}
+				return;
+			}
+			case 'delete': {
+				// The buckets inside the range lost every mark; those at its ends may keep some.
+				let from = interval > 0 ? Math.floor(change.from / interval) * interval : change.from;
+				let to = interval > 0 ? Math.floor(change.to / interval) * interval : change.to;
+				const kept = (start: number): boolean =>
+					this._marks.bucketTimes(series, interval, start, interval > 0 ? start + interval : start + 1).length > 0;
+				if (interval > 0 && kept(from)) {
+					from += interval;
+				}
+				if (interval > 0 && to >= from && kept(to)) {
+					to -= interval;
+				}
+				if (to >= from) {
+					yield* this._operation(operation('delete', EMPTY, 0, from, to), event);
+				}
+				return;
 			}
 		}
 	}
@@ -3287,6 +3386,13 @@ export class EngineCore {
 			}
 		}
 	}
+}
+
+/** Line rows at `times` without values, column-major: the bars of a timeline made from marks. */
+function bars(times: readonly number[]): Float64Array {
+	const data = new Float64Array(times.length * 2).fill(NaN);
+	data.set(times);
+	return data;
 }
 
 function markDirty(state: SeriesState, index: number): void {

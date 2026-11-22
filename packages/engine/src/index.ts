@@ -112,6 +112,7 @@ export type {
 	MarksChunk,
 	MarksFetchRequest,
 	MarksRestoreResult,
+	MarksTimeline,
 	MarksData,
 	MarksKind,
 	MarksRequest,
