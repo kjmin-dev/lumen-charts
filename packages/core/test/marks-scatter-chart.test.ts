@@ -336,7 +336,7 @@ describe('scatter sizes and densities on WebGL2 and WebGPU', () => {
 		expect(scatter.renderer()).toMatchObject({ effective: 'webgl2', reason: null });
 	});
 
-	it('sums densities on the GPU, reads the largest back, and adds appended points alone', async () => {
+	it('sums densities on the GPU, colors from the largest there, and adds appended points alone', async () => {
 		// The context is made with the first mark series' frame.
 		t.extensions = ['EXT_color_buffer_float', 'EXT_float_blend'];
 		t.readValue = 3;
@@ -348,37 +348,52 @@ describe('scatter sizes and densities on WebGL2 and WebGPU', () => {
 		const sum = gl().draws.filter(draw => draw.fragment === densityFragment);
 		expect(sum.at(-1)).toMatchObject({ instances: 4, offscreen: true, blend: true });
 		expect(gl().draws.some(draw => draw.fragment === reduceFragment && draw.offscreen)).toBe(true);
-		expect(gl().draws.at(-1)).toMatchObject({ fragment: densityColorFragment, offscreen: false, blend: false });
-		expect(gl().reads).toBe(1);
+		const color = gl().draws.at(-1)!;
+		expect(color).toMatchObject({ fragment: densityColorFragment, offscreen: false, blend: false });
+		// From 1 to the largest on a linear scale, entries are computed on the GPU: nothing is read back.
+		expect(color.uniforms['exact']).toEqual([1]);
+		expect(gl().reads).toBe(0);
 		// The counts, as float bits, where the colors would be; two words a row.
 		const records = new Float32Array(gl().bound(0)!.data.buffer);
 		expect([records[1], records[3], records[5], records[7]]).toEqual([1, 1, 1, 1]);
-		// The thresholds of the palette for densities 1 to 3, then the colors.
-		const scale = new DensityScale();
-		const mapping = { min: 0, factor: 0, log: false };
-		setValueMapping(mapping, 1, 3, false);
-		scale.set(mapping);
-		const style = gl().textures.find(texture => !texture.deleted && texture.data.length === 512)!;
-		expect([...style.data.subarray(0, 256)]).toEqual([...scale.thresholds]);
-		expect([...style.data.subarray(256)]).toEqual([...buildPalette('inferno')]);
+		const style = () => gl().textures.find(texture => !texture.deleted && texture.data.length === 512)!;
+		expect([...style().data.subarray(256)]).toEqual([...buildPalette('inferno')]);
 
 		// The first patch grows the window, whose records are uploaded anew, all of them.
 		scatter.update(at(160));
 		await t.settle();
-		// An appended point below the largest: one instance summed, nothing of the palette uploaded.
-		const reads = gl().reads;
+		// An appended point: one instance summed, nothing of the palette uploaded or read back.
 		gl().uploads.length = 0;
 		gl().draws.length = 0;
 		scatter.update(at(160));
 		await t.settle();
 		expect(gl().draws.filter(draw => draw.fragment === densityFragment)).toMatchObject([{ instances: 1 }]);
+		expect(gl().draws.at(-1)!.fragment).toBe(densityColorFragment);
 		expect(gl().uploads.filter(upload => upload.unit === 2)).toEqual([]);
-		expect(gl().reads).toBe(reads + 1);
+		expect(gl().reads).toBe(0);
+
+		// On a logarithmic scale the thresholds are the CPU's, for the largest density read back.
+		scatter.applyOptions({ valueScale: 'log' });
+		await t.settle();
+		expect(gl().reads).toBe(1);
+		expect(gl().draws.at(-1)!.uniforms['exact']).toEqual([0]);
+		const scale = new DensityScale();
+		const mapping = { min: 0, factor: 0, log: false };
+		setValueMapping(mapping, 1, 3, true);
+		scale.set(mapping);
+		expect([...style().data.subarray(0, 256)]).toEqual([...scale.thresholds]);
+		expect([...style().data.subarray(256)]).toEqual([...buildPalette('inferno')]);
+		// An appended point below the largest: one read, and nothing of the palette uploaded.
+		gl().uploads.length = 0;
+		scatter.update(at(160));
+		await t.settle();
+		expect(gl().reads).toBe(2);
+		expect(gl().uploads.filter(upload => upload.unit === 2)).toEqual([]);
 
 		// With valueMax the top of the palette is known: nothing is read back.
 		scatter.applyOptions({ valueMax: 10 });
 		await t.settle();
-		expect(gl().reads).toBe(reads + 1);
+		expect(gl().reads).toBe(2);
 		const densityBytes = scatter.renderer().bytes;
 		scatter.applyOptions({ colorBy: 'value' });
 		await t.settle();

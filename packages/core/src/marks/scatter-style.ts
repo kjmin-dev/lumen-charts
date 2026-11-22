@@ -1,3 +1,4 @@
+import type { ScatterOptions } from './options';
 import { PALETTE_SIZE, type ValueMapping, paletteIndex } from './palette';
 import { type DensitySlots, type PointStamp, type PriceProjection, type StampCache, pointPixels } from './render';
 import type { TimeMap } from './time-map';
@@ -16,15 +17,53 @@ const scalar = new Float32Array(bits.buffer);
 const LUT_SIZE = 4096;
 /** One past the bits of +Infinity: above every density, so a threshold here is never reached. */
 const NEVER = 0x7f800001;
+/** The largest float below 2^32: densities are held to it, so they are 32-bit unsigned integers. */
+const DENSITY_CAP = 4294967040;
+/** Densities that keep `255 * (d - 1)` within 32 bits; larger ones are halved with the top until below. */
+const EXACT_RANGE = 2 ** 24;
 
 /**
- * The palette entries of densities for a mapping of values. A density is a sum of counts in a
- * 32-bit float above 0, and a positive float's bits are ordered as its values are; so the entries
- * are given by 255 thresholds, the bits of the smallest density whose entry (`paletteIndex`, as
- * values get theirs) is each of 1 to 255. A density's entry is the number of thresholds at or below
- * its bits. The WebGL2 renderer searches the same thresholds on the GPU, which compares bits
- * exactly, so its colors are those of Canvas 2D for every density without computing a logarithm or
- * a product in 32-bit floats.
+ * The palette entry of density `density` on a palette that spans from 1 to `top`, the largest
+ * density of the frame: `255 (density - 1) / (top - 1)`, rounded half up, in whole numbers only.
+ * Densities and the top are whole numbers (sums of counts), so this needs no float: the GPU computes
+ * it as Canvas 2D does, from the largest density it found itself, and nothing is read back. Above
+ * 2^24 both are halved together until the top is below it, which both renderers do alike. A top of
+ * 1 puts every density in the middle of the palette, as a range of values without width does.
+ */
+export function exactDensitySlot(density: number, top: number): number {
+	let a = Math.min(density, DENSITY_CAP) - 1;
+	let m = Math.min(top, DENSITY_CAP) - 1;
+	if (!(m > 0)) {
+		return PALETTE_SIZE >> 1;
+	}
+	while (m >= EXACT_RANGE) {
+		m = Math.floor(m / 2);
+		a = Math.floor(a / 2);
+	}
+	const n = 255 * a;
+	const q = Math.floor(n / m);
+	const slot = q + (2 * (n - q * m) >= m ? 1 : 0);
+	return slot < PALETTE_SIZE - 1 ? slot : PALETTE_SIZE - 1;
+}
+
+/**
+ * Whether a density series' palette spans from 1 to the frame's largest density on a linear scale,
+ * whose entries are `exactDensitySlot`: no option fixes either end, and no logarithm is taken.
+ */
+export function exactDensities(options: ScatterOptions): boolean {
+	return options.valueMin === null && options.valueMax === null && options.valueScale !== 'log';
+}
+
+/**
+ * The palette entries of densities. A density is a sum of counts in a 32-bit float above 0, and a
+ * positive float's bits are ordered as its values are; so the entries are given by 255 thresholds,
+ * the bits of the smallest density whose entry is each of 1 to 255, and a density's entry is the
+ * number of thresholds at or below its bits.
+ *
+ * Entries come from a mapping of values as values get theirs (`paletteIndex`, in 64-bit floats), or,
+ * for a palette from 1 to the frame's largest density on a linear scale, from `exactDensitySlot`.
+ * The WebGL2 renderer searches the same thresholds on the GPU, which compares bits exactly, or
+ * computes `exactDensitySlot` itself; either way its colors are those of Canvas 2D.
  */
 export class DensityScale implements DensitySlots {
 	/** `thresholds[k]` for `k` from 1 to 255; `thresholds[0]` is 0. */
@@ -34,15 +73,38 @@ export class DensityScale implements DensitySlots {
 	private _min = Number.NaN;
 	private _factor = Number.NaN;
 	private _log = false;
+	/** The top of `setExact`; NaN for a mapping of values. */
+	private _top = Number.NaN;
 
 	/** Takes a mapping of values; nothing is computed again for the one it has. */
 	public set(mapping: ValueMapping): boolean {
-		if (mapping.min === this._min && mapping.factor === this._factor && mapping.log === this._log) {
+		if (
+			this._top !== this._top &&
+			mapping.min === this._min &&
+			mapping.factor === this._factor &&
+			mapping.log === this._log
+		) {
 			return false;
 		}
 		this._min = mapping.min;
 		this._factor = mapping.factor;
 		this._log = mapping.log;
+		this._top = Number.NaN;
+		this._build(density => paletteIndex(mapping, density));
+		return true;
+	}
+
+	/** Takes a palette from 1 to `top` on a linear scale, the entries of `exactDensitySlot`. */
+	public setExact(top: number): boolean {
+		if (top === this._top) {
+			return false;
+		}
+		this._top = top;
+		this._build(density => exactDensitySlot(density, top));
+		return true;
+	}
+
+	private _build(entry: (density: number) => number): void {
 		const thresholds = this.thresholds;
 		thresholds[0] = 0;
 		// Entries only grow with the density: each search starts at the threshold before it.
@@ -53,7 +115,7 @@ export class DensityScale implements DensitySlots {
 			while (lo < hi) {
 				const mid = lo + Math.floor((hi - lo) / 2);
 				bits[0] = mid;
-				if (paletteIndex(mapping, scalar[0]!) >= k) {
+				if (entry(scalar[0]!) >= k) {
 					hi = mid;
 				} else {
 					lo = mid + 1;
@@ -73,7 +135,6 @@ export class DensityScale implements DensitySlots {
 			}
 			lut[d] = slot;
 		}
-		return true;
 	}
 
 	/** The palette entry of a density above 0. */

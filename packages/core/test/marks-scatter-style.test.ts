@@ -16,7 +16,7 @@ import {
 	makeStamp,
 	pointPixels,
 } from '../src/marks/render';
-import { DensityScale, SizeExtent, hitScatter } from '../src/marks/scatter-style';
+import { DensityScale, SizeExtent, exactDensitySlot, hitScatter } from '../src/marks/scatter-style';
 import { TimeMap } from '../src/marks/time-map';
 import { MarksWindow } from '../src/marks/window';
 
@@ -270,6 +270,20 @@ function accumulate(data: Points, map: TimeMap, base: number, circle: boolean, c
 	return { density, peak, box: b };
 }
 
+/** 255 (d - 1) / (top - 1) rounded half up, in BigInt, both halved below 2^24 as the shader does. */
+function exactReference(d: number, top: number): number {
+	let a = BigInt(Math.min(d, 4294967040) - 1);
+	let m = BigInt(Math.min(top, 4294967040) - 1);
+	if (m === 0n) return 128;
+	while (m >= 1n << 24n) {
+		m >>= 1n;
+		a >>= 1n;
+	}
+	const n = 255n * a;
+	const q = n / m;
+	return Math.min(255, Number(q) + (2n * (n - q * m) >= m ? 1 : 0));
+}
+
 describe('scatter densities', () => {
 	it('sums the count of every point that covers a pixel, with sizes, discs and edges', () => {
 		for (const [seed, circle, counted] of [
@@ -345,6 +359,36 @@ describe('scatter densities', () => {
 			expect(wrong).toEqual([]);
 			for (let k = 2; k < 256; k++) expect(scale.thresholds[k]!).toBeGreaterThanOrEqual(scale.thresholds[k - 1]!);
 		}
+	});
+
+	it('computes the entries from 1 to the largest density in whole numbers, as the GPU does', () => {
+		const next = random(21);
+		const scale = new DensityScale();
+		const wrong: string[] = [];
+		for (const top of [1, 2, 3, 5, 255, 256, 511, 4097, 65535, 2 ** 24 - 1, 2 ** 24, 2 ** 24 + 2, 3e8, 4294967040]) {
+			expect(scale.setExact(top)).toBe(true);
+			expect(scale.setExact(top)).toBe(false);
+			const densities = [1, 2, top, Math.max(1, top - 1), Math.ceil(top / 2), Math.floor(top / 2) + 1];
+			for (let k = 0; k < 400; k++) densities.push(1 + Math.floor(next() * top));
+			for (let k = 1; k < 256; k++) {
+				// Around every threshold, as floats: the densities a pixel can hold.
+				const bits = new Uint32Array([scale.thresholds[k]!]);
+				const floats = new Float32Array(bits.buffer);
+				if (floats[0]! >= 1 && floats[0]! <= top) densities.push(floats[0]!);
+			}
+			for (const raw of densities) {
+				const d = Math.fround(Math.max(1, Math.min(raw, top)));
+				if (!Number.isInteger(d)) continue;
+				const expected = exactReference(d, top);
+				if (exactDensitySlot(d, top) !== expected || scale.slot(d) !== expected) wrong.push(`${d}/${top}`);
+				if (d < scale.lutSize && scale.lut[d] !== expected) wrong.push(`lut ${d}/${top}`);
+			}
+		}
+		expect(wrong).toEqual([]);
+		// Halves go up, as a value's entry does: 2 of 1 to 3 is the middle of the palette.
+		expect(exactDensitySlot(2, 3)).toBe(128);
+		expect(exactDensitySlot(1, 1)).toBe(128);
+		expect(exactDensitySlot(7, 7)).toBe(255);
 	});
 
 	it('colors pixels with a density and leaves the others transparent', () => {

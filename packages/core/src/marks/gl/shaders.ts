@@ -125,10 +125,16 @@ void main() {
 }`;
 
 // A density's palette entry is the number of thresholds (style words 1 to 255, as `DensityScale`
-// makes them) at or below its bits; the colors follow at 256. No density: transparent.
+// makes them) at or below its bits; the colors follow at 256. With `exact`, the palette spans from
+// 1 to the largest density, the texel of the last reduction pass (`peak`), and the entry is
+// `exactDensitySlot`'s, in whole numbers: 255 (d - 1) / (top - 1) rounded half up, both halved
+// together while the top is 2^24 or more, so 255 (d - 1) stays within 32 bits. No density:
+// transparent.
 export const densityColorFragment =
 	densityHeader +
 	`
+uniform bool exact;
+uniform sampler2D peak;
 out vec4 pixel;
 void main() {
 	float d = texelFetch(density, ivec2(gl_FragCoord.xy), 0).r;
@@ -136,13 +142,31 @@ void main() {
 		pixel = vec4(0.0);
 		return;
 	}
-	uint key = floatBitsToUint(d);
-	int lo = 0, hi = 256;
-	while (lo + 1 < hi) {
-		int mid = (lo + hi) >> 1;
-		if (key >= styleWord(mid)) lo = mid; else hi = mid;
+	int slot;
+	if (exact) {
+		uint a = uint(min(d, 4294967040.0)) - 1u;
+		uint m = uint(min(texelFetch(peak, ivec2(0), 0).r, 4294967040.0)) - 1u;
+		if (m == 0u) {
+			slot = 128;
+		} else {
+			while (m >= 16777216u) {
+				m >>= 1u;
+				a >>= 1u;
+			}
+			uint n = 255u * a;
+			uint q = n / m;
+			slot = min(255, int(q) + (2u * (n - q * m) >= m ? 1 : 0));
+		}
+	} else {
+		uint key = floatBitsToUint(d);
+		int lo = 0, hi = 256;
+		while (lo + 1 < hi) {
+			int mid = (lo + hi) >> 1;
+			if (key >= styleWord(mid)) lo = mid; else hi = mid;
+		}
+		slot = lo;
 	}
-	pixel = color(styleWord(256 + lo));
+	pixel = color(styleWord(256 + slot));
 }`;
 
 export const heatVertex =

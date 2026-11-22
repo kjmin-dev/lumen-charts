@@ -420,6 +420,8 @@ async function check(
 		if (coarse.level < 1 || coarse.level !== a.scatter.drawn().level)
 			throw Error('Coarse density level not exercised: ' + JSON.stringify([coarse, a.scatter.drawn()]));
 		readouts();
+		// Linear from 1 to the largest: the WebGL2 entries are computed on the GPU, from counts of cells.
+		await compare('dense density at a coarse level, linear', s => s.scatter.applyOptions({ valueScale: 'linear' }));
 		await compare('dense density, zoom to the points', s =>
 			s.chart.timeScale().setVisibleLogicalRange({ from: 40.3, to: 43.1 }),
 		);

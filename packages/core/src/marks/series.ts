@@ -42,7 +42,7 @@ import {
 	quantize,
 	slotColors,
 } from './render';
-import { DensityScale, SizeExtent, hitScatter } from './scatter-style';
+import { DensityScale, SizeExtent, exactDensities, hitScatter } from './scatter-style';
 import { CanvasMarkBackend } from './canvas-backend';
 import {
 	type HeatSlots,
@@ -1057,18 +1057,23 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 
 	/**
 	 * Colors the pixels of `box` from their densities, the palette spanning from `valueMin` (or 1)
-	 * to `valueMax` (or the largest density of the frame).
+	 * to `valueMax` (or the largest density of the frame). From 1 to the largest on a linear scale,
+	 * entries are those of `exactDensitySlot`, which the WebGL2 renderer computes on the GPU.
 	 */
 	private _colorDensity(box: PixelBox): void {
 		const options = this.seriesOptions as ScatterOptions;
-		const mapping = this._densityMapping;
-		setValueMapping(
-			mapping,
-			options.valueMin ?? 1,
-			options.valueMax ?? this._densityPeak,
-			options.valueScale === 'log',
-		);
-		this._densityScale.set(mapping);
+		if (exactDensities(options)) {
+			this._densityScale.setExact(this._densityPeak);
+		} else {
+			const mapping = this._densityMapping;
+			setValueMapping(
+				mapping,
+				options.valueMin ?? 1,
+				options.valueMax ?? this._densityPeak,
+				options.valueScale === 'log',
+			);
+			this._densityScale.set(mapping);
+		}
 		const surface = this.surface;
 		colorDensity(this._density, surface.pixels, surface.height, box, this._densityScale, this._palette);
 		growBox(surface.box, box);

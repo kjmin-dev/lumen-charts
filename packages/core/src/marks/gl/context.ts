@@ -54,7 +54,8 @@ function program(gl: WebGL2RenderingContext, vertex: string, fragment: string) {
 		if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) ?? 'WebGL2 link failed');
 		const location = (name: string) => gl.getUniformLocation(p, name);
 		gl.useProgram(p);
-		for (const [unit, name] of ['records', 'ranges', 'style', 'density'].entries()) gl.uniform1i(location(name), unit);
+		for (const [unit, name] of ['records', 'ranges', 'style', 'density', 'peak'].entries())
+			gl.uniform1i(location(name), unit);
 		return {
 			p,
 			pane: location('pane'),
@@ -65,6 +66,7 @@ function program(gl: WebGL2RenderingContext, vertex: string, fragment: string) {
 			circle: location('circle'),
 			extent: location('extent'),
 			tile: location('tile'),
+			exact: location('exact'),
 			rows: location('rows'),
 			recordsStride: location('recordsStride'),
 			rangesStride: location('rangesStride'),

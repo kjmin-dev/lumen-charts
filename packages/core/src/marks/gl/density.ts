@@ -3,7 +3,7 @@ import type { MarkFrame } from '../backend';
 import type { ScatterOptions } from '../options';
 import { PALETTE_SIZE, type ValueMapping, paletteIndex, setValueMapping } from '../palette';
 import { pointPixels } from '../render';
-import { DensityScale } from '../scatter-style';
+import { DensityScale, exactDensities } from '../scatter-style';
 import { GlBudget, type GlContext, type GlProgram, GlUnsupported } from './context';
 import { WordTexture } from './texture';
 
@@ -65,15 +65,18 @@ interface Target {
  * 1. Sum: every point adds its count to the pixels it covers, in a 32-bit float texture the size of
  *    the pane, with additive blending. The texture is kept, so appended points are added to it.
  * 2. Largest: unless `valueMax` fixes the top of the palette, passes of 16 by 16 texels bring the
- *    texture's largest density to one texel, which is read back: four bytes, at the cost of waiting
- *    for the GPU to finish the frame's passes. The top of the palette has to be known on the CPU,
- *    where the thresholds of the palette's entries are computed in 64-bit floats exactly as Canvas
- *    2D computes them (`DensityScale`); a GPU that computed the entries itself, in 32-bit floats,
- *    would round some densities into the entry next to Canvas 2D's.
- * 3. Color: each pixel searches its density among the thresholds, and takes its entry's color.
+ *    texture's largest density to one texel.
+ * 3. Color: from 1 to the largest density on a linear scale (the default), each pixel computes its
+ *    entry from its density and that texel in whole numbers (`exactDensitySlot`), on the GPU: the
+ *    CPU waits for nothing. Otherwise the entries come from the mapping of values, which a GPU
+ *    computing in 32-bit floats would round into the entry next to Canvas 2D's for some densities:
+ *    their thresholds are computed on the CPU in 64-bit floats as Canvas 2D computes them
+ *    (`DensityScale`), and each pixel searches its density among them. With a top that is the
+ *    largest density (a logarithmic scale, or a fixed `valueMin`), the texel is read back first:
+ *    four bytes, at the cost of waiting for the GPU to finish the frame's passes.
  *
- * Sums are exact below 2^24 points on a pixel, as counts are whole numbers; the largest and the
- * search compare floats exactly. So the picture is Canvas 2D's, pixel for pixel.
+ * Sums are exact below 2^24 points on a pixel, as counts are whole numbers; the largest, the search
+ * and the whole-number entries are exact. So the picture is Canvas 2D's, pixel for pixel.
  */
 export class GlDensity {
 	private targets: Target[] = [];
@@ -84,7 +87,9 @@ export class GlDensity {
 	private readonly mapping: ValueMapping = { min: 0, factor: 1, log: false };
 	private readonly peakPixel = new Float32Array(4);
 	private palette: Uint32Array | null = null;
-	/** The largest density of the texture, as last read or summed. */
+	/** Whether the table holds only colors (`exactDensitySlot`), or thresholds for the last mapping too. */
+	private exact = false;
+	/** The largest density of the texture, as last read. */
 	private peak = 0;
 
 	constructor(private readonly pool: GlContext) {
@@ -98,8 +103,9 @@ export class GlDensity {
 	/**
 	 * Sums rows `[first, end)` into the densities, which are made 0 first unless `patch` (the rows were
 	 * appended since the densities were summed), then colors pixel columns `[left, right)` of the
-	 * pane, or all of them when the palette's mapping changed. The scatter program `p` is current,
-	 * with its records and ranges bound and its uniforms set but `first`. Returns the columns colored.
+	 * pane, or all of them when the palette's mapping may have changed. The scatter program `p` is
+	 * current, with its records and ranges bound and its uniforms set but `first`. Returns the columns
+	 * colored.
 	 */
 	draw(
 		f: MarkFrame,
@@ -112,6 +118,7 @@ export class GlDensity {
 	): { left: number; right: number } {
 		const { width, height } = f;
 		const options = f.options as ScatterOptions;
+		const exact = exactDensities(options);
 		const gl = this.pool.gl;
 		const fresh = this.reserve(width, height);
 		patch &&= !fresh;
@@ -122,34 +129,62 @@ export class GlDensity {
 				gl.clear(gl.COLOR_BUFFER_BIT);
 				this.peak = 0;
 			}
-			if (end > first) {
+			const summed = end > first;
+			if (summed) {
 				gl.uniform1i(p.first, first);
 				gl.enable(gl.BLEND);
 				gl.blendEquation(gl.FUNC_ADD);
 				gl.blendFunc(gl.ONE, gl.ONE);
 				gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, end - first);
 				gl.disable(gl.BLEND);
-				if (options.valueMax === null) this.peak = this.readPeak(width, height);
 			}
-			setValueMapping(this.mapping, options.valueMin ?? 1, options.valueMax ?? this.peak, options.valueScale === 'log');
-			const remapped = this.scale.set(this.mapping);
-			if (this.style.bind(PALETTE_SIZE * 2) || remapped || this.palette !== f.palette) {
-				this.table.set(this.scale.thresholds);
+			let remapped = false;
+			if (exact) {
+				// The top may move with any point summed: every pixel is colored again.
+				if (summed || !patch) {
+					this.reduce();
+					remapped = true;
+				}
+			} else {
+				if (summed && options.valueMax === null) {
+					this.reduce();
+					gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, this.peakPixel);
+					this.peak = this.peakPixel[0]!;
+				}
+				setValueMapping(
+					this.mapping,
+					options.valueMin ?? 1,
+					options.valueMax ?? this.peak,
+					options.valueScale === 'log',
+				);
+				remapped = this.scale.set(this.mapping);
+			}
+			if (
+				this.style.bind(PALETTE_SIZE * 2) ||
+				exact !== this.exact ||
+				this.palette !== f.palette ||
+				(remapped && !exact)
+			) {
+				// The thresholds, unless the entries are computed on the GPU; then the colors.
+				if (!exact) this.table.set(this.scale.thresholds);
 				this.table.set(f.palette, PALETTE_SIZE);
 				this.style.write(this.table, 0, PALETTE_SIZE * 2);
 				this.palette = f.palette;
-				left = 0;
-				right = width;
+				this.exact = exact;
+				remapped = true;
 			}
-			if (!patch) {
+			if (remapped || !patch) {
 				left = 0;
 				right = width;
 			}
 			gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 			const color = this.pool.use('density-color', width, height);
 			this.style.layout(color.styleStride);
+			gl.uniform1i(color.exact, Number(exact));
 			gl.activeTexture(gl.TEXTURE3);
 			gl.bindTexture(gl.TEXTURE_2D, this.targets[0]!.texture);
+			gl.activeTexture(gl.TEXTURE4);
+			gl.bindTexture(gl.TEXTURE_2D, this.targets[this.targets.length - 1]!.texture);
 			gl.scissor(left, 0, right - left, height);
 			if (right > left) gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 		} finally {
@@ -159,8 +194,11 @@ export class GlDensity {
 		return { left, right };
 	}
 
-	/** The largest density of the pane's texture, brought to one texel on the GPU and read back. */
-	private readPeak(width: number, height: number): number {
+	/**
+	 * Brings the largest density of the pane's texture to the one texel of the last level, on the
+	 * GPU, and leaves that level's framebuffer bound; the pass after sets its own viewport.
+	 */
+	private reduce(): void {
 		const gl = this.pool.gl;
 		const reduce = this.pool.use('density-reduce', 1, 1);
 		gl.uniform1i(reduce.tile, TILE);
@@ -176,9 +214,6 @@ export class GlDensity {
 			gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 			below = level;
 		}
-		gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, this.peakPixel);
-		gl.viewport(0, 0, width, height);
-		return this.peakPixel[0]!;
 	}
 
 	/**
