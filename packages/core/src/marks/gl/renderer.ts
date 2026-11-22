@@ -2,7 +2,7 @@ import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
 import type { HeatSlots, MarkFrame, MarkRendererReason } from '../backend';
 import { heatStyle, scatterBounds, scatterRecords } from '../gpu/geometry';
 import { heatEdge, heatRowSpan, pointPixels, slotColors, StampCache } from '../render';
-import { HeatRanges } from '../heat-ranges';
+import { HeatPan, HeatRanges } from '../heat-ranges';
 import type { ScatterOptions } from '../options';
 import { PALETTE_SIZE, paletteIndex, parseColor, unpackColor } from '../palette';
 import { GlBudget, GlContext, type GlProgram, GlUnsupported } from './context';
@@ -48,6 +48,9 @@ class GlLayer {
 	private tableAt = -1;
 	/** The grid rows the columns in view spanned when the pixel ranges were made. */
 	private span = '';
+	/** A heatmap's integer pans, which translate the retained image, and the projection it was drawn at. */
+	private heatPan = new HeatPan();
+	private heatProjection = '';
 	/** Words per scatter record of the last draw: 2, or 3 with sizes; 0 for none. */
 	private words = 0;
 	/**
@@ -232,7 +235,14 @@ class GlLayer {
 		this.ranges.write(table, from * 3, to * 3, at + from * 3);
 	}
 
-	private heatmap(f: MarkFrame, p: GlProgram, full: boolean, styleChanged: boolean, mappingChanged: boolean) {
+	private heatmap(
+		f: MarkFrame,
+		p: GlProgram,
+		full: boolean,
+		styleChanged: boolean,
+		mappingChanged: boolean,
+		resized: boolean,
+	) {
 		const { window: w, width, height } = f;
 		const slots = f.slots ?? null;
 		const modeChanged = (slots !== null) !== this.slots;
@@ -264,11 +274,29 @@ class GlLayer {
 			span = `${SPAN.low},${SPAN.high}`;
 		}
 		const sameGrid = !rebound && !full && !fresh && w.count === this.count && span === this.span;
+		const projection = `${f.projection.offset},${f.projection.scale},${f.projection.log}`;
+		let delta: number | null = null;
 		if (!sameGrid) {
 			this.heat.project(f);
 			this.ranges.write(this.heat.data, 0, n);
 			this.span = span;
+			// As the WebGPU path: an integer pan whose overlapping columns and rows read the cells they
+			// read before translates the retained image, and draws the columns it exposes.
+			delta = this.heatPan.translation(
+				f.map.x(w.time[0]!),
+				this.heat.data,
+				width,
+				height,
+				!resized &&
+					!fresh &&
+					!styleChanged &&
+					!modeChanged &&
+					this.revision === w.revision &&
+					projection === this.heatProjection,
+				this.heat.rowBase,
+			);
 		}
+		this.heatProjection = projection;
 		if (varying) this.uploadTable(f, n, rebound || fresh || this.tableAt !== n, from, to);
 		this.tableAt = varying ? n : -1;
 		if (this.style.bind(512) || styleChanged || modeChanged) {
@@ -286,7 +314,20 @@ class GlLayer {
 		} else if (!full && !fresh && to > from) {
 			// The column before an append or replacement shares its edge.
 			left = Math.max(0, Math.min(width, Math.round(f.map.x(w.time[Math.max(0, from - 1)]!) - f.map.spacing / 2)));
+		} else if (delta !== null) {
+			if (delta !== 0) {
+				// The image is transposed: the pane's columns are its rows.
+				const cache = this.cache;
+				cache.save();
+				cache.setTransform(1, 0, 0, 1, 0, 0);
+				cache.globalCompositeOperation = 'copy';
+				cache.drawImage(cache.canvas, 0, delta);
+				cache.restore();
+			}
+			if (delta >= 0) right = delta;
+			else left = width + delta;
 		}
+		if (right <= left) return;
 		const gl = this.pool.gl;
 		this.records.layout(p.recordsStride);
 		this.ranges.layout(p.rangesStride);
@@ -408,13 +449,14 @@ class GlLayer {
 						? 'heatmap-slots'
 						: 'heatmap';
 			const program = this.pool.begin(this.listener, kind, width, height);
-			full = this.resize(width, height) || full;
+			const resized = this.resize(width, height);
+			full ||= resized;
 			const mapping = [f.mapping.min, f.mapping.factor, f.mapping.log].join(',');
 			const mappingChanged = mapping !== this.mapping;
 			const styleChanged = this.palette !== f.palette || mappingChanged;
 			this.pool.gl.enable(this.pool.gl.SCISSOR_TEST);
 			if (f.type === 'scatter') this.scatter(f, program, full, styleChanged);
-			else this.heatmap(f, program, full, styleChanged, mappingChanged);
+			else this.heatmap(f, program, full, styleChanged, mappingChanged, resized);
 			this.count = w.count;
 			this.version = w.version;
 			this.revision = w.revision;
@@ -433,6 +475,7 @@ class GlLayer {
 	/** Frames were drawn without this layer: the records may have missed patches. */
 	stale() {
 		this.version = -1;
+		this.heatPan = new HeatPan();
 		this.pendingFrom = Infinity;
 		this.pendingTo = -Infinity;
 	}
