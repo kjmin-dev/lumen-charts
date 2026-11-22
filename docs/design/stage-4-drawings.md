@@ -50,7 +50,8 @@ The measurements are in [docs/benchmarks/stage-4-drawings.md](../benchmarks/stag
   the first visible bar changes. Lines are straight on screen between the points' screen positions,
   and Fibonacci levels are taken in price, then mapped, so both stay right on a logarithmic or
   inverted scale. A drawing on a scale without a range (no series on it yet) is not drawn; the
-  magnet snaps to the first visible series on the drawing's own scale.
+  magnet snaps to the nearest value of the visible series on the drawing's own scale, as the
+  crosshair does ([price axes](stage-4-price-axes.md#81-as-built-in-stage-4-price-axes)).
 - **Times to logical positions.** A time is the index of the bar with that time, a fraction of the
   way between two bars for a time between theirs, and beyond either end at the median spacing of
   the 64 bars there, so a point in the future stays put while bars keep arriving at that spacing.

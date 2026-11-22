@@ -80,6 +80,7 @@ The JSON files beside each document are the runs its numbers come from.
 - [shared-resources.md](shared-resources.md): the `multi` scenario puts several auto-sized charts on one page, some of them below the fold, and measures workers, memory, the time until all are shown and the cost of a round of ticks.
 - [stage-3.md](stage-3.md): the stage 3 scenarios (`ind-load`, `ind-apply`, `ind-frames`, `ind-prepend`) put 20 indicators on the candles.
 - [stage-4-price-axes.md](stage-4-price-axes.md): the `axes-frames` scenario pans and zooms candles with three moving averages on one axis, on a logarithmic or a percentage scale, and on four axes; it and the frame cases of earlier stages against `main`.
+- [price-axis-follow-ups.md](price-axis-follow-ups.md): value labels that keep apart, scales marked in use every frame, the magnet and the wheel on axes; `frames`, `axes-frames` and drawing hover against `main` in alternating rounds on a loaded machine.
 - [stage-4-drawings.md](stage-4-drawings.md): the `drawings` scenario hovers, drags and pans over 1,000 drawings on 1M candles (the stage 4 hover gate).
 - [stage-4-time-zones.md](stage-4-time-zones.md): the scenarios `tz-frames` (pan and zoom in New York time with the sessions of an equity exchange) and `tz-change` (switching time zones at run time).
 - [stage-4-follow-ups.md](stage-4-follow-ups.md): the `draw-autoscale` scenario pans with 100 and 1,000 drawings that take part in autoscale; hover over 1,000 drawings and a restore of 1,000, matched by id, against `main`.
