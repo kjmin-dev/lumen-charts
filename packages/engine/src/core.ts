@@ -422,6 +422,9 @@ export class EngineCore {
 			case 'marksWindow':
 				this._marks.window(command.series, command.seq, command.request, event);
 				break;
+			case 'marksRows':
+				yield* this._marks.restore(command.request, command.data, event);
+				break;
 		}
 	}
 
@@ -465,11 +468,12 @@ export class EngineCore {
 				evictable += candidate.bytes;
 			}
 		}
-		let waiting = this._corrections.length + this._rebuilds.length;
+		let waiting = this._corrections.length + this._rebuilds.length + this._marks.waiting;
 		for (const state of this._series.values()) {
 			waiting += state.queue.length;
 		}
-		return { bytes: this.byteLength, limit: this._limit, evictable, requests: this._requests.size, waiting };
+		const requests = this._requests.size + this._marks.requests;
+		return { bytes: this.byteLength, limit: this._limit, evictable, requests, waiting };
 	}
 
 	/**
@@ -1967,23 +1971,30 @@ export class EngineCore {
 			return;
 		}
 		this._overLimit = false;
-		if (!this._evicting()) {
-			return;
-		}
 		let bytes = this.byteLength;
 		if (bytes <= this._limit) {
 			return;
 		}
-		const candidates = this._candidates();
-		const n = Math.min(candidates.length, EVICT_SLICE);
-		for (let i = 0; i < n; i++) {
-			const candidate = candidates[i]!;
-			bytes -= candidate.state.store.evict(candidate.grid, candidate.keepTime, candidate.anchors);
-			if (bytes <= this._limit) {
+		if (this._evicting()) {
+			const candidates = this._candidates();
+			const n = Math.min(candidates.length, EVICT_SLICE);
+			for (let i = 0; i < n; i++) {
+				const candidate = candidates[i]!;
+				bytes -= candidate.state.store.evict(candidate.grid, candidate.keepTime, candidate.anchors);
+				if (bytes <= this._limit) {
+					return;
+				}
+			}
+			if (candidates.length > n) {
+				this._overLimit = true;
 				return;
 			}
 		}
-		this._overLimit = candidates.length > n;
+		// The bars go first; then the marks of series with a datafeed, far from their views.
+		if (this._limit !== Infinity) {
+			const { more } = this._marks.evict(bytes - this._limit, EVICT_SLICE);
+			this._overLimit = more;
+		}
 	}
 
 	/**

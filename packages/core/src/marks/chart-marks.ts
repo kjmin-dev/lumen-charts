@@ -8,6 +8,7 @@ import type { ChartLayout } from '../render/layout';
 import type { AnyMarkOptions, HeatmapOptions, MarkSeriesType, ScatterOptions } from './options';
 import { HeatmapSeries, type MarkSeries, type MarkSeriesHost, ScatterSeries, checkOptions } from './series';
 import type { MarkSeriesPlan, MarkSeriesState } from './state';
+import { type MarksDatafeed, MarkFetches } from './fetches';
 import { TimeMap } from './time-map';
 
 /** What the marks need from the chart. */
@@ -19,6 +20,8 @@ export interface ChartMarksHost {
 	invalidate(): void;
 	/** Data changed and nothing else: the frame fits the scales again and keeps what it can of the layers. */
 	dataChanged(): void;
+	/** A datafeed request ended: whoever waits for the chart to be idle may have nothing left to wait for. */
+	settled(): void;
 }
 
 /**
@@ -46,6 +49,8 @@ export class ChartMarks implements MarkSeriesHost {
 	private readonly _mapKey = new Float64Array(7).fill(Number.NaN);
 	private readonly _extent = { low: 0, high: 0 };
 	private _destroyed = false;
+	/** Marks fetched again from the datafeeds of series. */
+	private readonly _fetches: MarkFetches;
 
 	public constructor(
 		host: ChartMarksHost,
@@ -61,15 +66,34 @@ export class ChartMarks implements MarkSeriesHost {
 		this._axes = axes;
 		this._primitives = primitives;
 		this._model = model;
+		this._fetches = new MarkFetches(
+			() => this._engine,
+			id => this._byEngineId.get(id),
+			() => host.settled(),
+		);
+	}
+
+	/** Datafeed requests in flight. */
+	public get fetching(): number {
+		return this._fetches.fetching;
+	}
+
+	public abortFetches(series: MarkSeries): void {
+		this._fetches.abort(series);
 	}
 
 	// The series
 
-	public add(type: MarkSeriesType, id: string, options: Partial<AnyMarkOptions>): MarkSeries {
+	public add(
+		type: MarkSeriesType,
+		id: string,
+		options: Partial<AnyMarkOptions>,
+		datafeed: MarksDatafeed<never> | null = null,
+	): MarkSeries {
 		const series =
 			type === 'heatmap'
-				? new HeatmapSeries(this, id, options as Partial<HeatmapOptions>)
-				: new ScatterSeries(this, id, options as Partial<ScatterOptions>);
+				? new HeatmapSeries(this, id, options as Partial<HeatmapOptions>, datafeed)
+				: new ScatterSeries(this, id, options as Partial<ScatterOptions>, datafeed);
 		this.list.push(series);
 		this._byEngineId.set(series.engineId, series);
 		this._attach(series);
@@ -84,6 +108,7 @@ export class ChartMarks implements MarkSeriesHost {
 		}
 		const removed = this.list.splice(index, 1)[0]!;
 		this._byEngineId.delete(removed.engineId);
+		this._fetches.abort(removed);
 		this._primitives.layers.detach(removed.primitive);
 		removed.release();
 		this._engine?.changeMarks(removed.engineId, { op: 'remove' });
@@ -107,6 +132,7 @@ export class ChartMarks implements MarkSeriesHost {
 
 	public destroy(): void {
 		this._destroyed = true;
+		this._fetches.destroy();
 		for (const series of this.list) {
 			series.release();
 		}
@@ -138,6 +164,7 @@ export class ChartMarks implements MarkSeriesHost {
 			if (engine !== null) {
 				this._engine = engine;
 				engine.onmarks = this._onMarks;
+				engine.onmarksfetch = event => this._fetches.handle(event);
 			}
 		}
 		return this._engine;

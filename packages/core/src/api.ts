@@ -7,10 +7,19 @@ import type { PriceScaleApi } from './price-axes';
 import type { PanePrimitive } from './primitives';
 import type { SeriesApi, SeriesCreateOptions, SeriesType, TimeRange } from './series';
 import type { HeatmapOptions, ScatterOptions } from './marks/options';
+import type { MarksDatafeed } from './marks/fetches';
+import type { HeatmapData, ScatterData } from './marks/input';
 import type { HeatmapSeriesApi, MarkSeriesApi, ScatterSeriesApi } from './marks/series';
 import type { ChartState, ChartStateSelection } from './state';
 
 /** A range of logical positions: bar `i` covers `[i - 0.5, i + 0.5)`. */
+/**
+ * Options `addSeries` takes for a heatmap or a scatter: the series options, its name in saved state,
+ * and a datafeed to fetch its marks from again, which lets the engine let them go under the chart's
+ * `memoryLimit`.
+ */
+export type MarkSeriesCreateOptions<O, D> = Partial<O> & { id?: string; datafeed?: MarksDatafeed<D> };
+
 export interface LogicalRange {
 	from: number;
 	to: number;
@@ -156,11 +165,12 @@ export interface ChartApi {
 	/**
 	 * Adds a heatmap: columns of cells on a grid of prices, drawn below the other series. Its marks
 	 * are placed by time on the timeline of the bars, so the chart needs a series with bars. `id`
-	 * names it in saved state, like any series.
+	 * names it in saved state, like any series; with a `datafeed`, the engine may let its marks go
+	 * under the chart's `memoryLimit` and fetch them back when the view needs them.
 	 */
-	addSeries(type: 'heatmap', options?: Partial<HeatmapOptions> & { id?: string }): HeatmapSeriesApi;
+	addSeries(type: 'heatmap', options?: MarkSeriesCreateOptions<HeatmapOptions, HeatmapData>): HeatmapSeriesApi;
 	/** Adds a scatter series: points at any time and price, drawn above the other series. */
-	addSeries(type: 'scatter', options?: Partial<ScatterOptions> & { id?: string }): ScatterSeriesApi;
+	addSeries(type: 'scatter', options?: MarkSeriesCreateOptions<ScatterOptions, ScatterData>): ScatterSeriesApi;
 	/**
 	 * Removes a series, and every indicator that reads it.
 	 */

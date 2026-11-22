@@ -1,4 +1,5 @@
-import type { MarksData, MarksRequest, MarksSelection, MarksStore, MarksUpdate } from './protocol';
+import type { MarksChunk, MarksData, MarksRequest, MarksSelection, MarksStore, MarksUpdate } from './protocol';
+import { Checksum, MARKS_SUMMARY_BYTES } from './summary';
 
 /** Rows per chunk of a scatter column store. */
 export const SCATTER_CHUNK_SHIFT = 16;
@@ -27,7 +28,29 @@ interface ScatterChunk {
 	count: Float32Array | null;
 	/** Size of each row's mark in CSS pixels, NaN for the series' size; null while no row has one. */
 	size: Float32Array | null;
+	/** Set while the chunk is let go under the memory limit: what checks the rows that come back. */
+	summary: ScatterSummary | null;
 }
+
+/**
+ * What is kept of a chunk of points let go: its number of points, the first and last time, how many
+ * of its points share each of those times (points at one time may lie in two chunks), and a
+ * checksum of every point.
+ */
+interface ScatterSummary {
+	count: number;
+	/** Whether the checksum takes the sizes in: the store had sizes when the chunk was let go. */
+	sized: boolean;
+	firstTime: number;
+	lastTime: number;
+	headTies: number;
+	tailTies: number;
+	high: number;
+	low: number;
+}
+
+const NO_TIME = new Float64Array(0);
+const NO_VALUE = new Float32Array(0);
 
 /**
  * Time, price and value of points or cells in time order, in chunks so growing at either end never
@@ -42,6 +65,8 @@ export class ScatterColumns {
 	private _base = 0;
 	private readonly _counted: boolean;
 	private _sized = false;
+	/** Chunks let go under the memory limit. */
+	private _evicted = 0;
 
 	public constructor(counted = false) {
 		this._counted = counted;
@@ -61,7 +86,16 @@ export class ScatterColumns {
 	}
 
 	public get byteLength(): number {
-		return this._chunks.length * CHUNK_ROWS * (20 + (this._counted ? 4 : 0) + (this._sized ? 4 : 0));
+		const resident = this._chunks.length - this._evicted;
+		return (
+			resident * CHUNK_ROWS * (20 + (this._counted ? 4 : 0) + (this._sized ? 4 : 0)) +
+			this._evicted * MARKS_SUMMARY_BYTES
+		);
+	}
+
+	/** Bytes of one chunk held, which letting it go frees but for its summary. */
+	public get chunkBytes(): number {
+		return CHUNK_ROWS * (20 + (this._counted ? 4 : 0) + (this._sized ? 4 : 0)) - MARKS_SUMMARY_BYTES;
 	}
 
 	public clear(): void {
@@ -70,6 +104,168 @@ export class ScatterColumns {
 		this._chunks.length = 0;
 		this._base = 0;
 		this._sized = false;
+		this._evicted = 0;
+	}
+
+	/** Chunks let go under the memory limit. */
+	public get evictedCount(): number {
+		return this._evicted;
+	}
+
+	/** Numbers of the first and last chunk holding rows (`row >> SCATTER_CHUNK_SHIFT`). */
+	public get firstChunk(): number {
+		return this.first >> SCATTER_CHUNK_SHIFT;
+	}
+
+	public get lastChunk(): number {
+		return (this.end - 1) >> SCATTER_CHUNK_SHIFT;
+	}
+
+	/** Rows of chunk `n`: `[chunkStart(n), chunkEnd(n))`. */
+	public chunkStart(n: number): number {
+		return Math.max(this.first, n << SCATTER_CHUNK_SHIFT);
+	}
+
+	public chunkEnd(n: number): number {
+		return Math.min(this.end, (n + 1) << SCATTER_CHUNK_SHIFT);
+	}
+
+	public isEvicted(n: number): boolean {
+		return this._chunks[n - this._base]?.summary != null;
+	}
+
+	public chunkFirstTime(n: number): number {
+		const chunk = this._chunks[n - this._base]!;
+		return chunk.summary === null ? this.timeAt(this.chunkStart(n)) : chunk.summary.firstTime;
+	}
+
+	public chunkLastTime(n: number): number {
+		const chunk = this._chunks[n - this._base]!;
+		return chunk.summary === null ? this.timeAt(this.chunkEnd(n) - 1) : chunk.summary.lastTime;
+	}
+
+	/** Chunks let go that hold rows of `[from, to)`. */
+	public missing(from: number, to: number, out: number[]): void {
+		if (this._evicted === 0 || to <= from) {
+			return;
+		}
+		const last = (Math.min(to, this.end) - 1) >> SCATTER_CHUNK_SHIFT;
+		for (let n = Math.max(from, this.first) >> SCATTER_CHUNK_SHIFT; n <= last; n++) {
+			if (this.isEvicted(n)) {
+				out.push(n);
+			}
+		}
+	}
+
+	/** The summary of chunk `n` as it holds its rows now. */
+	private _summarize(n: number): ScatterSummary {
+		const from = this.chunkStart(n);
+		const to = this.chunkEnd(n);
+		const checksum = new Checksum();
+		for (let row = from; row < to; row++) {
+			feedPoint(checksum, this.timeAt(row), this.priceAt(row), this.valueAt(row), this.sizeAt(row), this._sized);
+		}
+		const firstTime = this.timeAt(from);
+		const lastTime = this.timeAt(to - 1);
+		let headTies = 1;
+		while (from + headTies < to && this.timeAt(from + headTies) === firstTime) {
+			headTies++;
+		}
+		let tailTies = 1;
+		while (to - 1 - tailTies >= from && this.timeAt(to - 1 - tailTies) === lastTime) {
+			tailTies++;
+		}
+		return {
+			count: to - from,
+			sized: this._sized,
+			firstTime,
+			lastTime,
+			headTies,
+			tailTies,
+			high: checksum.high,
+			low: checksum.low,
+		};
+	}
+
+	/**
+	 * Lets go of the rows of chunk `n`, keeping its summary; returns the bytes freed. A chunk whose
+	 * points all share one time is kept: the points of that time in the chunks beside it could not
+	 * be told from its own when they come back.
+	 */
+	public evict(n: number): number {
+		const chunk = this._chunks[n - this._base];
+		if (chunk === undefined || chunk.summary !== null) {
+			return 0;
+		}
+		const summary = this._summarize(n);
+		if (!(summary.firstTime < summary.lastTime)) {
+			return 0;
+		}
+		chunk.summary = summary;
+		chunk.time = NO_TIME;
+		chunk.price = NO_TIME;
+		chunk.value = NO_VALUE;
+		chunk.count = null;
+		chunk.size = null;
+		this._evicted++;
+		return this.chunkBytes;
+	}
+
+	/**
+	 * What a datafeed must return for chunk `n` to come back: the points with times in
+	 * `[firstTime, lastTime]`, of which the chunk holds the last `headTies` at the first time and the
+	 * first `tailTies` at the last.
+	 */
+	public summaryOf(n: number): Readonly<ScatterSummary> | null {
+		return this._chunks[n - this._base]?.summary ?? null;
+	}
+
+	/**
+	 * Gives chunk `n` its rows back from points `[from, from + count)` of the arrays, if they are the
+	 * points it was let go with: the same number, times, prices, values and sizes. Returns whether
+	 * they were taken.
+	 */
+	public restore(
+		n: number,
+		time: Float64Array,
+		price: Float64Array,
+		value: Float32Array | null,
+		size: Float32Array | null,
+		from: number,
+		count: number,
+	): boolean {
+		const chunk = this._chunks[n - this._base];
+		const summary = chunk?.summary ?? null;
+		if (chunk === undefined || summary === null || count !== summary.count) {
+			return false;
+		}
+		const checksum = new Checksum();
+		for (let i = from; i < from + count; i++) {
+			feedPoint(
+				checksum,
+				time[i]!,
+				price[i]!,
+				value === null ? Number.NaN : value[i]!,
+				size === null ? Number.NaN : size[i]!,
+				summary.sized,
+			);
+		}
+		if (checksum.high !== summary.high || checksum.low !== summary.low) {
+			return false;
+		}
+		// The first write gives the chunk its arrays back.
+		const start = this.chunkStart(n);
+		for (let i = 0; i < count; i++) {
+			this.write(
+				start + i,
+				time[from + i]!,
+				price[from + i]!,
+				value === null ? Number.NaN : value[from + i]!,
+				1,
+				size === null ? Number.NaN : size[from + i]!,
+			);
+		}
+		return true;
 	}
 
 	/** Gives every row a size, NaN (the series' size) for the rows there are. */
@@ -79,7 +275,10 @@ export class ScatterColumns {
 		}
 		this._sized = true;
 		for (const chunk of this._chunks) {
-			chunk.size = new Float32Array(CHUNK_ROWS).fill(Number.NaN);
+			// A chunk let go keeps its checksum, which a size of NaN for each point leaves as it was.
+			if (chunk.summary === null) {
+				chunk.size = new Float32Array(CHUNK_ROWS).fill(Number.NaN);
+			}
 		}
 	}
 
@@ -90,6 +289,7 @@ export class ScatterColumns {
 			value: new Float32Array(CHUNK_ROWS),
 			count: this._counted ? new Float32Array(CHUNK_ROWS) : null,
 			size: this._sized ? new Float32Array(CHUNK_ROWS).fill(Number.NaN) : null,
+			summary: null,
 		};
 	}
 
@@ -114,9 +314,23 @@ export class ScatterColumns {
 		return this._chunks[(row >> SCATTER_CHUNK_SHIFT) - this._base]!;
 	}
 
-	/** Writes row `row`, which must be `end` or `first - 1` or a row held. */
+	/**
+	 * Writes row `row`, which must be `end` or `first - 1` or a row held. A row of a chunk let go is
+	 * written only where every row of the chunk is written anew (a removal moving rows over it), so
+	 * the chunk starts over, held.
+	 */
 	public write(row: number, time: number, price: number, value: number, count: number, size: number): void {
 		const chunk = this._chunkFor(row);
+		if (chunk.summary !== null) {
+			const fresh = this._newChunk();
+			chunk.time = fresh.time;
+			chunk.price = fresh.price;
+			chunk.value = fresh.value;
+			chunk.count = fresh.count;
+			chunk.size = fresh.size;
+			chunk.summary = null;
+			this._evicted--;
+		}
 		const at = row & CHUNK_MASK;
 		chunk.time[at] = time;
 		chunk.price[at] = price;
@@ -185,43 +399,55 @@ export class ScatterColumns {
 		}
 	}
 
-	/** First row whose time is not before `time`. */
+	/**
+	 * First row whose time is not before `time`. Where that row lies in a chunk let go, the first row
+	 * of that chunk: a bound to ask for the chunk by, not the row itself.
+	 */
 	public lowerBound(time: number): number {
-		let lo = this.first;
-		let hi = this.end;
-		while (lo < hi) {
-			const mid = lo + ((hi - lo) >>> 1);
-			if (this.timeAt(mid) < time) {
-				lo = mid + 1;
-			} else {
-				hi = mid;
-			}
-		}
-		return lo;
+		return this._search(t => t < time, false);
 	}
 
-	/** First row whose time is after `time`. */
+	/** First row whose time is after `time`; in a chunk let go, that chunk's end, so the chunk is in range. */
 	public upperBound(time: number): number {
-		let lo = this.first;
-		let hi = this.end;
-		while (lo < hi) {
-			const mid = lo + ((hi - lo) >>> 1);
-			if (this.timeAt(mid) <= time) {
-				lo = mid + 1;
-			} else {
-				hi = mid;
-			}
-		}
-		return lo;
+		return this._search(t => t <= time, true);
 	}
 
 	/** First row whose time falls in time bucket `bucket` of width `step` or a later one. */
 	public lowerBucket(step: number, bucket: number): number {
+		return this._search(t => Math.floor(t / step) < bucket, false);
+	}
+
+	/**
+	 * First row whose time `before` is false for, `before` being true up to some time and false from
+	 * then on. With chunks let go, the chunk is found first by the times at its edges; in a chunk let
+	 * go, the bound is its start, or its end with `end`.
+	 */
+	private _search(before: (time: number) => boolean, end: boolean): number {
 		let lo = this.first;
 		let hi = this.end;
+		if (this._evicted > 0 && hi > lo) {
+			let a = this.firstChunk;
+			let b = this.lastChunk + 1;
+			while (a < b) {
+				const mid = (a + b) >>> 1;
+				if (before(this.chunkLastTime(mid))) {
+					a = mid + 1;
+				} else {
+					b = mid;
+				}
+			}
+			if (a > this.lastChunk) {
+				return this.end;
+			}
+			if (this.isEvicted(a)) {
+				return end ? this.chunkEnd(a) : this.chunkStart(a);
+			}
+			lo = this.chunkStart(a);
+			hi = this.chunkEnd(a);
+		}
 		while (lo < hi) {
 			const mid = lo + ((hi - lo) >>> 1);
-			if (Math.floor(this.timeAt(mid) / step) < bucket) {
+			if (before(this.timeAt(mid))) {
 				lo = mid + 1;
 			} else {
 				hi = mid;
@@ -339,13 +565,32 @@ export class ScatterColumns {
 		}
 		const firstChunk = this.first >> SCATTER_CHUNK_SHIFT;
 		const lastChunk = (this.end - 1) >> SCATTER_CHUNK_SHIFT;
+		const drop = (from: number, to: number): void => {
+			for (let i = from; i < to; i++) {
+				if (chunks[i]!.summary !== null) {
+					this._evicted--;
+				}
+			}
+		};
 		if (lastChunk - this._base + 1 < chunks.length) {
+			drop(lastChunk - this._base + 1, chunks.length);
 			chunks.length = lastChunk - this._base + 1;
 		}
 		if (firstChunk > this._base) {
+			drop(0, firstChunk - this._base);
 			chunks.splice(0, firstChunk - this._base);
 			this._base = firstChunk;
 		}
+	}
+}
+
+/** Feeds one point to the checksum of a chunk: its time, price, value and, in a store with sizes, size. */
+function feedPoint(checksum: Checksum, time: number, price: number, value: number, size: number, sized: boolean): void {
+	checksum.double(time);
+	checksum.double(price);
+	checksum.single(value);
+	if (sized) {
+		checksum.single(size);
 	}
 }
 
@@ -774,6 +1019,138 @@ export class ScatterStore implements MarksStore {
 		}
 	}
 
+	// Memory: under the engine's memory limit, chunks of points far from the view are let go and
+	// fetched back from the series' datafeed. The levels stay, so wide views draw meanwhile.
+
+	/**
+	 * Chunks of points that may be let go, with the times they span: not the first or last chunk
+	 * (appends and prepends write there), none with points in `[keepFrom, keepTo]` (the view and its
+	 * margins), and none before the series has levels to draw from in their place.
+	 */
+	public evictable(keepFrom: number, keepTo: number, out: MarksChunk[]): void {
+		const points = this._points;
+		if (this._levels.length === 0 || points.count === 0) {
+			return;
+		}
+		for (let n = points.firstChunk + 1; n < points.lastChunk; n++) {
+			if (points.isEvicted(n)) {
+				continue;
+			}
+			const from = points.chunkFirstTime(n);
+			const to = points.chunkLastTime(n);
+			if (to >= keepFrom && from <= keepTo) {
+				continue;
+			}
+			out.push({ chunk: n, from, to, bytes: points.chunkBytes });
+		}
+	}
+
+	public evict(chunk: number): number {
+		return this._points.evict(chunk);
+	}
+
+	public get evicted(): number {
+		return this._points.evictedCount;
+	}
+
+	/** Chunks let go that hold points of level `level` rows `[start, end)`; none above level 0. */
+	public missing(level: number, start: number, end: number, out: number[]): void {
+		if (level === 0) {
+			this._points.missing(start, end, out);
+		}
+	}
+
+	/** The times a datafeed is asked for to give chunk `chunk` back, and the points it holds. */
+	public fetchRange(chunk: number): { from: number; to: number; count: number } | null {
+		const summary = this._points.summaryOf(chunk);
+		return summary === null ? null : { from: summary.firstTime, to: summary.lastTime, count: summary.count };
+	}
+
+	/**
+	 * Gives chunk `chunk` its points back from what a datafeed returned for its times: the points of
+	 * those times in time order, of which those it held are taken (at the first and last time, points
+	 * of the chunks beside it may come too). Returns whether they were the points let go.
+	 */
+	public restore(chunk: number, data: MarksData): boolean {
+		const summary = this._points.summaryOf(chunk);
+		if (summary === null || data.kind !== 'scatter') {
+			return false;
+		}
+		const order = timeOrder(data.time, data.count);
+		const at = (k: number): number => (order === null ? k : order[k]!);
+		const { firstTime, lastTime } = summary;
+		// The points of the chunk's times, in order, and how many at each end belong to other chunks.
+		const picked: number[] = [];
+		let head = 0;
+		let tail = 0;
+		for (let k = 0; k < data.count; k++) {
+			const i = at(k);
+			const t = data.time[i]!;
+			if (t >= firstTime && t <= lastTime) {
+				picked.push(i);
+				if (t === firstTime) {
+					head++;
+				}
+				if (t === lastTime) {
+					tail++;
+				}
+			}
+		}
+		const from = head - summary.headTies;
+		const to = picked.length - (tail - summary.tailTies);
+		if (from < 0 || to - from !== summary.count) {
+			return false;
+		}
+		const count = summary.count;
+		const time = new Float64Array(count);
+		const price = new Float64Array(count);
+		const value = data.value === null ? null : new Float32Array(count);
+		const sizes = data.size ?? null;
+		const size = sizes === null ? null : new Float32Array(count);
+		for (let k = 0; k < count; k++) {
+			const i = picked[from + k]!;
+			time[k] = data.time[i]!;
+			price[k] = data.price[i]!;
+			if (value !== null) {
+				value[k] = data.value![i]!;
+			}
+			if (size !== null) {
+				size[k] = sizes![i]!;
+			}
+		}
+		return this._points.restore(chunk, time, price, value, size, 0, count);
+	}
+
+	/**
+	 * Chunks let go that removing the points of `[from, to]` would read or move: the points on the
+	 * shorter side of them, and those of the level-1 buckets the removal touches, which that level is
+	 * made again from.
+	 */
+	public needs(from: number, to: number, out: number[]): void {
+		const points = this._points;
+		if (points.evictedCount === 0 || !(from <= to) || points.count === 0) {
+			return;
+		}
+		const a = points.lowerBound(from);
+		const b = points.upperBound(to);
+		if (b <= a) {
+			return;
+		}
+		const moved = a - points.first <= points.end - b ? [points.first, a] : [b, points.end];
+		points.missing(moved[0]!, moved[1]!, out);
+		// The removal's edges and the points beside them, which bounds in a chunk let go only find once
+		// it is back.
+		points.missing(a - 1, a + 1, out);
+		points.missing(b - 1, b + 1, out);
+		const level = this._levels[0];
+		if (level !== undefined) {
+			const low = points.lowerBucket(level.step, Math.floor(from / level.step));
+			const high = points.lowerBucket(level.step, Math.floor(to / level.step) + 1);
+			points.missing(low, a, out);
+			points.missing(b, high, out);
+		}
+	}
+
 	/** Rows of `level` whose point or cell can show in `[from, to]`. */
 	private _range(level: number, from: number, to: number, out: MarksSelection): void {
 		const columns = this._columns(level)!;
@@ -790,10 +1167,10 @@ export class ScatterStore implements MarksStore {
 	 * level is that fine. If that is more rows than the client wants, the next coarser levels are
 	 * tried: then cells are wider than a pixel, and the frame keeps its budget.
 	 */
-	public select(request: MarksRequest): MarksSelection {
+	public select(request: MarksRequest, minLevel = 0): MarksSelection {
 		const levels = this._levels;
-		let level = 0;
-		for (let l = 1; l <= levels.length; l++) {
+		let level = Math.min(minLevel, levels.length);
+		for (let l = level + 1; l <= levels.length; l++) {
 			if (levels[l - 1]!.step <= request.step && (request.priceStep <= 0 || this._binHeight <= request.priceStep)) {
 				level = l;
 			}

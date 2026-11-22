@@ -107,6 +107,12 @@ export class MarksWindow {
 	 * front of those held (a prepend), rows removed, rows back from the datafeed. The view is asked
 	 * for again; with another generation, the rows held are drawn until the new ones are here.
 	 */
+	/** The view is asked for again at the next plan, keeping the rows held: after a failed fetch. */
+	public retry(): void {
+		this._coveredFrom = Number.NaN;
+		this._coveredTo = Number.NaN;
+	}
+
 	public notice(update: MarksUpdate): void {
 		if (update.generation !== this.generation) {
 			this._stale = true;

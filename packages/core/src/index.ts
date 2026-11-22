@@ -79,6 +79,7 @@ export type { HeatmapColumn, HeatmapData, ScatterColumns, ScatterData, ScatterPo
 export type { HeatmapOptions, MarkSeriesOptionsCommon, MarkSeriesType, ScatterOptions } from './marks/options';
 export { PALETTES, type Palette } from './marks/palette';
 export type { HeatmapSeriesApi, MarkSeriesApi, ScatterSeriesApi } from './marks/series';
+export type { MarksDatafeed, MarksDatafeedRequest } from './marks/fetches';
 export type { MarkSeriesState } from './marks/state';
 export { getCanvasBudget, setCanvasBudget } from './shared/canvas-budget';
 export {

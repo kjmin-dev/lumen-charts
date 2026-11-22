@@ -1,4 +1,13 @@
-import type { HeatmapColumns, MarksData, MarksRequest, MarksSelection, MarksStore, MarksUpdate } from './protocol';
+import type {
+	HeatmapColumns,
+	MarksChunk,
+	MarksData,
+	MarksRequest,
+	MarksSelection,
+	MarksStore,
+	MarksUpdate,
+} from './protocol';
+import { Checksum, MARKS_SUMMARY_BYTES } from './summary';
 
 /** Cells per chunk of a heatmap level, about: a chunk holds whole columns. */
 const CHUNK_CELLS = 1 << 16;
@@ -19,6 +28,11 @@ class HeatChunk {
 	/** Where the cells of each slot start; `start[size]` is the end of the last. */
 	public readonly start: Int32Array;
 	public cells: Float32Array;
+	/**
+	 * Set while the cells are let go under the memory limit: their checksum. The times, rows and
+	 * lengths of the columns stay.
+	 */
+	public summary: { high: number; low: number } | null = null;
 
 	public constructor(size: number, rows: number) {
 		this.time = new Float64Array(size);
@@ -32,8 +46,26 @@ class HeatChunk {
 		return this.start[this.start.length - 1]!;
 	}
 
+	/** Checksum of the cells of the columns held, in their order. */
+	public checksum(): { high: number; low: number } {
+		const checksum = new Checksum();
+		const cells = this.cells;
+		for (let i = 0; i < this.used; i++) {
+			checksum.single(cells[i]!);
+		}
+		return { high: checksum.high, low: checksum.low };
+	}
+
 	/** Replaces the cells of slots `[from, to)` with `n` cells of `source` from `at` on. */
 	public splice(from: number, to: number, source: Float32Array, at: number, n: number): void {
+		if (this.summary !== null) {
+			// Written anew: a chunk let go is written only where all of its columns are.
+			this.summary = null;
+			this.cells = new Float32Array(Math.max(n, this.start.length - 1));
+			this.start.fill(0);
+			this.length.fill(0, 0, from);
+			this.length.fill(0, to);
+		}
 		const start = this.start;
 		const a = start[from]!;
 		const b = start[to]!;
@@ -95,8 +127,69 @@ class HeatmapLevel {
 		let bytes = 0;
 		for (const chunk of this._chunks) {
 			bytes += chunk.cells.byteLength + chunk.time.byteLength + chunk.offset.byteLength * 3;
+			if (chunk.summary !== null) {
+				bytes += MARKS_SUMMARY_BYTES;
+			}
 		}
 		return bytes;
+	}
+
+	/** Chunks let go under the memory limit. */
+	public evicted = 0;
+
+	/** Numbers of the first and last chunk holding columns, and the columns of chunk `n`. */
+	public get firstChunk(): number {
+		return Math.floor(this.first / this._size);
+	}
+
+	public get lastChunk(): number {
+		return Math.floor((this.end - 1) / this._size);
+	}
+
+	public chunkStart(n: number): number {
+		return Math.max(this.first, n * this._size);
+	}
+
+	public chunkEnd(n: number): number {
+		return Math.min(this.end, (n + 1) * this._size);
+	}
+
+	public chunkAt(n: number): HeatChunk | undefined {
+		return this._chunks[n - this._base];
+	}
+
+	public isEvicted(n: number): boolean {
+		return this._chunks[n - this._base]?.summary != null;
+	}
+
+	/** Lets go of the cells of chunk `n`, keeping their checksum; returns the bytes freed. */
+	public evict(n: number): number {
+		const chunk = this._chunks[n - this._base];
+		if (chunk === undefined || chunk.summary !== null) {
+			return 0;
+		}
+		const bytes = chunk.cells.byteLength;
+		chunk.summary = chunk.checksum();
+		chunk.cells = new Float32Array(0);
+		this.evicted++;
+		return bytes - MARKS_SUMMARY_BYTES;
+	}
+
+	/** Chunks let go that hold columns of `[from, to)`. */
+	public missing(from: number, to: number, out: number[]): void {
+		if (this.evicted === 0) {
+			return;
+		}
+		from = Math.max(from, this.first);
+		to = Math.min(to, this.end);
+		if (to <= from) {
+			return;
+		}
+		for (let n = Math.floor(from / this._size); n <= Math.floor((to - 1) / this._size); n++) {
+			if (this.isEvicted(n)) {
+				out.push(n);
+			}
+		}
 	}
 
 	public mark(column: number): void {
@@ -199,16 +292,26 @@ class HeatmapLevel {
 		if (end <= first) {
 			chunks.length = 0;
 			this.first = this.end = 0;
+			this.evicted = 0;
 			return;
 		}
 		this.first = first;
 		this.end = end;
 		const firstChunk = Math.floor(first / this._size);
 		const lastChunk = Math.floor((end - 1) / this._size);
+		const drop = (from: number, to: number): void => {
+			for (let i = from; i < to; i++) {
+				if (chunks[i]!.summary !== null) {
+					this.evicted--;
+				}
+			}
+		};
 		if (lastChunk - this._base + 1 < chunks.length) {
+			drop(Math.max(0, lastChunk - this._base + 1), chunks.length);
 			chunks.length = Math.max(0, lastChunk - this._base + 1);
 		}
 		if (firstChunk > this._base) {
+			drop(0, firstChunk - this._base);
 			chunks.splice(0, firstChunk - this._base);
 			this._base = firstChunk;
 		}
@@ -605,6 +708,146 @@ export class HeatmapStore implements MarksStore {
 		out.length = length;
 	}
 
+	// Memory: under the engine's memory limit, the cells of chunks of columns far from the view are
+	// let go and fetched back from the series' datafeed. The times and rows of every column, and the
+	// levels, stay.
+
+	/**
+	 * Chunks of columns that may be let go, with the times they span: none of the first and last
+	 * eight columns (appends and prepends rebuild the buckets there), none with columns in
+	 * `[keepFrom, keepTo]`, and none before the series has a level to draw from in their place.
+	 */
+	public evictable(keepFrom: number, keepTo: number, out: MarksChunk[]): void {
+		const raw = this._levels[0]!;
+		if (this.levels === 0 || raw.count === 0) {
+			return;
+		}
+		const first = Math.floor((raw.first + 8) / this._chunkColumns) + 1;
+		const last = Math.floor((raw.end - 9) / this._chunkColumns) - 1;
+		for (let n = Math.max(first, raw.firstChunk); n <= Math.min(last, raw.lastChunk); n++) {
+			if (raw.isEvicted(n)) {
+				continue;
+			}
+			const from = raw.timeAt(raw.chunkStart(n));
+			const to = raw.timeAt(raw.chunkEnd(n) - 1);
+			if (to >= keepFrom && from <= keepTo) {
+				continue;
+			}
+			const bytes = raw.chunkAt(n)!.cells.byteLength - MARKS_SUMMARY_BYTES;
+			out.push({ chunk: n, from, to, bytes });
+		}
+	}
+
+	private get _chunkColumns(): number {
+		return Math.max(1, Math.floor(CHUNK_CELLS / this._rows));
+	}
+
+	public evict(chunk: number): number {
+		return this._levels[0]!.evict(chunk);
+	}
+
+	public get evicted(): number {
+		return this._levels[0]!.evicted;
+	}
+
+	/** Chunks let go that hold columns of level `level` rows `[start, end)`; none above level 0. */
+	public missing(level: number, start: number, end: number, out: number[]): void {
+		if (level === 0) {
+			this._levels[0]!.missing(start, end, out);
+		}
+	}
+
+	public fetchRange(chunk: number): { from: number; to: number; count: number } | null {
+		const raw = this._levels[0]!;
+		if (!raw.isEvicted(chunk)) {
+			return null;
+		}
+		const start = raw.chunkStart(chunk);
+		const end = raw.chunkEnd(chunk);
+		return { from: raw.timeAt(start), to: raw.timeAt(end - 1), count: end - start };
+	}
+
+	/**
+	 * Gives chunk `chunk` its cells back from what a datafeed returned for its times: the columns of
+	 * those times, on the series' grid, each on the rows it had. Returns whether they were the
+	 * columns let go.
+	 */
+	public restore(chunk: number, data: MarksData): boolean {
+		const raw = this._levels[0]!;
+		const held = raw.chunkAt(chunk);
+		if (held === undefined || held.summary === null || !this._onGrid(data)) {
+			return false;
+		}
+		const start = raw.chunkStart(chunk);
+		const end = raw.chunkEnd(chunk);
+		const from = raw.timeAt(start);
+		const to = raw.timeAt(end - 1);
+		const rows = this._rows;
+		const cells = new Float32Array((end - start) * rows);
+		let column = start;
+		for (let i = 0; i < data.count; i++) {
+			const t = data.time[i]!;
+			if (t < from || t > to) {
+				continue;
+			}
+			const offset = data.offsets == null ? 0 : data.offsets[i]!;
+			if (
+				column >= end ||
+				t !== raw.timeAt(column) ||
+				offset !== raw.offsetAt(column) ||
+				(i + 1) * rows > data.values.length
+			) {
+				return false;
+			}
+			cells.set(data.values.subarray(i * rows, (i + 1) * rows), (column - start) * rows);
+			column++;
+		}
+		if (column !== end) {
+			return false;
+		}
+		const checksum = new Checksum();
+		for (const cell of cells) {
+			checksum.single(cell);
+		}
+		if (checksum.high !== held.summary.high || checksum.low !== held.summary.low) {
+			return false;
+		}
+		held.summary = null;
+		held.cells = cells;
+		raw.evicted--;
+		return true;
+	}
+
+	/**
+	 * Chunks let go that removing the columns of `[from, to]` would read or move: those on the
+	 * shorter side of them, and those of the buckets around the gap. Removing so many that no level
+	 * is left needs every chunk: a level made again later is made from all columns.
+	 */
+	public needs(from: number, to: number, out: number[]): void {
+		const raw = this._levels[0]!;
+		if (raw.evicted === 0 || !(from <= to) || raw.count === 0) {
+			return;
+		}
+		const a = raw.lowerBound(from);
+		const b = raw.upperBound(to);
+		if (b <= a) {
+			return;
+		}
+		if (raw.count - (b - a) <= HEATMAP_LEVEL_COLUMNS) {
+			raw.missing(raw.first, raw.end, out);
+			return;
+		}
+		if (a > raw.first && b < raw.end) {
+			if (a - raw.first <= raw.end - b) {
+				raw.missing(raw.first, a, out);
+			} else {
+				raw.missing(b, raw.end, out);
+			}
+		}
+		raw.missing(a - 8, a, out);
+		raw.missing(b, b + 8, out);
+	}
+
 	public first(level: number): number {
 		return this._levels[level]?.first ?? 0;
 	}
@@ -627,12 +870,12 @@ export class HeatmapStore implements MarksStore {
 	 * The level a view draws from: the coarsest that still has a column per device pixel over the
 	 * times asked for, and coarser ones while the cells are more than the client wants.
 	 */
-	public select(request: MarksRequest): MarksSelection {
+	public select(request: MarksRequest, minLevel = 0): MarksSelection {
 		const raw = this._levels[0]!;
 		// The column before the first time asked for reaches into it.
 		const start = Math.max(raw.first, raw.upperBound(request.from) - 1);
 		const end = Math.max(start, raw.upperBound(request.to));
-		let level = 0;
+		let level = Math.min(minLevel, this.levels);
 		if (end > start && request.step > 0) {
 			const from = Math.max(request.from, raw.timeAt(start));
 			const to = Math.min(request.to, raw.timeAt(end - 1));

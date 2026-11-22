@@ -1,5 +1,6 @@
 import { HeatRanges, HeatPan } from './heat-ranges';
-import type { EngineClient, HeatmapColumns, MarksUpdate } from '@lumen-charts/engine';
+import type { EngineClient, HeatmapColumns, MarksData, MarksUpdate } from '@lumen-charts/engine';
+import type { MarksDatafeed } from './fetches';
 import { DEFAULT_PRICE_SCALE_ID, definedOnly } from '../options';
 import type { PriceAxis, PriceScaleApi } from '../price-axes';
 import type { DrawTarget, PanePrimitive, PrimitiveHost, PrimitiveZOrder } from '../primitives';
@@ -92,9 +93,10 @@ export interface ScatterSeriesApi extends MarkSeriesApi<'scatter'> {
 	/**
 	 * Replaces the points. Times are UTC milliseconds; points are drawn in time order (an input out
 	 * of order is sorted), and several may share a time. A point without a finite time and price is
-	 * left out.
+	 * left out. `options.datafeed` replaces the series' datafeed (null for none) for the new points,
+	 * of another symbol say; left out, the datafeed stays.
 	 */
-	setData(data: ScatterData): void;
+	setData(data: ScatterData, options?: { datafeed?: MarksDatafeed<ScatterData> | null }): void;
 	/** Adds a point at or after the time of the last one; an earlier one is refused. */
 	update(point: ScatterPoint): void;
 	/** Adds points at or after the time of the last one, in time order: one message for all of them. */
@@ -116,8 +118,11 @@ export interface ScatterSeriesApi extends MarkSeriesApi<'scatter'> {
  * there are more columns than pixels.
  */
 export interface HeatmapSeriesApi extends MarkSeriesApi<'heatmap'> {
-	/** Replaces the columns and sets the price grid (see `HeatmapData`). Throws a RangeError for a grid that is not one. */
-	setData(data: HeatmapData): void;
+	/**
+	 * Replaces the columns and sets the price grid (see `HeatmapData`). Throws a RangeError for a grid
+	 * that is not one. `options.datafeed` replaces the series' datafeed, as for a scatter.
+	 */
+	setData(data: HeatmapData, options?: { datafeed?: MarksDatafeed<HeatmapData> | null }): void;
 	/**
 	 * Replaces the last column when `column.time` is its time, or adds a column after it; an earlier
 	 * time is refused. The column is on the grid of the last `setData`, which must have come first.
@@ -153,6 +158,8 @@ export interface MarkSeriesHost {
 	scaleChanged(series: MarkSeries): void;
 	/** Asks for the rows the last view needs, without waiting for the frame. */
 	request(series: MarkSeries): void;
+	/** Aborts the datafeed requests of the series: it has new data, or another datafeed. */
+	abortFetches(series: MarkSeries): void;
 	axisOf(series: MarkSeries): PriceAxis;
 	/** What the frame maps times with, and its version, which changes with the mapping. */
 	readonly map: TimeMap;
@@ -185,6 +192,10 @@ export abstract class MarkSeries {
 	public readonly engineId: number;
 	public seriesOptions: AnyMarkOptions;
 	public readonly window = new MarksWindow();
+	/** Where marks the engine let go under the memory limit are fetched again; null: none are let go. */
+	public datafeed: MarksDatafeed<unknown> | null;
+	/** Pause after the last failed datafeed request, which doubles with every failure in a row. */
+	public fetchBackoff = 0;
 	public readonly surface: CanvasMarkBackend;
 	private readonly _gpu = new MarkGpuClient();
 	private readonly _gl: GlMarkClient;
@@ -236,6 +247,7 @@ export abstract class MarkSeries {
 		options: Partial<AnyMarkOptions>,
 		zOrder: PrimitiveZOrder,
 		zIndex: number,
+		datafeed: MarksDatafeed<unknown> | null,
 	) {
 		this._host = host;
 		this.id = id;
@@ -254,7 +266,8 @@ export abstract class MarkSeries {
 		this._palette = checkOptions(merged);
 		this._paletteOptions = merged;
 		this.seriesOptions = merged;
-		this.engineId = host.engine()?.addMarks(type) ?? -1;
+		this.datafeed = datafeed;
+		this.engineId = host.engine()?.addMarks(type, datafeed !== null) ?? -1;
 		this.surface = new CanvasMarkBackend(host.document());
 		this._gl = new GlMarkClient(host.document(), this._invalidateBackend);
 	}
@@ -343,6 +356,28 @@ export abstract class MarkSeries {
 	/** The data was replaced: the rows held are drawn until the new ones are here, asked for at once. */
 	protected _replaced(): void {
 		this.window.invalidate();
+		this._host.request(this);
+	}
+
+	/** Sends new data, with the datafeed `options` names if it names one. */
+	protected _set(data: MarksData, options: { datafeed?: MarksDatafeed<unknown> | null } | undefined): void {
+		let fetchable: boolean | undefined;
+		if (options !== undefined && 'datafeed' in options) {
+			this.datafeed = options.datafeed ?? null;
+			fetchable = this.datafeed !== null;
+			this._host.abortFetches(this);
+		}
+		this.fetchBackoff = 0;
+		this._host.engine()?.changeMarks(this.engineId, { op: 'set', data, fetchable });
+		this._replaced();
+	}
+
+	/** Packs what the datafeed returned as marks for the engine; throws for input it cannot read. */
+	public abstract packFetched(data: unknown): MarksData;
+
+	/** After a failed fetch: the view is asked for again, which asks for the marks again. */
+	public retry(): void {
+		this.window.retry();
 		this._host.request(this);
 	}
 
@@ -680,20 +715,27 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 	private _colorOptions: ScatterOptions | null = null;
 	private _colorPixel = 0;
 
-	public constructor(host: MarkSeriesHost, id: string, options: Partial<ScatterOptions>) {
+	public constructor(
+		host: MarkSeriesHost,
+		id: string,
+		options: Partial<ScatterOptions>,
+		datafeed: MarksDatafeed<ScatterData> | null = null,
+	) {
 		// In the drawings layer, above the series; below the drawings and the primitives of the
 		// application, whose `zIndex` is 0 unless they say otherwise.
-		super(host, id, 'scatter', options, 'normal', -1);
+		super(host, id, 'scatter', options, 'normal', -1, datafeed as MarksDatafeed<unknown> | null);
 	}
 
 	public override options(): Readonly<ScatterOptions> {
 		return this.seriesOptions as ScatterOptions;
 	}
 
-	public setData(data: ScatterData): void {
-		const rows = packScatter(data);
-		this._host.engine()?.changeMarks(this.engineId, { op: 'set', data: rows });
-		this._replaced();
+	public setData(data: ScatterData, options?: { datafeed?: MarksDatafeed<ScatterData> | null }): void {
+		this._set(packScatter(data), options as { datafeed?: MarksDatafeed<unknown> | null } | undefined);
+	}
+
+	public packFetched(data: unknown): MarksData {
+		return packScatter(data as ScatterData);
 	}
 
 	public update(point: ScatterPoint): void {
@@ -856,20 +898,33 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 	private readonly _scratch = new HeatmapScratch();
 	private readonly _span = { low: 0, high: 0 };
 
-	public constructor(host: MarkSeriesHost, id: string, options: Partial<HeatmapOptions>) {
+	public constructor(
+		host: MarkSeriesHost,
+		id: string,
+		options: Partial<HeatmapOptions>,
+		datafeed: MarksDatafeed<HeatmapData> | null = null,
+	) {
 		// In the series layer, below the series.
-		super(host, id, 'heatmap', options, 'bottom', 0);
+		super(host, id, 'heatmap', options, 'bottom', 0, datafeed as MarksDatafeed<unknown> | null);
 	}
 
 	public override options(): Readonly<HeatmapOptions> {
 		return this.seriesOptions;
 	}
 
-	public setData(data: HeatmapData): void {
+	public setData(data: HeatmapData, options?: { datafeed?: MarksDatafeed<HeatmapData> | null }): void {
 		const columns = packHeatmap(data);
 		this._grid = { rows: columns.rows, priceStart: columns.priceStart, priceStep: columns.priceStep };
-		this._host.engine()?.changeMarks(this.engineId, { op: 'set', data: columns });
-		this._replaced();
+		this._set(columns, options as { datafeed?: MarksDatafeed<unknown> | null } | undefined);
+	}
+
+	public packFetched(data: unknown): MarksData {
+		const columns = data as HeatmapData;
+		const grid = this._grid;
+		if (grid === null || columns.rows !== grid.rows || columns.priceStep !== grid.priceStep) {
+			throw new RangeError('lumen-charts: a heatmap datafeed returned columns on another grid');
+		}
+		return packHeatmap(columns, grid);
 	}
 
 	/** Columns on the series' grid, packed; throws for a grid that is another or none. */

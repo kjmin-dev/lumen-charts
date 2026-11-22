@@ -142,6 +142,27 @@ export interface MarksUpdate {
 	lengths: Int32Array;
 }
 
+/**
+ * Marks of a series with a datafeed that the engine let go under its memory limit and needs again:
+ * those with times in `[from, to]` (UTC milliseconds, inclusive), `count` of them, in time order.
+ */
+export interface MarksFetchRequest {
+	/** Unique for the engine's lifetime; the marks are handed back under it, and `marksCancel` names it. */
+	id: number;
+	series: number;
+	from: number;
+	to: number;
+	count: number;
+}
+
+/** What became of marks handed back with a `marksRows` command. */
+export interface MarksRestoreResult {
+	request: number;
+	series: number;
+	/** `restored`: the marks are back; `failed`: fetching failed; `mismatch`: they were not the ones let go. */
+	outcome: 'restored' | 'failed' | 'mismatch';
+}
+
 /** A level and rows of it, as a store picks them for a request. */
 export interface MarksSelection {
 	level: number;
@@ -165,7 +186,33 @@ export interface MarksStore {
 	/** First row of `level` changed since `clearChanges`, or Infinity. */
 	changedFrom(level: number): number;
 	clearChanges(): void;
-	select(request: MarksRequest): MarksSelection;
+	/** The level and rows a view needs; `minLevel` keeps finer levels out. */
+	select(request: MarksRequest, minLevel?: number): MarksSelection;
 	/** Copies rows `[start, end)` of `level` into `update`, with what describes the level. */
 	read(level: number, start: number, end: number, update: MarksUpdate): void;
+
+	// Memory: chunks of level 0 let go under the memory limit and fetched back.
+
+	/** Chunks let go so far. */
+	readonly evicted: number;
+	/** Chunks that may be let go now, none with marks in `[keepFrom, keepTo]`. */
+	evictable(keepFrom: number, keepTo: number, out: MarksChunk[]): void;
+	/** Lets go of a chunk; returns the bytes freed. */
+	evict(chunk: number): number;
+	/** Chunks let go that hold rows `[start, end)` of `level`. */
+	missing(level: number, start: number, end: number, out: number[]): void;
+	/** Chunks let go that removing the marks of `[from, to]` reads or moves. */
+	needs(from: number, to: number, out: number[]): void;
+	/** The times to fetch a chunk let go by, and its marks; null for a chunk held. */
+	fetchRange(chunk: number): { from: number; to: number; count: number } | null;
+	/** Gives a chunk its marks back from what a datafeed returned; false when they are not those let go. */
+	restore(chunk: number, data: MarksData): boolean;
+}
+
+/** A chunk of level 0 that could be let go: its number, the times it spans and the bytes it would free. */
+export interface MarksChunk {
+	chunk: number;
+	from: number;
+	to: number;
+	bytes: number;
 }

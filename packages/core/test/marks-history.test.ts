@@ -1,4 +1,4 @@
-import type { HeatmapSeriesApi, PanePrimitive, PaneView, ScatterSeriesApi } from '@lumen-charts/core';
+import type { HeatmapOptions, HeatmapSeriesApi, PanePrimitive, PaneView, ScatterSeriesApi } from '@lumen-charts/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeWorker } from '../../engine/test/fake-worker';
 import { MINUTE, TestChart, candles } from './drawing-helpers';
@@ -88,7 +88,7 @@ function book(columns: number, rows: number, first = 100) {
 /** A chart of candles with one heatmap of `data`, the view on bars 90 to 260. */
 async function draw(
 	data: ReturnType<typeof book>['fixed'] | ReturnType<typeof book>['following'],
-	options: Parameters<Chart['chart']['addSeries']>[1] = {},
+	options: Partial<HeatmapOptions> = {},
 ): Promise<{ t: Chart; heat: HeatmapSeriesApi }> {
 	const t = new Chart();
 	t.chart.addSeries('candlestick').setData(candles(300));
@@ -289,4 +289,108 @@ describe('older marks, and marks removed', () => {
 			expect(removed.pixels).toEqual(kept.pixels);
 		});
 	}
+});
+
+/** Trades every second for `count` points, at bars a minute apart. */
+function history(count: number) {
+	const time = new Float64Array(count);
+	const price = new Float64Array(count);
+	const value = new Float32Array(count);
+	for (let i = 0; i < count; i++) {
+		time[i] = i * 1000;
+		price[i] = 100 + Math.sin(i / 3000) * 4 + ((i * 7) % 11) * 0.01;
+		value[i] = (i * 13) % 50;
+	}
+	return { time, price, value };
+}
+
+/** The points of `data` with times in `[from, to]`, as a datafeed returns them. */
+function slice(data: ReturnType<typeof history>, from: number, to: number) {
+	const first = data.time.findIndex(t => t >= from);
+	let end = first;
+	while (end < data.time.length && data.time[end]! <= to) {
+		end++;
+	}
+	return {
+		time: data.time.slice(first, end),
+		price: data.price.slice(first, end),
+		value: data.value.slice(first, end),
+	};
+}
+
+type ScatterColumnsData = ReturnType<typeof slice>;
+
+/**
+ * A chart whose scatter of 400,000 points is viewed at its end, then zoomed into older points:
+ * under `limit` with `getMarks` as its datafeed, those points were let go and are fetched back.
+ */
+async function zoomed(
+	limit: number,
+	getMarks: ((from: number, to: number) => Promise<ScatterColumnsData>) | null,
+): Promise<{ pixels: Uint32Array; level: number; calls: number; warnings: string[] }> {
+	vi.stubGlobal('ImageData', FakeImageData);
+	const t = new Chart({ memoryLimit: limit });
+	// The chart's own `destroy` restores every mock: the warnings are read before it.
+	const warnings: string[] = [];
+	vi.spyOn(console, 'warn').mockImplementation((message: string) => {
+		warnings.push(message);
+	});
+	try {
+		const data = history(400_000);
+		t.chart.addSeries('candlestick').setData(candles(7000));
+		let calls = 0;
+		const datafeed =
+			getMarks === null
+				? undefined
+				: {
+						getMarks: ({ from, to }: { from: number; to: number }) => {
+							calls++;
+							return getMarks(from, to);
+						},
+					};
+		const series = t.chart.addSeries('scatter', { autoscale: false, datafeed });
+		series.setData(data);
+		// The newest points in view: the older ones go.
+		t.chart.timeScale().setVisibleLogicalRange({ from: 6600, to: 6680 });
+		await t.settle();
+		// Into points that were let go.
+		t.chart.timeScale().setVisibleLogicalRange({ from: 2500, to: 2540 });
+		await t.settle();
+		return { pixels: t.pixels(), level: series.drawn().level, calls, warnings };
+	} finally {
+		t.destroy();
+	}
+}
+
+describe('marks fetched again from a datafeed under the memory limit', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		vi.useRealTimers();
+	});
+
+	it('draws a view of marks let go from a level, then from the marks fetched back', async () => {
+		const data = history(400_000);
+		const reference = await zoomed(Infinity, null);
+		expect(reference.level).toBe(0);
+		expect(reference.calls).toBe(0);
+		const fetched = await zoomed(1, (from, to) => Promise.resolve(slice(data, from, to)));
+		expect(fetched.calls).toBeGreaterThan(0);
+		expect(fetched.level).toBe(0);
+		expect(fetched.pixels).toEqual(reference.pixels);
+	});
+
+	it('keeps drawing from a level while the datafeed fails, warns of marks that differ, and asks again later', async () => {
+		const data = history(400_000);
+		const failing = await zoomed(1, () => Promise.reject(new Error('offline')));
+		expect(failing.calls).toBeGreaterThan(0);
+		expect(failing.level).toBeGreaterThan(0);
+		expect(failing.warnings).toEqual([]);
+		const wrong = await zoomed(1, (from, to) => {
+			const marks = slice(data, from, to);
+			marks.price[3] = marks.price[3]! + 1;
+			return Promise.resolve(marks);
+		});
+		expect(wrong.level).toBeGreaterThan(0);
+		expect(wrong.warnings).toEqual([expect.stringContaining('do not match')]);
+	});
 });

@@ -108,6 +108,9 @@ export { HEATMAP_LEVEL_COLUMNS, HeatmapStore } from './marks/heatmap-store';
 export type {
 	HeatmapColumns,
 	MarksChange,
+	MarksChunk,
+	MarksFetchRequest,
+	MarksRestoreResult,
 	MarksData,
 	MarksKind,
 	MarksRequest,

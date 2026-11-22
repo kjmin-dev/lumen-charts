@@ -1,5 +1,12 @@
 import type { IndicatorInfo } from './indicators/definition';
-import type { MarksChange, MarksRequest, MarksUpdate } from './marks/protocol';
+import type {
+	MarksChange,
+	MarksData,
+	MarksFetchRequest,
+	MarksRequest,
+	MarksRestoreResult,
+	MarksUpdate,
+} from './marks/protocol';
 
 /** Kind of a series store: OHLCV keeps six columns, a line keeps time and one value. */
 export type SeriesKind = 'ohlcv' | 'line';
@@ -150,7 +157,12 @@ type EngineOperation =
 	/** Adds, removes or changes a marks series (a scatter or a heatmap; see `marks/protocol.ts`). */
 	| { type: 'marks'; seq: number; series: number; change: MarksChange }
 	/** Rows of a marks series for a view, answered in the event's `marks`. Reads only. */
-	| { type: 'marksWindow'; seq: number; series: number; request: MarksRequest };
+	| { type: 'marksWindow'; seq: number; series: number; request: MarksRequest }
+	/**
+	 * Marks fetched again for the `MarksFetchRequest` with id `request`, or null when fetching
+	 * failed. The outcome comes in the event's `marksRestored`.
+	 */
+	| { type: 'marksRows'; seq: number; request: number; data: MarksData | null };
 
 /**
  * Where times fall on the main timeline, as of the event that carries it.
@@ -460,6 +472,12 @@ export interface EngineEvent {
 	resolved?: TimelineResolution;
 	/** Rows of marks series: the answer to a `marksWindow` command, or what an append changed in the window sent last. */
 	marks?: MarksUpdate[];
+	/** Marks of series with a datafeed that the engine let go and needs again. */
+	marksFetch?: MarksFetchRequest[];
+	/** Ids of marks fetch requests no longer needed. */
+	marksCancel?: number[];
+	/** Outcome of the marks handed back by the command this event answers. */
+	marksRestored?: MarksRestoreResult;
 }
 
 /** First message a worker host sends, before any event. */
