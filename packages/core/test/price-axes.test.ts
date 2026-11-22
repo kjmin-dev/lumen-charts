@@ -818,16 +818,19 @@ describe('price axes', () => {
 			expect(axisTexts().filter(text => text === '100.0')).toHaveLength(2);
 			expect(axisTexts().filter(text => text === '100.000')).toHaveLength(1);
 
-			// Above the pane, a value is out of reach however near: the one in the pane is taken.
+			// Above the pane, a value is out of reach however near: the one in the pane is taken. The
+			// overlay draws only what changed, so the calls are those of both frames: the data's, with
+			// the crosshair where it was, and the pointer's, near the value above the pane.
+			clearCalls();
 			second.setData(line(100, () => 230));
 			first.setData(line(100, () => 185));
 			await settle();
 			expect(second.priceToCoordinate(230)!).toBeLessThan(0);
-			clearCalls();
 			pointer(canvases()[0]!, 'pointermove', at(50), 2);
 			await settle();
 			// The value label of the first series, and the crosshair's on its value.
 			expect(axisTexts().filter(text => text === '185.0')).toHaveLength(2);
+			expect(axisTexts()).not.toContain('230.000');
 		});
 
 		it('snaps within the pane under the pointer only', async () => {
