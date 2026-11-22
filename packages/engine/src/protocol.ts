@@ -500,6 +500,10 @@ export function transferables(event: EngineEvent): ArrayBuffer[] {
 			add(update.time.buffer as ArrayBuffer);
 			add(update.price.buffer as ArrayBuffer);
 			add(update.values.buffer as ArrayBuffer);
+			add(update.counts.buffer as ArrayBuffer);
+			add(update.sizes.buffer as ArrayBuffer);
+			add(update.offsets.buffer as ArrayBuffer);
+			add(update.lengths.buffer as ArrayBuffer);
 		}
 	}
 	return list;

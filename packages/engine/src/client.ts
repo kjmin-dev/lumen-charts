@@ -297,21 +297,27 @@ export class EngineClient {
 	}
 
 	/**
-	 * Changes a marks series: `set` or `append` hand their typed arrays over to the engine (do not
-	 * use them afterwards), `remove` lets the series go. Returns the command's `seq`.
+	 * Changes a marks series: `set`, `append` and `prepend` hand their typed arrays over to the engine
+	 * (do not use them afterwards), `delete` removes the rows of a range of times, `remove` lets the
+	 * series go. Returns the command's `seq`.
 	 */
 	public changeMarks(series: number, change: MarksChange): number {
 		const transfer: ArrayBuffer[] = [];
-		if (change.op === 'set' || change.op === 'append') {
+		const add = (array: { buffer: ArrayBufferLike } | null | undefined): void => {
+			if (array != null && !transfer.includes(array.buffer as ArrayBuffer)) {
+				transfer.push(array.buffer as ArrayBuffer);
+			}
+		};
+		if (change.op === 'set' || change.op === 'append' || change.op === 'prepend') {
 			const data = change.data;
-			transfer.push(data.time.buffer as ArrayBuffer);
+			add(data.time);
 			if (data.kind === 'heatmap') {
-				transfer.push(data.values.buffer as ArrayBuffer);
+				add(data.values);
+				add(data.offsets);
 			} else {
-				transfer.push(data.price.buffer as ArrayBuffer);
-				if (data.value !== null) {
-					transfer.push(data.value.buffer as ArrayBuffer);
-				}
+				add(data.price);
+				add(data.value);
+				add(data.size);
 			}
 		}
 		return this._send({ type: 'marks', series, change }, transfer);

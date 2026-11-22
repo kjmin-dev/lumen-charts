@@ -1,5 +1,5 @@
 import { HeatRanges, HeatPan } from './heat-ranges';
-import type { EngineClient, MarksUpdate } from '@lumen-charts/engine';
+import type { EngineClient, HeatmapColumns, MarksUpdate } from '@lumen-charts/engine';
 import { DEFAULT_PRICE_SCALE_ID, definedOnly } from '../options';
 import type { PriceAxis, PriceScaleApi } from '../price-axes';
 import type { DrawTarget, PanePrimitive, PrimitiveHost, PrimitiveZOrder } from '../primitives';
@@ -98,6 +98,14 @@ export interface ScatterSeriesApi extends MarkSeriesApi<'scatter'> {
 	update(point: ScatterPoint): void;
 	/** Adds points at or after the time of the last one, in time order: one message for all of them. */
 	append(data: ScatterData): void;
+	/**
+	 * Adds older points, at or before the time of the first one; a later one is refused. They are
+	 * drawn before (under) the points there are. The points held keep their place, so a view of the
+	 * newest points does not wait for them.
+	 */
+	prepend(data: ScatterData): void;
+	/** Removes the points with times in `[from, to]` (UTC milliseconds, inclusive). */
+	removeMarks(range: { from: number; to: number }): void;
 }
 
 /**
@@ -116,6 +124,13 @@ export interface HeatmapSeriesApi extends MarkSeriesApi<'heatmap'> {
 	update(column: HeatmapColumn): void;
 	/** Adds columns after the last one, on the grid the series has (`data`'s must be the same). */
 	append(data: HeatmapData): void;
+	/**
+	 * Adds older columns, before the first one and in time order, on the grid the series has; a column
+	 * at or after the first column's time is refused.
+	 */
+	prepend(data: HeatmapData): void;
+	/** Removes the columns with times in `[from, to]` (UTC milliseconds, inclusive). */
+	removeMarks(range: { from: number; to: number }): void;
 	/**
 	 * The value of the cell at a time and a price, from the columns held around the view at the level
 	 * of detail drawn (so at a wide view, the highest of the columns merged there). Null outside the
@@ -311,8 +326,13 @@ export abstract class MarkSeries {
 
 	// Data
 
-	/** Rows from the engine: a window, or the rows an append changed. */
+	/** Rows from the engine: a window, the rows an append changed, or a notice to ask again. */
 	public receive(update: MarksUpdate): void {
+		if (update.notice === true) {
+			this.window.notice(update);
+			this._host.request(this);
+			return;
+		}
 		if (this.window.apply(update)) {
 			if (this.type !== 'heatmap') this._primitiveHost?.requestUpdate();
 			this._host.rowsChanged(this);
@@ -620,6 +640,15 @@ export abstract class MarkSeries {
 	protected abstract _drawRows(map: TimeMap, from: number, to: number, box: PixelBox): void;
 }
 
+/** Asks the engine to remove the marks of a range of times; throws a RangeError for a range that is not one. */
+function removeMarks(host: MarkSeriesHost, engineId: number, range: { from: number; to: number }): void {
+	const { from, to } = range;
+	if (typeof from !== 'number' || typeof to !== 'number' || Number.isNaN(from) || Number.isNaN(to) || from > to) {
+		throw new RangeError('lumen-charts: removeMarks needs a range of times with `from` at or before `to`');
+	}
+	host.engine()?.changeMarks(engineId, { op: 'delete', from, to });
+}
+
 /** The color table of options that are sound; throws a RangeError for those that are not. */
 export function checkOptions(options: AnyMarkOptions, palette = buildPalette(options.palette)): Uint32Array {
 	if ('color' in options && parseColor(options.color) === null) {
@@ -670,6 +699,17 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 		if (rows.count > 0) {
 			this._host.engine()?.changeMarks(this.engineId, { op: 'append', data: rows });
 		}
+	}
+
+	public prepend(data: ScatterData): void {
+		const rows = packScatter(data);
+		if (rows.count > 0) {
+			this._host.engine()?.changeMarks(this.engineId, { op: 'prepend', data: rows });
+		}
+	}
+
+	public removeMarks(range: { from: number; to: number }): void {
+		removeMarks(this._host, this.engineId, range);
 	}
 
 	private _size(pixelRatio: number): number {
@@ -825,6 +865,28 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		this._replaced();
 	}
 
+	/** Columns on the series' grid, packed; throws for a grid that is another or none. */
+	private _onGrid(data: HeatmapData, op: string): HeatmapColumns {
+		const grid = this._grid;
+		if (grid === null || data.rows !== grid.rows || data.priceStep !== grid.priceStep) {
+			throw new Error(
+				`lumen-charts: columns given to a heatmap's \`${op}\` must be on the grid of its last \`setData\``,
+			);
+		}
+		return packHeatmap(data, grid);
+	}
+
+	public prepend(data: HeatmapData): void {
+		const columns = this._onGrid(data, 'prepend');
+		if (columns.count > 0) {
+			this._host.engine()?.changeMarks(this.engineId, { op: 'prepend', data: columns });
+		}
+	}
+
+	public removeMarks(range: { from: number; to: number }): void {
+		removeMarks(this._host, this.engineId, range);
+	}
+
 	public update(column: HeatmapColumn): void {
 		if (this._grid === null) {
 			throw new Error('lumen-charts: a heatmap gets its price grid from `setData`, which must come before `update`');
@@ -833,16 +895,7 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 	}
 
 	public append(data: HeatmapData): void {
-		const grid = this._grid;
-		const columns = packHeatmap(data);
-		if (
-			grid === null ||
-			columns.rows !== grid.rows ||
-			columns.priceStart !== grid.priceStart ||
-			columns.priceStep !== grid.priceStep
-		) {
-			throw new Error('lumen-charts: columns appended to a heatmap must be on the grid of its last `setData`');
-		}
+		const columns = this._onGrid(data, 'append');
 		if (columns.count > 0) {
 			this._host.engine()?.changeMarks(this.engineId, { op: 'append', data: columns });
 		}

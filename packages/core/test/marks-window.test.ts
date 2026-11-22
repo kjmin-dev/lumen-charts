@@ -11,6 +11,7 @@ function update(fields: Partial<MarksUpdate> & { time?: Float64Array }): MarksUp
 		level: 0,
 		start: 0,
 		count: time.length,
+		first: 0,
 		total: time.length,
 		timeStep: 0,
 		priceStep: 0,
@@ -20,6 +21,10 @@ function update(fields: Partial<MarksUpdate> & { time?: Float64Array }): MarksUp
 		valueMax: Number.NaN,
 		price: rows === 1 && fields.price === undefined ? time.map(t => t / 10) : new Float64Array(0),
 		values: new Float32Array(time.length * rows),
+		counts: new Float32Array(0),
+		sizes: new Float32Array(0),
+		offsets: new Int32Array(0),
+		lengths: new Int32Array(0),
 		...fields,
 		time,
 	};
