@@ -36,7 +36,7 @@ Every other difference changes sign between runs or between devices. The 300k-po
 
 Rule to adopt now: `auto` = WebGL2, as today. Revisit with a mid-range Android device, an x86 machine with a discrete GPU and a WebGL2 append patch in place; until then, applications that measure a benefit on their own target can still request `webgpu` explicitly.
 
-The WebGL2 append patch is now in place ([GPU mark renderer gaps](mark-gpu-device-gaps.md#webgl2-scatter-append)): on the M1 the 1M-point append takes 0.280 ms of frame JS at p95 with WebGL2 (three runs, 0.265–0.455), against 1.07 ms before, and does the same work as the Canvas 2D and WebGPU patches. That removes the one place where the M1 table above favored WebGPU without a cadence cost only because of WebGL2's append; the phone's numbers, and with them the rule, await a run on the device.
+The WebGL2 append patch is now in place ([GPU mark renderer gaps](mark-gpu-device-gaps.md#webgl2-scatter-append)): on the M1 the 1M-point append takes 0.280 ms of frame JS at p95 with WebGL2 (three runs, 0.265–0.455), against 1.07 ms before, and does the same work as the Canvas 2D and WebGPU patches. That removes the one place where the M1 table above favored WebGPU without a cadence cost only because of WebGL2's append. WebGL2 also draws scatter points as sprites now, which cut the GPU draw of the 1M-point zoom from 20.2 to 4.87 ms at p50 on the M1 and brought that zoom back to every display frame there. The phone's numbers, and with them the rule, await a run on the device.
 
 ## Raw runs
 

@@ -239,7 +239,7 @@ export class GlContext {
 	 * or instances of a four-corner quad.
 	 *
 	 * The sprites are drawn without instancing: on the M1 (ANGLE on Metal), a million instances of one
-	 * vertex took twice as long as a million instanced quads, and a million vertices a third of it.
+	 * vertex took twice as long as a million instanced quads, and a million vertices a quarter of it.
 	 * The corner attribute stays bound for the quads, read once per instance (a divisor of 1) so that
 	 * a draw of more vertices than its buffer holds is valid.
 	 */
