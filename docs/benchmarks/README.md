@@ -102,3 +102,4 @@ The JSON files beside each document are the runs its numbers come from.
 - [WebGL2 heatmap](webgl2-heatmap.md) measures shift-and-mask word lookups and palette-slot heatmaps for a fixed value range, with WebGL2 GPU timer queries.
 - [WebGPU workload specialization](webgpu-workload-specialization.md) prototypes a single-pass column kernel for large scatter squares, packed palette slots for heatmaps and projection of only the visible scatter rows, against the shipping WebGPU paths.
 - [WebGPU specialized paths](webgpu-specialized-paths.md) measures the integrated large-square kernel, visible-row scatter projection and heatmap palette slots against `main`, with the 1M cloud A/B of the projection change.
+- [mark-history.md](mark-history.md): what prepending, removing, letting go and fetching back marks, and indicators over them, cost in the engine, and byte-for-byte checks of heatmaps whose grid follows the price in three browsers.

@@ -32,7 +32,9 @@ default; `anchor` in milliseconds, 0 for never), `highest` and `lowest`. An inpu
 the source by default (`close`, or `high`, `low`, `close` for ATR and Stochastic); pass
 `inputs: ['high']`, `inputs: [{ series: other, column: 'close' }]` or `inputs: [someIndicator.output()]`
 to read something else. Missing bars and the warm-up read as gaps (NaN). Values are deterministic:
-incremental updates give the same bits as a full computation.
+incremental updates give the same bits as a full computation. An input can also read trades or a
+book per bar, `inputs: [{ series: trades, column: 'count' }]`: see
+[indicators over marks](heatmap-scatter.md#indicators-over-marks).
 
 A histogram series is also available for your own data, for example volume:
 `chart.addSeries('histogram', { color: '#26a69a', negativeColor: '#ef5350', base: 0 })`.

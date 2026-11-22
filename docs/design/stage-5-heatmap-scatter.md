@@ -77,6 +77,7 @@ them a mark series. Everything else of the architecture holds for them as it doe
   renderer merges cells that share a pixel row.
 - Not built: a grid that follows the price (a first row per column). A book over a long history
   needs the whole price range in its grid, at 4 bytes a cell.
+  - Built after stage 5: [a grid that follows the price](stage-5-mark-history.md#45-heatmap-store-as-built-after-stage-5).
 
 ### 4.6 Window of a mark series (as built in stage 5)
 
@@ -161,6 +162,7 @@ allow, is what the WebGL2 layer of section 6 is for.
   renderers.
 - Not built: a datafeed for marks (history on demand), `prepend`, removing marks, indicators over
   them, and a chart whose timeline comes from a mark series (it needs a series with bars).
+  - Built after stage 5: all of them, in [the stage 5 follow-ups for marks](stage-5-mark-history.md#8-external-contract-and-scope).
 
 ## 9. Stages and measurement gates
 
