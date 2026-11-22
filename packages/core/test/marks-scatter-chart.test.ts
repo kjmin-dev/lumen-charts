@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GpuBackend } from '../src/marks/backend';
 import type { acquire } from '../src/marks/gpu/device';
 import { densityColorFragment, densityFragment, reduceFragment, scatterFragment } from '../src/marks/gl/shaders';
-import { buildPalette, paletteIndex, setValueMapping } from '../src/marks/palette';
+import { buildPalette, paletteIndex, parseColor, setValueMapping } from '../src/marks/palette';
 import { DensityScale } from '../src/marks/scatter-style';
 import { type Call, MINUTE, TestChart, candles } from './drawing-helpers';
 import { FakeWebGl } from './fake-webgl';
@@ -459,5 +459,107 @@ describe('scatter sizes and densities on WebGL2 and WebGPU', () => {
 			Reflect.deleteProperty(window.navigator, 'gpu');
 			pool.acquire.mockReset();
 		}
+	});
+});
+
+describe('scatter appends on WebGL2', () => {
+	let t: ScatterChart;
+
+	beforeEach(async () => {
+		t = new ScatterChart('webgl2');
+		t.chart.addSeries('candlestick', { id: 'bars' }).setData(candles(200));
+		await t.settle();
+	});
+
+	afterEach(() => {
+		t.destroy();
+	});
+
+	/** Calls on the image the WebGL2 layer retains: the canvas it copies the GL canvas into. */
+	function retained(): Call[] {
+		const gl = t.gl!.canvas;
+		for (const canvas of t.recorders.keys()) {
+			const calls = t.calls(canvas);
+			if (calls.some(call => call.name === 'drawImage' && call.args[0] === gl)) return calls;
+		}
+		throw new Error('No retained image');
+	}
+
+	it('writes appended opaque points into the retained image, and uploads their records with the next draw', async () => {
+		const scatter = t.chart.addSeries('scatter', {
+			pointSize: 3,
+			palette: 'heat',
+			valueMin: 0,
+			valueMax: 10,
+			color: '#102030',
+		});
+		scatter.setData([valued(150, 10), plain(155)]);
+		await t.settle();
+		expect(scatter.renderer()).toMatchObject({ effective: 'webgl2', reason: null });
+		const gl = t.gl!;
+		gl.draws.length = 0;
+		gl.uploads.length = 0;
+		const image = retained();
+		image.length = 0;
+
+		// A point without a value and one at the top of the palette: opaque, written as squares.
+		scatter.update(plain(160));
+		scatter.update(valued(161, 10));
+		await t.settle();
+		expect(gl.draws).toEqual([]);
+		expect(gl.uploads).toEqual([]);
+		const top = buildPalette('heat')[255]!;
+		const red = `rgb(${top & 255},${(top >>> 8) & 255},${(top >>> 16) & 255})`;
+		const [x0, y0] = t.center(scatter, 160 * MINUTE, 100);
+		const [x1, y1] = t.center(scatter, 161 * MINUTE, 100);
+		expect(image.filter(call => call.name === 'fillRect').map(call => [...call.args, call.fillStyle])).toEqual([
+			[x0 - 1, y0 - 1, 3, 3, 'rgb(16,32,48)'],
+			[x1 - 1, y1 - 1, 3, 3, red],
+		]);
+
+		// A translucent point is drawn in WebGL2, with the records of the points before it.
+		scatter.update(valued(162, 0));
+		await t.settle();
+		expect(gl.draws.map(draw => draw.fragment)).toEqual([scatterFragment]);
+		const records = gl.bound(0)!.data;
+		const color = (row: number) => records[row * 2 + 1];
+		expect([color(2), color(3), color(4)]).toEqual([parseColor('#102030'), top, buildPalette('heat')[0]]);
+		expect(records[2 * 2]).toBe(y0);
+	});
+
+	it('writes the columns of a disc, and points of their own size', async () => {
+		const scatter = t.chart.addSeries('scatter', { pointSize: 5, shape: 'circle', color: '#102030' });
+		scatter.setData([at(150, 3), at(155)]);
+		await t.settle();
+		const image = retained();
+		image.length = 0;
+		t.gl!.draws.length = 0;
+		scatter.update(plain(160));
+		scatter.update({ ...plain(161), size: 2 });
+		await t.settle();
+		expect(t.gl!.draws).toEqual([]);
+		const [x, y] = t.center(scatter, 160 * MINUTE, 100);
+		const [x1, y1] = t.center(scatter, 161 * MINUTE, 100);
+		// The columns of a disc 5 pixels across (`makeStamp`), then a square of 2.
+		expect(image.filter(call => call.name === 'fillRect').map(call => call.args)).toEqual([
+			[x - 2, y - 1, 1, 3],
+			[x - 1, y - 2, 1, 5],
+			[x, y - 2, 1, 5],
+			[x + 1, y - 2, 1, 5],
+			[x + 2, y - 1, 1, 3],
+			[x1 - 1, y1 - 1, 2, 2],
+		]);
+	});
+
+	it('draws appended densities in WebGL2', async () => {
+		t.extensions = ['EXT_color_buffer_float', 'EXT_float_blend'];
+		const scatter = t.chart.addSeries('scatter', { colorBy: 'density' });
+		scatter.setData([at(150), at(155)]);
+		await t.settle();
+		const gl = t.gl!;
+		gl.draws.length = 0;
+		scatter.update(at(160));
+		await t.settle();
+		expect(gl.draws.some(draw => draw.fragment === densityFragment)).toBe(true);
 	});
 });

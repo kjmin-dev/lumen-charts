@@ -32,7 +32,8 @@ export class TimeMap {
 	public t1 = 0;
 	public x0 = 0;
 	public pace = 0;
-	private _segment = 0;
+	/** The knot `segment` or `time` loaded last: -1 before the first, -2 for none since `set`. */
+	private _segment = -2;
 
 	/**
 	 * Sets the map from a window of the main timeline: `times[offset + k]` is the time of item
@@ -89,6 +90,12 @@ export class TimeMap {
 	 * the stretch before the first knot or after the last. Times at or after `t1` are in a later one.
 	 */
 	public segment(time: number): void {
+		// Marks come in time order: most times are in the segment loaded last, which the search
+		// below would load again.
+		const k = this._segment;
+		if (k > -2 && (k < 0 ? time < this.t0 : time >= this.t0 && time < this.t1)) {
+			return;
+		}
 		const times = this.times;
 		const count = this.count;
 		if (count === 0) {
@@ -166,18 +173,31 @@ export class TimeMap {
 		if (count === 0) {
 			return Number.NaN;
 		}
-		// Last knot at or left of x.
-		let lo = 0;
-		let hi = count;
-		while (lo < hi) {
-			const mid = (lo + hi) >>> 1;
-			if (this.knotX(mid) <= x) {
-				lo = mid + 1;
-			} else {
-				hi = mid;
+		// Last knot at or left of x: that of the segment loaded last, or of the one after it, for
+		// positions taken from left to right; otherwise found by a search.
+		const k = this._segment;
+		if (k > -2 && this._holdsX(k, x)) {
+			// Loaded already.
+		} else if (k > -2 && k < count - 1 && this._holdsX(k + 1, x)) {
+			this._load(k + 1);
+		} else {
+			let lo = 0;
+			let hi = count;
+			while (lo < hi) {
+				const mid = (lo + hi) >>> 1;
+				if (this.knotX(mid) <= x) {
+					lo = mid + 1;
+				} else {
+					hi = mid;
+				}
 			}
+			this._load(lo - 1);
 		}
-		this._load(lo - 1);
 		return this.pace > 0 ? this.t0 + (x - this.x0) / this.pace : this.t0;
+	}
+
+	/** Whether knot `k` (-1 before the first) is the last at or left of `x`. */
+	private _holdsX(k: number, x: number): boolean {
+		return (k < 0 || this.knotX(k) <= x) && (k >= this.count - 1 || x < this.knotX(k + 1));
 	}
 }

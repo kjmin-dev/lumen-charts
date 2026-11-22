@@ -94,4 +94,38 @@ describe('TimeMap', () => {
 		expect(none.x(0)).toBeNaN();
 		expect(none.time(0)).toBeNaN();
 	});
+
+	it('loads the segment of a time or a position the same whatever it loaded before', () => {
+		// Duplicate times, a gap and buckets that start before the timeline: knots at the same x.
+		const times = Float64Array.from([3, 3, 4, 5, 9, 9, 9, 10, 400, 401, 402, 410], minute => minute * MINUTE);
+		const fresh = (): TimeMap => {
+			const map = new TimeMap();
+			map.set(times, 0, times.length, 0, 1, 5, 7, 3.5);
+			return map;
+		};
+		const walked = fresh();
+		const state = (map: TimeMap) => [map.t0, map.t1, map.x0, map.pace];
+		let seed = 7;
+		const random = (): number => {
+			seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+			return seed / 4294967296;
+		};
+		for (let i = 0; i < 2000; i++) {
+			const pick = random();
+			if (i % 2 === 0) {
+				// Knot times themselves, times between them and beyond both ends.
+				const time =
+					pick < 0.3 ? times[Math.floor(random() * times.length)]! : (random() * 430 - 10) * MINUTE;
+				walked.segment(time);
+				const map = fresh();
+				map.segment(time);
+				expect(state(walked)).toEqual(state(map));
+			} else {
+				const x = pick < 0.3 ? walked.knotX(Math.floor(random() * times.length)) : random() * 100 - 20;
+				const map = fresh();
+				expect(walked.time(x)).toBe(map.time(x));
+				expect(state(walked)).toEqual(state(map));
+			}
+		}
+	});
 });
