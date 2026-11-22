@@ -8,7 +8,7 @@ import type * as render from '../src/marks/render';
 import { quantize } from '../src/marks/render';
 import { AUTO_SLOTS_CELLS, AUTO_SLOTS_DRAWS } from '../src/marks/series';
 import { canvasPixelsInUse } from '../src/shared/canvas-budget';
-import { MINUTE, TestChart, candles } from './drawing-helpers';
+import { type Call, MINUTE, TestChart, candles } from './drawing-helpers';
 import { FakeWebGl } from './fake-webgl';
 
 vi.mock('../src/marks/render', async importOriginal => {
@@ -48,9 +48,24 @@ class GlChart extends TestChart {
 		const canvas2d = getContext.getMockImplementation()!;
 		const created = (gl: FakeWebGl): FakeWebGl => (this.gl = gl);
 		getContext.mockImplementation(function (this: HTMLCanvasElement, kind: string, ...rest: unknown[]) {
-			if (kind !== 'webgl2') return (canvas2d as (...args: unknown[]) => unknown).call(this, kind, ...rest);
+			if (kind !== 'webgl2') {
+				const context = (canvas2d as (...args: unknown[]) => object | null).call(this, kind, ...rest);
+				// The WebGL2 layer reads the size of its retained image from its context's canvas.
+				if (context !== null && !('canvas' in context)) Object.assign(context, { canvas: this });
+				return context;
+			}
 			return created(new FakeWebGl(this));
 		} as unknown as HTMLCanvasElement['getContext']);
+	}
+
+	/** Calls on the image the WebGL2 layer retains: the canvas it copies the GL canvas into. */
+	public retained(): { canvas: HTMLCanvasElement; calls: Call[] } {
+		const gl = this.gl!.canvas;
+		for (const canvas of this.recorders.keys()) {
+			const calls = this.calls(canvas);
+			if (calls.some(call => call.name === 'drawImage' && call.args[0] === gl)) return { canvas, calls };
+		}
+		throw new Error('No retained image');
 	}
 
 	/** The heatmap's records texture: unit 0 of its last draw. */
@@ -159,6 +174,41 @@ describe('WebGL2 heatmap from palette slots', () => {
 		const quantized = vi.mocked(quantize).mock.calls.reduce((sum, [, , from, to]) => sum + (to - from), 0);
 		expect(quantized).toBe(t.uploaded(0) * 4);
 		expect([...t.records().subarray(...cells(101, 143))]).toEqual(expected.slice(...cells(101, 143)));
+	});
+
+	it('translates the retained image on a pan by whole device pixels, and draws the columns it exposes', async () => {
+		const columns = 200;
+		const time = Float64Array.from({ length: columns }, (_, c) => c * MINUTE);
+		const values = Float32Array.from({ length: columns * ROWS }, (_, i) => (i * 7) % 199);
+		const heat = t.chart.addSeries('heatmap', { valueMin: 0, valueMax: 199 });
+		heat.setData({ priceStart: 90, priceStep: 1, rows: ROWS, time, values });
+		// Four device pixels a bar (the ratio is 1), on a price scale that stays.
+		t.chart.priceScale().applyOptions({ autoScale: false });
+		const scale = t.chart.timeScale();
+		scale.setVisibleLogicalRange({ from: 100, to: 140 });
+		await t.settle();
+		const spacing = scale.logicalToCoordinate(1)! - scale.logicalToCoordinate(0)!;
+		scale.setVisibleLogicalRange({ from: 100, to: 100 + (40 * spacing) / 4 });
+		await t.settle();
+		expect(scale.logicalToCoordinate(1)! - scale.logicalToCoordinate(0)!).toBeCloseTo(4, 9);
+		const { canvas, calls } = t.retained();
+		calls.length = 0;
+
+		scale.setVisibleLogicalRange({ from: 103, to: 103 + (40 * spacing) / 4 });
+		await t.settle();
+		// Moved 12 pixels to the left, which are rows of the transposed image; the 12 columns exposed
+		// at the right are drawn and copied.
+		const shift = calls.find(call => call.name === 'drawImage' && call.args[0] === canvas);
+		expect(shift?.args).toEqual([canvas, 0, -12]);
+		const copy = calls.filter(call => call.name === 'drawImage' && call.args[0] === t.gl!.canvas);
+		const width = t.gl!.canvas.width;
+		expect(copy.map(call => [call.args[1], call.args[3]])).toEqual([[width - 12, 12]]);
+
+		// A pan by part of a pixel draws the whole pane.
+		calls.length = 0;
+		scale.setVisibleLogicalRange({ from: 103.1, to: 103.1 + (40 * spacing) / 4 });
+		await t.settle();
+		expect(calls.some(call => call.name === 'drawImage' && call.args[0] === canvas)).toBe(false);
 	});
 
 	it('takes a new palette without quantizing or uploading the slots again', async () => {
