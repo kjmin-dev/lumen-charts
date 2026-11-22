@@ -4,6 +4,7 @@
 // Node APIs.
 
 import type { ChartSize } from './adapter.ts';
+import type { DeviceState } from './android.ts';
 import type { SeriesKind } from './data.ts';
 
 /** Name of a scenario: one of those found in `scenarios/` (see `scenarios/index.ts`). */
@@ -111,6 +112,11 @@ export interface HostLoad {
 	cpuIdle: number;
 	/** One-minute load average at the end of the run. */
 	loadAverage: number;
+	/**
+	 * Battery and thermal state of the Android device the run used (`--android`), before and after
+	 * it. The two fields above then describe the computer that serves the page.
+	 */
+	device?: { before: DeviceState; after: DeviceState };
 }
 
 export type RunOutcome =

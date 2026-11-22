@@ -168,9 +168,15 @@ function differences(a: Fixture, b: Fixture) {
 	return { different, largest, first };
 }
 
+/**
+ * Runs the comparisons in `mode`. `tolerance` is the largest difference of a channel value that a
+ * comparison accepts: 0, byte for byte, unless a device's rasterizer is known to round otherwise;
+ * every difference is recorded either way.
+ */
 async function check(
 	mode: 'hardware' | 'unavailable' | 'rejected' | 'native-fallback' | 'webgl2' | 'canvas-only' | 'pending',
 	worker: boolean,
+	tolerance = 0,
 ) {
 	const memory = canvasPixelsInUse(),
 		budget = getCanvasBudget(),
@@ -185,7 +191,7 @@ async function check(
 		await raf();
 		const diff = differences(a, b);
 		results.push({ name, ...diff, scatter: b.scatter.renderer().path, heat: b.heat.renderer().path });
-		if (diff.different) throw Error(name + ' ' + JSON.stringify(diff));
+		if (diff.largest > tolerance) throw Error(name + ' ' + JSON.stringify(diff));
 	}
 	let report;
 	try {
@@ -325,14 +331,15 @@ async function check(
 			});
 			if (b.scatter.renderer().path !== (mode === 'hardware' ? 'scatter-columns' : 'webgl2'))
 				throw Error('Dense column kernel not exercised: ' + JSON.stringify(b.scatter.drawn()));
-			// Squares of 5, 7 and 9 device pixels at the three ratios, in a pane taller than one
-			// 1024-row strip at 2, take the kernel that reads a marker's rows back.
+			// Squares of 5, 7 and 9 device pixels at the three desktop ratios, in a pane taller than
+			// one 1024-row strip at 2, take the kernel that reads a marker's rows back. Above a ratio
+			// of 2 (2.625 on many phones) the squares stay at 9, the largest WebGPU draws.
 			await compare('large squares in a tall pane', s => {
 				s.chart.resize(380, 620);
-				s.scatter.applyOptions({ pointSize: 4.5 });
+				s.scatter.applyOptions({ pointSize: Math.min(4.5, 9 / devicePixelRatio) });
 			});
 			if (mode === 'hardware' && kernel(b) !== 'scatter-columns-wide')
-				throw Error('Wide column kernel not exercised: ' + kernel(b));
+				throw Error('Wide column kernel not exercised: ' + kernel(b) + ' ' + JSON.stringify(b.scatter.renderer()));
 			await compare('point appended to large squares', s =>
 				s.scatter.update({ time: barTime(82) + 60000, price: 81, value: 64 }),
 			);
@@ -509,6 +516,10 @@ async function check(
 		report = {
 			mode,
 			worker,
+			tolerance,
+			/** Comparisons with any difference, all within the tolerance. */
+			inexact: results.filter(result => result.different > 0).length,
+			largest: Math.max(0, ...results.map(result => result.largest)),
 			firstFrameMs,
 			readyMs,
 			peakBytes,
