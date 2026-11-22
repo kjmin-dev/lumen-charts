@@ -1,4 +1,11 @@
-import type { ChartApi, ChartError, ChartPointerEvent, LogicalRange, TimeScaleApi } from './api';
+import type {
+	ChartApi,
+	ChartError,
+	ChartPointerEvent,
+	LogicalRange,
+	MarkSeriesCreateOptions,
+	TimeScaleApi,
+} from './api';
 import type { EngineClient, IndicatorInfo } from '@lumen-charts/engine';
 import { DataFlow } from './data/data-flow';
 import { DatafeedFetches } from './data/datafeed';
@@ -7,7 +14,9 @@ import { PanePrimitives } from './drawings/pane-primitives';
 import type { DrawingsApi } from './drawings/types';
 import { ChartIndicators, type IndicatorApi, type IndicatorOptions, type IndicatorOutputApi } from './indicators';
 import { ChartMarks } from './marks/chart-marks';
-import type { AnyMarkOptions, MarkSeriesType } from './marks/options';
+import type { HeatmapData, ScatterData } from './marks/input';
+import type { AnyMarkOptions, HeatmapOptions, MarkSeriesType, ScatterOptions } from './marks/options';
+import type { MarksDatafeed } from './marks/fetches';
 import type { HeatmapSeriesApi, MarkSeriesApi, ScatterSeriesApi } from './marks/series';
 import { type MarkSeriesPlan, isMarkType, planMarkSeries } from './marks/state';
 import { ChartReadout } from './input/chart-readout';
@@ -259,6 +268,7 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 			attachSeriesPrimitive: (series, primitive) => this.attachSeriesPrimitive(series, primitive),
 			detachSeriesPrimitive: (series, primitive) => this.detachSeriesPrimitive(series, primitive),
 			baseUrl: () => container.ownerDocument.baseURI,
+			markOf: value => this._marks.list.find(entry => entry === value) ?? null,
 			addIndicator: (source, name, settings) => this.addIndicator(source, name, settings),
 			removeIndicator: indicator => this.removeIndicator(indicator),
 			priceAxisOf: series => this.priceAxisOf(series),
@@ -298,6 +308,11 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 				addSeries: (type, seriesOptions) => this.addSeries(type, seriesOptions),
 				removeSeries: series => this.removeSeries(series),
 				seriesNamed: id => this._seriesNamed(id),
+				markNamed: id => this._marks.named(id) as unknown as ScatterSeriesApi | HeatmapSeriesApi | undefined,
+				markKinds: () =>
+					new Map(
+						(this._markPlans ?? this._marks.list).map(entry => [entry.id, entry.type] as [string, MarkSeriesType]),
+					),
 				replaceOptions: replaced => {
 					this._settings.apply(replaced);
 					this._update();
@@ -361,6 +376,10 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 				markRenderer: () => this._settings.options.markRenderer,
 				invalidate: () => this.invalidate(INVALIDATE_LIGHT),
 				dataChanged: this._onDataChanged,
+				settled: this._onDataSettled,
+				addTimeline: () => this._addTimeline(),
+				removeTimeline: engineId => this._removeTimeline(engineId),
+				removing: engineId => this._indicators.removeReadersOf(engineId),
 			},
 			this._layout,
 			this.scale,
@@ -408,18 +427,31 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 	}
 
 	public addSeries<T extends SeriesType>(type: T, options?: SeriesCreateOptions<T>): SeriesApi<T>;
-	public addSeries(type: 'heatmap', options?: Partial<AnyMarkOptions> & { id?: string }): HeatmapSeriesApi;
-	public addSeries(type: 'scatter', options?: Partial<AnyMarkOptions> & { id?: string }): ScatterSeriesApi;
+	public addSeries(type: 'heatmap', options?: MarkSeriesCreateOptions<HeatmapOptions, HeatmapData>): HeatmapSeriesApi;
+	public addSeries(type: 'scatter', options?: MarkSeriesCreateOptions<ScatterOptions, ScatterData>): ScatterSeriesApi;
 	public addSeries(
 		type: SeriesType | MarkSeriesType,
 		options: SeriesCreateOptions<SeriesType> | (Partial<AnyMarkOptions> & { id?: string }) = {},
 	): SeriesApi | HeatmapSeriesApi | ScatterSeriesApi {
 		if (isMarkType(type)) {
-			const { id: markId, ...markOptions } = options as Partial<AnyMarkOptions> & { id?: string };
+			const {
+				id: markId,
+				datafeed,
+				timeline,
+				...markOptions
+			} = options as Partial<AnyMarkOptions> & {
+				id?: string;
+				datafeed?: MarksDatafeed<never>;
+				timeline?: boolean | { interval?: number };
+			};
 			// Throws for options that cannot be drawn, before the series has a name.
-			return this._marks.add(type, this._nameSeries(markId), markOptions) as unknown as
-				| HeatmapSeriesApi
-				| ScatterSeriesApi;
+			return this._marks.add(
+				type,
+				this._nameSeries(markId),
+				markOptions,
+				datafeed ?? null,
+				timeline ?? false,
+			) as unknown as HeatmapSeriesApi | ScatterSeriesApi;
 		}
 		const { datafeed, id, ...style } = options as SeriesCreateOptions<SeriesType>;
 		const name = this._nameSeries(id);
@@ -461,6 +493,7 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 	}
 
 	public removeSeries(series: SeriesApi | MarkSeriesApi): void {
+		// Indicators that read a heatmap or scatter go with it, as with any series.
 		if (this._marks.remove(series)) {
 			return;
 		}
@@ -475,6 +508,38 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 		this._fetches.abort(removed);
 		this._cache.removeSeries(removed.engineId);
 		this._data.engine?.removeSeries(removed.engineId);
+		this.invalidate(INVALIDATE_LIGHT);
+	}
+
+	/**
+	 * The hidden line series a heatmap or scatter makes the bars of (see `MarkSeriesCreateOptions`):
+	 * listed with the series like an indicator's output, which keeps it out of `series()`, saved
+	 * state, readouts and the price scales, and drawn by nobody.
+	 */
+	private _addTimeline(): number {
+		const engine = this._data.ensureEngine();
+		const engineId = engine?.addSeries('line', false) ?? -1;
+		const series = new Series(
+			this,
+			engineId,
+			'line',
+			{ visible: false, priceLineVisible: false, lastValueVisible: false },
+			true,
+			'',
+		);
+		this._series.push(series);
+		return engineId;
+	}
+
+	private _removeTimeline(engineId: number): void {
+		const index = this._series.findIndex(series => series.engineId === engineId);
+		if (index < 0) {
+			return;
+		}
+		const removed = this._series.splice(index, 1)[0]!;
+		this._primitives.detachSeries(removed);
+		this._cache.removeSeries(engineId);
+		this._data.engine?.removeSeries(engineId);
 		this.invalidate(INVALIDATE_LIGHT);
 	}
 
@@ -561,13 +626,10 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 			const plans = this._markPlans;
 			this._markPlans = null;
 			if (plans !== null) {
-				// Free the names of removed marks before restoring the other series.
-				this._marks.drop(plans);
-			}
-			changes();
-			if (plans !== null) {
+				// Before the other series and the indicators, which may read them.
 				this._marks.restore(plans);
 			}
+			changes();
 		} finally {
 			this._batching = false;
 			this.invalidate(this._batchLevel);
@@ -944,7 +1006,10 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 		return (
 			this._destroyed ||
 			engine === null ||
-			(engine.pending === 0 && this._indicators.computing === 0 && this._fetches.fetching === 0)
+			(engine.pending === 0 &&
+				this._indicators.computing === 0 &&
+				this._fetches.fetching === 0 &&
+				this._marks.fetching === 0)
 		);
 	}
 
@@ -964,6 +1029,7 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 			this._destroyed ||
 			(!this.frameQueued &&
 				this._fetches.fetching === 0 &&
+				this._marks.fetching === 0 &&
 				this._indicators.computing === 0 &&
 				(this._data.engine === null || this._data.engine.pending === 0))
 		);

@@ -74,11 +74,61 @@ export function makeStamp(size: number, circle: boolean): PointStamp {
 }
 
 /**
+ * The widest point in device pixels. A cap keeps a size from the data (Infinity, or a typo of a
+ * few orders of magnitude) from asking for a stamp, a padding of the WebGL2 column ranges and a
+ * hit-test reach of that many pixels. Up to this width the disc of a WebGL2 circle, computed in
+ * 32-bit floats, rounds as the disc of `makeStamp` does in 64-bit ones (see `gl/shaders.ts`).
+ */
+export const MAX_POINT_PIXELS = 256;
+
+/**
+ * The device pixels across of a point `css` CSS pixels wide: rounded, at least 1 and at most
+ * `MAX_POINT_PIXELS`. A size that is not a number is the caller's to resolve (the series' size).
+ */
+export function pointPixels(css: number, ratio: number): number {
+	const size = Math.round(css * ratio);
+	return size >= 1 ? (size <= MAX_POINT_PIXELS ? size : MAX_POINT_PIXELS) : 1;
+}
+
+/** No sizes: every point is the series' stamp. */
+const NO_SIZES = new Float32Array(0);
+
+/**
+ * The stamps of points with sizes of their own, one per size in device pixels, made the first
+ * time a size is drawn and kept: a frame of sized points allocates nothing once its sizes were seen.
+ */
+export class StampCache {
+	private _stamps: (PointStamp | undefined)[] = [];
+	private _circle = false;
+
+	/** Stamps are discs (`makeStamp`); a change drops the stamps made the other way. */
+	public setCircle(circle: boolean): void {
+		if (circle !== this._circle) {
+			this._circle = circle;
+			this._stamps = [];
+		}
+	}
+
+	public get(size: number): PointStamp {
+		let stamp = this._stamps[size];
+		if (stamp === undefined) {
+			stamp = makeStamp(size, this._circle);
+			this._stamps[size] = stamp;
+		}
+		return stamp;
+	}
+}
+
+/**
  * Draws points `[from, to)` of a scatter window, which are in time order. A point is stamped with
  * its center on the device pixel its time and price round to; a later point overwrites an earlier
  * one where they overlap. Its color is the palette's for its value, or `color` without one. `shift`
  * is added to every x (half a bar to the left for points placed from the start of their bar).
  * `box` grows by the pixels written.
+ *
+ * `stamp` is the series' point. With `sizes` (CSS pixels per row, NaN for the series' size) and
+ * `stamps`, a row is stamped at its own size, `pointPixels` of it at `ratio`. Without them the loop
+ * is the one it always was: the branch that looks a row's size up is never taken.
  */
 export function drawScatter(
 	pixels: Uint32Array,
@@ -97,26 +147,31 @@ export function drawScatter(
 	color: number,
 	stamp: PointStamp,
 	box: PixelBox,
+	sizes: Float32Array = NO_SIZES,
+	ratio = 1,
+	stamps: StampCache | null = null,
 ): void {
 	if (to <= from || map.count === 0) {
 		return;
 	}
 	const { offset, scale, log } = projection;
-	const size = stamp.size;
-	const spans = stamp.spans;
+	const sized = sizes.length > 0 && stamps !== null;
+	let current = stamp;
+	let size = stamp.size;
+	let spans = stamp.spans;
 	// The sizes most points have are written without a loop.
-	const shape = !stamp.square || size > 3 ? 0 : size;
-	const half = size >> 1;
-	const maxX = width - size;
-	const maxY = height - size;
+	let shape = !stamp.square || size > 3 ? 0 : size;
+	let half = size >> 1;
+	let maxX = width - size;
+	let maxY = height - size;
 	const valueMin = mapping.min;
 	const factor = mapping.factor;
 	const valueLog = mapping.log;
 	const top = PALETTE_SIZE - 1;
 	let left = width;
-	let right = -size - 1;
+	let right = -0x40000000;
 	let minY = height;
-	let maxRow = -size - 1;
+	let bottom = -0x40000000;
 	map.segment(time[from]!);
 	let t0 = map.t0;
 	let t1 = map.t1;
@@ -130,6 +185,19 @@ export function drawScatter(
 			t1 = map.t1;
 			x0 = map.x0 + shift;
 			pace = map.pace;
+		}
+		if (sized) {
+			const css = sizes[i]!;
+			const own = css === css ? stamps.get(pointPixels(css, ratio)) : stamp;
+			if (own !== current) {
+				current = own;
+				size = own.size;
+				spans = own.spans;
+				shape = !own.square || size > 3 ? 0 : size;
+				half = size >> 1;
+				maxX = width - size;
+				maxY = height - size;
+			}
 		}
 		const p = price[i]!;
 		const px = Math.round(x0 + (t - t0) * pace) - half;
@@ -188,23 +256,209 @@ export function drawScatter(
 				}
 			}
 		}
-		// Points are in time order, so the first one drawn is the leftmost and the last the rightmost.
-		if (left > px) {
+		// With one size for all, the first point drawn is the leftmost and the last the rightmost;
+		// with sizes of their own a wide point before a narrow one may reach further.
+		if (px < left) {
 			left = px;
 		}
-		right = px;
+		if (px + size > right) {
+			right = px + size;
+		}
 		if (py < minY) {
 			minY = py;
 		}
-		if (py > maxRow) {
-			maxRow = py;
+		if (py + size > bottom) {
+			bottom = py + size;
 		}
 	}
-	if (right >= left) {
+	if (right > left) {
 		box.left = Math.min(box.left, Math.max(0, left));
-		box.right = Math.max(box.right, Math.min(width, right + size));
+		box.right = Math.max(box.right, Math.min(width, right));
 		box.top = Math.min(box.top, Math.max(0, minY));
-		box.bottom = Math.max(box.bottom, Math.min(height, maxRow + size));
+		box.bottom = Math.max(box.bottom, Math.min(height, bottom));
+	}
+}
+
+/**
+ * Adds points `[from, to)` of a scatter window into `density`, a buffer laid out as the pixels are:
+ * every device pixel a point's stamp covers (the pixels `drawScatter` would write) gains the point's
+ * count, 1 at level 0 and the number of points a cell of a coarse level holds (`counts`, empty for
+ * none). Stamps and sizes are those of `drawScatter`. `box` grows by the pixels written. Returns the
+ * largest density written.
+ *
+ * Densities are 32-bit floats, added in row order and rounded after every addition, as a GPU's
+ * float blending adds them in the order of its instances: counts are whole numbers, so every sum
+ * below 2^24 is exact, and equal to the WebGL2 renderer's.
+ */
+export function accumulateScatter(
+	density: Float32Array,
+	width: number,
+	height: number,
+	time: Float64Array,
+	price: Float64Array,
+	counts: Float32Array,
+	from: number,
+	to: number,
+	map: TimeMap,
+	shift: number,
+	projection: PriceProjection,
+	stamp: PointStamp,
+	box: PixelBox,
+	sizes: Float32Array = NO_SIZES,
+	ratio = 1,
+	stamps: StampCache | null = null,
+): number {
+	if (to <= from || map.count === 0) {
+		return 0;
+	}
+	const { offset, scale, log } = projection;
+	const sized = sizes.length > 0 && stamps !== null;
+	const counted = counts.length > 0;
+	let current = stamp;
+	let size = stamp.size;
+	let spans = stamp.spans;
+	let half = size >> 1;
+	let maxX = width - size;
+	let maxY = height - size;
+	let peak = 0;
+	let left = width;
+	let right = -0x40000000;
+	let minY = height;
+	let bottom = -0x40000000;
+	map.segment(time[from]!);
+	let t0 = map.t0;
+	let t1 = map.t1;
+	let x0 = map.x0 + shift;
+	let pace = map.pace;
+	for (let i = from; i < to; i++) {
+		const t = time[i]!;
+		while (t >= t1) {
+			map.next();
+			t0 = map.t0;
+			t1 = map.t1;
+			x0 = map.x0 + shift;
+			pace = map.pace;
+		}
+		if (sized) {
+			const css = sizes[i]!;
+			const own = css === css ? stamps.get(pointPixels(css, ratio)) : stamp;
+			if (own !== current) {
+				current = own;
+				size = own.size;
+				spans = own.spans;
+				half = size >> 1;
+				maxX = width - size;
+				maxY = height - size;
+			}
+		}
+		const p = price[i]!;
+		const px = Math.round(x0 + (t - t0) * pace) - half;
+		const py = Math.round(offset - (log ? Math.log10(p) : p) * scale) - half;
+		if (!(px > -size && px < width && py > -size && py < height)) {
+			continue;
+		}
+		const c = counted ? counts[i]! : 1;
+		if (px >= 0 && px <= maxX && py >= 0 && py <= maxY) {
+			let base = px * height + py;
+			for (let column = 0; column < size; column++) {
+				const end = base + spans[column * 2 + 1]!;
+				for (let at = base + spans[column * 2]!; at < end; at++) {
+					const sum = Math.fround(density[at]! + c);
+					density[at] = sum;
+					if (sum > peak) {
+						peak = sum;
+					}
+				}
+				base += height;
+			}
+		} else {
+			for (let column = 0; column < size; column++) {
+				const x = px + column;
+				if (x < 0 || x >= width) {
+					continue;
+				}
+				const end = x * height + Math.min(height, py + spans[column * 2 + 1]!);
+				for (let at = x * height + Math.max(0, py + spans[column * 2]!); at < end; at++) {
+					const sum = Math.fround(density[at]! + c);
+					density[at] = sum;
+					if (sum > peak) {
+						peak = sum;
+					}
+				}
+			}
+		}
+		if (px < left) {
+			left = px;
+		}
+		if (px + size > right) {
+			right = px + size;
+		}
+		if (py < minY) {
+			minY = py;
+		}
+		if (py + size > bottom) {
+			bottom = py + size;
+		}
+	}
+	if (right > left) {
+		box.left = Math.min(box.left, Math.max(0, left));
+		box.right = Math.max(box.right, Math.min(width, right));
+		box.top = Math.min(box.top, Math.max(0, minY));
+		box.bottom = Math.max(box.bottom, Math.min(height, bottom));
+	}
+	return peak;
+}
+
+/** What `colorDensity` maps densities to palette entries with: see `DensityScale`. */
+export interface DensitySlots {
+	/** The entry of every whole density below `lutSize`. */
+	readonly lut: Uint8Array;
+	readonly lutSize: number;
+	/** The entry of a density above 0. */
+	slot(density: number): number;
+}
+
+/**
+ * Writes the color of every pixel of `box` with a density above 0: the palette's entry for its
+ * density. Pixels without one keep what they have, which is nothing: a pixel is only ever written
+ * where a point covers it, and its density and pixel are made 0 together.
+ */
+export function colorDensity(
+	density: Float32Array,
+	pixels: Uint32Array,
+	height: number,
+	box: PixelBox,
+	slots: DensitySlots,
+	palette: Uint32Array,
+): void {
+	const lut = slots.lut;
+	const lutSize = slots.lutSize;
+	const top = Math.max(0, box.top);
+	const bottom = Math.min(height, box.bottom);
+	for (let x = Math.max(0, box.left); x < box.right; x++) {
+		const end = x * height + bottom;
+		for (let i = x * height + top; i < end; i++) {
+			const d = density[i]!;
+			if (d === 0) {
+				continue;
+			}
+			pixels[i] = palette[d < lutSize ? lut[d | 0]! : slots.slot(d)]!;
+		}
+	}
+}
+
+/** Makes the densities of `box` 0 again. */
+export function clearDensity(density: Float32Array, height: number, box: PixelBox): void {
+	if (!(box.right > box.left && box.bottom > box.top)) {
+		return;
+	}
+	const left = Math.max(0, box.left);
+	if (box.top <= 0 && box.bottom >= height) {
+		density.fill(0, left * height, box.right * height);
+		return;
+	}
+	for (let x = left; x < box.right; x++) {
+		density.fill(0, x * height + Math.max(0, box.top), x * height + Math.min(height, box.bottom));
 	}
 }
 
@@ -222,13 +476,12 @@ export function priceExtent(price: Float64Array, from: number, to: number, out: 
 }
 
 /**
- * Turns the values of heatmap columns `[from, to)` into slots of a color table: 0 for a cell
- * without a value, 1 to 255 from the lowest value to the highest. `slots` is laid out like `values`.
+ * Turns the values of heatmap cells `[from, to)` into slots of a color table: 0 for a cell without
+ * a value, 1 to 255 from the lowest value to the highest. `slots` is laid out like `values`.
  */
 export function quantize(
 	values: Float32Array,
 	slots: Uint8Array,
-	rows: number,
 	from: number,
 	to: number,
 	mapping: ValueMapping,
@@ -236,8 +489,7 @@ export function quantize(
 	const min = mapping.min;
 	const factor = (mapping.factor * (PALETTE_SIZE - 2)) / (PALETTE_SIZE - 1);
 	const log = mapping.log;
-	const end = to * rows;
-	for (let i = from * rows; i < end; i++) {
+	for (let i = from; i < to; i++) {
 		const v = values[i]!;
 		if (v !== v) {
 			slots[i] = 0;
@@ -256,10 +508,31 @@ export function slotColors(palette: Uint32Array, out: Uint32Array): void {
 	}
 }
 
+/**
+ * Where a heatmap window's cells are, column by column: what `MarksWindow` tells of them. Cell `r`
+ * of held column `c` is grid row `cellOffset(c) + r`, for `r` below `cellLength(c)`, and is
+ * `values[cellStart(c) + r]`. Row `g` of the grid covers prices `[priceStart + g * priceStep, ...)`.
+ */
+export interface HeatLayout {
+	rows: number;
+	priceStart: number;
+	priceStep: number;
+	/** Columns start at grid rows of their own: `cellOffset` is not always 0. */
+	readonly varying: boolean;
+	cellStart(column: number): number;
+	cellOffset(column: number): number;
+	cellLength(column: number): number;
+}
+
 /** Buffers a heatmap is drawn with, kept between frames. */
 export class HeatmapScratch {
 	/** Device x of the left edge of each column drawn, and of the right edge of the last. */
 	public edges = new Int32Array(0);
+	/**
+	 * Grid row that the rows below count from: the lowest first row of the columns drawn (0 on a grid
+	 * that does not follow the price). `firstRow`, `endRow`, `rowTop` and `rowBottom` count from it.
+	 */
+	public rowBase = 0;
 	public firstRow = 0;
 	public endRow = 0;
 	public top = 0;
@@ -294,16 +567,40 @@ export function heatEdge(time: Float64Array, count: number, column: number, map:
 	return Math.round(map.x(t) - map.spacing / 2);
 }
 
-/** Shared pixel boundaries for Canvas 2D and WebGPU. */
+/**
+ * The grid rows columns `[from, to)` span: `[low, high)`, written to `out`. On a grid that does not
+ * follow the price, `[0, rows)`.
+ */
+export function heatRowSpan(layout: HeatLayout, from: number, to: number, out: { low: number; high: number }): void {
+	if (!layout.varying) {
+		out.low = 0;
+		out.high = layout.rows;
+		return;
+	}
+	let low = Infinity;
+	let high = -Infinity;
+	for (let c = from; c < to; c++) {
+		const length = layout.cellLength(c);
+		if (length > 0) {
+			const offset = layout.cellOffset(c);
+			low = Math.min(low, offset);
+			high = Math.max(high, offset + length);
+		}
+	}
+	out.low = low < high ? low : 0;
+	out.high = low < high ? high : 0;
+}
+
+const SPAN = { low: 0, high: 0 };
+
+/** Shared pixel boundaries for Canvas 2D, WebGL2 and WebGPU. */
 export function heatGeometry(
 	height: number,
 	time: Float64Array,
-	rows: number,
+	layout: HeatLayout,
 	count: number,
 	from: number,
 	to: number,
-	priceStart: number,
-	priceStep: number,
 	map: TimeMap,
 	projection: PriceProjection,
 	scratch: HeatmapScratch,
@@ -314,7 +611,11 @@ export function heatGeometry(
 		return false;
 	}
 	const columns = to - from;
+	heatRowSpan(layout, from, to, SPAN);
+	const base = SPAN.low;
+	const rows = SPAN.high - SPAN.low;
 	scratch.reserve(columns, rows);
+	scratch.rowBase = base;
 	const edges = scratch.edges;
 	const rowTop = scratch.rowTop;
 	const rowBottom = scratch.rowBottom;
@@ -324,18 +625,19 @@ export function heatGeometry(
 	}
 	const left = edges[0]!;
 	const right = edges[columns]!;
-	if (right <= left) {
+	if (right <= left || rows <= 0) {
 		return false;
 	}
 	// The cell rows that are in the pane, `[firstRow, endRow)`, and the pixel rows they cover.
 	const { offset, scale, log } = projection;
+	const { priceStart, priceStep } = layout;
 	let firstRow = rows;
 	let endRow = 0;
 	let top = height;
 	let bottom = 0;
 	let previous = 0;
 	for (let r = 0; r <= rows; r++) {
-		const price = priceStart + r * priceStep;
+		const price = priceStart + (base + r) * priceStep;
 		const y = offset - (log ? Math.log10(price) : price) * scale;
 		// A price a logarithmic scale cannot show is below everything it can.
 		const edge = y === y ? Math.round(y) : scale > 0 ? Infinity : -Infinity;
@@ -373,7 +675,8 @@ export function heatGeometry(
  * wide when it is the only one. Cell `r` covers the pixels between the rows of its two prices. Edges
  * are rounded to device pixels once, so neighbors share an edge and leave no seam. Where several
  * cells fall into one pixel (more columns than pixels across, or more rows than pixels down), the
- * pixel takes the highest of them, so a peak survives zooming out.
+ * pixel takes the highest of them, so a peak survives zooming out. Grid rows a column has no cell
+ * on (where the grid follows the price) are transparent in it.
  *
  * The cost is one pass over the cells in view and a copy of the pixels they cover: a column of
  * pixels is computed once per heatmap column, from the cell rows that are in the pane, and copied
@@ -385,12 +688,10 @@ export function drawHeatmap(
 	height: number,
 	time: Float64Array,
 	slots: Uint8Array,
-	rows: number,
+	layout: HeatLayout,
 	count: number,
 	from: number,
 	to: number,
-	priceStart: number,
-	priceStep: number,
 	map: TimeMap,
 	projection: PriceProjection,
 	colors: Uint32Array,
@@ -399,25 +700,10 @@ export function drawHeatmap(
 	clipRight: number,
 	box: PixelBox,
 ): void {
-	if (
-		!heatGeometry(
-			height,
-			time,
-			rows,
-			count,
-			from,
-			to,
-			priceStart,
-			priceStep,
-			map,
-			projection,
-			scratch,
-			clipLeft,
-			clipRight,
-		)
-	)
+	if (!heatGeometry(height, time, layout, count, from, to, map, projection, scratch, clipLeft, clipRight)) {
 		return;
-	const { edges, rowTop, rowBottom, merged, firstRow, endRow, top, bottom } = scratch;
+	}
+	const { edges, rowTop, rowBottom, merged, firstRow, endRow, top, bottom, rowBase } = scratch;
 	const columns = to - from;
 	const left = edges[0]!;
 	const right = edges[columns]!;
@@ -426,22 +712,29 @@ export function drawHeatmap(
 	for (let c = 0; c < columns; c++) {
 		const x0 = edges[c]!;
 		const x1 = edges[c + 1]!;
+		const column = from + c;
+		// The column's cells as rows counted from `rowBase`: `[lo, hi)`, cell `g - lo` at `at + g - lo`.
+		const lo = layout.cellOffset(column) - rowBase;
+		const hi = lo + layout.cellLength(column);
 		let source = slots;
-		let at = (from + c) * rows;
+		let at = layout.cellStart(column) - lo;
+		let low = Math.max(firstRow, lo);
+		let high = Math.min(endRow, hi);
 		if (x1 <= x0 || gathered) {
 			if (x1 <= clipLeft) {
 				// Left of the columns drawn: it shares no pixel with them.
 				continue;
 			}
 			if (gathered) {
-				for (let r = firstRow; r < endRow; r++) {
+				for (let r = low; r < high; r++) {
 					const s = slots[at + r]!;
 					if (s > merged[r]!) {
 						merged[r] = s;
 					}
 				}
 			} else {
-				for (let r = firstRow; r < endRow; r++) {
+				merged.fill(0, firstRow, endRow);
+				for (let r = low; r < high; r++) {
 					merged[r] = slots[at + r]!;
 				}
 				gathered = true;
@@ -452,15 +745,19 @@ export function drawHeatmap(
 			gathered = false;
 			source = merged;
 			at = 0;
+			low = firstRow;
+			high = endRow;
 		}
 		// The first pixel column of this heatmap column. Cell rows shorter than a pixel share the
 		// pixel of the next row that has one, which takes the highest of them.
 		const base = x0 * height;
 		let slot = 0;
 		for (let r = firstRow; r < endRow; r++) {
-			const s = source[at + r]!;
-			if (s > slot) {
-				slot = s;
+			if (r >= low && r < high) {
+				const s = source[at + r]!;
+				if (s > slot) {
+					slot = s;
+				}
 			}
 			const y0 = rowTop[r]!;
 			const y1 = rowBottom[r]!;

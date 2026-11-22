@@ -45,18 +45,20 @@ export class WordTexture {
 	layout(location: WebGLUniformLocation | null) {
 		this.pool.gl.uniform2i(location, this.shift, (1 << this.shift) - 1);
 	}
-	write(data: Uint32Array<ArrayBuffer>, from: number, to: number) {
+	/** Uploads words `[from, to)` of `data` to the texture's words from `at` on (where they are in `data`, by default). */
+	write(data: Uint32Array<ArrayBuffer>, from: number, to: number, at = from) {
 		const gl = this.pool.gl;
 		const stride = 1 << this.shift;
+		let target = at;
 		while (from < to) {
-			const x = from & (stride - 1);
+			const x = target & (stride - 1);
 			const width = Math.min(stride - x, to - from);
 			const height = width === stride ? Math.floor((to - from) / width) : 1;
 			gl.texSubImage2D(
 				gl.TEXTURE_2D,
 				0,
 				x,
-				Math.floor(from / stride),
+				Math.floor(target / stride),
 				width,
 				height,
 				gl.RED_INTEGER,
@@ -65,6 +67,7 @@ export class WordTexture {
 				from,
 			);
 			from += width * height;
+			target += width * height;
 		}
 	}
 	release() {

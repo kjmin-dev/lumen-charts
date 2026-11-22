@@ -2,7 +2,7 @@ import type { MarkTextureFormat } from './device';
 // All geometry entering the shaders is integer device pixels or sorted window indices.
 // Colors are straight RGBA bytes as in ImageData. The canvas receives premultiplied RGBA.
 const common = (format: MarkTextureFormat) => `
-struct View { width:u32, height:u32, left:u32, right:u32, size:u32, rows:u32, bandCount:u32, spare:u32 }
+struct View { width:u32, height:u32, left:u32, right:u32, size:u32, rows:u32, bandCount:u32, spare:u32, table:u32, rowBase:u32, pad0:u32, pad1:u32 }
 @group(0) @binding(0) var<uniform> v:View;
 @group(0) @binding(1) var<storage,read> data:array<u32>;
 @group(0) @binding(2) var<storage,read> spans:array<u32>;
@@ -14,8 +14,23 @@ fn color(bits:u32)->vec4f {
 }
 `;
 
+// The cells of a heatmap column: `rows` from grid row 0 each, or, where the grid follows the price,
+// those a table in `spans` gives from word `table` on (where its cells start, its first grid row
+// plus 2^30, its number of cells). Grid rows count from `rowBase` (plus 2^30).
+const heatCells = `
+fn cells(c:u32, low:u32, high:u32)->vec2u {
+	if (v.table==0xffffffffu) {return vec2u(c*v.rows+low,c*v.rows+high);}
+	let t=v.table+c*3u;
+	let first=i32(spans[t+1u])-i32(v.rowBase);
+	let lo=max(i32(low),first);
+	let hi=max(lo,min(i32(high),first+i32(spans[t+2u])));
+	return vec2u(u32(i32(spans[t])+lo-first),u32(i32(spans[t])+hi-first));
+}
+`;
+
 export const heatShader = (format: MarkTextureFormat) =>
 	common(format) +
+	heatCells +
 	`
 @compute @workgroup_size(8,8)
 fn main(@builtin(global_invocation_id) gid:vec3u) {
@@ -24,8 +39,9 @@ fn main(@builtin(global_invocation_id) gid:vec3u) {
 	let row=(v.width+y)*2u;
 	var best=0u;
 	for(var c=spans[x*2u];c<spans[x*2u+1u];c++){
-		for(var r=spans[row];r<spans[row+1u];r++){
-			let bits=data[c*v.rows+r];
+		let span=cells(c,spans[row],spans[row+1u]);
+		for(var i=span.x;i<span.y;i++){
+			let bits=data[i];
 			if ((bits&0x7fffffffu)<=0x7f800000u) {
 				let ordered=select(bits^0x80000000u,~bits,(bits>>31u)!=0u);
 				best=max(best,ordered);
@@ -47,6 +63,7 @@ fn main(@builtin(global_invocation_id) gid:vec3u) {
 // a word, and a pixel takes the color of the highest slot among its cells.
 export const heatSlotsShader = (format: MarkTextureFormat) =>
 	common(format) +
+	heatCells +
 	`
 @compute @workgroup_size(8,8)
 fn main(@builtin(global_invocation_id) gid:vec3u) {
@@ -55,8 +72,8 @@ fn main(@builtin(global_invocation_id) gid:vec3u) {
 	let row=(v.width+y)*2u;
 	var slot=0u;
 	for(var c=spans[x*2u];c<spans[x*2u+1u];c++){
-		for(var r=spans[row];r<spans[row+1u];r++){
-			let i=c*v.rows+r;
+		let span=cells(c,spans[row],spans[row+1u]);
+		for(var i=span.x;i<span.y;i++){
 			slot=max(slot,(data[i>>2u]>>((i&3u)*8u))&255u);
 		}
 	}

@@ -29,12 +29,27 @@ export class FakeWebGl {
 	public readonly R32UI = 0x8236;
 	public readonly UNSIGNED_INT = 0x1405;
 	public readonly uploads: FakeUpload[] = [];
-	public readonly draws: { fragment: string; uniforms: Record<string, unknown[]> }[] = [];
+	public readonly draws: {
+		fragment: string;
+		uniforms: Record<string, unknown[]>;
+		/** Instances of an instanced draw; 1 for another. */
+		instances: number;
+		/** Whether the draw went to a framebuffer of the series rather than the canvas. */
+		offscreen: boolean;
+		blend: boolean;
+	}[] = [];
+	/** Extensions `getExtension` enables; none unless a test adds them. */
+	public readonly extensions = new Set<string>();
+	/** What `readPixels` reads: the first channel of every pixel. */
+	public readValue = 0;
+	public reads = 0;
 	public readonly textures: FakeTexture[] = [];
 	public maxTextureSize = 4096;
 	private _unit = 0;
 	private readonly _bound: (FakeTexture | null)[] = [];
 	private _program: { fragment: string; uniforms: Record<string, unknown[]> } | null = null;
+	private _framebuffer: object | null = null;
+	private _blend = false;
 
 	public constructor(public readonly canvas: HTMLCanvasElement) {
 		// Every other constant a caller reads is a number of its own.
@@ -58,8 +73,8 @@ export class FakeWebGl {
 	public isContextLost(): boolean {
 		return false;
 	}
-	public getExtension(): null {
-		return null;
+	public getExtension(name: string): object | null {
+		return this.extensions.has(name) ? {} : null;
 	}
 	public getError(): number {
 		return this.NO_ERROR;
@@ -139,13 +154,43 @@ export class FakeWebGl {
 		if (texture) texture.deleted = true;
 	}
 
-	public drawArrays(): void {
+	public drawArrays(_mode?: number, _first?: number, _count?: number, instances = 1): void {
 		const program = this._program!;
-		this.draws.push({ fragment: program.fragment, uniforms: { ...program.uniforms } });
+		this.draws.push({
+			fragment: program.fragment,
+			uniforms: { ...program.uniforms },
+			instances,
+			offscreen: this._framebuffer !== null,
+			blend: this._blend,
+		});
 	}
-	public drawArraysInstanced(): void {
-		this.drawArrays();
+	public drawArraysInstanced(mode: number, first: number, count: number, instances: number): void {
+		this.drawArrays(mode, first, count, instances);
 	}
+
+	public createFramebuffer(): object {
+		return {};
+	}
+	public bindFramebuffer(_target: number, framebuffer: object | null): void {
+		this._framebuffer = framebuffer;
+	}
+	public framebufferTexture2D(): void {}
+	public checkFramebufferStatus(): number {
+		return (this as unknown as Record<string, number>)['FRAMEBUFFER_COMPLETE']!;
+	}
+	public deleteFramebuffer(): void {}
+	public readPixels(_x: number, _y: number, _w: number, _h: number, _f: number, _t: number, out: Float32Array): void {
+		out.fill(this.readValue);
+		this.reads++;
+	}
+	public enable(capability: number): void {
+		if (capability === (this as unknown as Record<string, number>)['BLEND']) this._blend = true;
+	}
+	public disable(capability: number): void {
+		if (capability === (this as unknown as Record<string, number>)['BLEND']) this._blend = false;
+	}
+	public blendEquation(): void {}
+	public blendFunc(): void {}
 
 	// Calls whose effect the tests do not read.
 	public compileShader(): void {}
@@ -162,8 +207,6 @@ export class FakeWebGl {
 	public deleteBuffer(): void {}
 	public vertexAttribPointer(): void {}
 	public enableVertexAttribArray(): void {}
-	public enable(): void {}
-	public disable(): void {}
 	public viewport(): void {}
 	public scissor(): void {}
 	public clear(): void {}

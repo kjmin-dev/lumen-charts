@@ -267,6 +267,29 @@ export class IndicatorEngine {
 		return this._byOutput.has(series);
 	}
 
+	/** Whether an instance reads a column of `series` (not an output of another instance). */
+	public reads(series: number): boolean {
+		for (const instance of this._instances) {
+			for (let i = 0; i < instance.inputs.length; i++) {
+				if (instance.sources[i] === null && instance.inputs[i]!.series === series) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/** Every series some instance reads a column of. */
+	public readSeries(out: Set<number>): void {
+		for (const instance of this._instances) {
+			for (let i = 0; i < instance.inputs.length; i++) {
+				if (instance.sources[i] === null) {
+					out.add(instance.inputs[i]!.series);
+				}
+			}
+		}
+	}
+
 	/** Value columns of a derived series at a level. */
 	public columns(level: number): number {
 		return level === 0 ? 1 : 4;

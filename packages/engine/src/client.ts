@@ -1,4 +1,4 @@
-import type { MarksChange, MarksKind, MarksRequest, MarksUpdate } from './marks/protocol';
+import type { MarksChange, MarksData, MarksKind, MarksRequest, MarksTimeline, MarksUpdate } from './marks/protocol';
 import { type EngineTransport, LocalTransport } from './host';
 import { connectWorker } from './pool';
 import {
@@ -55,6 +55,11 @@ export class EngineClient {
 	public onevent: ((event: EngineEvent) => void) | null = null;
 	/** Receives the rows of marks series an event carries, before `onevent` gets the event. */
 	public onmarks: ((updates: MarksUpdate[]) => void) | null = null;
+	/**
+	 * Receives an event that asks for marks to be fetched again, cancels such requests, or tells what
+	 * became of marks handed back, before `onevent` gets it.
+	 */
+	public onmarksfetch: ((event: EngineEvent) => void) | null = null;
 	/**
 	 * Called once if the engine stops for good, with a message and what reported it: the worker it
 	 * ran in failed after it started. What the engine held is gone with it. Commands it had not
@@ -289,29 +294,57 @@ export class EngineClient {
 		return this._send({ type: 'resolve', times }, [times.buffer as ArrayBuffer]);
 	}
 
-	/** Adds a marks series (a scatter or a heatmap, see `marks/protocol.ts`) and returns its id. */
-	public addMarks(kind: MarksKind): number {
+	/**
+	 * Adds a marks series (a scatter or a heatmap, see `marks/protocol.ts`) and returns its id.
+	 * `fetchable`: its marks can be fetched again, so they may be let go under a memory limit.
+	 * `timeline`: a line series added before whose bars the marks make (see `MarksTimeline`).
+	 */
+	public addMarks(kind: MarksKind, fetchable = false, timeline?: MarksTimeline): number {
 		const series = this._nextSeries++;
-		this._send({ type: 'marks', series, change: { op: 'add', kind } }, NO_TRANSFER);
+		this._send({ type: 'marks', series, change: { op: 'add', kind, fetchable, timeline } }, NO_TRANSFER);
 		return series;
 	}
 
 	/**
-	 * Changes a marks series: `set` or `append` hand their typed arrays over to the engine (do not
-	 * use them afterwards), `remove` lets the series go. Returns the command's `seq`.
+	 * Hands back marks fetched again for the `MarksFetchRequest` with id `request`, or null when
+	 * fetching failed. The typed arrays are handed over.
+	 */
+	public restoreMarks(request: number, data: MarksData | null): number {
+		const transfer: ArrayBuffer[] = [];
+		if (data !== null) {
+			for (const array of data.kind === 'heatmap'
+				? [data.time, data.values, data.offsets]
+				: [data.time, data.price, data.value, data.size]) {
+				if (array != null && !transfer.includes(array.buffer as ArrayBuffer)) {
+					transfer.push(array.buffer as ArrayBuffer);
+				}
+			}
+		}
+		return this._send({ type: 'marksRows', request, data }, transfer);
+	}
+
+	/**
+	 * Changes a marks series: `set`, `append` and `prepend` hand their typed arrays over to the engine
+	 * (do not use them afterwards), `delete` removes the rows of a range of times, `remove` lets the
+	 * series go. Returns the command's `seq`.
 	 */
 	public changeMarks(series: number, change: MarksChange): number {
 		const transfer: ArrayBuffer[] = [];
-		if (change.op === 'set' || change.op === 'append') {
+		const add = (array: { buffer: ArrayBufferLike } | null | undefined): void => {
+			if (array != null && !transfer.includes(array.buffer as ArrayBuffer)) {
+				transfer.push(array.buffer as ArrayBuffer);
+			}
+		};
+		if (change.op === 'set' || change.op === 'append' || change.op === 'prepend') {
 			const data = change.data;
-			transfer.push(data.time.buffer as ArrayBuffer);
+			add(data.time);
 			if (data.kind === 'heatmap') {
-				transfer.push(data.values.buffer as ArrayBuffer);
+				add(data.values);
+				add(data.offsets);
 			} else {
-				transfer.push(data.price.buffer as ArrayBuffer);
-				if (data.value !== null) {
-					transfer.push(data.value.buffer as ArrayBuffer);
-				}
+				add(data.price);
+				add(data.value);
+				add(data.size);
 			}
 		}
 		return this._send({ type: 'marks', series, change }, transfer);
@@ -342,6 +375,7 @@ export class EngineClient {
 		this._destroyed = true;
 		this.onevent = null;
 		this.onmarks = null;
+		this.onmarksfetch = null;
 		this._held = [];
 		this._tickCount = 0;
 		this._abortConnect?.();
@@ -377,6 +411,7 @@ export class EngineClient {
 			body.type !== 'window' &&
 			body.type !== 'limit' &&
 			body.type !== 'rows' &&
+			body.type !== 'marksRows' &&
 			body.type !== 'resolve' &&
 			body.type !== 'marksWindow'
 		) {
@@ -419,6 +454,9 @@ export class EngineClient {
 			event.packedPatches = packPatches(event.patches);
 		}
 		this._acked = event.ack;
+		if (event.marksFetch !== undefined || event.marksCancel !== undefined || event.marksRestored !== undefined) {
+			this.onmarksfetch?.(event);
+		}
 		if (event.marks !== undefined) {
 			this.onmarks?.(event.marks);
 		}

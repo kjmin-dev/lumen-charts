@@ -29,7 +29,7 @@ chart.timeScale().subscribe('visibleTimeRangeChange', range => {
   a candlestick series, `{ value }` for a line or a histogram. An indicator's outputs are there too,
   as `<indicator id>.<output name>` (`indicator-1.value`, or `bands.upper` for Bollinger bands
   added with `id: 'bands'`). A series without a value at that
-  bar is left out. Heatmap and scatter series are not: read them with `valueAt` (below).
+  bar is left out. Heatmap and scatter series are not: read them with `valueAt` and `pointAt` (below).
 
 `crosshairMove` comes once per frame at most, after the frame was drawn: a hundred pointer moves
 between two frames give one event, for where the pointer ended. It comes only when the crosshair
@@ -106,6 +106,25 @@ chart.subscribe('crosshairMove', event => {
 	tooltip.textContent = time === null || price === null ? '' : String(book.valueAt(time, price) ?? '');
 });
 ```
+
+A scatter is read at the event's point as it is, in CSS pixels of the pane:
+
+```ts
+chart.subscribe('crosshairMove', event => {
+	const hit = event.point === null ? null : trades.pointAt(event.point.x, event.point.y);
+	tooltip.textContent =
+		hit === null ? '' : `${hit.price} ${hit.value ?? ''}${hit.count > 1 ? ` (${hit.count} trades)` : ''}`;
+});
+```
+
+`pointAt` returns the point drawn at the device pixel under the position, as the last frame placed,
+sized and shaped it: of the points whose marks cover the pixel, the one drawn on top, the last in
+time order; null where none is drawn, and for a hidden series. It gives the point's `time`, `price`,
+`value` (null without one) and `size` (its own, or `pointSize`), `count`, the points a mark of a
+coarse level of detail stands for (1 for a point), and `density`, the points whose marks cover the
+pixel, the number a `colorBy: 'density'` series colors it by. It reads the rows the chart holds,
+whichever renderer drew them, and looks only at those whose center is within the widest mark of the
+pixel's column, found by a binary search in time: cheap enough for every pointer move.
 
 ## Synced charts
 

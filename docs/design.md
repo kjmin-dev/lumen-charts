@@ -177,6 +177,7 @@ Moved to [design/stage-4-save-restore.md](design/stage-4-save-restore.md).
 - Plugins: custom series, plus pane and series primitives. As built: custom indicators in [stage 3](design/stage-3-indicators.md) (section 5.1), primitives and custom renderers in [stage 4](design/stage-4-drawings.md#8-external-contract-and-scope).
 - The core has no framework dependency: strict TypeScript, ESM, tree-shakeable.
 - Keyboard data navigation and screen reader summaries are available on each chart. [Accessibility guide](guide/accessibility.md).
+- Heatmap and scatter series: history on demand, prepends and removals, sizes, densities and readouts of points, timelines made from marks and indicators over them. As built: [stage 5 follow-ups for marks](design/stage-5-mark-history.md).
 - Out of scope: a user scripting language like Pine. The isolated engine leaves room for one later.
 
 ### 8.1 As built in stage 4: price axes
@@ -209,4 +210,7 @@ What each stage measured against its gate is in the document of that stage, unde
   - As decided and as built in stage 5: [design/stage-5.md](design/stage-5.md#10-open-questions).
   - The worker now meets the 4 ms gate on M1 with an idle wait between ticks and packed indicator patches. [GC and tick latency](benchmarks/gc-floor.md).
 - Benchmarks ran on one Apple M1. x86, Firefox and Android are unmeasured.
+  - Measured after stage 5: in headless Firefox on the M1 ([Firefox](benchmarks/firefox-frames.md)) and on one flagship Android phone ([physical Android](benchmarks/android-physical.md)). x86, desktop discrete GPUs and a mid-range Android device are still unmeasured.
 - The review's experiments ran on a heavily loaded machine. Their direction holds; their absolute numbers need re-measuring.
+  - The review left no scripts. Its scan-cost claim, measured again: chunk by chunk 0.90–1.11 times a contiguous buffer, row by row through the index 3.1–4.8 times ([review re-measure](benchmarks/review-remeasure.md)); its other numbers cannot be reproduced.
+- Open after the stage 5 follow-ups: on a flagship Android phone (Adreno 830) WebGL2 and WebGPU layers differ from Canvas 2D by one step of a channel value in places (cause not isolated), and the WebGL2 1M scatter zoom (p95 8.42 ms) and append (6.05 ms), the hover of 1,000 drawings (1.38 ms) and a worker tick with 20 indicators (4.39 ms) miss their budgets; WebGPU's compute pass there makes viewport redraws miss frames [measured: [physical Android](benchmarks/android-physical.md)]. Headless Firefox on the M1 misses every frame budget by 2 to 30 times with either mark renderer while Chromium meets them; whether headless Firefox draws on the GPU was not recorded, and a headed run on an idle machine is needed [measured: [Firefox](benchmarks/firefox-frames.md)].

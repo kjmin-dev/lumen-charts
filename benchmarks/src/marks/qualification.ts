@@ -51,13 +51,12 @@ function fixture(pref: MarkRenderer | undefined, worker: boolean) {
 		rows,
 		values: Float32Array.from({ length: time.length * rows }, (_, i) => (i % 29 === 0 ? NaN : ((i * 31) % 1000) / 10)),
 	});
-	scatter.setData(
-		Array.from({ length: 2500 }, (_, i) => ({
-			time: time[Math.floor((i * time.length) / 2500)]!,
-			price: 69 + ((i * 73) % 3000) / 100,
-			value: i % 101,
-		})),
-	);
+	const points = Array.from({ length: 2500 }, (_, i) => ({
+		time: time[Math.floor((i * time.length) / 2500)]!,
+		price: 69 + ((i * 73) % 3000) / 100,
+		value: i % 101,
+	}));
+	scatter.setData(points);
 	chart.drawings().add({
 		id: 'reference',
 		type: 'trendLine',
@@ -73,6 +72,7 @@ function fixture(pref: MarkRenderer | undefined, worker: boolean) {
 		scatter,
 		heat,
 		column,
+		points,
 		dispose() {
 			chart.destroy();
 			host.remove();
@@ -104,6 +104,30 @@ async function uploadBytes(gl: WebGL2RenderingContext | undefined, operation: ()
 }
 
 type Fixture = ReturnType<typeof fixture>;
+
+/**
+ * Points over the first 90 bars with sizes of their own, 0.5 to 11.5 CSS pixels and some without
+ * one, and two 24 pixels wide at the ends, which reach into the pane from beside it.
+ */
+function sizedPoints() {
+	const n = 3000;
+	const time = new Float64Array(n),
+		price = new Float64Array(n),
+		value = new Float32Array(n),
+		size = new Float32Array(n);
+	let seed = 5;
+	for (let i = 0; i < n; i++) {
+		const bar = (i / n) * 90;
+		time[i] = barTime(Math.floor(bar)) + Math.floor((bar % 1) * 60000);
+		seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+		price[i] = 70 + (25 * seed) / 4294967296;
+		value[i] = i % 101;
+		size[i] = i % 11 === 0 ? NaN : 0.5 + ((i * 37) % 23) / 2;
+	}
+	size[0] = 24;
+	size[n - 1] = 24;
+	return { time, price, value, size };
+}
 /** Internal to the library: whether WebGL2 drew the heatmap from its values or its palette slots. */
 function heatPath(s: Fixture): string | null {
 	return (s.heat as unknown as { glHeatPath(): string | null }).glHeatPath();
@@ -168,24 +192,44 @@ function differences(a: Fixture, b: Fixture) {
 	return { different, largest, first };
 }
 
+/**
+ * Runs the comparisons in `mode`. `tolerance` is the largest difference of a channel value that a
+ * comparison accepts: 0, byte for byte, unless a device's rasterizer is known to round otherwise;
+ * every difference is recorded either way.
+ */
 async function check(
 	mode: 'hardware' | 'unavailable' | 'rejected' | 'native-fallback' | 'webgl2' | 'canvas-only' | 'pending',
 	worker: boolean,
+	tolerance = 0,
 ) {
 	const memory = canvasPixelsInUse(),
 		budget = getCanvasBudget(),
 		begin = performance.now();
 	const a = fixture('canvas2d', worker),
 		b = fixture(mode === 'webgl2' ? undefined : 'webgpu', worker);
-	const results: { name: string; different: number; largest: number; first: string; heat: string; scatter: string }[] =
-		[];
+	const results: {
+		name: string;
+		different: number;
+		largest: number;
+		first: string;
+		heat: string;
+		scatter: string;
+		scatterReason: string | null;
+	}[] = [];
+	let styled: unknown = null;
 	async function compare(name: string, change: (s: Fixture) => void = () => {}) {
 		for (const s of [a, b]) change(s);
 		await Promise.all([a.chart.whenIdle(), b.chart.whenIdle()]);
 		await raf();
 		const diff = differences(a, b);
-		results.push({ name, ...diff, scatter: b.scatter.renderer().path, heat: b.heat.renderer().path });
-		if (diff.different) throw Error(name + ' ' + JSON.stringify(diff));
+		results.push({
+			name,
+			...diff,
+			scatter: b.scatter.renderer().path,
+			scatterReason: b.scatter.renderer().reason,
+			heat: b.heat.renderer().path,
+		});
+		if (diff.largest > tolerance) throw Error(name + ' ' + JSON.stringify(diff));
 	}
 	let report;
 	try {
@@ -303,6 +347,97 @@ async function check(
 			a.scatter.priceToCoordinate(readPrice) !== b.scatter.priceToCoordinate(readPrice)
 		)
 			throw Error('Mark data queries differ');
+		// Points with sizes of their own, then densities. WebGPU draws neither and hands them to
+		// WebGL2, which sums densities with float blending, or leaves them to Canvas 2D without it.
+		let floatBlend = false;
+		const expectStyled = (name: string, density: boolean) => {
+			// The WebGL2 context is made when a series first draws with it: in WebGPU mode, here.
+			const gl2 = window.testMarkContexts.find(context => !context.isContextLost());
+			floatBlend = !!gl2?.getExtension('EXT_color_buffer_float') && !!gl2?.getExtension('EXT_float_blend');
+			const status = b.scatter.renderer();
+			if (mode === 'hardware' && status.reason !== 'unsupported-style')
+				throw Error(name + ': WebGPU did not hand the style over: ' + JSON.stringify(status));
+			const gl = mode === 'webgl2' || window.testMarkGlAvailable;
+			const wanted = gl && (!density || floatBlend) ? 'webgl2' : 'canvas2d';
+			if (status.effective !== wanted) throw Error(name + ': drawn with ' + JSON.stringify(status));
+		};
+		const readouts = () => {
+			// The point at a pixel reads the window, whatever draws it: both charts give the same.
+			for (let x = 3; x < 360; x += 7)
+				for (let y = 5; y < 220; y += 9) {
+					const left = JSON.stringify(a.scatter.pointAt(x + 0.3, y + 0.6));
+					if (left !== JSON.stringify(b.scatter.pointAt(x + 0.3, y + 0.6)))
+						throw Error(`pointAt(${x}, ${y}) differs: ${left}`);
+				}
+		};
+		await compare('sizes per point', s => {
+			s.scatter.applyOptions({ shape: 'square', pointSize: 2, barAlign: 'center' });
+			s.scatter.setData(sizedPoints());
+		});
+		expectStyled('sizes per point', false);
+		readouts();
+		await compare('sizes per point, discs', s => s.scatter.applyOptions({ shape: 'circle' }));
+		await compare('sizes per point, zoom', s => s.chart.timeScale().setVisibleLogicalRange({ from: 55.4, to: 96.9 }));
+		await compare('sizes per point, start of bar', s => s.scatter.applyOptions({ barAlign: 'start' }));
+		await compare('sized point appended', s =>
+			s.scatter.update({ time: barTime(95) + 50000, price: 84, value: 50, size: 9 }),
+		);
+		await compare('wider point appended', s =>
+			s.scatter.update({ time: barTime(95) + 52000, price: 78, value: 20, size: 30 }),
+		);
+		readouts();
+		await compare('density', s =>
+			s.scatter.applyOptions({ colorBy: 'density', shape: 'square', barAlign: 'center', palette: 'inferno' }),
+		);
+		expectStyled('density', true);
+		const densityRenderer = b.scatter.renderer();
+		readouts();
+		await compare('density, discs and log', s => s.scatter.applyOptions({ shape: 'circle', valueScale: 'log' }));
+		await compare('density, fixed range', s =>
+			s.scatter.applyOptions({ valueMin: 2, valueMax: 5, valueScale: 'linear' }),
+		);
+		await compare('density point appended, fixed range', s =>
+			s.scatter.update({ time: barTime(95) + 55000, price: 84, value: 1, size: 3 }),
+		);
+		await compare('density, automatic range', s => s.scatter.applyOptions({ valueMin: null, valueMax: null }));
+		await compare('density point appended under the top', s =>
+			s.scatter.update({ time: barTime(95) + 56000, price: 84, value: 1, size: 3 }),
+		);
+		await compare('density points appended above the top', s =>
+			s.scatter.append(Array.from({ length: 40 }, () => ({ time: barTime(95) + 57000, price: 84, value: 1, size: 4 }))),
+		);
+		readouts();
+		await compare('dense density at a coarse level', s => {
+			const n = 600000;
+			const time = new Float64Array(n),
+				price = new Float64Array(n);
+			let seed = 17;
+			for (let i = 0; i < n; i++) {
+				time[i] = barTime(Math.floor((i / n) * 90)) + Math.floor((((i / n) * 90) % 1) * 60000);
+				seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+				// Prices on twenty levels: points share cells, which count them.
+				price[i] = 70 + 1.25 * Math.floor((20 * seed) / 4294967296);
+			}
+			s.scatter.applyOptions({ shape: 'square', pointSize: 1, valueScale: 'log' });
+			s.scatter.setData({ time, price });
+			s.chart.timeScale().setVisibleLogicalRange({ from: 0.6, to: 92.2 });
+		});
+		const coarse = b.scatter.drawn();
+		if (coarse.level < 1 || coarse.level !== a.scatter.drawn().level)
+			throw Error('Coarse density level not exercised: ' + JSON.stringify([coarse, a.scatter.drawn()]));
+		readouts();
+		// Linear from 1 to the largest: the WebGL2 entries are computed on the GPU, from counts of cells.
+		await compare('dense density at a coarse level, linear', s => s.scatter.applyOptions({ valueScale: 'linear' }));
+		await compare('dense density, zoom to the points', s =>
+			s.chart.timeScale().setVisibleLogicalRange({ from: 40.3, to: 43.1 }),
+		);
+		await compare('value colors again', s => {
+			s.chart.restoreState(state);
+			s.scatter.applyOptions({ shape: 'square', pointSize: 2 });
+			s.scatter.setData(s.points);
+		});
+		if (b.scatter.options().colorBy !== 'value') throw Error('colorBy was not restored');
+		styled = { floatBlend, density: densityRenderer, coarse };
 		if (mode === 'hardware' || mode === 'webgl2') {
 			await compare('dense scatter', s => {
 				const n = 390000;
@@ -325,14 +460,15 @@ async function check(
 			});
 			if (b.scatter.renderer().path !== (mode === 'hardware' ? 'scatter-columns' : 'webgl2'))
 				throw Error('Dense column kernel not exercised: ' + JSON.stringify(b.scatter.drawn()));
-			// Squares of 5, 7 and 9 device pixels at the three ratios, in a pane taller than one
-			// 1024-row strip at 2, take the kernel that reads a marker's rows back.
+			// Squares of 5, 7 and 9 device pixels at the three desktop ratios, in a pane taller than
+			// one 1024-row strip at 2, take the kernel that reads a marker's rows back. Above a ratio
+			// of 2 (2.625 on many phones) the squares stay at 9, the largest WebGPU draws.
 			await compare('large squares in a tall pane', s => {
 				s.chart.resize(380, 620);
-				s.scatter.applyOptions({ pointSize: 4.5 });
+				s.scatter.applyOptions({ pointSize: Math.min(4.5, 9 / devicePixelRatio) });
 			});
 			if (mode === 'hardware' && kernel(b) !== 'scatter-columns-wide')
-				throw Error('Wide column kernel not exercised: ' + kernel(b));
+				throw Error('Wide column kernel not exercised: ' + kernel(b) + ' ' + JSON.stringify(b.scatter.renderer()));
 			await compare('point appended to large squares', s =>
 				s.scatter.update({ time: barTime(82) + 60000, price: 81, value: 64 }),
 			);
@@ -375,6 +511,17 @@ async function check(
 				s.chart.priceScale().applyOptions({ invertScale: true }),
 			);
 			await compare('price scale restored', s => s.chart.priceScale().applyOptions({ invertScale: false }));
+			// With most rows held in view, a draw that starts over projects all of them, and a pan
+			// then has none left to project.
+			const wide: [string, number, number][] = [
+				['dense scatter, most rows in view', 50.2, 90.4],
+				['dense scatter, pan over rows all projected', 49.6, 89.8],
+			];
+			for (const [name, from, to] of wide) {
+				await compare(name, s => s.chart.timeScale().setVisibleLogicalRange({ from, to }));
+				if (mode === 'hardware' && b.scatter.renderer().path !== 'scatter-columns')
+					throw Error(name + ' left the column kernel: ' + b.scatter.renderer().path);
+			}
 			await compare('large squares restored', s => {
 				s.chart.resize(365, 231);
 				s.scatter.applyOptions({ pointSize: 2 });
@@ -509,10 +656,15 @@ async function check(
 		report = {
 			mode,
 			worker,
+			tolerance,
+			/** Comparisons with any difference, all within the tolerance. */
+			inexact: results.filter(result => result.different > 0).length,
+			largest: Math.max(0, ...results.map(result => result.largest)),
 			firstFrameMs,
 			readyMs,
 			peakBytes,
 			fallback: b.heat.renderer().reason,
+			styled,
 			checks: results.length,
 			results,
 		};

@@ -41,7 +41,7 @@ describe('WebGPU heatmap palette thresholds', () => {
 			}
 			const values = Float32Array.from(inputs),
 				slots = new Uint8Array(inputs.length);
-			quantize(values, slots, 1, 0, values.length, mapping);
+			quantize(values, slots, 0, values.length, mapping);
 			for (let i = 0; i < values.length; i++) {
 				const value = values[i]!;
 				floats[0] = value;

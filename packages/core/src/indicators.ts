@@ -3,11 +3,15 @@ import {
 	type EngineClient,
 	type IndicatorInfo,
 	type IndicatorInputRef,
+	MARK_COLUMNS,
+	MARK_COLUMNS_OF,
+	type MarkColumn,
 	type PluginResult,
 	SOURCE_COLUMNS,
 	indicatorInfo,
 	resolveParams,
 } from '@lumen-charts/engine';
+import type { HeatmapSeriesApi, ScatterSeriesApi } from './marks/series';
 import { INVALIDATE_LIGHT } from './model/invalidation';
 import { type DeepPartial, type HistogramOptions, type LineOptions, definedOnly, shallowEqual } from './options';
 import type { SeriesRenderer } from './primitives';
@@ -19,9 +23,14 @@ export type SourceColumn = 'time' | 'open' | 'high' | 'low' | 'close' | 'volume'
 
 /**
  * Where one input of an indicator reads from: a column of the indicator's source, a column of
- * another series, or the values of another indicator's output (a chain).
+ * another series, the values of another indicator's output (a chain), or a column of a heatmap or
+ * scatter series per bar (see `MarkColumn`: the marks of each bar, aggregated in the engine).
  */
-export type IndicatorInput = SourceColumn | { series: SeriesApi; column?: SourceColumn } | IndicatorOutputApi;
+export type IndicatorInput =
+	| SourceColumn
+	| { series: SeriesApi; column?: SourceColumn }
+	| IndicatorOutputApi
+	| { series: ScatterSeriesApi | HeatmapSeriesApi; column: MarkColumn };
 
 /** Options of an output's series: a line or a histogram, as the indicator defines it. */
 export type IndicatorOutputOptions = Partial<LineOptions> | Partial<HistogramOptions>;
@@ -361,6 +370,10 @@ export interface ChartIndicatorsHost extends IndicatorHost {
 	seriesRemoved(series: Series): void;
 	/** URL relative module URLs are resolved against. */
 	baseUrl(): string;
+	/** The heatmap or scatter series `value` is, with its engine id; null for anything else. */
+	markOf(
+		value: unknown,
+	): { readonly engineId: number; readonly type: 'heatmap' | 'scatter'; readonly id: string } | null;
 }
 
 /**
@@ -456,7 +469,8 @@ export class ChartIndicators {
 					const read = (input as { series: Series; column?: SourceColumn }).series;
 					const column =
 						(input as { column?: SourceColumn }).column ?? (indicator.definition.inputs[i] as SourceColumn);
-					return read.derived ? (reference(read) as IndicatorInputState) : { series: read.id, column };
+					// A heatmap or scatter is named by its id, as a series is.
+					return read.derived === true ? (reference(read) as IndicatorInputState) : { series: read.id, column };
 				}),
 				outputs,
 				priceScaleId: options.priceScaleId,
@@ -477,6 +491,7 @@ export class ChartIndicators {
 	public restore(
 		plans: readonly IndicatorPlan[],
 		seriesById: (id: string) => Series | undefined,
+		markById: (id: string) => ScatterSeriesApi | HeatmapSeriesApi | undefined = () => undefined,
 	): Map<string, Indicator> {
 		const restored = new Map<string, Indicator>();
 		const seriesOf = (reference: SeriesReference): Series | undefined =>
@@ -513,7 +528,10 @@ export class ChartIndicators {
 				if ('indicator' in input) {
 					return restored.get(input.indicator)!.output(input.output);
 				}
-				return { series: seriesById(input.series)!, column: input.column };
+				const mark = markById(input.series);
+				return mark === undefined
+					? { series: seriesById(input.series)!, column: input.column }
+					: { series: mark, column: input.column as MarkColumn };
 			}) as IndicatorInput[],
 			outputs: plan.outputs,
 			priceScaleId: plan.priceScaleId,
@@ -645,6 +663,17 @@ export class ChartIndicators {
 		column: string,
 	): IndicatorInputRef {
 		const output = outputSeries(input);
+		const mark =
+			typeof input === 'object' && output === null ? this._host.markOf((input as { series: unknown }).series) : null;
+		if (mark !== null) {
+			const field = (input as { column?: string }).column as MarkColumn;
+			if (!MARK_COLUMNS_OF[mark.type].includes(field)) {
+				throw new RangeError(
+					`lumen-charts: an indicator reads a ${mark.type} by one of ${MARK_COLUMNS_OF[mark.type].join(', ')}, not "${String(field)}"`,
+				);
+			}
+			return { series: mark.engineId, column: MARK_COLUMNS[field] };
+		}
 		const read = output ?? (typeof input === 'string' ? source : (input as { series: SeriesApi }).series);
 		if (!(read instanceof Series) || !this._host.seriesList.includes(read)) {
 			throw new Error('An indicator input must read a series or an indicator output of this chart');

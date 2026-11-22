@@ -22,12 +22,18 @@ import {
 	planRestore,
 } from './state';
 
+import type { HeatmapSeriesApi, ScatterSeriesApi } from './marks/series';
+
 /** What saving and restoring a state needs from the chart. */
 export interface StateHost {
 	addSeries<T extends SeriesType>(type: T, options?: SeriesCreateOptions<T>): SeriesApi<T>;
 	removeSeries(series: SeriesApi): void;
 	/** The series with this id that is not the output of an indicator. */
 	seriesNamed(id: string): Series | undefined;
+	/** The heatmap or scatter series with this id. */
+	markNamed(id: string): ScatterSeriesApi | HeatmapSeriesApi | undefined;
+	/** The heatmap and scatter series a state's indicators may read, by id (see `RestoreContext.markKinds`). */
+	markKinds(): ReadonlyMap<string, 'heatmap' | 'scatter'>;
 	/** Takes `input` in place of the options applied so far. */
 	replaceOptions(input: DeepPartial<ChartOptions>): void;
 	/** Runs `changes` with one invalidation at the end, whatever they change. */
@@ -111,6 +117,7 @@ export class StateIo {
 		const plan = planRestore(state, selection.parts, {
 			definition: name => this._indicators.definition(name),
 			seriesIds: () => this._series.filter(series => !series.derived).map(series => series.id),
+			markKinds: () => this._host.markKinds(),
 			outputDefaults: outputSeriesDefaults,
 		});
 		let input: DeepPartial<ChartOptions> | null = null;
@@ -131,14 +138,19 @@ export class StateIo {
 			this._restoreSeries(plan.series, order);
 		}
 		if (plan.indicators !== null) {
-			const restored = this._indicators.restore(plan.indicators, id => this._host.seriesNamed(id));
+			const restored = this._indicators.restore(
+				plan.indicators,
+				id => this._host.seriesNamed(id),
+				id => this._host.markNamed(id),
+			);
 			for (const entry of plan.indicators) {
 				order.set(restored.get(entry.id)!, entry.order);
 			}
 		}
 		if (order.size > 0) {
 			// Drawing order: what was restored by its place in the state, the rest by where it is now.
-			const units = this._units();
+			// The hidden timelines of heatmaps and scatters stay in the list, where they draw nothing.
+			const units = this._units(true);
 			const keys = new Map(units.map((unit, i) => [unit, order.get(unit) ?? i]));
 			units.sort((a, b) => keys.get(a)! - keys.get(b)!);
 			const list = this._series;
@@ -206,7 +218,12 @@ export class StateIo {
 	}
 
 	/** Series and indicators in drawing order; the outputs of an indicator are drawn together. */
-	private _units(): (Series | Indicator)[] {
+	/**
+	 * The series and indicators in drawing order, an indicator in the place of its outputs. The
+	 * timelines heatmaps and scatters make (derived series no indicator owns) are left out of saved
+	 * state, and kept with `hidden`.
+	 */
+	private _units(hidden = false): (Series | Indicator)[] {
 		const owners = new Map<Series, Indicator>();
 		for (const indicator of this._indicators.list) {
 			for (const output of indicator.outputList) {
@@ -217,6 +234,10 @@ export class StateIo {
 		const listed = new Set<Indicator>();
 		for (const series of this._series) {
 			const owner = owners.get(series);
+			if (owner === undefined && series.derived && !hidden) {
+				// The timeline a heatmap or scatter makes, which the series makes again.
+				continue;
+			}
 			if (owner === undefined) {
 				units.push(series);
 			} else if (!listed.has(owner)) {

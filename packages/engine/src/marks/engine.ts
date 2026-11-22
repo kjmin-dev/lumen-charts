@@ -1,11 +1,22 @@
 import { HeatmapStore } from './heatmap-store';
-import type { MarksChange, MarksRequest, MarksStore, MarksUpdate } from './protocol';
+import type {
+	MarksTimeline,
+	MarksChange,
+	MarksChunk,
+	MarksData,
+	MarksFetchRequest,
+	MarksRequest,
+	MarksRestoreResult,
+	MarksStore,
+	MarksUpdate,
+} from './protocol';
 import { ScatterStore } from './scatter-store';
 
 /** The window of a series the client was sent last: appends that change rows of it are patched in. */
 interface Subscription {
 	generation: number;
 	level: number;
+	start: number;
 	end: number;
 	/** The window ended with the last row of its level, so rows added after it follow on. */
 	live: boolean;
@@ -13,24 +24,61 @@ interface Subscription {
 
 interface Hosted {
 	store: MarksStore;
-	/** Changes with every `set`. */
+	/** Changes with every `set` and `delete`. */
 	generation: number;
 	subscription: Subscription | null;
+	/** The series has a datafeed: chunks of its marks may be let go under the memory limit. */
+	fetchable: boolean;
+	/** Times the last window request asked for, whose marks stay in memory. */
+	keepFrom: number;
+	keepTo: number;
+	/**
+	 * The chunks the last window request needs and that were let go: it was answered with a coarser
+	 * level meanwhile (`MarksUpdate.partial`), and the client is told to ask again once they are back.
+	 */
+	deferred: number[] | null;
+	/** Fetch requests out, by chunk. */
+	fetching: Map<number, number>;
+	/** Chunks asked for because the last view needs them, and because an indicator recomputation reads them. */
+	forView: Set<number>;
+	forRead: Set<number>;
+	/**
+	 * Chunks a waiting removal needs, asked for or back: kept in memory until the waiting changes
+	 * have run, so one that came back does not go again before the others are back.
+	 */
+	pinned: Set<number>;
+	/** Changes waiting for chunks let go (a removal that reads or moves them), and those after them. */
+	queue: MarksChange[];
+	/** The line series whose bars the marks make, if any. */
+	timeline: MarksTimeline | null;
 }
 
 /** What a change or a window request of a marks series leaves in the event that answers it. */
 export interface MarksOutcome {
 	rejected: number;
+	/**
+	 * The changes that took effect while running the command, in order: those of the command and
+	 * those that waited for marks to come back. For the engine, which follows them with the
+	 * indicators and timelines made from the marks; not sent to the client.
+	 */
+	appliedMarks?: { series: number; change: Exclude<MarksChange, { op: 'add' } | { op: 'remove' }> }[];
 	marks?: MarksUpdate[];
+	marksFetch?: MarksFetchRequest[];
+	marksCancel?: number[];
+	marksRestored?: MarksRestoreResult;
 }
 
 /**
  * The marks series of an engine: their stores, and for each the window the client holds, which an
  * append patches with the rows it changed (the new points, the cells of the last time bucket, the
- * last column) in the event that answers it.
+ * last column) in the event that answers it. A prepend or a deletion is not patched: the client is
+ * told to ask for its view again (`MarksUpdate.notice`).
  */
 export class MarksEngine {
 	private readonly _series = new Map<number, Hosted>();
+	/** Fetch requests out, by id: the series and chunk each is for. */
+	private readonly _requests = new Map<number, { series: number; chunk: number }>();
+	private _nextRequest = 1;
 
 	/** Bytes held by the stores. */
 	public get byteLength(): number {
@@ -41,6 +89,29 @@ export class MarksEngine {
 		return bytes;
 	}
 
+	/** The store of a series, for readers in the engine; undefined for a series it does not have. */
+	public store(series: number): MarksStore | undefined {
+		return this._series.get(series)?.store;
+	}
+
+	/** Whether `series` is a marks series. */
+	public has(series: number): boolean {
+		return this._series.has(series);
+	}
+
+	/** Fetch requests out, and changes waiting for marks to come back. */
+	public get requests(): number {
+		return this._requests.size;
+	}
+
+	public get waiting(): number {
+		let waiting = 0;
+		for (const hosted of this._series.values()) {
+			waiting += hosted.queue.length;
+		}
+		return waiting;
+	}
+
 	/** Applies a change. A bulk change yields between slices of work. */
 	public *change(series: number, change: MarksChange, outcome: MarksOutcome): Generator<undefined, void, undefined> {
 		if (change.op === 'add') {
@@ -48,31 +119,107 @@ export class MarksEngine {
 				store: change.kind === 'heatmap' ? new HeatmapStore() : new ScatterStore(),
 				generation: 0,
 				subscription: null,
+				fetchable: change.fetchable === true,
+				keepFrom: Number.NaN,
+				keepTo: Number.NaN,
+				deferred: null,
+				fetching: new Map(),
+				forView: new Set(),
+				forRead: new Set(),
+				pinned: new Set(),
+				queue: [],
+				timeline: change.timeline ?? null,
 			});
 			return;
 		}
+		const hosted = this._series.get(series);
 		if (change.op === 'remove') {
+			if (hosted !== undefined) {
+				this._forget(hosted, outcome);
+			}
 			this._series.delete(series);
 			return;
 		}
-		const hosted = this._series.get(series);
 		if (hosted === undefined) {
-			outcome.rejected = change.data.count;
+			outcome.rejected = change.op === 'delete' ? 0 : change.data.count;
 			return;
 		}
-		const store = hosted.store;
 		if (change.op === 'set') {
-			hosted.generation++;
-			hosted.subscription = null;
-			outcome.rejected = yield* store.set(change.data);
-			store.clearChanges();
+			// A new history: what waited for the old one, and the requests for it, are dropped.
+			hosted.queue.length = 0;
+			this._forget(hosted, outcome);
+			if (change.fetchable !== undefined) {
+				hosted.fetchable = change.fetchable;
+			}
+		} else if (hosted.queue.length > 0) {
+			// Behind a change that waits for marks to come back, in the order they came.
+			hosted.queue.push(change);
 			return;
+		}
+		yield* this._apply(series, hosted, change, outcome);
+	}
+
+	/**
+	 * Applies a change that does not wait. A removal that reads or moves marks let go waits for them:
+	 * it is queued, and they are asked for.
+	 */
+	private *_apply(
+		series: number,
+		hosted: Hosted,
+		change: Exclude<MarksChange, { op: 'add' } | { op: 'remove' }>,
+		outcome: MarksOutcome,
+	): Generator<undefined, void, undefined> {
+		const store = hosted.store;
+		(outcome.appliedMarks ??= []).push({ series, change });
+		switch (change.op) {
+			case 'set':
+				hosted.generation++;
+				hosted.subscription = null;
+				outcome.rejected = yield* store.set(change.data);
+				store.clearChanges();
+				return;
+			case 'prepend': {
+				const subscription = hosted.subscription;
+				const head = subscription === null ? Infinity : store.first(subscription.level);
+				outcome.rejected = yield* store.prepend(change.data);
+				store.clearChanges();
+				if (subscription !== null && subscription.level > 0 && subscription.start <= head) {
+					// The first bucket of a coarse level took prepended marks in: the rows the client
+					// holds from there are not the engine's any more.
+					hosted.generation++;
+				}
+				// The rows held keep their indexes, but the view may now reach rows in front of them.
+				this._notice(series, hosted, outcome);
+				return;
+			}
+			case 'delete': {
+				const needed: number[] = [];
+				store.needs(change.from, change.to, needed);
+				if (needed.length > 0) {
+					hosted.queue.unshift(change);
+					outcome.appliedMarks!.pop();
+					this._fetch(series, hosted, needed, outcome, hosted.pinned);
+					return;
+				}
+				const removed = yield* store.delete(change.from, change.to);
+				store.clearChanges();
+				if (removed > 0) {
+					hosted.generation++;
+					this._notice(series, hosted, outcome);
+					hosted.subscription = null;
+					// Rows moved: chunks asked for are other rows now. What still needs them asks again.
+					this._forget(hosted, outcome);
+				}
+				return;
+			}
 		}
 		outcome.rejected = yield* store.append(change.data);
 		const subscription = hosted.subscription;
 		if (subscription !== null) {
 			const from = store.changedFrom(subscription.level);
-			const end = subscription.live ? store.total(subscription.level) : subscription.end;
+			const end = subscription.live
+				? store.first(subscription.level) + store.total(subscription.level)
+				: subscription.end;
 			if (from < end) {
 				const update = emptyUpdate(series, hosted.generation);
 				store.read(subscription.level, from, end, update);
@@ -83,17 +230,59 @@ export class MarksEngine {
 		store.clearChanges();
 	}
 
-	/** Answers a window request: the rows of the level the view needs, or that the client has them. */
+	/** Tells the client holding a window of the series to ask for its view again. */
+	private _notice(series: number, hosted: Hosted, outcome: MarksOutcome): void {
+		const subscription = hosted.subscription;
+		if (subscription === null) {
+			// Nothing was sent since the last `set`, or the answer to a request out reflects the change.
+			return;
+		}
+		const update = emptyUpdate(series, hosted.generation);
+		hosted.store.read(subscription.level, 0, 0, update);
+		update.notice = true;
+		(outcome.marks ??= []).push(update);
+	}
+
+	/**
+	 * Answers a window request: the rows of the level the view needs, or that the client has them.
+	 * Where the level is 0 and some of its rows were let go, they are asked for, and the answer holds
+	 * the finest coarse level meanwhile (`partial`); a notice follows once they are back.
+	 */
 	public window(series: number, seq: number, request: MarksRequest, outcome: MarksOutcome): void {
 		const hosted = this._series.get(series);
 		if (hosted === undefined) {
 			return;
 		}
 		const store = hosted.store;
-		const selection = store.select(request);
+		let selection = store.select(request);
+		hosted.keepFrom = request.from;
+		hosted.keepTo = request.to;
+		const missing: number[] = [];
+		store.missing(selection.level, selection.start, selection.end, missing);
+		// Requests the view made for marks it left, and nothing else waits for, are dropped.
+		for (const chunk of hosted.forView) {
+			if (!missing.includes(chunk) && !hosted.forRead.has(chunk) && !hosted.pinned.has(chunk)) {
+				this._cancelChunk(hosted, chunk, outcome);
+			}
+		}
+		hosted.forView.clear();
+		hosted.deferred = null;
+		// A waiting removal whose marks failed to come back asks again, with the view.
+		const waiting = this._queueNeeds(hosted);
+		if (waiting.length > 0) {
+			this._fetch(series, hosted, waiting, outcome, hosted.pinned);
+		}
+		if (missing.length > 0) {
+			this._fetch(series, hosted, missing, outcome, hosted.forView);
+			hosted.deferred = missing;
+			selection = store.select(request, 1);
+		}
 		const update = emptyUpdate(series, hosted.generation);
 		update.request = seq;
-		const total = store.total(selection.level);
+		if (missing.length > 0) {
+			update.partial = true;
+		}
+		const end = store.first(selection.level) + store.total(selection.level);
 		if (
 			request.generation === hosted.generation &&
 			request.heldLevel === selection.level &&
@@ -103,33 +292,277 @@ export class MarksEngine {
 			// Nothing to copy. The description of the level comes with the rows of an empty read.
 			store.read(selection.level, request.heldStart, request.heldStart, update);
 			update.kept = true;
-			update.count = Math.min(request.heldEnd, total) - request.heldStart;
+			update.count = Math.min(request.heldEnd, end) - request.heldStart;
 			hosted.subscription = {
 				generation: hosted.generation,
 				level: selection.level,
+				start: request.heldStart,
 				end: request.heldEnd,
-				live: request.heldEnd >= total,
+				live: request.heldEnd >= end,
 			};
 		} else {
 			store.read(selection.level, selection.start, selection.end, update);
 			hosted.subscription = {
 				generation: hosted.generation,
 				level: selection.level,
+				start: selection.start,
 				end: selection.end,
-				live: selection.end >= total,
+				live: selection.end >= end,
 			};
 		}
 		(outcome.marks ??= []).push(update);
 	}
+
+	// Memory
+
+	/** Asks for the chunks of a series that are not asked for yet, noting them in `purpose`. */
+	private _fetch(
+		series: number,
+		hosted: Hosted,
+		chunks: readonly number[],
+		outcome: MarksOutcome,
+		purpose: Set<number>,
+	): void {
+		for (const chunk of chunks) {
+			purpose.add(chunk);
+			if (hosted.fetching.has(chunk)) {
+				continue;
+			}
+			const range = hosted.store.fetchRange(chunk);
+			if (range === null) {
+				continue;
+			}
+			const id = this._nextRequest++;
+			hosted.fetching.set(chunk, id);
+			this._requests.set(id, { series, chunk });
+			(outcome.marksFetch ??= []).push({ id, series, ...range });
+		}
+	}
+
+	/** Cancels the request of a series for a chunk, if one is out. */
+	private _cancelChunk(hosted: Hosted, chunk: number, outcome: MarksOutcome): void {
+		const id = hosted.fetching.get(chunk);
+		if (id !== undefined) {
+			hosted.fetching.delete(chunk);
+			this._requests.delete(id);
+			(outcome.marksCancel ??= []).push(id);
+		}
+	}
+
+	/**
+	 * Cancels every request of a series and forgets why chunks were asked for: its rows were replaced
+	 * or moved, so chunk numbers name other rows. What still needs marks asks for them again.
+	 */
+	private _forget(hosted: Hosted, outcome: MarksOutcome): void {
+		// Deleting the entry being visited is safe while iterating a Map.
+		for (const chunk of hosted.fetching.keys()) {
+			this._cancelChunk(hosted, chunk, outcome);
+		}
+		hosted.forView.clear();
+		hosted.forRead.clear();
+		hosted.pinned.clear();
+		hosted.deferred = null;
+	}
+
+	/** Chunks let go that the changes waiting for marks need first. */
+	private _queueNeeds(hosted: Hosted): number[] {
+		const needed: number[] = [];
+		const first = hosted.queue[0];
+		if (first !== undefined && first.op === 'delete') {
+			hosted.store.needs(first.from, first.to, needed);
+		}
+		return needed;
+	}
+
+	/**
+	 * Takes marks fetched again for request `request` (null: fetching failed). Changes that waited for
+	 * them run, and the client whose view needed them is told to ask again. Returns the number of
+	 * changes that ran.
+	 */
+	public *restore(
+		request: number,
+		data: MarksData | null,
+		outcome: MarksOutcome,
+	): Generator<undefined, number, undefined> {
+		const entry = this._requests.get(request);
+		if (entry === undefined) {
+			// Cancelled, or for a series that is gone: nothing needs it.
+			return 0;
+		}
+		this._requests.delete(request);
+		const hosted = this._series.get(entry.series)!;
+		hosted.fetching.delete(entry.chunk);
+		const store = hosted.store;
+		const restored = data !== null && store.restore(entry.chunk, data);
+		if (restored) {
+			hosted.forView.delete(entry.chunk);
+			hosted.forRead.delete(entry.chunk);
+		}
+		outcome.marksRestored = {
+			request,
+			series: entry.series,
+			outcome: data === null ? 'failed' : restored ? 'restored' : 'mismatch',
+		};
+		if (!restored) {
+			return 0;
+		}
+		// The changes that waited, while nothing they read is missing.
+		let applied = 0;
+		while (hosted.queue.length > 0) {
+			const needed = this._queueNeeds(hosted);
+			if (needed.length > 0) {
+				this._fetch(entry.series, hosted, needed, outcome, hosted.pinned);
+				break;
+			}
+			const change = hosted.queue.shift()!;
+			applied++;
+			yield* this._apply(
+				entry.series,
+				hosted,
+				change as Exclude<MarksChange, { op: 'add' } | { op: 'remove' }>,
+				outcome,
+			);
+		}
+		if (hosted.queue.length === 0) {
+			hosted.pinned.clear();
+		}
+		const deferred = hosted.deferred;
+		if (deferred !== null) {
+			const left: number[] = [];
+			for (const chunk of deferred) {
+				const range = store.fetchRange(chunk);
+				if (range !== null) {
+					left.push(chunk);
+				}
+			}
+			if (left.length === 0) {
+				hosted.deferred = null;
+				this._notice(entry.series, hosted, outcome);
+			}
+		}
+		return applied;
+	}
+
+	/**
+	 * Lets go of chunks of series with a datafeed, those farthest from what their views asked for
+	 * first, until `excess` bytes are freed or `max` chunks went. Returns the bytes freed, and whether
+	 * more could go.
+	 */
+	public evict(
+		excess: number,
+		max: number,
+		read: ReadonlySet<number> = NO_SERIES,
+		readTime = Infinity,
+	): { freed: number; more: boolean } {
+		const candidates: (MarksChunk & { hosted: Hosted; distance: number })[] = [];
+		const out: MarksChunk[] = [];
+		for (const [series, hosted] of this._series) {
+			if (!hosted.fetchable) {
+				continue;
+			}
+			out.length = 0;
+			const keepFrom = hosted.keepFrom === hosted.keepFrom ? hosted.keepFrom : Infinity;
+			const keepTo = hosted.keepTo === hosted.keepTo ? hosted.keepTo : -Infinity;
+			hosted.store.evictable(keepFrom, keepTo, out);
+			// Marks a recomputation of an indicator has yet to read.
+			const keepAfter = read.has(series) ? readTime : Infinity;
+			for (const chunk of out) {
+				if (hosted.fetching.has(chunk.chunk) || hosted.pinned.has(chunk.chunk) || chunk.to >= keepAfter) {
+					continue;
+				}
+				const distance =
+					keepFrom <= keepTo ? Math.max(keepFrom - chunk.to, chunk.from - keepTo) : -Math.abs(chunk.from);
+				candidates.push({ ...chunk, hosted, distance });
+			}
+		}
+		candidates.sort((a, b) => b.distance - a.distance);
+		let freed = 0;
+		const n = Math.min(candidates.length, max);
+		let i = 0;
+		for (; i < n && freed < excess; i++) {
+			const candidate = candidates[i]!;
+			freed += candidate.hosted.store.evict(candidate.chunk);
+		}
+		return { freed, more: freed < excess && i < candidates.length };
+	}
+
+	// Indicators over marks
+
+	/**
+	 * Column `column` of a marks series for `n` bars (see `MarksStore.aggregate`); NaN for a series
+	 * the engine does not have.
+	 */
+	public aggregate(
+		series: number,
+		column: number,
+		bounds: Float64Array,
+		n: number,
+		out: Float64Array,
+		offset: number,
+	): void {
+		const store = this._series.get(series)?.store;
+		if (store === undefined) {
+			out.fill(Number.NaN, offset, offset + n);
+			return;
+		}
+		store.aggregate(column, bounds, n, out, offset);
+	}
+
+	/**
+	 * Whether the marks the bars of times `[from, to)` read are held. Those let go are asked for when
+	 * `outcome` is given: a recomputation of the indicators that read them waits until they are back.
+	 */
+	public held(series: number, from: number, to: number, outcome: MarksOutcome | null): boolean {
+		const hosted = this._series.get(series);
+		if (hosted === undefined) {
+			return true;
+		}
+		const missing: number[] = [];
+		hosted.store.missingTimes(from, to, missing);
+		if (missing.length > 0 && outcome !== null) {
+			this._fetch(series, hosted, missing, outcome, hosted.forRead);
+		}
+		return missing.length === 0;
+	}
+
+	/** The times a fetch request is for, while it is out. */
+	public requestTimes(request: number): { from: number; to: number } | null {
+		const entry = this._requests.get(request);
+		const range = entry === undefined ? null : this._series.get(entry.series)?.store.fetchRange(entry.chunk);
+		return range == null ? null : { from: range.from, to: range.to };
+	}
+
+	/** The line series a marks series makes the bars of, if any. */
+	public timelineOf(series: number): MarksTimeline | null {
+		return this._series.get(series)?.timeline ?? null;
+	}
+
+	/** See `MarksStore.bucketTimes`. */
+	public bucketTimes(series: number, interval: number, from: number, to: number): number[] {
+		return this._series.get(series)?.store.bucketTimes(interval, from, to) ?? [];
+	}
+
+	/** Chunks every series has let go. */
+	public get evicted(): number {
+		let evicted = 0;
+		for (const hosted of this._series.values()) {
+			evicted += hosted.store.evicted;
+		}
+		return evicted;
+	}
 }
 
+const NO_SERIES: ReadonlySet<number> = new Set();
+
 function emptyUpdate(series: number, generation: number): MarksUpdate {
+	// Arrays of their own: the update's buffers are transferred to the client.
 	return {
 		series,
 		generation,
 		level: 0,
 		start: 0,
 		count: 0,
+		first: 0,
 		total: 0,
 		timeStep: 0,
 		priceStep: 0,
@@ -137,11 +570,12 @@ function emptyUpdate(series: number, generation: number): MarksUpdate {
 		rows: 1,
 		valueMin: Number.NaN,
 		valueMax: Number.NaN,
-		time: EMPTY_TIME,
-		price: EMPTY_TIME,
-		values: EMPTY_VALUES,
+		time: new Float64Array(0),
+		price: new Float64Array(0),
+		values: new Float32Array(0),
+		counts: new Float32Array(0),
+		sizes: new Float32Array(0),
+		offsets: new Int32Array(0),
+		lengths: new Int32Array(0),
 	};
 }
-
-const EMPTY_TIME = new Float64Array(0);
-const EMPTY_VALUES = new Float32Array(0);

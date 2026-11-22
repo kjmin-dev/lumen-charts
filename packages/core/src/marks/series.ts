@@ -1,5 +1,6 @@
 import { HeatRanges, HeatPan } from './heat-ranges';
-import type { EngineClient, MarksUpdate } from '@lumen-charts/engine';
+import type { EngineClient, HeatmapColumns, MarksData, MarksTimeline, MarksUpdate } from '@lumen-charts/engine';
+import type { MarksDatafeed } from './fetches';
 import { DEFAULT_PRICE_SCALE_ID, definedOnly } from '../options';
 import type { PriceAxis, PriceScaleApi } from '../price-axes';
 import type { DrawTarget, PanePrimitive, PrimitiveHost, PrimitiveZOrder } from '../primitives';
@@ -27,16 +28,23 @@ import {
 	type PixelBox,
 	type PointStamp,
 	type PriceProjection,
+	StampCache,
+	accumulateScatter,
+	clearDensity,
+	colorDensity,
 	drawHeatmap,
 	heatEdge,
 	heatEndTime,
+	heatRowSpan,
 	drawScatter,
 	emptyBox,
 	makeStamp,
+	pointPixels,
 	priceExtent,
 	quantize,
 	slotColors,
 } from './render';
+import { DensityScale, SizeExtent, exactDensities, hitScatter } from './scatter-style';
 import { CanvasMarkBackend } from './canvas-backend';
 import {
 	type HeatSlots,
@@ -49,6 +57,13 @@ import {
 import { GlMarkClient } from './gl/renderer';
 import type { TimeMap } from './time-map';
 import { MarksWindow } from './window';
+
+/**
+ * Draws a heatmap's automatic value range must stay the same before its GPU renderer draws from
+ * palette slots, and the cells quantized for that per draw (about a millisecond on an M1).
+ */
+export const AUTO_SLOTS_DRAWS = 30;
+export const AUTO_SLOTS_CELLS = 262_144;
 
 /** Rows of a scatter window whose lowest and highest price are kept together, for the autoscale. */
 const EXTENT_BLOCK = 4096;
@@ -91,13 +106,49 @@ export interface ScatterSeriesApi extends MarkSeriesApi<'scatter'> {
 	/**
 	 * Replaces the points. Times are UTC milliseconds; points are drawn in time order (an input out
 	 * of order is sorted), and several may share a time. A point without a finite time and price is
-	 * left out.
+	 * left out. `options.datafeed` replaces the series' datafeed (null for none) for the new points,
+	 * of another symbol say; left out, the datafeed stays.
 	 */
-	setData(data: ScatterData): void;
+	setData(data: ScatterData, options?: { datafeed?: MarksDatafeed<ScatterData> | null }): void;
 	/** Adds a point at or after the time of the last one; an earlier one is refused. */
 	update(point: ScatterPoint): void;
 	/** Adds points at or after the time of the last one, in time order: one message for all of them. */
 	append(data: ScatterData): void;
+	/**
+	 * Adds older points, at or before the time of the first one; a later one is refused. They are
+	 * drawn before (under) the points there are. The points held keep their place, so a view of the
+	 * newest points does not wait for them.
+	 */
+	prepend(data: ScatterData): void;
+	/** Removes the points with times in `[from, to]` (UTC milliseconds, inclusive). */
+	removeMarks(range: { from: number; to: number }): void;
+	/**
+	 * The point drawn at a position of the pane, in CSS pixels from its top left corner (the `point`
+	 * of a `crosshairMove` or `click` event): of the points whose mark covers the device pixel there,
+	 * as the last frame placed, sized and shaped them, the one drawn on top (the last in time order).
+	 * Null where no point is drawn, and for a hidden series. At a coarse level of detail the point is
+	 * a cell of points: its time and price are the cell's center, its value and size the largest of
+	 * its points', and `count` their number. For a readout at the crosshair.
+	 */
+	pointAt(x: number, y: number): ScatterHit | null;
+}
+
+/** The point drawn at a position of the pane (see `ScatterSeriesApi.pointAt`). */
+export interface ScatterHit {
+	/** UTC milliseconds. */
+	time: number;
+	price: number;
+	/** The point's value; null for a point without one. */
+	value: number | null;
+	/** Width of its mark in CSS pixels as given: its own size, or the series' `pointSize`. */
+	size: number;
+	/** Points it stands for: 1, or the points a cell of a coarse level of detail holds. */
+	count: number;
+	/**
+	 * Points whose marks cover the pixel, this one and those under it, each counting as `count`: the
+	 * number a `colorBy: 'density'` series colors the pixel by.
+	 */
+	density: number;
 }
 
 /**
@@ -107,8 +158,11 @@ export interface ScatterSeriesApi extends MarkSeriesApi<'scatter'> {
  * there are more columns than pixels.
  */
 export interface HeatmapSeriesApi extends MarkSeriesApi<'heatmap'> {
-	/** Replaces the columns and sets the price grid (see `HeatmapData`). Throws a RangeError for a grid that is not one. */
-	setData(data: HeatmapData): void;
+	/**
+	 * Replaces the columns and sets the price grid (see `HeatmapData`). Throws a RangeError for a grid
+	 * that is not one. `options.datafeed` replaces the series' datafeed, as for a scatter.
+	 */
+	setData(data: HeatmapData, options?: { datafeed?: MarksDatafeed<HeatmapData> | null }): void;
 	/**
 	 * Replaces the last column when `column.time` is its time, or adds a column after it; an earlier
 	 * time is refused. The column is on the grid of the last `setData`, which must have come first.
@@ -116,6 +170,13 @@ export interface HeatmapSeriesApi extends MarkSeriesApi<'heatmap'> {
 	update(column: HeatmapColumn): void;
 	/** Adds columns after the last one, on the grid the series has (`data`'s must be the same). */
 	append(data: HeatmapData): void;
+	/**
+	 * Adds older columns, before the first one and in time order, on the grid the series has; a column
+	 * at or after the first column's time is refused.
+	 */
+	prepend(data: HeatmapData): void;
+	/** Removes the columns with times in `[from, to]` (UTC milliseconds, inclusive). */
+	removeMarks(range: { from: number; to: number }): void;
 	/**
 	 * The value of the cell at a time and a price, from the columns held around the view at the level
 	 * of detail drawn (so at a wide view, the highest of the columns merged there). Null outside the
@@ -137,6 +198,8 @@ export interface MarkSeriesHost {
 	scaleChanged(series: MarkSeries): void;
 	/** Asks for the rows the last view needs, without waiting for the frame. */
 	request(series: MarkSeries): void;
+	/** Aborts the datafeed requests of the series: it has new data, or another datafeed. */
+	abortFetches(series: MarkSeries): void;
 	axisOf(series: MarkSeries): PriceAxis;
 	/** What the frame maps times with, and its version, which changes with the mapping. */
 	readonly map: TimeMap;
@@ -169,6 +232,12 @@ export abstract class MarkSeries {
 	public readonly engineId: number;
 	public seriesOptions: AnyMarkOptions;
 	public readonly window = new MarksWindow();
+	/** Where marks the engine let go under the memory limit are fetched again; null: none are let go. */
+	public datafeed: MarksDatafeed<unknown> | null;
+	/** Pause after the last failed datafeed request, which doubles with every failure in a row. */
+	public fetchBackoff = 0;
+	/** The hidden line series whose bars the series makes, for a chart without bars of its own. */
+	public readonly timeline: MarksTimeline | null;
 	public readonly surface: CanvasMarkBackend;
 	private readonly _gpu = new MarkGpuClient();
 	private readonly _gl: GlMarkClient;
@@ -220,6 +289,8 @@ export abstract class MarkSeries {
 		options: Partial<AnyMarkOptions>,
 		zOrder: PrimitiveZOrder,
 		zIndex: number,
+		datafeed: MarksDatafeed<unknown> | null,
+		timeline: MarksTimeline | null = null,
 	) {
 		this._host = host;
 		this.id = id;
@@ -238,7 +309,9 @@ export abstract class MarkSeries {
 		this._palette = checkOptions(merged);
 		this._paletteOptions = merged;
 		this.seriesOptions = merged;
-		this.engineId = host.engine()?.addMarks(type) ?? -1;
+		this.datafeed = datafeed;
+		this.timeline = timeline;
+		this.engineId = host.engine()?.addMarks(type, datafeed !== null, timeline ?? undefined) ?? -1;
 		this.surface = new CanvasMarkBackend(host.document());
 		this._gl = new GlMarkClient(host.document(), this._invalidateBackend);
 	}
@@ -311,8 +384,13 @@ export abstract class MarkSeries {
 
 	// Data
 
-	/** Rows from the engine: a window, or the rows an append changed. */
+	/** Rows from the engine: a window, the rows an append changed, or a notice to ask again. */
 	public receive(update: MarksUpdate): void {
+		if (update.notice === true) {
+			this.window.notice(update);
+			this._host.request(this);
+			return;
+		}
 		if (this.window.apply(update)) {
 			if (this.type !== 'heatmap') this._primitiveHost?.requestUpdate();
 			this._host.rowsChanged(this);
@@ -322,6 +400,28 @@ export abstract class MarkSeries {
 	/** The data was replaced: the rows held are drawn until the new ones are here, asked for at once. */
 	protected _replaced(): void {
 		this.window.invalidate();
+		this._host.request(this);
+	}
+
+	/** Sends new data, with the datafeed `options` names if it names one. */
+	protected _set(data: MarksData, options: { datafeed?: MarksDatafeed<unknown> | null } | undefined): void {
+		let fetchable: boolean | undefined;
+		if (options !== undefined && 'datafeed' in options) {
+			this.datafeed = options.datafeed ?? null;
+			fetchable = this.datafeed !== null;
+			this._host.abortFetches(this);
+		}
+		this.fetchBackoff = 0;
+		this._host.engine()?.changeMarks(this.engineId, { op: 'set', data, fetchable });
+		this._replaced();
+	}
+
+	/** Packs what the datafeed returned as marks for the engine; throws for input it cannot read. */
+	public abstract packFetched(data: unknown): MarksData;
+
+	/** After a failed fetch: the view is asked for again, which asks for the marks again. */
+	public retry(): void {
+		this.window.retry();
 		this._host.request(this);
 	}
 
@@ -399,8 +499,14 @@ export abstract class MarkSeries {
 	): MarkRendererStatus['path'] {
 		if (pref === 'webgpu') {
 			const options = frame.options as ScatterOptions;
+			// The WebGPU kernels draw one square size for all points, by overwriting: points with sizes
+			// of their own, and densities, which add up, are WebGL2's.
 			const supported =
-				frame.type !== 'scatter' || (options.shape === 'square' && Math.round(options.pointSize * frame.ratio) <= 9);
+				frame.type !== 'scatter' ||
+				(options.shape === 'square' &&
+					Math.round(options.pointSize * frame.ratio) <= 9 &&
+					frame.window.sizes.length === 0 &&
+					options.colorBy !== 'density');
 			if (supported) {
 				this._gpu.start(this._host.document(), this._webgpuChanged);
 				const backend = this._gpu.backend;
@@ -464,9 +570,7 @@ export abstract class MarkSeries {
 			this._palette = buildPalette(options.palette);
 			this._paletteOptions = options;
 		}
-		const min = options.valueMin ?? window.valueMin;
-		const max = options.valueMax ?? window.valueMax;
-		setValueMapping(this._mapping, min, max, options.valueScale === 'log');
+		this._setValueMapping(this._mapping);
 		const current = this._current;
 		current[0] = host.mapVersion;
 		current[1] = offset;
@@ -541,23 +645,20 @@ export abstract class MarkSeries {
 					ratio,
 					from,
 					to,
-					slots: this._fixedSlots(),
+					slots: this._fixedSlots(from, to),
+					stampMax: this._frameStamp(ratio),
 				},
 				target.context,
 				!same,
 			);
 			if (path !== 'canvas2d') {
-				this._marks = Math.max(0, to - from) * (scatter ? 1 : window.rows);
+				this._marks = scatter ? Math.max(0, to - from) : heatCells(window, from, to);
 				this._peakBytes = Math.max(this._peakBytes, (this._gpu.backend?.bytes ?? 0) + this._gl.bytes);
 			}
 		}
 		if (path === 'canvas2d') {
 			const fresh = surface.resize(width, height);
-			const full =
-				fresh ||
-				wasGpu ||
-				!same ||
-				(this.type === 'scatter' && window.level > 0 && this._drawnRevision !== window.revision);
+			const full = fresh || wasGpu || !same || (this._drawnRevision !== window.revision && this._patchesRedraw());
 			if (full) this._marks = 0;
 			const reuse =
 				full &&
@@ -581,7 +682,10 @@ export abstract class MarkSeries {
 				this._canvasRows,
 				this._box,
 			);
-		} else if (!wasGpu) surface.release();
+		} else if (!wasGpu) {
+			surface.release();
+			this._canvasReleased();
+		}
 		// The patches of this frame are cleared below: a WebGL2 layer kept for later uploads anew.
 		if (path !== 'webgl2') this._gl.stale();
 		this._effective = path;
@@ -599,8 +703,44 @@ export abstract class MarkSeries {
 		return false;
 	}
 
-	/** The slots of a heatmap whose options fix the mapping of values; null otherwise. */
-	protected _fixedSlots(): HeatSlots | null {
+	/** Sets the mapping of values of this frame: the palette spans the values held, or the options' range. */
+	protected _setValueMapping(mapping: ValueMapping): void {
+		const options = this.seriesOptions;
+		const window = this.window;
+		setValueMapping(
+			mapping,
+			options.valueMin ?? window.valueMin,
+			options.valueMax ?? window.valueMax,
+			options.valueScale === 'log',
+		);
+	}
+
+	/** The widest mark of the frame in device pixels, for the renderers that pad by it. */
+	protected _frameStamp(_ratio: number): number {
+		return 1;
+	}
+
+	/**
+	 * Whether the window's patches since the last frame need the picture drawn again in Canvas 2D,
+	 * rather than written over it.
+	 */
+	protected _patchesRedraw(): boolean {
+		return false;
+	}
+
+	/** The Canvas 2D surface was let go for a GPU renderer: what else the Canvas path keeps can go too. */
+	protected _canvasReleased(): void {}
+
+	/** Whether the last frame could place the series' marks: its price scale had a range. */
+	protected get _placed(): boolean {
+		return this._current[8] === 1;
+	}
+
+	/**
+	 * A heatmap's palette slots for the GPU renderers to draw held columns `[from, to)` from, while
+	 * they serve (see `HeatmapSeries`); null: draw from the values.
+	 */
+	protected _fixedSlots(_from: number, _to: number): HeatSlots | null {
 		return null;
 	}
 
@@ -620,6 +760,20 @@ export abstract class MarkSeries {
 	protected abstract _drawRows(map: TimeMap, from: number, to: number, box: PixelBox): void;
 }
 
+/** Cells of held heatmap columns `[from, to)`. */
+function heatCells(window: MarksWindow, from: number, to: number): number {
+	return to > from ? window.cellStart(to) - window.cellStart(from) : 0;
+}
+
+/** Asks the engine to remove the marks of a range of times; throws a RangeError for a range that is not one. */
+function removeMarks(host: MarkSeriesHost, engineId: number, range: { from: number; to: number }): void {
+	const { from, to } = range;
+	if (typeof from !== 'number' || typeof to !== 'number' || Number.isNaN(from) || Number.isNaN(to) || from > to) {
+		throw new RangeError('lumen-charts: removeMarks needs a range of times with `from` at or before `to`');
+	}
+	host.engine()?.changeMarks(engineId, { op: 'delete', from, to });
+}
+
 /** The color table of options that are sound; throws a RangeError for those that are not. */
 export function checkOptions(options: AnyMarkOptions, palette = buildPalette(options.palette)): Uint32Array {
 	if ('color' in options && parseColor(options.color) === null) {
@@ -627,6 +781,9 @@ export function checkOptions(options: AnyMarkOptions, palette = buildPalette(opt
 	}
 	if (!(options.maxMarks >= 1)) {
 		throw new RangeError(`lumen-charts: maxMarks must be at least 1, got ${String(options.maxMarks)}`);
+	}
+	if ('colorBy' in options && options.colorBy !== 'value' && options.colorBy !== 'density') {
+		throw new RangeError(`lumen-charts: colorBy must be 'value' or 'density', got "${String(options.colorBy)}"`);
 	}
 	return palette;
 }
@@ -644,21 +801,45 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 	private readonly _scan = { low: 0, high: 0 };
 	private _colorOptions: ScatterOptions | null = null;
 	private _colorPixel = 0;
+	/** Stamps of the points with sizes of their own, and the largest size of the window. */
+	private readonly _stamps = new StampCache();
+	private readonly _sizes = new SizeExtent();
+	/**
+	 * Density of every device pixel (`colorBy: 'density'`), laid out as the surface's pixels; empty in
+	 * value mode. `_densityBox` holds every density above 0, `_densityPeak` is the largest, and the
+	 * densities are of the window's rows `[0, _densityRows)` that are in view.
+	 */
+	private _density = EMPTY_DENSITY;
+	private readonly _densityBox: PixelBox = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity };
+	private _densityPeak = 0;
+	private _densityRows = 0;
+	private _densityHeight = 0;
+	private readonly _densityScale = new DensityScale();
+	private readonly _densityMapping: ValueMapping = { min: 0, factor: 1, log: false };
+	private readonly _hit = { row: -1, density: 0 };
 
-	public constructor(host: MarkSeriesHost, id: string, options: Partial<ScatterOptions>) {
+	public constructor(
+		host: MarkSeriesHost,
+		id: string,
+		options: Partial<ScatterOptions>,
+		datafeed: MarksDatafeed<ScatterData> | null = null,
+		timeline: MarksTimeline | null = null,
+	) {
 		// In the drawings layer, above the series; below the drawings and the primitives of the
 		// application, whose `zIndex` is 0 unless they say otherwise.
-		super(host, id, 'scatter', options, 'normal', -1);
+		super(host, id, 'scatter', options, 'normal', -1, datafeed as MarksDatafeed<unknown> | null, timeline);
 	}
 
 	public override options(): Readonly<ScatterOptions> {
 		return this.seriesOptions as ScatterOptions;
 	}
 
-	public setData(data: ScatterData): void {
-		const rows = packScatter(data);
-		this._host.engine()?.changeMarks(this.engineId, { op: 'set', data: rows });
-		this._replaced();
+	public setData(data: ScatterData, options?: { datafeed?: MarksDatafeed<ScatterData> | null }): void {
+		this._set(packScatter(data), options as { datafeed?: MarksDatafeed<unknown> | null } | undefined);
+	}
+
+	public packFetched(data: unknown): MarksData {
+		return packScatter(data as ScatterData);
 	}
 
 	public update(point: ScatterPoint): void {
@@ -672,14 +853,126 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 		}
 	}
 
+	public prepend(data: ScatterData): void {
+		const rows = packScatter(data);
+		if (rows.count > 0) {
+			this._host.engine()?.changeMarks(this.engineId, { op: 'prepend', data: rows });
+		}
+	}
+
+	public removeMarks(range: { from: number; to: number }): void {
+		removeMarks(this._host, this.engineId, range);
+	}
+
+	/** Device pixels across of the series' points: those without a size of their own. */
 	private _size(pixelRatio: number): number {
-		return Math.max(1, Math.round((this.seriesOptions as ScatterOptions).pointSize * pixelRatio));
+		return pointPixels((this.seriesOptions as ScatterOptions).pointSize, pixelRatio);
+	}
+
+	/** Device pixels across of the widest point the window holds, the series' size or a point's own. */
+	private _largest(pixelRatio: number): number {
+		const base = this._size(pixelRatio);
+		const css = this._sizes.largest(this.window);
+		return css === css ? Math.max(base, pointPixels(css, pixelRatio)) : base;
 	}
 
 	public reach(pixelRatio: number): number {
 		// A point is centered on its time; placed from the start of its bar, it is half a bar further left.
 		const half = (this.seriesOptions as ScatterOptions).barAlign === 'start' ? this._host.map.spacing / 2 : 0;
-		return this._size(pixelRatio) + half;
+		return this._largest(pixelRatio) + half;
+	}
+
+	protected override _frameStamp(ratio: number): number {
+		return this._largest(ratio);
+	}
+
+	/** The largest size reads the rows patches changed before they are forgotten. */
+	protected override _beforeClearDirty(): void {
+		this._sizes.largest(this.window);
+	}
+
+	/**
+	 * At a coarse level a patch changes cells drawn before, which an overwrite cannot take back. In
+	 * density mode a patch can only add points to what was summed: one that changed rows summed
+	 * before has the densities summed again.
+	 */
+	protected override _patchesRedraw(): boolean {
+		const window = this.window;
+		return (
+			window.level > 0 ||
+			((this.seriesOptions as ScatterOptions).colorBy === 'density' && window.dirtyFrom < this._densityRows)
+		);
+	}
+
+	protected override _canvasReleased(): void {
+		this._density = EMPTY_DENSITY;
+	}
+
+	/**
+	 * In density mode the palette spans densities, whose range is known once they are summed: the
+	 * frame's mapping is one that does not change with the values of the rows, so a new extreme value
+	 * draws nothing again. The densities' own mapping is `_densityMapping`.
+	 */
+	protected override _setValueMapping(mapping: ValueMapping): void {
+		const options = this.seriesOptions as ScatterOptions;
+		if (options.colorBy !== 'density') {
+			super._setValueMapping(mapping);
+			return;
+		}
+		setValueMapping(mapping, options.valueMin ?? 1, options.valueMax ?? 1, options.valueScale === 'log');
+	}
+
+	public pointAt(x: number, y: number): ScatterHit | null {
+		const options = this.seriesOptions as ScatterOptions;
+		const window = this.window;
+		const host = this._host;
+		const map = host.map;
+		if (!options.visible || window.level < 0 || window.count === 0 || map.count === 0 || !this._placed) {
+			return null;
+		}
+		const ratio = host.pixelRatio();
+		// The device pixel the position is in.
+		const px = Math.floor(x * ratio);
+		const py = Math.floor(y * ratio);
+		if (!(px >= 0 && px < host.paneWidth() && py >= 0 && py < host.paneHeight())) {
+			return null;
+		}
+		const shift = this._prepare();
+		const from = window.lowerBound(this.viewFrom);
+		const to = Math.max(from, window.upperBound(this.viewTo));
+		const hit = this._hit;
+		hitScatter(
+			window.time,
+			window.price,
+			window.sizes,
+			window.counts,
+			from,
+			to,
+			map,
+			shift,
+			this._projection,
+			this._stamp,
+			this._stamps,
+			ratio,
+			this._largest(ratio),
+			px,
+			py,
+			hit,
+		);
+		const row = hit.row;
+		if (row < 0) {
+			return null;
+		}
+		const value = window.values[row]!;
+		const size = window.sizes.length > 0 ? window.sizes[row]! : Number.NaN;
+		return {
+			time: window.time[row]!,
+			price: window.price[row]!,
+			value: value === value ? value : null,
+			size: size === size ? size : options.pointSize,
+			count: window.counts.length > 0 ? window.counts[row]! : 1,
+			density: hit.density,
+		};
 	}
 
 	/**
@@ -747,6 +1040,7 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 			this._stamp = makeStamp(size, circle);
 			this._stampCircle = circle;
 		}
+		this._stamps.setCircle(circle);
 		return options.barAlign === 'start' ? -this._host.map.spacing / 2 : 0;
 	}
 
@@ -755,10 +1049,19 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 		const from = window.lowerBound(this.viewFrom);
 		const to = Math.max(from, window.upperBound(this.viewTo));
 		this._marks = to - from;
+		if ((this.seriesOptions as ScatterOptions).colorBy === 'density') {
+			this._densityAll(map, from, to);
+			return;
+		}
+		this._density = EMPTY_DENSITY;
 		this._drawRows(map, from, to, this._box);
 	}
 
 	protected _drawRows(map: TimeMap, from: number, to: number, box: PixelBox): void {
+		if ((this.seriesOptions as ScatterOptions).colorBy === 'density') {
+			this._densityPatch(map, from, to, box);
+			return;
+		}
 		const shift = this._prepare();
 		const window = this.window;
 		const surface = this.surface;
@@ -780,13 +1083,114 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 			this._color(),
 			this._stamp,
 			box,
+			window.sizes,
+			this._host.pixelRatio(),
+			this._stamps,
 		);
-		const whole = surface.box;
-		whole.left = Math.min(whole.left, box.left);
-		whole.top = Math.min(whole.top, box.top);
-		whole.right = Math.max(whole.right, box.right);
-		whole.bottom = Math.max(whole.bottom, box.bottom);
+		growBox(surface.box, box);
 	}
+
+	/**
+	 * Sums the densities of rows `[from, to)` (of the window, in view or beside it) into the density
+	 * buffer; `box` grows by the pixels they cover. Returns the largest density written.
+	 */
+	private _accumulate(map: TimeMap, from: number, to: number, box: PixelBox): number {
+		const shift = this._prepare();
+		const window = this.window;
+		const surface = this.surface;
+		return accumulateScatter(
+			this._density,
+			surface.width,
+			surface.height,
+			window.time,
+			window.price,
+			window.counts,
+			from,
+			Math.min(to, window.count),
+			map,
+			shift,
+			this._projection,
+			this._stamp,
+			box,
+			window.sizes,
+			this._host.pixelRatio(),
+			this._stamps,
+		);
+	}
+
+	/**
+	 * Colors the pixels of `box` from their densities, the palette spanning from `valueMin` (or 1)
+	 * to `valueMax` (or the largest density of the frame). From 1 to the largest on a linear scale,
+	 * entries are those of `exactDensitySlot`, which the WebGL2 renderer computes on the GPU.
+	 */
+	private _colorDensity(box: PixelBox): void {
+		const options = this.seriesOptions as ScatterOptions;
+		if (exactDensities(options)) {
+			this._densityScale.setExact(this._densityPeak);
+		} else {
+			const mapping = this._densityMapping;
+			setValueMapping(
+				mapping,
+				options.valueMin ?? 1,
+				options.valueMax ?? this._densityPeak,
+				options.valueScale === 'log',
+			);
+			this._densityScale.set(mapping);
+		}
+		const surface = this.surface;
+		colorDensity(this._density, surface.pixels, surface.height, box, this._densityScale, this._palette);
+		growBox(surface.box, box);
+	}
+
+	/** Sums the densities of the rows in view anew and colors them: the surface is empty. */
+	private _densityAll(map: TimeMap, from: number, to: number): void {
+		const surface = this.surface;
+		const pixels = surface.width * surface.height;
+		const box = this._densityBox;
+		if (this._density.length !== pixels || this._densityHeight !== surface.height) {
+			this._density = new Float32Array(pixels);
+			this._densityHeight = surface.height;
+		} else {
+			clearDensity(this._density, surface.height, box);
+		}
+		emptyBox(box);
+		this._densityPeak = this._accumulate(map, from, to, box);
+		this._densityRows = this.window.count;
+		this._colorDensity(box);
+	}
+
+	/**
+	 * Adds the densities of appended rows `[from, to)` and colors what they changed. A density above
+	 * the largest of the frame moves the top of the palette, unless `valueMax` fixes it: every pixel
+	 * is colored again then, and `box` is all of them.
+	 */
+	private _densityPatch(map: TimeMap, from: number, to: number, box: PixelBox): void {
+		emptyBox(box);
+		const peak = this._accumulate(map, from, to, box);
+		growBox(this._densityBox, box);
+		this._densityRows = this.window.count;
+		if (peak > this._densityPeak) {
+			this._densityPeak = peak;
+			if ((this.seriesOptions as ScatterOptions).valueMax === null) {
+				const all = this._densityBox;
+				box.left = all.left;
+				box.top = all.top;
+				box.right = all.right;
+				box.bottom = all.bottom;
+			}
+		}
+		this._colorDensity(box);
+	}
+}
+
+const EMPTY_DENSITY = new Float32Array(0);
+
+/** Grows `box` by `by`. */
+function growBox(box: PixelBox, by: PixelBox): void {
+	box.left = Math.min(box.left, by.left);
+	box.top = Math.min(box.top, by.top);
+	box.right = Math.max(box.right, by.right);
+	box.bottom = Math.max(box.bottom, by.bottom);
 }
 
 export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
@@ -808,21 +1212,58 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 	private readonly _colors = new Uint32Array(256);
 	private _colorsPalette: Uint32Array | null = null;
 	private readonly _scratch = new HeatmapScratch();
+	private readonly _span = { low: 0, high: 0 };
 
-	public constructor(host: MarkSeriesHost, id: string, options: Partial<HeatmapOptions>) {
+	public constructor(
+		host: MarkSeriesHost,
+		id: string,
+		options: Partial<HeatmapOptions>,
+		datafeed: MarksDatafeed<HeatmapData> | null = null,
+		timeline: MarksTimeline | null = null,
+	) {
 		// In the series layer, below the series.
-		super(host, id, 'heatmap', options, 'bottom', 0);
+		super(host, id, 'heatmap', options, 'bottom', 0, datafeed as MarksDatafeed<unknown> | null, timeline);
 	}
 
 	public override options(): Readonly<HeatmapOptions> {
 		return this.seriesOptions;
 	}
 
-	public setData(data: HeatmapData): void {
+	public setData(data: HeatmapData, options?: { datafeed?: MarksDatafeed<HeatmapData> | null }): void {
 		const columns = packHeatmap(data);
 		this._grid = { rows: columns.rows, priceStart: columns.priceStart, priceStep: columns.priceStep };
-		this._host.engine()?.changeMarks(this.engineId, { op: 'set', data: columns });
-		this._replaced();
+		this._set(columns, options as { datafeed?: MarksDatafeed<unknown> | null } | undefined);
+	}
+
+	public packFetched(data: unknown): MarksData {
+		const columns = data as HeatmapData;
+		const grid = this._grid;
+		if (grid === null || columns.rows !== grid.rows || columns.priceStep !== grid.priceStep) {
+			throw new RangeError('lumen-charts: a heatmap datafeed returned columns on another grid');
+		}
+		return packHeatmap(columns, grid);
+	}
+
+	/** Columns on the series' grid, packed; throws for a grid that is another or none. */
+	private _onGrid(data: HeatmapData, op: string): HeatmapColumns {
+		const grid = this._grid;
+		if (grid === null || data.rows !== grid.rows || data.priceStep !== grid.priceStep) {
+			throw new Error(
+				`lumen-charts: columns given to a heatmap's \`${op}\` must be on the grid of its last \`setData\``,
+			);
+		}
+		return packHeatmap(data, grid);
+	}
+
+	public prepend(data: HeatmapData): void {
+		const columns = this._onGrid(data, 'prepend');
+		if (columns.count > 0) {
+			this._host.engine()?.changeMarks(this.engineId, { op: 'prepend', data: columns });
+		}
+	}
+
+	public removeMarks(range: { from: number; to: number }): void {
+		removeMarks(this._host, this.engineId, range);
 	}
 
 	public update(column: HeatmapColumn): void {
@@ -833,16 +1274,7 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 	}
 
 	public append(data: HeatmapData): void {
-		const grid = this._grid;
-		const columns = packHeatmap(data);
-		if (
-			grid === null ||
-			columns.rows !== grid.rows ||
-			columns.priceStart !== grid.priceStart ||
-			columns.priceStep !== grid.priceStep
-		) {
-			throw new Error('lumen-charts: columns appended to a heatmap must be on the grid of its last `setData`');
-		}
+		const columns = this._onGrid(data, 'append');
 		if (columns.count > 0) {
 			this._host.engine()?.changeMarks(this.engineId, { op: 'append', data: columns });
 		}
@@ -854,8 +1286,10 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 			return null;
 		}
 		const column = window.upperBound(time) - 1;
-		const row = Math.floor((price - window.priceStart) / window.priceStep);
-		if (column < 0 || !(row >= 0 && row < window.rows)) {
+		// The column's cells from the grid row of its first one.
+		const row =
+			Math.floor((price - window.priceStart) / window.priceStep) - (column < 0 ? 0 : window.cellOffset(column));
+		if (column < 0 || !(row >= 0 && row < window.cellLength(column))) {
 			return null;
 		}
 		if (column === window.count - 1) {
@@ -865,7 +1299,7 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 				return null;
 			}
 		}
-		const value = window.values[column * window.rows + row]!;
+		const value = window.values[window.cellStart(column) + row]!;
 		return value === value ? value : null;
 	}
 
@@ -880,9 +1314,14 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		out.high = -Infinity;
 		// A column before the view reaches into it.
 		const from = Math.max(0, window.upperBound(this.viewFrom) - 1);
-		if (window.level >= 0 && window.upperBound(this.viewTo) > from) {
-			out.low = window.priceStart;
-			out.high = window.priceStart + window.rows * window.priceStep;
+		const to = window.upperBound(this.viewTo);
+		if (window.level >= 0 && to > from) {
+			// The grid rows the columns in view span: all of the grid unless it follows the price.
+			heatRowSpan(window, from, to, this._span);
+			if (this._span.high > this._span.low) {
+				out.low = window.priceStart + this._span.low * window.priceStep;
+				out.high = window.priceStart + this._span.high * window.priceStep;
+			}
 		}
 	}
 
@@ -892,10 +1331,17 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 	 * come into view into slots, and a new window only those in view.
 	 */
 	private _quantize(from: number, to: number): void {
+		this._quantizeSome(from, to, Infinity);
+	}
+
+	/**
+	 * Brings the slots of up to `budget` cells of columns `[from, to)` up to date, those nearest the
+	 * slots there are first. Returns whether every column of `[from, to)` has its slots.
+	 */
+	private _quantizeSome(from: number, to: number, budget: number): boolean {
 		const window = this.window;
 		const mapping = this._mapping;
-		const rows = window.rows;
-		const cells = window.capacity * rows;
+		const cells = window.cellCapacity;
 		if (this._colorsPalette !== this._palette) {
 			slotColors(this._palette, this._colors);
 			this._colorsPalette = this._palette;
@@ -916,22 +1362,35 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 			this._quantizePatches();
 		}
 		if (to <= from) {
-			return;
+			return true;
 		}
+		const values = window.values;
+		const at = (column: number) => window.cellStart(column);
 		if (this._slotsTo <= this._slotsFrom || from > this._slotsTo || to < this._slotsFrom) {
-			quantize(window.values, this._slots, rows, from, to, mapping);
 			this._slotsFrom = from;
-			this._slotsTo = to;
-			return;
+			this._slotsTo = from;
 		}
-		if (from < this._slotsFrom) {
-			quantize(window.values, this._slots, rows, from, this._slotsFrom, mapping);
-			this._slotsFrom = from;
+		// Columns after the slots, then before them, as far as the budget goes.
+		let end = this._slotsTo;
+		while (end < to && (end === this._slotsTo || at(end + 1) - at(this._slotsTo) <= budget)) {
+			end++;
 		}
-		if (to > this._slotsTo) {
-			quantize(window.values, this._slots, rows, this._slotsTo, to, mapping);
-			this._slotsTo = to;
+		if (end > this._slotsTo) {
+			quantize(values, this._slots, at(this._slotsTo), at(end), mapping);
+			budget -= at(end) - at(this._slotsTo);
+			this._slotsTo = end;
 		}
+		let start = this._slotsFrom;
+		if (budget > 0) {
+			while (start > from && (start === this._slotsFrom || at(this._slotsFrom) - at(start - 1) <= budget)) {
+				start--;
+			}
+		}
+		if (start < this._slotsFrom) {
+			quantize(values, this._slots, at(start), at(this._slotsFrom), mapping);
+			this._slotsFrom = start;
+		}
+		return from >= this._slotsFrom && to <= this._slotsTo;
 	}
 
 	/** Whether the slots were made from the rows held and the mapping of values of this frame. */
@@ -943,7 +1402,7 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 			mapping.min === this._slotsMin &&
 			mapping.factor === this._slotsFactor &&
 			mapping.log === this._slotsLog &&
-			this._slots.length >= window.capacity * window.rows
+			this._slots.length >= window.cellCapacity
 		);
 	}
 
@@ -957,7 +1416,7 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		const from = Math.max(window.dirtyFrom, this._slotsFrom);
 		const to = Math.min(window.dirtyTo, this._slotsTo);
 		if (to > from) {
-			quantize(window.values, this._slots, window.rows, from, to, this._mapping);
+			quantize(window.values, this._slots, window.cellStart(from), window.cellStart(to), this._mapping);
 		}
 	}
 
@@ -980,14 +1439,56 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 	};
 
 	/**
-	 * With `valueMin` and `valueMax` set, a value's slot depends on the value alone: renderers can
-	 * keep the slots of cells and update those of the cells that change. Otherwise a change of the
-	 * value range would change the slots of every cell.
+	 * With `valueMin` and `valueMax` set, a value's slot depends on the value alone: renderers keep
+	 * the slots of cells and update those of the cells that change.
+	 *
+	 * With an automatic value range, a new extreme changes the slot of every cell: the GPU renderers
+	 * draw from the values, which a change of the range only recolors. Once the range has stayed the
+	 * same for `AUTO_SLOTS_DRAWS` draws, the slots of the columns in view are made, at most
+	 * `AUTO_SLOTS_CELLS` cells a draw so no frame takes the whole view's work, and drawn from until
+	 * the range changes again.
 	 */
-	protected override _fixedSlots(): HeatSlots | null {
+	protected override _fixedSlots(from: number, to: number): HeatSlots | null {
 		const options = this.seriesOptions as HeatmapOptions;
-		return options.valueMin !== null && options.valueMax !== null ? this._heatSlots : null;
+		if (options.valueMin !== null && options.valueMax !== null) {
+			return this._heatSlots;
+		}
+		const mapping = this._mapping;
+		if (mapping.min !== this._autoMin || mapping.factor !== this._autoFactor || mapping.log !== this._autoLog) {
+			this._autoMin = mapping.min;
+			this._autoFactor = mapping.factor;
+			this._autoLog = mapping.log;
+			this._stableDraws = 0;
+			if (this._autoSlots) {
+				this._autoSlots = false;
+				this.slotSwitches++;
+			}
+			return null;
+		}
+		if (this._autoSlots) {
+			return this._heatSlots;
+		}
+		if (++this._stableDraws < AUTO_SLOTS_DRAWS) {
+			return null;
+		}
+		if (this._quantizeSome(from, to, AUTO_SLOTS_CELLS)) {
+			this._autoSlots = true;
+			this.slotSwitches++;
+			return this._heatSlots;
+		}
+		// The next frame goes on with the slots, though nothing else asks for it.
+		this._primitiveHost?.requestUpdate();
+		return null;
 	}
+
+	/** An automatic value range as of the last draw; draws since it last changed; whether the slots serve. */
+	private _autoMin = Number.NaN;
+	private _autoFactor = Number.NaN;
+	private _autoLog = false;
+	private _stableDraws = 0;
+	private _autoSlots = false;
+	/** Internal, read by tests and the benchmark harness: switches between values and slots. */
+	public slotSwitches = 0;
 
 	private readonly panRanges = new HeatRanges();
 	private readonly pan = new HeatPan();
@@ -1001,14 +1502,16 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		const { width, height } = surface;
 		this.panRanges.project({ window: w, map, projection: this._projection, width, height, from, to });
 		const ranges = this.panRanges.data;
-		const delta = this.pan.translation(map.x(w.time[0]!), ranges, width, height, compatible);
+		const delta = this.pan.translation(map.x(w.time[0]!), ranges, width, height, compatible, this.panRanges.rowBase);
 		if (delta === null || Math.abs(delta) > width / 4) return false;
-		this._marks = Math.max(0, to - from) * w.rows;
+		this._marks = heatCells(w, from, to);
 		if (!delta) return true;
 		surface.shiftColumns(delta);
 		const left = delta > 0 ? 0 : width + delta,
 			right = delta > 0 ? delta : width;
 		this._quantize(from, to);
+		const base = this.panRanges.rowBase;
+		const slots = this._slots;
 		for (let x = left; x < right; x++) {
 			const c0 = ranges[x * 2]!,
 				c1 = ranges[x * 2 + 1]!;
@@ -1017,7 +1520,13 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 					lo = ranges[k]!,
 					hi = ranges[k + 1]!;
 				let slot = 0;
-				for (let c = c0; c < c1; c++) for (let r = lo; r < hi; r++) slot = Math.max(slot, this._slots[c * w.rows + r]!);
+				for (let c = c0; c < c1; c++) {
+					// Rows `[lo, hi)` count from `base`; the column's cells from its own first row.
+					const first = w.cellOffset(c) - base;
+					const at = w.cellStart(c) - first;
+					const end = Math.min(hi, first + w.cellLength(c));
+					for (let r = Math.max(lo, first); r < end; r++) slot = Math.max(slot, slots[at + r]!);
+				}
 				surface.pixels[x * height + y] = this._colors[slot]!;
 			}
 		}
@@ -1032,19 +1541,17 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		const from = Math.max(0, window.upperBound(this.viewFrom) - 1);
 		const to = Math.min(window.count, window.upperBound(this.viewTo) + 1);
 		this._quantize(from, to);
-		this._marks = Math.max(0, to - from) * window.rows;
+		this._marks = heatCells(window, from, to);
 		drawHeatmap(
 			surface.pixels,
 			surface.width,
 			surface.height,
 			window.time,
 			this._slots,
-			window.rows,
+			window,
 			window.count,
 			from,
 			to,
-			window.priceStart,
-			window.priceStep,
 			map,
 			this._projection,
 			this._colors,
@@ -1089,12 +1596,10 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 			surface.height,
 			window.time,
 			this._slots,
-			window.rows,
+			window,
 			window.count,
 			first,
 			end,
-			window.priceStart,
-			window.priceStep,
 			map,
 			this._projection,
 			this._colors,

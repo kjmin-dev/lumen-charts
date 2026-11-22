@@ -20,7 +20,8 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright';
-import { build, preview } from 'vite';
+import { build } from 'vite';
+import { servePreview } from './serve.ts';
 import type { PixelCase, PixelResult } from '../src/pixels/main.ts';
 
 const benchDir = fileURLToPath(new URL('..', import.meta.url));
@@ -41,11 +42,7 @@ const fullOnly = args.redraw === 'full';
 async function main(): Promise<void> {
 	const configFile = resolve(benchDir, 'vite.config.ts');
 	await build({ configFile, logLevel: 'warn' });
-	const server = await preview({ configFile, logLevel: 'warn' });
-	const baseUrl = server.resolvedUrls?.local[0];
-	if (baseUrl === undefined) {
-		throw new Error('Preview server has no local URL');
-	}
+	const { server, url: baseUrl } = await servePreview({ configFile, logLevel: 'warn' });
 	// New headless mode rasterizes on the GPU, like a window (see `cli.ts`).
 	const browser = await chromium.launch({ headless: true, channel: 'chromium' });
 	const results: (PixelResult & { dpr: number; raster: string })[] = [];

@@ -26,4 +26,4 @@ On Apple M1 in headless Chromium, the gate is p99 at most 4 ms from submitting a
 
 All three wide-view worker runs met the desktop gate. Host load varied throughout the experiment.
 
-Reproduce timing with `pnpm bench --case ind-apply/candles-1m --lib lumen-worker,lumen-main --repeats 3 --budget 3`. Add `--allocations benchmarks/results/allocations` to profile another run. Samples depend on V8, host load and scenario pacing. Android timing remains unmeasured.
+Reproduce timing with `pnpm bench --case ind-apply/candles-1m --lib lumen-worker,lumen-main --repeats 3 --budget 3`. Add `--allocations benchmarks/results/allocations` to profile another run. Samples depend on V8, host load and scenario pacing. On a flagship Android phone the worker's p99 is 3.8–4.8 ms ([physical Android](android-physical.md#core-gates)).

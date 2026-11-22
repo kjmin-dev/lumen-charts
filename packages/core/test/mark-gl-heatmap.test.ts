@@ -6,6 +6,7 @@ import { heatFragment, heatSlotsFragment } from '../src/marks/gl/shaders';
 import { setValueMapping } from '../src/marks/palette';
 import type * as render from '../src/marks/render';
 import { quantize } from '../src/marks/render';
+import { AUTO_SLOTS_CELLS, AUTO_SLOTS_DRAWS } from '../src/marks/series';
 import { canvasPixelsInUse } from '../src/shared/canvas-budget';
 import { MINUTE, TestChart, candles } from './drawing-helpers';
 import { FakeWebGl } from './fake-webgl';
@@ -33,7 +34,7 @@ function slotsOf(values: Float32Array, min: number, max: number, log = false): n
 	const mapping = { min: 0, factor: 0, log: false };
 	setValueMapping(mapping, min, max, log);
 	const slots = new Uint8Array(values.length);
-	quantize(values, slots, ROWS, 0, values.length / ROWS, mapping);
+	quantize(values, slots, 0, values.length, mapping);
 	return [...slots];
 }
 
@@ -87,7 +88,7 @@ describe('WebGL2 heatmap from palette slots', () => {
 		t.destroy();
 	});
 
-	it('draws from slots only when valueMin and valueMax are both set', async () => {
+	it('draws from slots at once when valueMin and valueMax are both set, and from values meanwhile', async () => {
 		const data = grid((c, r) => (c === 2 && r === 3 ? Number.NaN : c * 20 + r));
 		const auto = t.chart.addSeries('heatmap');
 		auto.setData(data);
@@ -128,7 +129,7 @@ describe('WebGL2 heatmap from palette slots', () => {
 		// Column 9 holds cells 180 to 199: words 45 to 49.
 		expect(t.uploaded(0)).toBe(5);
 		expect(t.gl!.uploads.filter(u => u.unit === 0)).toEqual([{ unit: 0, x: 45, y: 0, width: 5, height: 1 }]);
-		const cells = vi.mocked(quantize).mock.calls.reduce((sum, [, , rows, from, to]) => sum + (to - from) * rows, 0);
+		const cells = vi.mocked(quantize).mock.calls.reduce((sum, [, , from, to]) => sum + (to - from), 0);
 		expect(cells).toBe(ROWS);
 		data.values.set(column, 9 * ROWS);
 		expect([...t.records().subarray(0, COLUMNS * ROWS)]).toEqual(slotsOf(data.values, 0, 199));
@@ -155,7 +156,7 @@ describe('WebGL2 heatmap from palette slots', () => {
 		// Four columns come into view, of five words each, and the edge columns around them.
 		expect(t.uploaded(0)).toBeGreaterThanOrEqual(20);
 		expect(t.uploaded(0)).toBeLessThanOrEqual(30);
-		const quantized = vi.mocked(quantize).mock.calls.reduce((sum, [, , rows, from, to]) => sum + (to - from) * rows, 0);
+		const quantized = vi.mocked(quantize).mock.calls.reduce((sum, [, , from, to]) => sum + (to - from), 0);
 		expect(quantized).toBe(t.uploaded(0) * 4);
 		expect([...t.records().subarray(...cells(101, 143))]).toEqual(expected.slice(...cells(101, 143)));
 	});
@@ -246,5 +247,72 @@ describe('WebGL2 heatmap from palette slots', () => {
 			Reflect.deleteProperty(window.navigator, 'gpu');
 			pool.acquire.mockReset();
 		}
+	});
+});
+
+describe('WebGL2 heatmap with an automatic value range', () => {
+	let t: GlChart;
+
+	beforeEach(async () => {
+		t = new GlChart();
+		t.chart.addSeries('candlestick', { id: 'bars' }).setData(candles(200));
+		await t.settle();
+	});
+
+	afterEach(() => {
+		t.destroy();
+	});
+
+	/** Draws the chart again `n` times, as a pan or a tick would. */
+	async function redraw(heat: HeatmapSeriesApi, n: number): Promise<void> {
+		for (let i = 0; i < n; i++) {
+			// An option that changes nothing drawn: each one is a frame of the series.
+			heat.applyOptions({ opacity: i % 2 === 0 ? 0.999 : 1 });
+			// oxlint-disable-next-line no-await-in-loop
+			await t.settle();
+		}
+	}
+
+	it('draws from slots once the range has stayed the same, and from values again when it changes', async () => {
+		const data = grid((c, r) => c * 20 + r);
+		const heat = t.chart.addSeries('heatmap');
+		heat.setData(data);
+		await t.settle();
+		expect(path(heat)).toBe('values');
+		const switches = () => (heat as unknown as { slotSwitches: number }).slotSwitches;
+		await redraw(heat, AUTO_SLOTS_DRAWS + 2);
+		expect(path(heat)).toBe('slots');
+		expect(switches()).toBe(1);
+		// The slots of the range the series has held: from its lowest value to its highest.
+		expect([...t.records().subarray(0, COLUMNS * ROWS)]).toEqual(slotsOf(data.values, 0, 9 * 20 + 19));
+		// A new highest value changes the slot of every cell: values at once, until the range settles.
+		heat.update({ time: 109 * MINUTE, values: new Float32Array(ROWS).fill(1000) });
+		await t.settle();
+		expect(path(heat)).toBe('values');
+		expect(switches()).toBe(2);
+		await redraw(heat, AUTO_SLOTS_DRAWS - 5);
+		expect(path(heat)).toBe('values');
+		await redraw(heat, 10);
+		expect(path(heat)).toBe('slots');
+	});
+
+	it('makes the slots of a large view a slice per frame', async () => {
+		const columns = 200;
+		const rows = 4000;
+		const time = Float64Array.from({ length: columns }, (_, c) => c * MINUTE);
+		const values = Float32Array.from({ length: columns * rows }, (_, i) => i % 997);
+		const heat = t.chart.addSeries('heatmap');
+		heat.setData({ priceStart: 0, priceStep: 1, rows, time, values });
+		t.chart.timeScale().setVisibleLogicalRange({ from: 0, to: 199 });
+		await t.settle();
+		vi.mocked(quantize).mockClear();
+		await redraw(heat, AUTO_SLOTS_DRAWS + 1);
+		// 800,000 cells in view: no call makes more than a slice and a column.
+		const calls = vi.mocked(quantize).mock.calls.map(([, , from, to]) => to - from);
+		expect(calls.length).toBeGreaterThan(1);
+		expect(Math.max(...calls)).toBeLessThanOrEqual(AUTO_SLOTS_CELLS + rows);
+		expect(path(heat)).toBe('values');
+		await redraw(heat, 5);
+		expect(path(heat)).toBe('slots');
 	});
 });

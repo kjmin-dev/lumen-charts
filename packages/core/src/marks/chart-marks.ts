@@ -1,5 +1,5 @@
 import type { MarkRenderer } from './backend';
-import type { EngineClient, MarksUpdate } from '@lumen-charts/engine';
+import type { EngineClient, MarksTimeline, MarksUpdate } from '@lumen-charts/engine';
 import type { PanePrimitives } from '../drawings/pane-primitives';
 import type { FrameModel } from '../model/frame-model';
 import type { TimeScale } from '../model/time-scale';
@@ -8,6 +8,7 @@ import type { ChartLayout } from '../render/layout';
 import type { AnyMarkOptions, HeatmapOptions, MarkSeriesType, ScatterOptions } from './options';
 import { HeatmapSeries, type MarkSeries, type MarkSeriesHost, ScatterSeries, checkOptions } from './series';
 import type { MarkSeriesPlan, MarkSeriesState } from './state';
+import { type MarksDatafeed, MarkFetches } from './fetches';
 import { TimeMap } from './time-map';
 
 /** What the marks need from the chart. */
@@ -19,6 +20,16 @@ export interface ChartMarksHost {
 	invalidate(): void;
 	/** Data changed and nothing else: the frame fits the scales again and keeps what it can of the layers. */
 	dataChanged(): void;
+	/** A datafeed request ended: whoever waits for the chart to be idle may have nothing left to wait for. */
+	settled(): void;
+	/**
+	 * Adds a line series that draws nothing and is listed nowhere, whose bars a mark series makes:
+	 * the timeline of a chart without bars of its own. Returns its engine id.
+	 */
+	addTimeline(): number;
+	removeTimeline(engineId: number): void;
+	/** A series is about to be removed: the indicators that read it go with it. */
+	removing(engineId: number): void;
 }
 
 /**
@@ -46,6 +57,8 @@ export class ChartMarks implements MarkSeriesHost {
 	private readonly _mapKey = new Float64Array(7).fill(Number.NaN);
 	private readonly _extent = { low: 0, high: 0 };
 	private _destroyed = false;
+	/** Marks fetched again from the datafeeds of series. */
+	private readonly _fetches: MarkFetches;
 
 	public constructor(
 		host: ChartMarksHost,
@@ -61,15 +74,46 @@ export class ChartMarks implements MarkSeriesHost {
 		this._axes = axes;
 		this._primitives = primitives;
 		this._model = model;
+		this._fetches = new MarkFetches(
+			() => this._engine,
+			id => this._byEngineId.get(id),
+			() => host.settled(),
+		);
+	}
+
+	/** Datafeed requests in flight. */
+	public get fetching(): number {
+		return this._fetches.fetching;
+	}
+
+	public abortFetches(series: MarkSeries): void {
+		this._fetches.abort(series);
 	}
 
 	// The series
 
-	public add(type: MarkSeriesType, id: string, options: Partial<AnyMarkOptions>): MarkSeries {
+	public add(
+		type: MarkSeriesType,
+		id: string,
+		options: Partial<AnyMarkOptions>,
+		datafeed: MarksDatafeed<never> | null = null,
+		timeline: boolean | { interval?: number } = false,
+	): MarkSeries {
+		let link: MarksTimeline | null = null;
+		if (timeline !== false) {
+			const interval = timeline === true ? undefined : timeline.interval;
+			const step = interval ?? (type === 'heatmap' ? 0 : DEFAULT_INTERVAL);
+			if (!(step >= 0) || !Number.isFinite(step) || (type === 'scatter' && step === 0)) {
+				throw new RangeError(
+					`lumen-charts: the timeline of a ${type} needs an interval in milliseconds above 0${type === 'heatmap' ? ', or 0 for a bar per column' : ''}`,
+				);
+			}
+			link = { series: this._host.addTimeline(), interval: step };
+		}
 		const series =
 			type === 'heatmap'
-				? new HeatmapSeries(this, id, options as Partial<HeatmapOptions>)
-				: new ScatterSeries(this, id, options as Partial<ScatterOptions>);
+				? new HeatmapSeries(this, id, options as Partial<HeatmapOptions>, datafeed, link)
+				: new ScatterSeries(this, id, options as Partial<ScatterOptions>, datafeed, link);
 		this.list.push(series);
 		this._byEngineId.set(series.engineId, series);
 		this._attach(series);
@@ -83,10 +127,15 @@ export class ChartMarks implements MarkSeriesHost {
 			return false;
 		}
 		const removed = this.list.splice(index, 1)[0]!;
+		this._host.removing(removed.engineId);
 		this._byEngineId.delete(removed.engineId);
+		this._fetches.abort(removed);
 		this._primitives.layers.detach(removed.primitive);
 		removed.release();
 		this._engine?.changeMarks(removed.engineId, { op: 'remove' });
+		if (removed.timeline !== null) {
+			this._host.removeTimeline(removed.timeline.series);
+		}
 		this._host.invalidate();
 		return true;
 	}
@@ -107,6 +156,7 @@ export class ChartMarks implements MarkSeriesHost {
 
 	public destroy(): void {
 		this._destroyed = true;
+		this._fetches.destroy();
 		for (const series of this.list) {
 			series.release();
 		}
@@ -138,6 +188,7 @@ export class ChartMarks implements MarkSeriesHost {
 			if (engine !== null) {
 				this._engine = engine;
 				engine.onmarks = this._onMarks;
+				engine.onmarksfetch = event => this._fetches.handle(event);
 			}
 		}
 		return this._engine;
@@ -349,6 +400,9 @@ export class ChartMarks implements MarkSeriesHost {
 }
 
 const EMPTY = new Float64Array(0);
+
+/** Bars of a scatter's timeline, without an interval of its own: a minute. */
+const DEFAULT_INTERVAL = 60_000;
 
 /** Takes the prices `[low, high]` into the range an axis collects, in the values of its scale. */
 function include(axis: PriceAxis, low: number, high: number): void {

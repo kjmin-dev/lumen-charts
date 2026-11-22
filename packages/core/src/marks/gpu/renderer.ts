@@ -1,4 +1,4 @@
-import { heatEdge, slotColors } from '../render';
+import { heatEdge, heatRowSpan, slotColors } from '../render';
 import { HeatRanges, HeatPan } from '../heat-ranges';
 import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
 import type { GpuBackend, HeatSlots, MarkFrame } from '../backend';
@@ -15,12 +15,30 @@ const BUFFER_COPY_DST = 0x08,
 const TEXTURE_STORAGE = 0x08,
 	TEXTURE_ATTACHMENT = 0x10;
 class Budget extends Error {}
+
+const SPAN = { low: 0, high: 0 };
 /**
  * From this square size (device pixels) a whole column draw takes one atomic per point and reads
  * the marker's rows back, rather than one atomic per row a marker covers. Smaller squares and the
  * strips of a patch keep the row kernel, which costs less there.
  */
 const WIDE_COLUMNS = 5;
+/**
+ * A column draw that starts over projects the scatter rows in view, and later pans project those
+ * that come into view, unless that would leave out fewer than this share of the rows held: then it
+ * projects them all at once, because pans would soon project most of them anyway, one strip per
+ * frame. Calibrated on the 1M cloud and the 5M trade-history pan (docs/benchmarks/projection-threshold.md).
+ */
+export const MIN_UNPROJECTED_SHARE = 0.4;
+
+/**
+ * The rows `[from, to)` that a column draw starting over projects: the rows in view,
+ * `[viewFrom, viewTo)`, or all `count` rows held when the rows left out would be fewer than
+ * `MIN_UNPROJECTED_SHARE` of them.
+ */
+export function startRows(viewFrom: number, viewTo: number, count: number): [number, number] {
+	return count - (viewTo - viewFrom) < MIN_UNPROJECTED_SHARE * count ? [0, count] : [viewFrom, viewTo];
+}
 
 interface Upload {
 	newWindow: boolean;
@@ -66,11 +84,12 @@ class BufferSlot {
 		this.capacity = bytes;
 		return true;
 	}
-	public write(data: Uint32Array | Float32Array, start = 0, end = data.length): void {
+	/** Writes words `[start, end)` of `data` to the buffer's words from `at` on (where they are in `data`, by default). */
+	public write(data: Uint32Array | Float32Array, start = 0, end = data.length, at = start): void {
 		if (end > start)
 			this.device.queue.writeBuffer(
 				this.buffer!,
-				start * 4,
+				at * 4,
 				data.buffer as ArrayBuffer,
 				data.byteOffset + start * 4,
 				(end - start) * 4,
@@ -94,7 +113,7 @@ export class GpuMarkBackend implements GpuBackend {
 		ids: BufferSlot;
 	};
 	private readonly slots: BufferSlot[];
-	private readonly params = new Uint32Array(8);
+	private readonly params = new Uint32Array(12);
 	private readonly style = new Uint32Array(512);
 	private bounds = new Uint32Array(0);
 	private packed = new Uint32Array(0);
@@ -128,6 +147,12 @@ export class GpuMarkBackend implements GpuBackend {
 	private readonly cssColors = new Map<number, string>();
 	private lastPath: GpuPath | null = null;
 	private heatPan = new HeatPan();
+	/** A grid that follows the price: the column table, the window it was written for, and where. */
+	private table = new Uint32Array(0);
+	private tableVersion = -1;
+	private tableAt = -1;
+	/** The grid rows the columns in view spanned when the pixel ranges were made. */
+	private span = '';
 	/** The kernel of the last dispatch, read by the benchmark harness. */
 	public kernel: GpuKernel | null = null;
 	public get bytes(): number {
@@ -237,7 +262,9 @@ export class GpuMarkBackend implements GpuBackend {
 		const scatter = f.type === 'scatter';
 		const size = scatter ? Math.max(1, Math.round((f.options as ScatterOptions).pointSize * f.ratio)) : 1;
 		const path: GpuPath = scatter ? (fitsTileIndex(f) ? 'scatter-tiles' : 'scatter-columns') : 'heatmap';
-		full ||= fresh || this.lastPath !== path || this.version !== w.version;
+		// A heatmap that goes over to its slots, or back to its values, is drawn again from them.
+		full ||=
+			fresh || this.lastPath !== path || this.version !== w.version || (!scatter && !!f.slots !== this.heatSlots);
 		if (!full && scatter && this.revision !== w.revision) this.appendPatch(f, size);
 		if (full || this.revision !== w.revision) {
 			const { uniform, data, style } = this.buffers;
@@ -246,14 +273,14 @@ export class GpuMarkBackend implements GpuBackend {
 			const modeChanged = !scatter && slots !== this.heatSlots;
 			if (modeChanged) data.release();
 			const newData = data.reserve(
-				scatter ? w.capacity * 8 : slots ? Math.ceil((w.capacity * w.rows) / 4) * 4 : w.capacity * w.rows * 4,
+				scatter ? w.capacity * 8 : slots ? Math.ceil(w.cellCapacity / 4) * 4 : w.cellCapacity * 4,
 			);
 			const mapping = [f.mapping.min, f.mapping.factor, Number(f.mapping.log)].join(',');
 			const projection = [f.projection.offset, f.projection.scale, Number(f.projection.log)].join(',');
 			const newWindow = newData || this.version !== w.version;
 			const mappingChanged = mapping !== this.mapping;
 			const styleChanged = mappingChanged || this.palette !== f.palette || modeChanged;
-			uniform.reserve(32);
+			uniform.reserve(48);
 			style.reserve(this.style.byteLength);
 			const dirtyFrom = newWindow ? 0 : Math.min(this.pending, w.dirtyFrom),
 				dirtyTo = newWindow ? w.count : Math.max(w.dirtyTo, this.pending < Infinity ? this.count : 0);
@@ -295,9 +322,10 @@ export class GpuMarkBackend implements GpuBackend {
 		const from = path === 'scatter-tiles' ? 0 : f.from,
 			to = path === 'scatter-tiles' ? w.count : f.to;
 		if (all || this.projectedTo <= from || to <= this.projectedFrom) {
-			this.project(f, from, to, color);
-			this.projectedFrom = from;
-			this.projectedTo = to;
+			const [first, end] = startRows(from, to, w.count);
+			this.project(f, first, end, color);
+			this.projectedFrom = first;
+			this.projectedTo = end;
 		} else {
 			// A patch can change rows projected before, in view or not.
 			this.project(f, Math.max(dirtyFrom, this.projectedFrom), Math.min(dirtyTo, this.projectedTo), color);
@@ -348,7 +376,7 @@ export class GpuMarkBackend implements GpuBackend {
 		if (slots) {
 			this.uploadSlots(f, slots, change);
 		} else {
-			data.write(w.values, dirtyFrom * w.rows, dirtyTo * w.rows);
+			data.write(w.values, w.cellStart(dirtyFrom), w.cellStart(dirtyTo));
 			this.slotsBuffer = null;
 		}
 		this.heatSlots = slots !== null;
@@ -358,14 +386,33 @@ export class GpuMarkBackend implements GpuBackend {
 			else heatStyle(f.palette, f.mapping, this.style);
 			style.write(this.style, 0, slots ? 256 : 512);
 		}
-		if (!full && !fresh && !newWindow && this.count === w.count && dirtyFrom === w.count - 1 && dirtyTo === w.count) {
+		const n = (f.width + f.height) * 2;
+		const varying = w.varying;
+		const rebound = spans.reserve((n + (varying ? w.capacity * 3 : 0)) * 4);
+		if (varying) this.uploadTable(f, n, rebound || newWindow || fresh || this.tableAt !== n, dirtyFrom, dirtyTo);
+		this.tableAt = varying ? n : -1;
+		// Where the grid follows the price, the rows a pixel row reads change with the rows in view.
+		let span = '';
+		if (varying) {
+			heatRowSpan(w, f.from, f.to, SPAN);
+			span = `${SPAN.low},${SPAN.high}`;
+		}
+		if (
+			!full &&
+			!fresh &&
+			!newWindow &&
+			!rebound &&
+			span === this.span &&
+			this.count === w.count &&
+			dirtyFrom === w.count - 1 &&
+			dirtyTo === w.count
+		) {
 			left = Math.max(0, Math.min(f.width, heatEdge(w.time, w.count, dirtyFrom, f.map)));
 			right = Math.max(left, Math.min(f.width, heatEdge(w.time, w.count, dirtyTo, f.map)));
 			return { left, right };
 		}
 		this.heat.project(f);
-		const n = (f.width + f.height) * 2;
-		spans.reserve(n * 4);
+		this.span = span;
 		spans.write(this.heat.data, 0, n);
 		if (!full && dirtyTo > dirtyFrom) {
 			left = Math.max(
@@ -381,6 +428,7 @@ export class GpuMarkBackend implements GpuBackend {
 			f.width,
 			f.height,
 			!fresh && !newWindow && !styleChanged && this.revision === w.revision && projection === this.projection,
+			this.heat.rowBase,
 		);
 		if (delta !== null) {
 			if (delta !== 0) {
@@ -396,13 +444,34 @@ export class GpuMarkBackend implements GpuBackend {
 		return { left, right };
 	}
 	/**
+	 * Where the grid follows the price, writes the column table after the pixel ranges: where each
+	 * column's cells start, its first grid row plus 2^30, and its number of cells. Columns
+	 * `[from, to)` are written, or all held after a new window.
+	 */
+	private uploadTable(f: MarkFrame, at: number, all: boolean, from: number, to: number): void {
+		const w = f.window;
+		if (all || this.tableVersion !== w.version) {
+			from = 0;
+			to = w.count;
+		}
+		this.tableVersion = w.version;
+		if (to <= from) return;
+		if (this.table.length < w.capacity * 3) this.table = new Uint32Array(w.capacity * 3);
+		const table = this.table;
+		for (let c = from; c < to; c++) {
+			table[c * 3] = w.cellStart(c);
+			table[c * 3 + 1] = w.cellOffset(c) + 0x40000000;
+			table[c * 3 + 2] = w.cellLength(c);
+		}
+		this.buffers.spans.write(table, from * 3, to * 3, at + from * 3);
+	}
+	/**
 	 * Uploads the slots of the columns in view that the data lacks, and of those a patch changed.
 	 * The data holds the slots of columns `[slotsFrom, slotsTo)`, a range that grows with the view
 	 * and starts over when the view leaves it: a pan uploads the columns that come into view.
 	 */
 	private uploadSlots(f: MarkFrame, slots: HeatSlots, change: Upload): void {
 		const w = f.window,
-			rows = w.rows,
 			data = this.buffers.data;
 		const cells = slots.update(f.from, f.to);
 		const fresh =
@@ -412,7 +481,7 @@ export class GpuMarkBackend implements GpuBackend {
 			!slots.holds(this.slotsFrom, this.slotsTo);
 		const words = new Uint32Array(cells.buffer, cells.byteOffset, cells.length >> 2);
 		const upload = (from: number, to: number) => {
-			if (to > from) data.write(words, Math.floor((from * rows) / 4), Math.ceil((to * rows) / 4));
+			if (to > from) data.write(words, Math.floor(w.cellStart(from) / 4), Math.ceil(w.cellStart(to) / 4));
 		};
 		if (fresh || f.to <= this.slotsFrom || f.from >= this.slotsTo) {
 			upload(f.from, f.to);
@@ -432,7 +501,8 @@ export class GpuMarkBackend implements GpuBackend {
 			device = this.resources.device;
 		const { uniform, data, spans, style, bands, ids } = this.buffers;
 
-		this.params.set([f.width, f.height, left, right, size, w.rows, 0, 0]);
+		const table = path === 'heatmap' && w.varying ? this.tableAt : 0xffffffff;
+		this.params.set([f.width, f.height, left, right, size, w.rows, 0, 0, table, this.heat.rowBase + 0x40000000, 0, 0]);
 		uniform.write(this.params);
 		const kernel: GpuKernel =
 			path === 'scatter-columns' && size >= WIDE_COLUMNS && left === 0 && right === f.width
@@ -502,5 +572,8 @@ export class GpuMarkBackend implements GpuBackend {
 		this.bounds = new Uint32Array(0);
 		this.bands = new PriceBands();
 		this.heat = new HeatRanges();
+		this.tableVersion = -1;
+		this.tableAt = -1;
+		this.span = '';
 	}
 }

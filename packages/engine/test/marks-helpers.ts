@@ -86,6 +86,7 @@ export function blankUpdate(): MarksUpdate {
 		level: 0,
 		start: 0,
 		count: 0,
+		first: 0,
 		total: 0,
 		timeStep: 0,
 		priceStep: 0,
@@ -96,5 +97,9 @@ export function blankUpdate(): MarksUpdate {
 		time: new Float64Array(0),
 		price: new Float64Array(0),
 		values: new Float32Array(0),
+		counts: new Float32Array(0),
+		sizes: new Float32Array(0),
+		offsets: new Int32Array(0),
+		lengths: new Int32Array(0),
 	};
 }

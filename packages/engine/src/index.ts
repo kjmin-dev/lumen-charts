@@ -104,10 +104,15 @@ export {
 } from './pyramid';
 export { ANCHOR_SHIFT, ChunkedStore, SUMMARY_BYTES } from './store';
 export { MarksEngine, type MarksOutcome } from './marks/engine';
+export { MARK_COLUMNS, MARK_COLUMNS_OF, type MarkColumn } from './marks/protocol';
 export { HEATMAP_LEVEL_COLUMNS, HeatmapStore } from './marks/heatmap-store';
 export type {
 	HeatmapColumns,
 	MarksChange,
+	MarksChunk,
+	MarksFetchRequest,
+	MarksRestoreResult,
+	MarksTimeline,
 	MarksData,
 	MarksKind,
 	MarksRequest,
