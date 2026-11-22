@@ -210,6 +210,39 @@ describe('PriceScale modes', () => {
 		ps.zoom(1e-300);
 		expect([ps.min, ps.max]).toEqual([min, max]);
 	});
+
+	it('zooms around the value at a coordinate, which keeps its place in every mode and direction', () => {
+		for (const mode of MODES) {
+			for (const inverted of [false, true]) {
+				const ps = scaleFor(mode, inverted);
+				const y = ps.priceToY(80);
+				const span = ps.max - ps.min;
+				ps.zoomAt(y, 0.5);
+				expect(ps.priceToY(80)).toBeCloseTo(y, 6);
+				expect(ps.max - ps.min).toBeCloseTo(span / 2, 9);
+				// Above 1 shows more; a coordinate in the margins is a fixed point like any other.
+				const atMargin = ps.yToValue(10);
+				ps.zoomAt(10, 3);
+				expect(ps.max - ps.min).toBeCloseTo((span / 2) * 3, 9);
+				expect(ps.yToValue(10)).toBeCloseTo(atMargin, 9);
+			}
+		}
+		const ps = scaleFor('normal');
+		const value = ps.yToValue(123);
+		ps.zoomAt(123, 4);
+		expect(ps.yToValue(123)).toBeCloseTo(value, 9);
+		// Factors and coordinates that would collapse or blow up the range are ignored.
+		const { min, max, version } = ps;
+		ps.zoomAt(100, 0);
+		ps.zoomAt(100, Infinity);
+		ps.zoomAt(100, 1e-300);
+		ps.zoomAt(Number.NaN, 2);
+		expect([ps.min, ps.max, ps.version]).toEqual([min, max, version]);
+		const empty = new PriceScale();
+		empty.setHeight(100);
+		empty.zoomAt(50, 2);
+		expect(empty.hasRange).toBe(false);
+	});
 });
 
 /** Tick rows, top to bottom, checked to lie in the pane at least `spacing` apart. */

@@ -21,9 +21,14 @@ export interface PriceRange {
 
 /**
  * A price scale of the chart. Its values are prices on a normal or logarithmic scale, and changes
- * in percent or index values on a percentage or indexed one (see `PriceScaleMode`). Ranges and
- * coordinates are those of the last frame drawn; coordinates are CSS pixels from the top of the
+ * in percent or index values on a percentage or indexed one (see `PriceScaleMode`). Ranges, widths
+ * and coordinates are those of the last frame drawn; coordinates are CSS pixels from the top of the
  * chart's plotting area, including the offset of an independent pane.
+ *
+ * A handle stands for its id, and stays valid when the chart removes the scale (see
+ * `ChartApi.removePriceScale`): while the chart has no scale of that id it reads as a scale with
+ * nothing on it (no width, no range, no coordinates, the options of an overlay), and `applyOptions`
+ * or `setVisibleRange` make the scale again, listed in `ChartOptions.priceScales`.
  */
 export interface PriceScaleApi {
 	/** `default` for the scale `ChartOptions.priceScale` configures, or the id series name it by. */
@@ -31,7 +36,7 @@ export interface PriceScaleApi {
 	/** Merges options, like `chart.applyOptions({ priceScales: { [id]: options } })`. */
 	applyOptions(options: DeepPartial<PriceScaleOptions>): void;
 	options(): Readonly<PriceScaleOptions>;
-	/** Width of the axis in CSS pixels; 0 for an overlay. */
+	/** Width of the axis in CSS pixels; 0 for an overlay, and for a scale nothing is on. */
 	width(): number;
 	/**
 	 * The range of values fitted between the scale's margins: prices on a normal or logarithmic
@@ -58,6 +63,12 @@ export interface PriceAxisHost {
 	invalidate(level: Invalidation): void;
 }
 
+/** What the price axes need from the chart. */
+export interface PriceAxesHost extends PriceAxisHost {
+	/** The scale `id` was removed: nothing uses it, and no option lists it. */
+	priceScaleRemoved(id: string): void;
+}
+
 export const MIN_AXIS_WIDTH = 40;
 /** Space between an axis label and the edges of its axis, in CSS pixels. */
 export const AXIS_PADDING = 8;
@@ -72,7 +83,17 @@ const AXIS_SHRINK_SLACK = 12;
 export class PriceAxis implements PriceScaleApi, AxisTarget {
 	public readonly id: string;
 	public readonly scale: PriceScale;
+	/**
+	 * The options in effect: those of the scale (`options()`), except that a scale nothing is on
+	 * shows no axis and has no pane of its own (see `PriceAxes.endSweep`).
+	 */
 	public settings: PriceScaleOptions;
+	/** Whether a series, an indicator output, a heatmap or scatter, or a primitive is on the scale. */
+	public inUse = false;
+	/** The chart removed the scale; the object lives on as a handle of its id. */
+	public removed = false;
+	/** The last sweep that found the scale in use (see `PriceAxes.beginSweep`). */
+	public usedIn = -1;
 	public layer: Layer | null = null;
 	/** Place and width of the axis in CSS pixels, while it is visible. */
 	public axisLeft = 0;
@@ -103,22 +124,64 @@ export class PriceAxis implements PriceScaleApi, AxisTarget {
 	public high = -Infinity;
 
 	private readonly _host: PriceAxisHost;
+	/** The axes the scale belongs to, which a handle of a removed scale asks for the scale of its id. */
+	private readonly _owner: PriceAxes | null;
+	/** The options of the scale, as resolved. */
+	private _options: PriceScaleOptions;
+	/** Those options without an axis or a pane, for while nothing is on the scale; made when needed. */
+	private _unused: PriceScaleOptions | null = null;
+	private _unusedOf: PriceScaleOptions | null = null;
 
-	public constructor(id: string, host: PriceAxisHost, settings: PriceScaleOptions) {
+	public constructor(id: string, host: PriceAxisHost, settings: PriceScaleOptions, owner: PriceAxes | null = null) {
 		this.id = id;
 		this.scale = new PriceScale(id);
 		this._host = host;
+		this._owner = owner;
+		this._options = settings;
 		this.settings = settings;
 		this.setSettings(settings);
 	}
 
 	/** Takes resolved options and pushes what the scale keeps a copy of. */
 	public setSettings(settings: PriceScaleOptions): void {
-		this.settings = settings;
+		this._options = settings;
+		this.settings = this._effective();
 		const scale = this.scale;
 		scale.setMargins(settings.scaleMargins.top, settings.scaleMargins.bottom);
 		scale.setMode(settings.mode);
 		scale.setInverted(settings.invertScale);
+	}
+
+	/**
+	 * Notes whether anything is on the scale. Returns true when that shows or hides its axis or its
+	 * pane, which the layout has to follow.
+	 */
+	public setInUse(inUse: boolean): boolean {
+		if (inUse === this.inUse) {
+			return false;
+		}
+		this.inUse = inUse;
+		const before = this.settings;
+		this.settings = this._effective();
+		return before.visible !== this.settings.visible || before.paneWeight !== this.settings.paneWeight;
+	}
+
+	/** The options in effect: a scale other than the default one takes no room while nothing is on it. */
+	private _effective(): PriceScaleOptions {
+		const options = this._options;
+		if (this.inUse || this.id === DEFAULT_PRICE_SCALE_ID || (!options.visible && !(options.paneWeight > 0))) {
+			return options;
+		}
+		if (this._unusedOf !== options) {
+			this._unusedOf = options;
+			this._unused = { ...options, visible: false, paneWeight: 0 };
+		}
+		return this._unused!;
+	}
+
+	/** This scale, or for a handle of a removed scale the scale of its id now, if there is one. */
+	private _current(): PriceAxis | null {
+		return this.removed ? (this._owner?.find(this.id) ?? null) : this;
 	}
 
 	/** Starts collecting series and their range for a model update. */
@@ -156,14 +219,20 @@ export class PriceAxis implements PriceScaleApi, AxisTarget {
 	}
 
 	public options(): Readonly<PriceScaleOptions> {
-		return this.settings;
+		const current = this._current();
+		return current !== null ? current._options : this._owner!.overlayOptions();
 	}
 
 	public width(): number {
-		return this.settings.visible ? this.axisWidth : 0;
+		const current = this._current();
+		return current !== null && current.settings.visible ? current.axisWidth : 0;
 	}
 
 	public getVisibleRange(): PriceRange | null {
+		const current = this._current();
+		if (current !== this) {
+			return current?.getVisibleRange() ?? null;
+		}
 		const scale = this.scale;
 		if (!scale.hasRange) {
 			return null;
@@ -174,6 +243,10 @@ export class PriceAxis implements PriceScaleApi, AxisTarget {
 	}
 
 	public setVisibleRange(range: PriceRange): void {
+		if (this.removed && this._owner !== null) {
+			this._owner.get(this.id).setVisibleRange(range);
+			return;
+		}
 		let low = Math.min(range.from, range.to);
 		let high = Math.max(range.from, range.to);
 		if (this.scale.mode === 'logarithmic') {
@@ -192,6 +265,10 @@ export class PriceAxis implements PriceScaleApi, AxisTarget {
 	}
 
 	public priceToCoordinate(price: number): number | null {
+		const current = this._current();
+		if (current !== this) {
+			return current?.priceToCoordinate(price) ?? null;
+		}
 		if (!this.scale.hasRange) {
 			return null;
 		}
@@ -200,6 +277,10 @@ export class PriceAxis implements PriceScaleApi, AxisTarget {
 	}
 
 	public coordinateToPrice(y: number): number | null {
+		const current = this._current();
+		if (current !== this) {
+			return current?.coordinateToPrice(y) ?? null;
+		}
 		if (!this.scale.hasRange) {
 			return null;
 		}
@@ -212,7 +293,7 @@ export class PriceAxis implements PriceScaleApi, AxisTarget {
 	/** Scales the axis by a drag of `dy` CSS pixels: down shows more, up less, around the middle. */
 	public dragBy(dy: number): void {
 		const scale = this.scale;
-		if (dy === 0 || !scale.hasRange) {
+		if (dy === 0 || !scale.hasRange || this.removed) {
 			return;
 		}
 		this._manual();
@@ -220,8 +301,22 @@ export class PriceAxis implements PriceScaleApi, AxisTarget {
 		this._host.invalidate(INVALIDATE_LIGHT);
 	}
 
+	/**
+	 * Scales the axis around the price at `y` (CSS pixels from the top of the chart), which stays
+	 * where it is: a factor above 1 shows more. Turns autoscale off, as a drag does.
+	 */
+	public zoomAt(y: number, factor: number): void {
+		const scale = this.scale;
+		if (factor === 1 || !(factor > 0) || !scale.hasRange || this.removed) {
+			return;
+		}
+		this._manual();
+		scale.zoomAt(y, factor);
+		this._host.invalidate(INVALIDATE_LIGHT);
+	}
+
 	public resetScale(): void {
-		if (!this.settings.autoScale) {
+		if (!this.settings.autoScale && !this.removed) {
 			this._host.applyPriceScaleOptions(this.id, { autoScale: true });
 		}
 	}
@@ -236,7 +331,11 @@ export class PriceAxis implements PriceScaleApi, AxisTarget {
 
 /**
  * The price scales of a chart with their axes: the default scale, those the `priceScales` option
- * lists, and the overlays series name.
+ * lists, and the overlays that something on the chart names.
+ *
+ * Which scales there are follows what uses them, as of the last frame (see `beginSweep`): the
+ * default scale is always there; one the options list is there while they list it, and takes room
+ * (an axis, a pane) only while something is on it; any other is there while something is on it.
  */
 export class PriceAxes {
 	/**
@@ -247,15 +346,18 @@ export class PriceAxes {
 	/** The scale whose ticks the horizontal grid lines follow, from the last model update. */
 	public grid: PriceAxis;
 	private readonly _byId = new Map<string, PriceAxis>();
-	private readonly _host: PriceAxisHost;
+	private readonly _host: PriceAxesHost;
 	private readonly _settings: ChartSettings;
 	private readonly _layout: ChartLayout;
+	/** The sweep in progress (see `beginSweep`). */
+	private _sweep = 0;
 
-	public constructor(host: PriceAxisHost, settings: ChartSettings, layout: ChartLayout) {
+	public constructor(host: PriceAxesHost, settings: ChartSettings, layout: ChartLayout) {
 		this._host = host;
 		this._settings = settings;
 		this._layout = layout;
-		const main = new PriceAxis(DEFAULT_PRICE_SCALE_ID, host, settings.options.priceScale);
+		const main = new PriceAxis(DEFAULT_PRICE_SCALE_ID, host, settings.options.priceScale, this);
+		main.inUse = true;
 		main.layer = layout.mainAxis;
 		this.list.push(main);
 		this._byId.set(main.id, main);
@@ -297,6 +399,7 @@ export class PriceAxes {
 				id,
 				this._host,
 				this._settings.options.priceScales[id] ?? overlayScaleOptions(this._settings.theme()),
+				this,
 			);
 			axis.scale.setHeight(this._layout.mainPaneHeight);
 			this._byId.set(id, axis);
@@ -347,12 +450,84 @@ export class PriceAxes {
 		}
 	}
 
+	/** The price scale with this id, if there is one; makes none. */
+	public find(id: string): PriceAxis | null {
+		return this._byId.get(id) ?? null;
+	}
+
+	/** The options of a scale no option lists, in the theme in effect. */
+	public overlayOptions(): PriceScaleOptions {
+		return overlayScaleOptions(this._settings.theme());
+	}
+
+	/**
+	 * Starts finding the scales in use, which `markUsed` and `markUsedId` mark until `endSweep`. The
+	 * chart does it at the start of every frame that updates the model, with every series, indicator
+	 * output, heatmap, scatter and primitive it has, shown or hidden.
+	 */
+	public beginSweep(): void {
+		this._sweep++;
+	}
+
+	/** Marks a scale as in use. */
+	public markUsed(axis: PriceAxis): void {
+		axis.usedIn = this._sweep;
+	}
+
+	/** Marks the scale `id` as in use, if there is one. */
+	public markUsedId(id: string): void {
+		const axis = this._byId.get(id);
+		if (axis !== undefined) {
+			axis.usedIn = this._sweep;
+		}
+	}
+
+	/**
+	 * Ends finding the scales in use. A scale no option lists that nothing used is removed: its state
+	 * and its canvas go, and a later use makes it again. One the options list stays, but takes no room
+	 * while nothing is on it. Returns true when an axis or a pane appeared or went, which the layout
+	 * has to follow.
+	 */
+	public endSweep(): boolean {
+		const sweep = this._sweep;
+		const declared = this._settings.options.priceScales;
+		const list = this.list;
+		let changed = false;
+		// The default scale, first, is always there and always in use.
+		for (let i = list.length - 1; i > 0; i--) {
+			const axis = list[i]!;
+			const used = axis.usedIn === sweep;
+			if (!used && !Object.prototype.hasOwnProperty.call(declared, axis.id)) {
+				list.splice(i, 1);
+				this._byId.delete(axis.id);
+				axis.removed = true;
+				// Not listed, it was an overlay: its canvas, if it had one, is hidden and takes no room.
+				const layer = axis.layer;
+				if (layer !== null) {
+					layer.release();
+					layer.canvas.remove();
+					axis.layer = null;
+				}
+				if (this.grid === axis) {
+					this.grid = list[0]!;
+				}
+				this._host.priceScaleRemoved(axis.id);
+				continue;
+			}
+			if (axis.setInUse(used)) {
+				this._syncAxisLayer(axis);
+				changed = true;
+			}
+		}
+		return changed;
+	}
+
 	/** The price scale a series is on, following its `priceScaleId`. */
 	public of(series: Series): PriceAxis {
 		// Options are replaced as a whole on every change: while they are the same, so is the scale.
 		const options = series.seriesOptions;
 		let axis = series.axis;
-		if (axis === null || series.axisOptions !== options) {
+		if (axis === null || series.axisOptions !== options || axis.removed) {
 			axis = this.get(options.priceScaleId || DEFAULT_PRICE_SCALE_ID);
 			series.axis = axis;
 			series.axisOptions = options;
@@ -360,12 +535,25 @@ export class PriceAxes {
 		return axis;
 	}
 
-	/** Makes the canvas of an axis shown for the first time, below the overlay, and shows or hides it. */
+	/**
+	 * Makes the canvas of an axis the options show for the first time, below the overlay, and shows
+	 * or hides it: hidden while the options hide the axis or nothing is on the scale. A hidden axis
+	 * lets its bitmap go; the next placement of the canvases makes it again.
+	 */
 	private _syncAxisLayer(axis: PriceAxis): void {
-		if (axis.layer === null && axis.settings.visible) {
+		const visible = axis.settings.visible;
+		// Made once the options show the axis, so canvases keep the order of their scales' options.
+		if (axis.layer === null && axis.options().visible) {
 			axis.layer = this._layout.addAxisLayer();
 		}
-		axis.layer?.setVisible(axis.settings.visible);
+		const layer = axis.layer;
+		if (layer === null) {
+			return;
+		}
+		if (!visible && layer.visible && layer.pixels > 0) {
+			layer.release();
+		}
+		layer.setVisible(visible);
 	}
 
 	/** Has the widths of the axes fitted again by the next frame: fonts or formats may differ. */

@@ -230,9 +230,19 @@ export interface ChartApi {
 	/**
 	 * The price scale with this id: by default the default scale (`default`), which
 	 * `ChartOptions.priceScale` configures. An id no option or series has named yet gets an overlay
-	 * scale.
+	 * scale, which goes again with the next frame if nothing is put on it (see `removePriceScale`);
+	 * the handle stays valid either way.
 	 */
 	priceScale(id?: string): PriceScaleApi;
+	/**
+	 * Removes the scale `id` from `ChartOptions.priceScales`: its options go, and with them its range
+	 * if it did not autoscale. Series, indicator outputs, heatmaps, scatters, primitives and drawings
+	 * still on it stay there, on an overlay with default options; the scale itself goes with the
+	 * first frame nothing is on it, as any scale the options do not list does. Handles of it stay
+	 * valid (see `PriceScaleApi`). The default scale cannot be removed, and an id the options do not
+	 * list is ignored.
+	 */
+	removePriceScale(id: string): void;
 	/**
 	 * Resolves once all data handed over so far has been applied and painted. A chart outside the
 	 * viewport is not painted until it comes back into view, and does not wait for that.

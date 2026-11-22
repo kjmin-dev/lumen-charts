@@ -1034,9 +1034,10 @@ describe('chart with series', () => {
 		expect(calls.filter(call => call.fillStyle === themes.light.grid.vertLines.color)).toHaveLength(0);
 	});
 
-	it('snaps the crosshair to the close in magnet mode, and hides it', async () => {
+	it('snaps the crosshair to the nearest open, high, low or close in magnet mode, and hides it', async () => {
 		const data = candles(5000);
-		chart.addSeries('candlestick').setData(data);
+		const series = chart.addSeries('candlestick');
+		series.setData(data);
 		chart.applyOptions({ crosshair: { mode: 'magnet' } });
 		await settle();
 		clearCalls();
@@ -1045,10 +1046,13 @@ describe('chart with series', () => {
 		const range = chart.timeScale().getVisibleLogicalRange()!;
 		const paneWidth = Number.parseFloat(chart.element().querySelectorAll('canvas')[0]!.style.width);
 		const index = Math.round(range.from + (200 / paneWidth) * (range.to - range.from));
+		const values = [data.open[index]!, data.high[index]!, data.low[index]!, data.close[index]!];
+		const distance = (value: number) => Math.abs(series.priceToCoordinate(value)! - 37);
+		const nearest = values.reduce((best, value) => (distance(value) < distance(best) ? value : best));
 		const labels = overlay()
 			.calls.filter(call => call.name === 'fillText')
 			.map(call => call.args[0]);
-		expect(labels).toContain(data.close[index]!.toFixed(2));
+		expect(labels).toContain(nearest.toFixed(2));
 
 		chart.applyOptions({ crosshair: { mode: 'hidden' } });
 		expect(chart.element().style.cursor).toBe('default');
