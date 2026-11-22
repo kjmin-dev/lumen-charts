@@ -4,10 +4,18 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright';
-import { build, preview } from 'vite';
+import { build } from 'vite';
+import { connectAndroid } from '../../runner/android.ts';
+import { servePreview } from '../../runner/serve.ts';
 
 const { values } = parseArgs({
-	options: { packages: { type: 'string' }, out: { type: 'string' }, sizes: { type: 'string', default: '1,3,9' } },
+	options: {
+		packages: { type: 'string' },
+		out: { type: 'string' },
+		sizes: { type: 'string', default: '1,3,9' },
+		// Chrome on an Android device over USB (see runner/android.ts), at the device's own ratio.
+		android: { type: 'string' },
+	},
 });
 const sizes = values.sizes.split(',').map(Number);
 if (!sizes.length || !sizes.every(size => Number.isInteger(size) && size >= 1 && size <= 9))
@@ -36,23 +44,36 @@ const config = {
 		},
 	},
 	preview: {
-		host: '127.0.0.1',
-		port: 0,
 		headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' },
 	},
 };
 
-let browser, server;
+let browser, server, android;
 try {
 	await build(config);
 	await writeFile(join(outDir, 'index.html'), '<!doctype html><body style="margin:0"></body>');
-	server = await preview(config);
-	browser = await chromium.launch({ headless: true, channel: 'chromium' });
-	const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 });
-	await page.goto(server.resolvedUrls.local[0]);
+	const served = await servePreview(config);
+	server = served.server;
+	let page,
+		base = served.url;
+	if (values.android) {
+		const port = served.port;
+		android = await connectAndroid(values.android, port);
+		browser = android.browser;
+		page = await android.newPage();
+		base = `http://localhost:${port}/`;
+	} else {
+		browser = await chromium.launch({ headless: true, channel: 'chromium' });
+		page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 });
+	}
+	await page.goto(base);
+	const before = android?.state();
 	const result = {
 		chromium: browser.version(),
+		...(android ? { device: android.device } : {}),
+		dpr: await page.evaluate(() => window.devicePixelRatio),
 		...(await page.evaluate(async widths => (await import('/study.js')).study(widths), sizes)),
+		...(android ? { deviceState: { before, after: android.state() } } : {}),
 	};
 	if (values.out) await writeFile(values.out, JSON.stringify(result, null, '\t') + '\n');
 	for (const [key, samples] of Object.entries(result.probes)) {
@@ -61,7 +82,8 @@ try {
 	}
 	console.log(result.checks.length, 'whole-chart comparisons passed');
 } finally {
-	await browser?.close();
+	if (android) await android.close();
+	else await browser?.close();
 	await server?.close();
 	await rm(outDir, { recursive: true, force: true });
 }

@@ -10,7 +10,7 @@ import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { type Browser, type CDPSession, type Page, chromium, firefox } from 'playwright';
-import { build, preview } from 'vite';
+import { build } from 'vite';
 import { adapters, knownFailure } from '../src/adapters/index.ts';
 import { ALLOCATION_TRACE_CATEGORIES, type SamplingNode, allocationsHeadline } from '../src/allocations.ts';
 import type { SeriesKind } from '../src/data.ts';
@@ -46,6 +46,7 @@ import {
 	writeSummary,
 } from './profile.ts';
 import { type AndroidConnection, connectAndroid } from './android.ts';
+import { servePreview } from './serve.ts';
 
 const benchDir = fileURLToPath(new URL('..', import.meta.url));
 const repoDir = resolve(benchDir, '..');
@@ -650,9 +651,10 @@ const resolveSource = sourceResolver();
 async function runOne(session: Session, planned: PlannedJob): Promise<CompletedJob> {
 	const started = performance.now();
 	const cpuStart = cpuTimes();
-	if (!session.browser.isConnected()) {
-		// The browser process is gone (it crashed or was killed during the previous run). Starting a
-		// new one costs that run, not the rest of the matrix.
+	if (!session.browser.isConnected() || session.android?.mapped() === false) {
+		// The browser process is gone (it crashed or was killed during the previous run), or the adb
+		// server restarted and dropped the device's port mappings. Starting a new one costs that run,
+		// not the rest of the matrix.
 		process.stdout.write('  browser disconnected; restarting it\n');
 		session.browser = await launch(session);
 	}
@@ -761,18 +763,11 @@ async function main(): Promise<void> {
 		build: { outDir: buildDir, emptyOutDir: true },
 	};
 	await build(viteOptions);
-	// The device reaches the server through `adb reverse`, which connects to the IPv4 loopback.
-	const server = await preview(
-		androidSerial === null ? viteOptions : { ...viteOptions, preview: { host: '127.0.0.1' } },
-	);
-	const localUrl = server.resolvedUrls?.local[0];
-	if (localUrl === undefined) {
-		throw new Error('Preview server has no local URL');
-	}
+	// On 127.0.0.1 at a port of its own, which `adb reverse` also reaches from a device.
+	const { server, port, url: localUrl } = await servePreview(viteOptions);
 	const caffeinate = keepAwake();
 	let session: Session;
 	if (androidSerial !== null) {
-		const port = Number(new URL(localUrl).port);
 		const android = await connectAndroid(androidSerial, port, cdpPort);
 		// localhost on the device is a secure context, as on the desktop: WebGPU and isolation work.
 		session = { browser: android.browser, baseUrl: `http://localhost:${port}/`, android };
@@ -801,7 +796,17 @@ async function main(): Promise<void> {
 		const completed: CompletedJob[] = [];
 		const runStart = performance.now();
 		for (const [index, planned] of plan.entries()) {
-			const result = await runOne(session, planned);
+			let result = await runOne(session, planned);
+			if (
+				session.android !== null &&
+				result.outcome.status === 'failed' &&
+				/has been closed|disconnected/i.test(result.outcome.message)
+			) {
+				// The DevTools connection to the device dropped (another adb client restarted the adb
+				// server): the run says nothing about the chart, so it runs again once, reconnected.
+				process.stdout.write(`  ${planned.id}: connection to the device lost; running it again\n`);
+				result = await runOne(session, planned);
+			}
 			completed.push(result);
 			const elapsed = (performance.now() - runStart) / 1000;
 			const eta = (elapsed / (index + 1)) * (plan.length - index - 1);

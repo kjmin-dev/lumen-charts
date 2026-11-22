@@ -36,6 +36,11 @@ export interface AndroidConnection {
 	state(): DeviceState;
 	/** Resident memory of the given processes of the device, summed, in bytes. */
 	residentBytes(pids: readonly number[]): number | null;
+	/**
+	 * Whether both port mappings are in place. Another adb client can restart the adb server, which
+	 * drops them and leaves the DevTools connection open but silent.
+	 */
+	mapped(): boolean;
 	/** Connects again after Chrome went away (it crashed, or the adb server restarted). */
 	reconnect(): Promise<Browser>;
 	/** Closes the pages opened, removes the port mappings and restores the screen setting. */
@@ -105,10 +110,21 @@ export async function connectAndroid(serial: string, port: number, cdpPort = 922
 		adb(['reverse', `tcp:${port}`, `tcp:${port}`]);
 		adb(['forward', `tcp:${cdpPort}`, `localabstract:${DEVTOOLS_SOCKET}`]);
 	};
+	const pageUrl = `http://localhost:${port}/`;
+	/** Closes the device's tabs on this server's pages, which a lost connection leaves open. */
+	const closeHarnessTabs = async (browser: Browser): Promise<void> => {
+		for (const page of browser.contexts()[0]?.pages() ?? []) {
+			if (page.url().startsWith(pageUrl)) {
+				await page.close().catch(() => undefined);
+			}
+		}
+	};
 	const connect = async (): Promise<Browser> => {
 		// An adb server that restarted has dropped both mappings.
 		mapPorts();
-		return chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`, { timeout: 30_000 });
+		const browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`, { timeout: 30_000 });
+		await closeHarnessTabs(browser);
+		return browser;
 	};
 
 	const opened = new Set<Page>();
@@ -134,6 +150,18 @@ export async function connectAndroid(serial: string, port: number, cdpPort = 922
 		residentBytes(pids) {
 			return pids.length === 0 ? null : parseResidentBytes(tryShell(`ps -o RSS= -p ${pids.join(',')}`) ?? '');
 		},
+		mapped() {
+			try {
+				const forwards = execFileSync(adbPath(), ['forward', '--list'], { encoding: 'utf8', timeout: 10_000 });
+				const reverses = adb(['reverse', '--list'], 10_000);
+				return (
+					forwards.includes(`${serial} tcp:${cdpPort} localabstract:${DEVTOOLS_SOCKET}`) &&
+					reverses.includes(`tcp:${port} tcp:${port}`)
+				);
+			} catch {
+				return false;
+			}
+		},
 		async reconnect() {
 			await connection.browser.close().catch(() => undefined);
 			connection.browser = await connect();
@@ -143,6 +171,7 @@ export async function connectAndroid(serial: string, port: number, cdpPort = 922
 			for (const page of opened) {
 				await page.close().catch(() => undefined);
 			}
+			await closeHarnessTabs(connection.browser);
 			// Disconnects only: Chrome keeps running with the tabs it had before.
 			await connection.browser.close().catch(() => undefined);
 			for (const args of [

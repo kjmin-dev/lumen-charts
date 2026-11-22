@@ -2,8 +2,9 @@ import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { chromium, firefox, webkit } from 'playwright';
-import { build, preview } from 'vite';
+import { build } from 'vite';
 import { connectAndroid } from './android.ts';
+import { servePreview } from './serve.ts';
 const { values } = parseArgs({
 	options: {
 		out: { type: 'string' },
@@ -25,19 +26,14 @@ if (values.android && (values.browser !== 'chromium' || values['software-gl']))
 	throw new Error('--android drives the device Chrome: --browser and --software-gl do not apply');
 const configFile = new URL('../vite.config.ts', import.meta.url).pathname;
 await build({ configFile, logLevel: 'warn' });
-// The device reaches the server through `adb reverse`, which connects to the IPv4 loopback.
-const server = await preview({
-	configFile,
-	logLevel: 'warn',
-	...(values.android ? { preview: { host: '127.0.0.1' } } : {}),
-});
+// On 127.0.0.1 at a port of its own, which `adb reverse` also reaches from a device.
+const { server, port, url } = await servePreview({ configFile, logLevel: 'warn' });
 let browser, android;
 try {
-	let base = server.resolvedUrls.local[0];
+	let base = url;
 	/** One run per mode and entry: a ratio to emulate and the engine to use. */
 	let variants;
 	if (values.android) {
-		const port = Number(new URL(base).port);
 		android = await connectAndroid(values.android, port, Number(values['cdp-port']));
 		browser = android.browser;
 		base = `http://localhost:${port}/`;
