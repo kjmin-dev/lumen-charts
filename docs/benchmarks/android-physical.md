@@ -96,6 +96,7 @@ Frame JS p95 of the ten pan and zoom cases, worker / local engine, in millisecon
 - Tick samples fall on the 5 µs timer step and are mostly 0; the p99 of 10 µs is two steps. The main thread spends 7.8–10.5 µs per tick including paint, the most with all bars in view.
 - With 20 indicators and all 1M bars in view, a tick applied through the worker waits for the frame in progress, as on the M1 before the [idle wait and packed patches](gc-floor.md): here the frame is longer, and the worker's p99 is 3.8–4.8 ms against 0.67–0.98 ms on the M1 (1.5–3.2 ms in this branch's runs on the loaded M1, [Firefox comparison](firefox-frames.md)). The local engine stays at 0.7–1.2 ms.
 - Hover misses by 0.3–0.5 ms. The overlay redraw is the cost (p50 0.95 ms, p99 1.25–1.53 ms); hit testing over the 1,000 drawings takes 12 µs on average and 0.09–0.36 ms at p99, so a spatial index would not change the result. Stage 4 predicted this split for a slower device ([stage 4 drawings](stage-4-drawings.md)). The 1,200 × 600 CSS-pixel overlay is 3,150 × 1,575 device pixels here; a chart the width of the phone's screen (412 CSS pixels) clears about a third of that area per redraw, which this run did not measure.
+- **Since then** ([slow-device gates](slow-device-gates.md)): the overlay of a hover frame draws only what changed (about 17 Canvas 2D calls instead of about 470), and a tick frame with 20 indicators takes the views' price ranges from the rebuilt items only. On the M1 with the page's CPU slowed four times, hover on `main` had a frame JS p99 of 1.20–1.47 ms, near this phone's, and the change did not make it measurably faster (1.14–1.26 ms); the tick-to-applied p99 did not change beyond the spread of the runs. Both still have to be measured on the phone.
 
 ## WebGPU dispatch thresholds on Adreno
 
@@ -119,6 +120,7 @@ GPU pass p95 in milliseconds over 48 alternating fractional viewport changes, on
 
 ## Still open
 
+- **The hover and indicator gates after the [slow-device changes](slow-device-gates.md)**: measured on the M1 only, with CPU throttling as a stand-in; this phone has to run `tick/candles-1m,ind-apply/candles-1m,drawings/candles-1m/1000/hover` again.
 - **A mid-range Android device**, the reference of design section 9 and of stage 5 step 5. This flagship misses the hover gate, the worker's indicator gate and two mark budgets; a mid-range phone will miss more. No such device was available.
 - **The cause of the one-step pixel differences** of the GPU paths on Adreno, and with it byte-for-byte image equality on Android.
 - **A phone-sized chart.** Every case here kept the desktop's 1,200 × 600 CSS-pixel chart. A chart the width of the screen draws a third of the device pixels, which matters for the overlay redraw of hover and for the GPU passes.

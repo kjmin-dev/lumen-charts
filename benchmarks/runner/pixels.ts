@@ -1,9 +1,11 @@
 /// <reference types="node" />
-// Compares frames that redraw only the columns a tick changed with full redraws, pixel for pixel, in
-// headless Chromium (see `benchmarks/src/pixels/main.ts`).
+// Compares frames that redraw only the columns a tick changed, and overlay frames that redraw only
+// what moved, with full redraws, pixel for pixel, in headless Chromium (see
+// `benchmarks/src/pixels/main.ts`).
 // Usage: pnpm bench:pixels [--dpr 1,2,1.5] [--raster gpu,cpu] [--redraw auto|full] [--case <part of a name>] [--out <file.json>]
 //
-// Exits with 1 when any comparison differs, or when a case took no partial frame at all.
+// Exits with 1 when any comparison differs, or when a case took no partial frame at all (the overlay
+// case: no partial frame of the overlay).
 //
 // `--redraw full` runs the charts with the option that turns partial frames off (`redraw: 'full'`).
 // Then every frame is a full redraw, no comparison may differ on either rasterizer, and a partial

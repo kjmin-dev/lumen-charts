@@ -330,21 +330,8 @@ export class OverlayRenderer {
 				// Not settled: the frame draws everything instead.
 				return false;
 			}
-			changed = false;
-			for (const list of [this._static, this._next]) {
-				for (let i = 0; i < list.count; i++) {
-					const item = list.items[i]!;
-					if (
-						this._damaged(item.x0, item.y0, item.x1, item.y1) &&
-						!(item.kind === ROW || item.kind === COLUMN
-							? this._across(item)
-							: this._within(item.x0, item.y0, item.x1, item.y1))
-					) {
-						this._addDamage(item.x0, item.y0, item.x1, item.y1);
-						changed = true;
-					}
-				}
-			}
+			changed = this._widen(this._static);
+			if (this._widen(this._next)) changed = true;
 			let reached = false;
 			let inside = true;
 			for (let i = 0; i < boxes; i += 4) {
@@ -359,6 +346,27 @@ export class OverlayRenderer {
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * Adds the box of each item of `list` that reaches into the damage without lying inside it (a
+	 * line: without the boxes that cross it covering its thickness). Returns whether any was added.
+	 */
+	private _widen(list: ItemList): boolean {
+		let changed = false;
+		for (let i = 0; i < list.count; i++) {
+			const item = list.items[i]!;
+			if (
+				this._damaged(item.x0, item.y0, item.x1, item.y1) &&
+				!(item.kind === ROW || item.kind === COLUMN
+					? this._across(item)
+					: this._within(item.x0, item.y0, item.x1, item.y1))
+			) {
+				this._addDamage(item.x0, item.y0, item.x1, item.y1);
+				changed = true;
+			}
+		}
+		return changed;
 	}
 
 	/**
@@ -406,41 +414,19 @@ export class OverlayRenderer {
 		}
 		const paneLeft = Math.round(this._layout.paneLeft * this._ratio);
 		const highlights = this._nextBoxes;
-		let reached = false;
-		let inside = true;
 		for (let i = 0; i < boxes; i += 4) {
-			const x0 = highlights[i]! + paneLeft;
-			const y0 = highlights[i + 1]!;
-			const x1 = highlights[i + 2]! + paneLeft;
-			const y1 = highlights[i + 3]!;
-			if (this._damaged(x0, y0, x1, y1)) {
-				reached = true;
+			if (
+				this._damaged(highlights[i]! + paneLeft, highlights[i + 1]!, highlights[i + 2]! + paneLeft, highlights[i + 3]!)
+			) {
+				// The drawings draw every highlight at once; `_closeDamage` put all of them inside.
+				this._drawPaneGroup(ctx, false);
+				break;
 			}
-			if (!this._within(x0, y0, x1, y1)) {
-				inside = false;
-			}
-		}
-		if (reached) {
-			// The drawings draw every highlight at once: as they are only when all lie in the damage.
-			if (!inside) this._clip(ctx);
-			this._drawPaneGroup(ctx, false);
-			if (!inside) ctx.restore();
 		}
 		const next = this._next;
 		for (let i = 0; i < next.count; i++) {
 			this._drawDamaged(ctx, next.items[i]!);
 		}
-	}
-
-	/** Saves the context and clips it to the damage; the caller restores it. */
-	private _clip(ctx: CanvasRenderingContext2D): void {
-		const damage = this._damage;
-		ctx.save();
-		ctx.beginPath();
-		for (let i = 0; i < damage.length; i += 4) {
-			ctx.rect(damage[i]!, damage[i + 1]!, damage[i + 2]! - damage[i]!, damage[i + 3]! - damage[i + 1]!);
-		}
-		ctx.clip();
 	}
 
 	/** Primitives on top and what the drawings show on the overlay, in pane coordinates and clipped to the pane. */
@@ -520,10 +506,8 @@ export class OverlayRenderer {
 		if ((item.kind === ROW || item.kind === COLUMN) && !this._within(item.x0, item.y0, item.x1, item.y1)) {
 			this._drawLine(ctx, item);
 		} else if (this._damaged(item.x0, item.y0, item.x1, item.y1)) {
-			const inside = this._within(item.x0, item.y0, item.x1, item.y1);
-			if (!inside) this._clip(ctx);
+			// `_closeDamage` put it inside the damage.
 			this._drawItem(ctx, item);
-			if (!inside) ctx.restore();
 		}
 	}
 
@@ -533,7 +517,7 @@ export class OverlayRenderer {
 	 * damage crosses a price line or the crosshair in a few places only. Where boxes overlap along
 	 * the line, a piece is drawn once, as a semi-transparent color would show a second coat. The
 	 * pieces are whole device pixels of whole rectangles, so they color those pixels as the dashes
-	 * do; a box that covers only part of the line's thickness has them clipped.
+	 * do. The boxes that cross the line cover its thickness (`_closeDamage`).
 	 */
 	private _drawLine(ctx: CanvasRenderingContext2D, item: OverlayItem): void {
 		const damage = this._damage;
@@ -545,7 +529,6 @@ export class OverlayRenderer {
 		const far = row ? item.y1 : item.x1;
 		const ranges = this._ranges;
 		ranges.length = 0;
-		let across = true;
 		for (let i = 0; i < damage.length; i += 4) {
 			const a = Math.max(from, row ? damage[i]! : damage[i + 1]!);
 			const b = Math.min(to, row ? damage[i + 2]! : damage[i + 3]!);
@@ -553,9 +536,6 @@ export class OverlayRenderer {
 			const d = row ? damage[i + 3]! : damage[i + 2]!;
 			if (b <= a || c >= far || d <= near) {
 				continue;
-			}
-			if (c > near || d < far) {
-				across = false;
 			}
 			// In order of `a`.
 			let at = ranges.length;
@@ -571,7 +551,6 @@ export class OverlayRenderer {
 		if (ranges.length === 0) {
 			return;
 		}
-		if (!across) this._clip(ctx);
 		const thickness = item.d;
 		const pattern = dashPattern(item.text as LineStyle, thickness);
 		const dash = pattern.length === 0 ? 0 : pattern[0]!;
@@ -606,7 +585,6 @@ export class OverlayRenderer {
 				}
 			}
 		}
-		if (!across) ctx.restore();
 	}
 
 	/**

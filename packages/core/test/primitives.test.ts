@@ -123,6 +123,26 @@ describe('pane primitives', () => {
 		expect(box.draws.length).toBe(3);
 	});
 
+	it('updates primitives for a view the chart took over between frames', async () => {
+		const box = new Box('normal', 920, 940);
+		t.chart.attachPrimitive(box);
+		await t.settle();
+		// Frames of the pointer alone look at no primitive.
+		const updates = box.updates;
+		for (let k = 0; k < 5; k++) {
+			t.pointer('pointermove', 100 + k * 30, 120);
+			t.runFrames();
+		}
+		expect(box.updates).toBe(updates);
+		// A conversion between frames hands the views the new mapping before the frame does: the
+		// frame still updates the primitive for it.
+		t.chart.timeScale().setVisibleLogicalRange({ from: 880, to: 979 });
+		t.chart.timeScale().timeToCoordinate(930 * MINUTE);
+		await t.settle();
+		expect(box.updates).toBe(updates + 1);
+		expect(box.left).toBeCloseTo(scale().indexToX(920));
+	});
+
 	it('draws a bottom primitive with the series and a top one on the overlay', async () => {
 		const bottom = new Box('bottom', 910, 930);
 		const top = new Box('top', 950, 970);
