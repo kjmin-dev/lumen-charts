@@ -44,4 +44,4 @@ The documents are split so that two pull requests rarely edit the same lines. Ke
 - [design/stage-4-follow-ups.md](design/stage-4-follow-ups.md): handles derived from a drawing's points, primitives and drawings in autoscale, and restore by id (sections 7.1, 7.2, 8).
 
 - [Rendering backends for mark series](design/stage-5-mark-renderers.md) covers the integrated backends, runtime selection and device qualification.
-- [design/stage-5-mark-history.md](design/stage-5-mark-history.md): marks prepended and removed, let go under the memory limit and fetched back, a heatmap grid that follows the price, timelines made from marks and indicators over them (sections 3 to 10).
+- [design/stage-5-mark-history.md](design/stage-5-mark-history.md): marks prepended and removed, let go under the memory limit and fetched back, a heatmap grid that follows the price, sizes, densities and readouts of scatters, timelines made from marks and indicators over them (sections 3 to 10).

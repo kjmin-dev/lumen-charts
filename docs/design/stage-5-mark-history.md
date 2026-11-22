@@ -2,11 +2,12 @@
 
 What was built to close the limits [stage 5, heatmap and scatter](stage-5-heatmap-scatter.md) left
 open: no datafeed for marks, no `prepend`, no removal, no indicators over them, no chart whose
-timeline comes from them, no grid that follows the price, and a GPU palette-slot path only for fixed
-value ranges. Each heading below is the section of the [design](../design.md) the text under it
+timeline comes from them, no grid that follows the price, no size per point, no density of points,
+no readout of a scatter, and a GPU palette-slot path only for fixed value ranges. Each heading below is the section of the [design](../design.md) the text under it
 belongs to, and section numbers in the text are those of the design. Where this file and the stage 5
 file differ, this one says what the library does now. The measurements are in
-[docs/benchmarks/mark-history.md](../benchmarks/mark-history.md).
+[docs/benchmarks/mark-history.md](../benchmarks/mark-history.md) and, for sizes and densities,
+[docs/benchmarks/scatter-size-density.md](../benchmarks/scatter-size-density.md).
 
 ## 3. Architecture
 
@@ -32,7 +33,8 @@ file differ, this one says what the library does now. The measurements are in
   `pointSize`). The store keeps sizes only once a point has one. A cell of a level keeps, besides the
   largest value, the number of points it holds and the largest size among them, so a level is still a
   scatter, now with counts and sizes, and `MarksUpdate` sends `counts` (empty at level 0) and `sizes`
-  (empty without sizes).
+  (empty without sizes). A cell is therefore drawn as wide as its widest point, and a density counts
+  every point once at every level. Not built: a cell drawn over the area its points cover.
 - **Prepend.** Points at or before the first time are put in front, in their own order. Each level
   takes them by building their cells on their own, merging those that share a price bin with a cell
   of the level's first bucket into it, and putting the others in front. Within a bucket that a
@@ -110,6 +112,28 @@ file differ, this one says what the library does now. The measurements are in
 
 ### 6.3 Heatmap and scatter series (as built after stage 5)
 
+- **Sizes.** A point is stamped with its center on the device pixel its time and price round to: a
+  square, or the pixels of a disc, of its own size or of `pointSize`, in whole device pixels from 1 to
+  256 (a stamp is made once per size and kept). The widest point a window holds sets how far beyond
+  the view the series asks for and draws rows, and how far the WebGL2 renderer pads the ranges from
+  which each column of pixels finds its first point; points without sizes keep the loop and the
+  two-word GPU records they had, and a size per point is a third word.
+- **Densities** (`colorBy: 'density'`). The counts of the points that cover each device pixel (1 for a
+  point, the points of a cell at a coarse level) are summed into a buffer of 32-bit floats the size of
+  the pane, then colored. On a linear scale from 1 to the frame's largest, a density's palette entry is
+  255 (d − 1) / (largest − 1) rounded half up, in whole numbers; otherwise it is found among 255
+  thresholds, the smallest density of each entry, computed in 64-bit floats from the frame's mapping of
+  values, through a table for densities below 4096. WebGL2 sums the counts by additive blending into a
+  float texture and brings the largest to one texel by passes of 16 by 16 texels; the color pass
+  computes the whole-number entry from that texel on the GPU, or, for the thresholds, the texel is read
+  back first (a logarithmic scale, a fixed `valueMin`) and each pixel searches them. Sums of whole
+  numbers below 2^24 are exact in 32-bit floats and the entries are exact both ways, so both renderers
+  draw the same pixels. An append adds its points to the sums and colors their pixels; one that raises
+  the largest colors the frame again. Without float blending WebGL2 leaves densities to Canvas 2D, and
+  WebGPU, whose kernels overwrite one square size, hands both sizes and densities to WebGL2.
+- **What a pixel buffer cannot do** is blend marks with each other: overlapping points of a value
+  series do not mix (a density series counts them instead), and edges are not antialiased.
+
 - **A grid that follows the price.** The geometry counts grid rows from the lowest first row of the
   columns drawn. Canvas 2D reads each column's cells through its first row and length, leaving the
   rows it has none on transparent. The GPU renderers get a column table after the pixel ranges (where
@@ -123,6 +147,12 @@ file differ, this one says what the library does now. The measurements are in
   checked in three browsers (section 9).
 
 ## 7. Interaction
+
+- **Hover**: `ScatterSeriesApi.pointAt(x, y)` hit-tests a scatter at a position of the pane: the rows
+  whose centers lie within the widest mark of the pixel's column are found by a binary search in time,
+  and each is placed, sized and shaped as the last frame drew it; the last that covers the pixel is
+  the one on top, and their counts sum to the pixel's density. Like `HeatmapSeriesApi.valueAt`, it is
+  not part of the crosshair event: a handler reads it at `event.point`.
 
 - **Save and restore** (section 7.2): an indicator input that reads a marks series is saved as the
   series' id and the column, and checked against the columns of the series' type. A restore makes

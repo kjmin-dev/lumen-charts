@@ -2,8 +2,8 @@
 
 What a size per point (`ScatterPoint.size`) and `colorBy: 'density'` cost a scatter's frames on each
 mark renderer, against the same points drawn plain, and whether the renderers draw the same pixels.
-The design is in [stage 5, heatmap and scatter](../design/stage-5-heatmap-scatter.md) (sections 4.4,
-6.3 and 7), the API in [the guide](../guide/heatmap-scatter.md).
+The design is in [the stage 5 follow-ups for marks](../design/stage-5-mark-history.md) (sections
+4.4, 6.3 and 7), the API in [the guide](../guide/heatmap-scatter.md).
 
 ## Results
 

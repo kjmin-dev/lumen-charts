@@ -61,6 +61,7 @@ them a mark series. Everything else of the architecture holds for them as it doe
   wants (2M for the view and half a screen on either side), coarser levels are tried: cells are then
   wider than a pixel, and the frame keeps its budget (principle 1).
 - Not built: a count per cell (the density of points, as a color), and a size per point.
+  - Built after stage 5: [both](stage-5-mark-history.md#44-scatter-store-as-built-after-stage-5).
 
 ### 4.5 Heatmap store (as built in stage 5)
 
@@ -153,6 +154,7 @@ allow, is what the WebGL2 layer of section 6 is for.
   with the rest of the state, before anything changes.
 - **Hover**: `HeatmapSeriesApi.valueAt(time, price)` reads the cell drawn at a point from the
   window. Nothing is hit-tested, and a scatter has no readout.
+  - Built after stage 5: [`ScatterSeriesApi.pointAt`](stage-5-mark-history.md#7-interaction).
 
 ## 8. External contract and scope
 

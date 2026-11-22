@@ -22,6 +22,11 @@ book.setData({
 book.update({ time: snapshotTime, values: sizes }); // replaces the last column at its time, or adds one
 book.valueAt(time, price); // the value drawn there; at the crosshair, see docs/guide/events.md
 
+// A size per point, the point under the pointer, and points colored by how many cover a pixel.
+trades.setData({ time, price, value: side, size: notional }); // CSS pixels; NaN: the series' pointSize
+trades.pointAt(x, y); // the point drawn at a position of the pane; at the crosshair, see docs/guide/events.md
+const flow = chart.addSeries('scatter', { colorBy: 'density', palette: 'inferno', valueScale: 'log' });
+
 // Older history, and marks removed at the source.
 trades.prepend(olderTrades); // at or before the first point's time
 book.prepend(olderColumns); // before the first column, on the series' grid
@@ -37,8 +42,11 @@ like every series), and their data lives in the data engine, in the worker when 
 differ from candles and lines in what they hold, which is not one value per bar:
 
 - **A scatter** holds points in time order; several may share a time. A point is a square or a
-  disc (`shape`) of `pointSize` CSS pixels, in the palette's color for its `value`, or in `color`
-  without one. It is drawn above the other series and below drawings.
+  disc (`shape`) of its own `size` in CSS pixels, or of the series' `pointSize` without one, drawn
+  whole device pixels wide (at least 1 and at most 256; a disc below 3 device pixels is a square). It
+  takes the palette's color for its `value`, or `color` without one; with `colorBy: 'density'` a
+  pixel takes the palette's color for the number of points that cover it instead. It is drawn above
+  the other series and below drawings, a later point over an earlier one.
 - **A heatmap** holds columns of `rows` cells on one grid of prices. A column covers the time from
   its own to the next column's (the last one, as long as the one before it), so one column per bar
   fills the bars, and several per bar divide them. A series containing just one column spans one logical bar. Its end time is exclusive for `valueAt`. It is drawn below the other series. The grid is
@@ -72,6 +80,16 @@ over the logarithm of the values. Colors are written `#rgb`, `#rrggbb`, `#rrggbb
 and may be translucent, as the first colors of `heat` are; `opacity` applies to the whole series.
 Options the chart cannot draw throw a `RangeError` before anything changes.
 
+**Density.** With `colorBy: 'density'` the color of a device pixel shows how many points cover it:
+every point whose mark covers the pixel counts, at its own size and shape, and a mark of a coarse
+level of detail counts the points it holds, so the picture keeps its weight as the view zooms through
+the levels. The palette spans from 1 to the largest number in the frame, unless `valueMin` and
+`valueMax` fix it, and `valueScale: 'log'` spreads it over the logarithm; pixels without a point stay
+transparent, and `value` and `color` play no part. An appended point adds to the densities and hands
+over its own pixels; one that raises the largest number of the frame colors the whole picture again,
+unless `valueMax` is set. Counts are summed in 32-bit floats, exact up to 16,777,216 points on one
+pixel.
+
 **Autoscale.** A scatter's points in view take part in the autoscale of its price scale, like the
 values of a line. A heatmap's grid does not by default, so the book follows the candles instead of
 squeezing them; `autoscale` changes either. A series alone on its scale is fitted whatever the
@@ -81,11 +99,13 @@ option says.
 
 - A scatter with more points than pixels across is drawn from a level of detail, in which the
   points of one pixel column that share a price bin are one mark with the largest value of them. The
-  engine picks the level, and sends the points themselves once the view is narrow enough.
+  engine picks the level, and sends the points themselves once the view is narrow enough. A mark of a
+  cell is as wide as the widest of its points, and counts them all.
 - A heatmap with more columns than pixels is drawn from a level that merges four columns at a
   time, each cell the largest of its members; more rows than pixels are merged while drawing, again
   to the largest. A peak survives zooming out.
-- A tick draws what it changed: a point added to a scatter writes that point, a replaced or added
+- A tick draws what it changed: a point added to a scatter writes that point (one wider than any
+  point held draws the picture again, since it reaches further beyond the view), a replaced or added
   heatmap column writes from that column to the right edge.
 
 What to expect, on a 2,400 × 1,200 pixel pane (M1): see
@@ -182,7 +202,7 @@ The chart instance selects one mark renderer for its scatter and heatmap series.
 
 With WebGL2 and WebGPU, a heatmap with both `valueMin` and `valueMax` set is drawn from one-byte palette slots instead of its values: a quarter of the GPU memory and uploads, and no palette search per pixel. A palette change then uploads the colors only, but a change of `valueMin`, `valueMax` or `valueScale` turns every cell in view into slots again. With an automatic range, a new extreme changes the slot of every cell: such a heatmap is drawn from its values while the range changes, and from slots once it has stayed the same for 30 draws; the slots of the cells in view are then made at most 262,144 cells a frame, and a new extreme goes back to the values at once. The pixels are the same either way. [WebGL2](../benchmarks/webgl2-heatmap.md) and [WebGPU](../benchmarks/webgpu-specialized-paths.md) measurements.
 
-Older applications passing `auto` get the WebGL2 default. Rendering cost and mark count do not change the selected backend. WebGPU's scatter kernels cover square stamps up to nine device pixels. WebGL2 also supports circular and larger stamps. All three backends use the same time and price projections, palette and overlap order. Heatmaps preserve missing cells and maximum-value reduction at coarse levels of detail.
+Older applications passing `auto` get the WebGL2 default. Rendering cost and mark count do not change the selected backend. WebGPU's scatter kernels cover square stamps up to nine device pixels, one size for all points, colored by value. WebGL2 also supports circular and larger stamps, a size per point, and densities where the browser blends 32-bit floats (`EXT_color_buffer_float` and `EXT_float_blend`); a WebGPU series hands the others to WebGL2, with `renderer().reason` `unsupported-style`, and a density series that WebGL2 cannot blend is drawn with Canvas 2D, for the same reason. A WebGL2 density series on a logarithmic scale, or with `valueMin` set and `valueMax` not, waits for the GPU once per redrawn frame to read back the largest density (four bytes). [Measurements](../benchmarks/scatter-size-density.md). All three backends use the same time and price projections, palette and overlap order. Heatmaps preserve missing cells and maximum-value reduction at coarse levels of detail.
 
 `renderer()` reports the resolved preference, the effective backend and draw path for the last frame, and the reason the preferred backend could not draw it. `bytes` and `peakBytes` estimate per-series acceleration resources and exclude the shared GL drawing buffer. An opaque WebGPU scatter append may update its cached image with a 2D patch. `whenIdle()` waits for data and chart frames and can resolve while WebGPU is initializing.
 
