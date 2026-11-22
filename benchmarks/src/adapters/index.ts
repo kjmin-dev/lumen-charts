@@ -24,6 +24,7 @@ const LUMEN_CAPABILITIES: readonly string[] = [
 	'lineStyle', // line-ticks.ts
 	'marks', // marks.ts
 	'priceAxes', // axes-frames.ts
+	'scatterStyle', // scatter-style.ts
 	'state', // state.ts
 	'timeZones', // time-zones.ts
 ];

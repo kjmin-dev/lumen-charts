@@ -57,6 +57,11 @@ export interface MarkFrame {
 	 * `valueMax`): a change of the data cannot then change the slots of other cells.
 	 */
 	slots?: HeatSlots | null;
+	/**
+	 * A scatter's widest point in device pixels, of its own size or the series': how far beyond a
+	 * column of pixels a renderer looks for the points that cover it. The series' size without it.
+	 */
+	stampMax?: number;
 }
 
 export interface GpuBackend {

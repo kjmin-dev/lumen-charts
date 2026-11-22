@@ -1,15 +1,38 @@
 import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
-import { heatFragment, heatSlotsFragment, heatVertex, scatterFragment, scatterVertex } from './shaders';
+import {
+	densityColorFragment,
+	densityFragment,
+	heatFragment,
+	heatSlotsFragment,
+	heatVertex,
+	reduceFragment,
+	scatterFragment,
+	scatterVertex,
+} from './shaders';
 
-/** The programs: a scatter, a heatmap from its values, a heatmap from its palette slots. */
-export type GlProgramKind = 'scatter' | 'heatmap' | 'heatmap-slots';
+/**
+ * The programs: a scatter, its densities summed, their largest found tile by tile, and colored; a
+ * heatmap from its values, a heatmap from its palette slots.
+ */
+export type GlProgramKind =
+	| 'scatter'
+	| 'scatter-density'
+	| 'density-reduce'
+	| 'density-color'
+	| 'heatmap'
+	| 'heatmap-slots';
 const SOURCES: Record<GlProgramKind, [string, string]> = {
 	scatter: [scatterVertex, scatterFragment],
+	'scatter-density': [scatterVertex, densityFragment],
+	'density-reduce': [heatVertex, reduceFragment],
+	'density-color': [heatVertex, densityColorFragment],
 	heatmap: [heatVertex, heatFragment],
 	'heatmap-slots': [heatVertex, heatSlotsFragment],
 };
 
 export class GlBudget extends Error {}
+/** The context cannot draw what was asked (a scatter's densities without float blending). */
+export class GlUnsupported extends Error {}
 
 function program(gl: WebGL2RenderingContext, vertex: string, fragment: string) {
 	const p = gl.createProgram();
@@ -31,13 +54,19 @@ function program(gl: WebGL2RenderingContext, vertex: string, fragment: string) {
 		if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) ?? 'WebGL2 link failed');
 		const location = (name: string) => gl.getUniformLocation(p, name);
 		gl.useProgram(p);
-		for (const [unit, name] of ['records', 'ranges', 'style'].entries()) gl.uniform1i(location(name), unit);
+		for (const [unit, name] of ['records', 'ranges', 'style', 'density', 'peak'].entries())
+			gl.uniform1i(location(name), unit);
 		return {
 			p,
 			pane: location('pane'),
 			first: location('first'),
 			stamp: location('stamp'),
+			base: location('base'),
+			recordWords: location('recordWords'),
 			circle: location('circle'),
+			extent: location('extent'),
+			tile: location('tile'),
+			exact: location('exact'),
 			rows: location('rows'),
 			table: location('table'),
 			rowBase: location('rowBase'),
@@ -63,6 +92,8 @@ export class GlContext {
 	private readonly programs = new Map<GlProgramKind, ReturnType<typeof program>>();
 	public readonly limit: number;
 	private pixels = 0;
+	/** Whether 32-bit float targets can be drawn and blended into; null until asked. */
+	private _floatBlend: boolean | null = null;
 	private corners: WebGLBuffer | null = null;
 	private constructor(
 		private doc: Document,
@@ -95,6 +126,8 @@ export class GlContext {
 	private readonly change = (event: Event) => {
 		event.preventDefault();
 		this.programs.clear();
+		// A restored context has its extensions to enable again.
+		this._floatBlend = null;
 		this.corners = null;
 		trackCanvas(this.pixels, 0);
 		this.pixels = 0;
@@ -148,16 +181,37 @@ export class GlContext {
 			gl.vertexAttribPointer(0, 2, gl.UNSIGNED_BYTE, false, 0, 0);
 			gl.enableVertexAttribArray(0);
 		}
+		gl.disable(gl.DITHER);
+		return this.use(type, width, height);
+	}
+	/** Makes a program current, drawing `width` by `height` pixels of the framebuffer bound. */
+	use(type: GlProgramKind, width: number, height: number) {
+		const gl = this.gl;
 		let pipeline = this.programs.get(type);
 		if (!pipeline) {
 			pipeline = program(gl, ...SOURCES[type]);
 			this.programs.set(type, pipeline);
 		}
 		gl.useProgram(pipeline.p);
-		gl.disable(gl.DITHER);
 		gl.viewport(0, 0, width, height);
 		gl.uniform2i(pipeline.pane, width, height);
 		return pipeline;
+	}
+	/**
+	 * Whether a scatter's densities can be summed here: drawn into a 32-bit float texture
+	 * (EXT_color_buffer_float) with blending (EXT_float_blend). Half floats would hold whole numbers
+	 * only up to 2048, so there is no lesser format to fall back to.
+	 */
+	floatBlend(): boolean {
+		if (this._floatBlend === null) {
+			const gl = this.gl;
+			this._floatBlend = !!gl.getExtension('EXT_color_buffer_float') && !!gl.getExtension('EXT_float_blend');
+		}
+		return this._floatBlend;
+	}
+	/** Float targets turned out not to work (an incomplete framebuffer): densities go to Canvas 2D. */
+	noFloatBlend() {
+		this._floatBlend = false;
 	}
 	release(listener: () => void) {
 		if (!this.listeners.delete(listener)) return;

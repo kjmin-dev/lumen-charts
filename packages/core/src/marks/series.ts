@@ -28,6 +28,10 @@ import {
 	type PixelBox,
 	type PointStamp,
 	type PriceProjection,
+	StampCache,
+	accumulateScatter,
+	clearDensity,
+	colorDensity,
 	drawHeatmap,
 	heatEdge,
 	heatEndTime,
@@ -35,10 +39,12 @@ import {
 	drawScatter,
 	emptyBox,
 	makeStamp,
+	pointPixels,
 	priceExtent,
 	quantize,
 	slotColors,
 } from './render';
+import { DensityScale, SizeExtent, exactDensities, hitScatter } from './scatter-style';
 import { CanvasMarkBackend } from './canvas-backend';
 import {
 	type HeatSlots,
@@ -116,6 +122,33 @@ export interface ScatterSeriesApi extends MarkSeriesApi<'scatter'> {
 	prepend(data: ScatterData): void;
 	/** Removes the points with times in `[from, to]` (UTC milliseconds, inclusive). */
 	removeMarks(range: { from: number; to: number }): void;
+	/**
+	 * The point drawn at a position of the pane, in CSS pixels from its top left corner (the `point`
+	 * of a `crosshairMove` or `click` event): of the points whose mark covers the device pixel there,
+	 * as the last frame placed, sized and shaped them, the one drawn on top (the last in time order).
+	 * Null where no point is drawn, and for a hidden series. At a coarse level of detail the point is
+	 * a cell of points: its time and price are the cell's center, its value and size the largest of
+	 * its points', and `count` their number. For a readout at the crosshair.
+	 */
+	pointAt(x: number, y: number): ScatterHit | null;
+}
+
+/** The point drawn at a position of the pane (see `ScatterSeriesApi.pointAt`). */
+export interface ScatterHit {
+	/** UTC milliseconds. */
+	time: number;
+	price: number;
+	/** The point's value; null for a point without one. */
+	value: number | null;
+	/** Width of its mark in CSS pixels as given: its own size, or the series' `pointSize`. */
+	size: number;
+	/** Points it stands for: 1, or the points a cell of a coarse level of detail holds. */
+	count: number;
+	/**
+	 * Points whose marks cover the pixel, this one and those under it, each counting as `count`: the
+	 * number a `colorBy: 'density'` series colors the pixel by.
+	 */
+	density: number;
 }
 
 /**
@@ -466,8 +499,14 @@ export abstract class MarkSeries {
 	): MarkRendererStatus['path'] {
 		if (pref === 'webgpu') {
 			const options = frame.options as ScatterOptions;
+			// The WebGPU kernels draw one square size for all points, by overwriting: points with sizes
+			// of their own, and densities, which add up, are WebGL2's.
 			const supported =
-				frame.type !== 'scatter' || (options.shape === 'square' && Math.round(options.pointSize * frame.ratio) <= 9);
+				frame.type !== 'scatter' ||
+				(options.shape === 'square' &&
+					Math.round(options.pointSize * frame.ratio) <= 9 &&
+					frame.window.sizes.length === 0 &&
+					options.colorBy !== 'density');
 			if (supported) {
 				this._gpu.start(this._host.document(), this._webgpuChanged);
 				const backend = this._gpu.backend;
@@ -531,9 +570,7 @@ export abstract class MarkSeries {
 			this._palette = buildPalette(options.palette);
 			this._paletteOptions = options;
 		}
-		const min = options.valueMin ?? window.valueMin;
-		const max = options.valueMax ?? window.valueMax;
-		setValueMapping(this._mapping, min, max, options.valueScale === 'log');
+		this._setValueMapping(this._mapping);
 		const current = this._current;
 		current[0] = host.mapVersion;
 		current[1] = offset;
@@ -609,6 +646,7 @@ export abstract class MarkSeries {
 					from,
 					to,
 					slots: this._fixedSlots(from, to),
+					stampMax: this._frameStamp(ratio),
 				},
 				target.context,
 				!same,
@@ -620,11 +658,7 @@ export abstract class MarkSeries {
 		}
 		if (path === 'canvas2d') {
 			const fresh = surface.resize(width, height);
-			const full =
-				fresh ||
-				wasGpu ||
-				!same ||
-				(this.type === 'scatter' && window.level > 0 && this._drawnRevision !== window.revision);
+			const full = fresh || wasGpu || !same || (this._drawnRevision !== window.revision && this._patchesRedraw());
 			if (full) this._marks = 0;
 			const reuse =
 				full &&
@@ -648,7 +682,10 @@ export abstract class MarkSeries {
 				this._canvasRows,
 				this._box,
 			);
-		} else if (!wasGpu) surface.release();
+		} else if (!wasGpu) {
+			surface.release();
+			this._canvasReleased();
+		}
 		// The patches of this frame are cleared below: a WebGL2 layer kept for later uploads anew.
 		if (path !== 'webgl2') this._gl.stale();
 		this._effective = path;
@@ -664,6 +701,39 @@ export abstract class MarkSeries {
 
 	protected reusePan(_compatible: boolean): boolean {
 		return false;
+	}
+
+	/** Sets the mapping of values of this frame: the palette spans the values held, or the options' range. */
+	protected _setValueMapping(mapping: ValueMapping): void {
+		const options = this.seriesOptions;
+		const window = this.window;
+		setValueMapping(
+			mapping,
+			options.valueMin ?? window.valueMin,
+			options.valueMax ?? window.valueMax,
+			options.valueScale === 'log',
+		);
+	}
+
+	/** The widest mark of the frame in device pixels, for the renderers that pad by it. */
+	protected _frameStamp(_ratio: number): number {
+		return 1;
+	}
+
+	/**
+	 * Whether the window's patches since the last frame need the picture drawn again in Canvas 2D,
+	 * rather than written over it.
+	 */
+	protected _patchesRedraw(): boolean {
+		return false;
+	}
+
+	/** The Canvas 2D surface was let go for a GPU renderer: what else the Canvas path keeps can go too. */
+	protected _canvasReleased(): void {}
+
+	/** Whether the last frame could place the series' marks: its price scale had a range. */
+	protected get _placed(): boolean {
+		return this._current[8] === 1;
 	}
 
 	/**
@@ -712,6 +782,9 @@ export function checkOptions(options: AnyMarkOptions, palette = buildPalette(opt
 	if (!(options.maxMarks >= 1)) {
 		throw new RangeError(`lumen-charts: maxMarks must be at least 1, got ${String(options.maxMarks)}`);
 	}
+	if ('colorBy' in options && options.colorBy !== 'value' && options.colorBy !== 'density') {
+		throw new RangeError(`lumen-charts: colorBy must be 'value' or 'density', got "${String(options.colorBy)}"`);
+	}
 	return palette;
 }
 
@@ -728,6 +801,22 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 	private readonly _scan = { low: 0, high: 0 };
 	private _colorOptions: ScatterOptions | null = null;
 	private _colorPixel = 0;
+	/** Stamps of the points with sizes of their own, and the largest size of the window. */
+	private readonly _stamps = new StampCache();
+	private readonly _sizes = new SizeExtent();
+	/**
+	 * Density of every device pixel (`colorBy: 'density'`), laid out as the surface's pixels; empty in
+	 * value mode. `_densityBox` holds every density above 0, `_densityPeak` is the largest, and the
+	 * densities are of the window's rows `[0, _densityRows)` that are in view.
+	 */
+	private _density = EMPTY_DENSITY;
+	private readonly _densityBox: PixelBox = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity };
+	private _densityPeak = 0;
+	private _densityRows = 0;
+	private _densityHeight = 0;
+	private readonly _densityScale = new DensityScale();
+	private readonly _densityMapping: ValueMapping = { min: 0, factor: 1, log: false };
+	private readonly _hit = { row: -1, density: 0 };
 
 	public constructor(
 		host: MarkSeriesHost,
@@ -775,14 +864,115 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 		removeMarks(this._host, this.engineId, range);
 	}
 
+	/** Device pixels across of the series' points: those without a size of their own. */
 	private _size(pixelRatio: number): number {
-		return Math.max(1, Math.round((this.seriesOptions as ScatterOptions).pointSize * pixelRatio));
+		return pointPixels((this.seriesOptions as ScatterOptions).pointSize, pixelRatio);
+	}
+
+	/** Device pixels across of the widest point the window holds, the series' size or a point's own. */
+	private _largest(pixelRatio: number): number {
+		const base = this._size(pixelRatio);
+		const css = this._sizes.largest(this.window);
+		return css === css ? Math.max(base, pointPixels(css, pixelRatio)) : base;
 	}
 
 	public reach(pixelRatio: number): number {
 		// A point is centered on its time; placed from the start of its bar, it is half a bar further left.
 		const half = (this.seriesOptions as ScatterOptions).barAlign === 'start' ? this._host.map.spacing / 2 : 0;
-		return this._size(pixelRatio) + half;
+		return this._largest(pixelRatio) + half;
+	}
+
+	protected override _frameStamp(ratio: number): number {
+		return this._largest(ratio);
+	}
+
+	/** The largest size reads the rows patches changed before they are forgotten. */
+	protected override _beforeClearDirty(): void {
+		this._sizes.largest(this.window);
+	}
+
+	/**
+	 * At a coarse level a patch changes cells drawn before, which an overwrite cannot take back. In
+	 * density mode a patch can only add points to what was summed: one that changed rows summed
+	 * before has the densities summed again.
+	 */
+	protected override _patchesRedraw(): boolean {
+		const window = this.window;
+		return (
+			window.level > 0 ||
+			((this.seriesOptions as ScatterOptions).colorBy === 'density' && window.dirtyFrom < this._densityRows)
+		);
+	}
+
+	protected override _canvasReleased(): void {
+		this._density = EMPTY_DENSITY;
+	}
+
+	/**
+	 * In density mode the palette spans densities, whose range is known once they are summed: the
+	 * frame's mapping is one that does not change with the values of the rows, so a new extreme value
+	 * draws nothing again. The densities' own mapping is `_densityMapping`.
+	 */
+	protected override _setValueMapping(mapping: ValueMapping): void {
+		const options = this.seriesOptions as ScatterOptions;
+		if (options.colorBy !== 'density') {
+			super._setValueMapping(mapping);
+			return;
+		}
+		setValueMapping(mapping, options.valueMin ?? 1, options.valueMax ?? 1, options.valueScale === 'log');
+	}
+
+	public pointAt(x: number, y: number): ScatterHit | null {
+		const options = this.seriesOptions as ScatterOptions;
+		const window = this.window;
+		const host = this._host;
+		const map = host.map;
+		if (!options.visible || window.level < 0 || window.count === 0 || map.count === 0 || !this._placed) {
+			return null;
+		}
+		const ratio = host.pixelRatio();
+		// The device pixel the position is in.
+		const px = Math.floor(x * ratio);
+		const py = Math.floor(y * ratio);
+		if (!(px >= 0 && px < host.paneWidth() && py >= 0 && py < host.paneHeight())) {
+			return null;
+		}
+		const shift = this._prepare();
+		const from = window.lowerBound(this.viewFrom);
+		const to = Math.max(from, window.upperBound(this.viewTo));
+		const hit = this._hit;
+		hitScatter(
+			window.time,
+			window.price,
+			window.sizes,
+			window.counts,
+			from,
+			to,
+			map,
+			shift,
+			this._projection,
+			this._stamp,
+			this._stamps,
+			ratio,
+			this._largest(ratio),
+			px,
+			py,
+			hit,
+		);
+		const row = hit.row;
+		if (row < 0) {
+			return null;
+		}
+		const value = window.values[row]!;
+		const size = window.sizes.length > 0 ? window.sizes[row]! : Number.NaN;
+		return {
+			time: window.time[row]!,
+			price: window.price[row]!,
+			value: value === value ? value : null,
+			size: size === size ? size : options.pointSize,
+			count: window.counts.length > 0 ? window.counts[row]! : 1,
+			density: hit.density,
+		};
 	}
 
 	/**
@@ -850,6 +1040,7 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 			this._stamp = makeStamp(size, circle);
 			this._stampCircle = circle;
 		}
+		this._stamps.setCircle(circle);
 		return options.barAlign === 'start' ? -this._host.map.spacing / 2 : 0;
 	}
 
@@ -858,10 +1049,19 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 		const from = window.lowerBound(this.viewFrom);
 		const to = Math.max(from, window.upperBound(this.viewTo));
 		this._marks = to - from;
+		if ((this.seriesOptions as ScatterOptions).colorBy === 'density') {
+			this._densityAll(map, from, to);
+			return;
+		}
+		this._density = EMPTY_DENSITY;
 		this._drawRows(map, from, to, this._box);
 	}
 
 	protected _drawRows(map: TimeMap, from: number, to: number, box: PixelBox): void {
+		if ((this.seriesOptions as ScatterOptions).colorBy === 'density') {
+			this._densityPatch(map, from, to, box);
+			return;
+		}
 		const shift = this._prepare();
 		const window = this.window;
 		const surface = this.surface;
@@ -883,13 +1083,114 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 			this._color(),
 			this._stamp,
 			box,
+			window.sizes,
+			this._host.pixelRatio(),
+			this._stamps,
 		);
-		const whole = surface.box;
-		whole.left = Math.min(whole.left, box.left);
-		whole.top = Math.min(whole.top, box.top);
-		whole.right = Math.max(whole.right, box.right);
-		whole.bottom = Math.max(whole.bottom, box.bottom);
+		growBox(surface.box, box);
 	}
+
+	/**
+	 * Sums the densities of rows `[from, to)` (of the window, in view or beside it) into the density
+	 * buffer; `box` grows by the pixels they cover. Returns the largest density written.
+	 */
+	private _accumulate(map: TimeMap, from: number, to: number, box: PixelBox): number {
+		const shift = this._prepare();
+		const window = this.window;
+		const surface = this.surface;
+		return accumulateScatter(
+			this._density,
+			surface.width,
+			surface.height,
+			window.time,
+			window.price,
+			window.counts,
+			from,
+			Math.min(to, window.count),
+			map,
+			shift,
+			this._projection,
+			this._stamp,
+			box,
+			window.sizes,
+			this._host.pixelRatio(),
+			this._stamps,
+		);
+	}
+
+	/**
+	 * Colors the pixels of `box` from their densities, the palette spanning from `valueMin` (or 1)
+	 * to `valueMax` (or the largest density of the frame). From 1 to the largest on a linear scale,
+	 * entries are those of `exactDensitySlot`, which the WebGL2 renderer computes on the GPU.
+	 */
+	private _colorDensity(box: PixelBox): void {
+		const options = this.seriesOptions as ScatterOptions;
+		if (exactDensities(options)) {
+			this._densityScale.setExact(this._densityPeak);
+		} else {
+			const mapping = this._densityMapping;
+			setValueMapping(
+				mapping,
+				options.valueMin ?? 1,
+				options.valueMax ?? this._densityPeak,
+				options.valueScale === 'log',
+			);
+			this._densityScale.set(mapping);
+		}
+		const surface = this.surface;
+		colorDensity(this._density, surface.pixels, surface.height, box, this._densityScale, this._palette);
+		growBox(surface.box, box);
+	}
+
+	/** Sums the densities of the rows in view anew and colors them: the surface is empty. */
+	private _densityAll(map: TimeMap, from: number, to: number): void {
+		const surface = this.surface;
+		const pixels = surface.width * surface.height;
+		const box = this._densityBox;
+		if (this._density.length !== pixels || this._densityHeight !== surface.height) {
+			this._density = new Float32Array(pixels);
+			this._densityHeight = surface.height;
+		} else {
+			clearDensity(this._density, surface.height, box);
+		}
+		emptyBox(box);
+		this._densityPeak = this._accumulate(map, from, to, box);
+		this._densityRows = this.window.count;
+		this._colorDensity(box);
+	}
+
+	/**
+	 * Adds the densities of appended rows `[from, to)` and colors what they changed. A density above
+	 * the largest of the frame moves the top of the palette, unless `valueMax` fixes it: every pixel
+	 * is colored again then, and `box` is all of them.
+	 */
+	private _densityPatch(map: TimeMap, from: number, to: number, box: PixelBox): void {
+		emptyBox(box);
+		const peak = this._accumulate(map, from, to, box);
+		growBox(this._densityBox, box);
+		this._densityRows = this.window.count;
+		if (peak > this._densityPeak) {
+			this._densityPeak = peak;
+			if ((this.seriesOptions as ScatterOptions).valueMax === null) {
+				const all = this._densityBox;
+				box.left = all.left;
+				box.top = all.top;
+				box.right = all.right;
+				box.bottom = all.bottom;
+			}
+		}
+		this._colorDensity(box);
+	}
+}
+
+const EMPTY_DENSITY = new Float32Array(0);
+
+/** Grows `box` by `by`. */
+function growBox(box: PixelBox, by: PixelBox): void {
+	box.left = Math.min(box.left, by.left);
+	box.top = Math.min(box.top, by.top);
+	box.right = Math.max(box.right, by.right);
+	box.bottom = Math.max(box.bottom, by.bottom);
 }
 
 export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
