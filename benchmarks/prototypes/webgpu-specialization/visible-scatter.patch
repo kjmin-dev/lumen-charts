@@ -1,0 +1,59 @@
+diff --git a/packages/core/src/marks/gpu/renderer.ts b/packages/core/src/marks/gpu/renderer.ts
+--- a/packages/core/src/marks/gpu/renderer.ts
++++ b/packages/core/src/marks/gpu/renderer.ts
+@@ -99,6 +99,8 @@
+ 	private mapping = '';
+ 	private palette: Uint32Array | null = null;
+ 	private fallback = '';
++	private validFrom = 0;
++	private validTo = 0;
+ 	private bandsKey = '';
+ 	private count = 0;
+ 	private pending = Infinity;
+@@ -249,19 +251,28 @@
+ 	}
+ 	private prepareScatter(f: MarkFrame, path: GpuPath, size: number, full: boolean, change: Upload): Strip {
+ 		const w = f.window;
+-		const { data, spans, bands, ids } = this.buffers;
++		const { spans, bands, ids } = this.buffers;
+ 		const { newWindow, styleChanged, projection, dirtyFrom, dirtyTo } = change;
+ 		let left = 0,
+ 			right = f.width;
+ 
+ 		const fallback = (f.options as ScatterOptions).color;
+ 		const all = newWindow || styleChanged || projection !== this.projection || fallback !== this.fallback;
+-		const from = all ? 0 : dirtyFrom,
+-			to = all ? w.count : dirtyTo;
+ 		if (this.packed.length < w.capacity * 2) this.packed = new Uint32Array(w.capacity * 2);
+-		if (to > from) {
+-			scatterRecords(f, this.packed, from, to, parseColor(fallback) ?? 0);
+-			data.write(this.packed, from * 2, to * 2);
++		const color = parseColor(fallback) ?? 0;
++		const neededFrom = path === 'scatter-tiles' ? 0 : f.from;
++		const neededTo = path === 'scatter-tiles' ? w.count : f.to;
++		if (all || this.validTo <= neededFrom || neededTo <= this.validFrom) {
++			this.uploadRecords(f, neededFrom, neededTo, color);
++			this.validFrom = neededFrom;
++			this.validTo = neededTo;
++		} else {
++			// Patches can change a cached row while it is outside the visible range.
++			this.uploadRecords(f, Math.max(this.validFrom, dirtyFrom), Math.min(this.validTo, dirtyTo), color);
++			this.uploadRecords(f, neededFrom, this.validFrom, color);
++			this.uploadRecords(f, this.validTo, neededTo, color);
++			this.validFrom = Math.min(this.validFrom, neededFrom);
++			this.validTo = Math.max(this.validTo, neededTo);
+ 		}
+ 		if (this.bounds.length < f.width + size) this.bounds = new Uint32Array(f.width + size);
+ 		scatterBounds(f, size, this.bounds);
+@@ -287,6 +298,11 @@
+ 		}
+ 		this.fallback = fallback;
+ 		return { left, right };
++	}
++	private uploadRecords(f: MarkFrame, from: number, to: number, fallback: number): void {
++		if (to <= from) return;
++		scatterRecords(f, this.packed, from, to, fallback);
++		this.buffers.data.write(this.packed, from * 2, to * 2);
+ 	}
+ 	private prepareHeatmap(f: MarkFrame, full: boolean, fresh: boolean, change: Upload): Strip {
+ 		const w = f.window;

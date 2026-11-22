@@ -1,0 +1,232 @@
+diff --git a/packages/core/src/marks/gpu/shaders.ts b/packages/core/src/marks/gpu/shaders.ts
+--- a/packages/core/src/marks/gpu/shaders.ts
++++ b/packages/core/src/marks/gpu/shaders.ts
+@@ -22,23 +22,12 @@
+ 	let x=v.left+gid.x; let y=gid.y;
+ 	if (x>=v.right || y>=v.height) {return;}
+ 	let row=(v.width+y)*2u;
+-	var best=0u;
++	var slot=0u;
+ 	for(var c=spans[x*2u];c<spans[x*2u+1u];c++){
+ 		for(var r=spans[row];r<spans[row+1u];r++){
+-			let bits=data[c*v.rows+r];
+-			if ((bits&0x7fffffffu)<=0x7f800000u) {
+-				let ordered=select(bits^0x80000000u,~bits,(bits>>31u)!=0u);
+-				best=max(best,ordered);
+-			}
++			let i=c*v.rows+r;
++			slot=max(slot,(data[i>>2u]>>((i&3u)*8u))&255u);
+ 		}
+-	}
+-	var slot=0u;
+-	if (best!=0u) {
+-		var lo=1u;var hi=256u;
+-		while(lo+1u<hi){let mid=(lo+hi)/2u;
+-			if(best>=style[256u+mid]){lo=mid;}else{hi=mid;}
+-		}
+-		slot=lo;
+ 	}
+ 	textureStore(image,vec2u(x,y),color(style[slot]));
+ }`;
+@@ -102,3 +91,36 @@
+ 		}
+ 	}
+ }`;
++
++// First assign each point to its center column once. Eight extra rows cover
++// a square that crosses a 1024-row workgroup boundary at size nine.
++export const centerShader = (format: MarkTextureFormat) => common(format) + `
++@group(0) @binding(7) var<storage,read_write> centers:array<u32>;
++var<workgroup> winners:array<atomic<u32>,1032>;
++@compute @workgroup_size(64)
++fn main(@builtin(workgroup_id) g:vec3u,@builtin(local_invocation_index) lane:u32) {
++	let x=g.x; let top=g.y*1024u; let h=min(v.height-top,1024u);
++	for(var id=spans[x]+lane;id<spans[x+1u];id+=64u){
++		let y=bitcast<i32>(data[id*2u])-i32(v.size/2u)-i32(top)+i32(v.size)-1;
++		if(y>=0 && y<i32(h+v.size-1u)){atomicMax(&winners[u32(y)],id+1u);}
++	}
++	workgroupBarrier();
++	for(var y=lane;y<h;y+=64u){
++		var winner=0u;
++		for(var dy=0u;dy<v.size;dy++){winner=max(winner,atomicLoad(&winners[y+dy]));}
++		centers[x*v.height+top+y]=winner;
++	}
++}`;
++
++export const resolveShader = (format: MarkTextureFormat) => common(format) + `
++@group(0) @binding(7) var<storage,read> centers:array<u32>;
++@compute @workgroup_size(8,8)
++fn main(@builtin(global_invocation_id) gid:vec3u) {
++	let x=gid.x;let y=gid.y;
++	if(x>=v.width || y>=v.height){return;}
++	var winner=0u;
++	for(var dx=0u;dx<v.size;dx++){winner=max(winner,centers[(x+dx)*v.height+y]);}
++	var c=vec4f(0);
++	if(winner!=0u){c=color(data[2u*(winner-1u)+1u]);}
++	textureStore(image,vec2u(x,y),c);
++}`;
+diff --git a/packages/core/src/marks/gpu/renderer.ts b/packages/core/src/marks/gpu/renderer.ts
+--- a/packages/core/src/marks/gpu/renderer.ts
++++ b/packages/core/src/marks/gpu/renderer.ts
+@@ -1,11 +1,11 @@
+-import { heatEdge } from '../render';
++import { heatEdge, quantize, slotColors } from '../render';
+ import { HeatRanges, HeatPan } from '../heat-ranges';
+ import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
+ import type { GpuBackend, MarkFrame } from '../backend';
+ import type { ScatterOptions } from '../options';
+ import { parseColor, paletteIndex, unpackColor } from '../palette';
+ import type { GpuPath, GpuResources } from './device';
+-import { heatStyle, PriceBands, scatterBounds, scatterRecords, fitsTileIndex } from './geometry';
++import { PriceBands, scatterBounds, scatterRecords, fitsTileIndex } from './geometry';
+ 
+ // WebGPU IDL flag values. The DOM declarations shipped by the supported TypeScript
+ // compilers agree on the interfaces but differ on these global flag namespaces.
+@@ -81,12 +81,14 @@
+ 		style: BufferSlot;
+ 		bands: BufferSlot;
+ 		ids: BufferSlot;
++		centers: BufferSlot;
+ 	};
+ 	private readonly slots: BufferSlot[];
+ 	private readonly params = new Uint32Array(8);
+ 	private readonly style = new Uint32Array(512);
+ 	private bounds = new Uint32Array(0);
+ 	private packed = new Uint32Array(0);
++	private heatSlots = new Uint8Array(0);
+ 	private bands = new PriceBands();
+ 	private heat = new HeatRanges();
+ 	private width = 0;
+@@ -121,6 +123,7 @@
+ 			style: buffer(),
+ 			bands: buffer(),
+ 			ids: buffer(),
++			centers: buffer(),
+ 		};
+ 		this.slots = Object.values(this.buffers);
+ 	}
+@@ -216,7 +219,7 @@
+ 		if (!full && scatter && this.revision !== w.revision) this.appendPatch(f, size);
+ 		if (full || this.revision !== w.revision) {
+ 			const { uniform, data, style } = this.buffers;
+-			const newData = data.reserve(scatter ? w.capacity * 8 : w.capacity * w.rows * 4);
++			const newData = data.reserve(scatter ? w.capacity * 8 : Math.ceil(w.capacity * w.rows / 4) * 4);
+ 			const mapping = [f.mapping.min, f.mapping.factor, Number(f.mapping.log)].join(',');
+ 			const projection = [f.projection.offset, f.projection.scale, Number(f.projection.log)].join(',');
+ 			const newWindow = newData || this.version !== w.version;
+@@ -295,9 +298,18 @@
+ 		let left = 0,
+ 			right = f.width;
+ 
+-		data.write(w.values, dirtyFrom * w.rows, dirtyTo * w.rows);
++		const slotBytes = Math.ceil(w.capacity * w.rows / 4) * 4;
++		if (this.heatSlots.length < slotBytes) this.heatSlots = new Uint8Array(slotBytes);
++		const mappingChanged = change.styleChanged && [f.mapping.min, f.mapping.factor, Number(f.mapping.log)].join(',') !== this.mapping;
++		const from = mappingChanged || newWindow ? 0 : dirtyFrom;
++		const to = mappingChanged || newWindow ? w.count : dirtyTo;
++		if (to > from) {
++			quantize(w.values, this.heatSlots, w.rows, from, to, f.mapping);
++			const words = new Uint32Array(this.heatSlots.buffer);
++			data.write(words, Math.floor(from * w.rows / 4), Math.ceil(to * w.rows / 4));
++		}
+ 		if (styleChanged || newWindow || fresh) {
+-			heatStyle(f.palette, f.mapping, this.style);
++			slotColors(f.palette, this.style);
+ 			style.write(this.style);
+ 		}
+ 		if (!full && !fresh && !newWindow && this.count === w.count && dirtyFrom === w.count - 1 && dirtyTo === w.count) {
+@@ -344,6 +356,14 @@
+ 
+ 		this.params.set([f.width, f.height, left, right, size, w.rows, 0, 0]);
+ 		uniform.write(this.params);
++		if (path === 'scatter-columns' && size > 1 && left === 0 && right === f.width) {
++			const extra = (f.width + size - 1) * f.height * 4;
++			try {
++				this.buffers.centers.reserve(extra);
++				this.drawCenters(f, size);
++				return;
++			} catch (error) { if (!(error instanceof Budget)) throw error; }
++		}
+ 		const pipeline = this.resources.pipelines[path];
+ 		const entries: GPUBindGroupEntry[] = [
+ 			{ binding: 0, resource: { buffer: uniform.buffer! } },
+@@ -372,6 +392,31 @@
+ 		cache.clearRect(left, 0, right - left, f.height);
+ 		cache.drawImage(this.gpu!.canvas, left, 0, right - left, f.height, left, 0, right - left, f.height);
+ 	}
++	private drawCenters(f: MarkFrame, size: number): void {
++		const {device, pipelines} = this.resources;
++		const {uniform, data, spans, centers} = this.buffers;
++		const encoder = device.createCommandEncoder();
++		const pass = encoder.beginComputePass({label:'lumen-marks'});
++		const shared = [
++			{binding:0,resource:{buffer:uniform.buffer!}},
++			{binding:1,resource:{buffer:data.buffer!}},
++			{binding:7,resource:{buffer:centers.buffer!}},
++		];
++		pass.setPipeline(pipelines.centers);
++		pass.setBindGroup(0,device.createBindGroup({layout:pipelines.centers.getBindGroupLayout(0),
++			entries:[...shared,{binding:2,resource:{buffer:spans.buffer!}}]}));
++		pass.dispatchWorkgroups(f.width+size-1, Math.ceil(f.height/1024));
++		pass.setPipeline(pipelines.resolve);
++		pass.setBindGroup(0,device.createBindGroup({layout:pipelines.resolve.getBindGroupLayout(0),
++			entries:[...shared,{binding:4,resource:this.gpu!.getCurrentTexture().createView()}]}));
++		pass.dispatchWorkgroups(Math.ceil(f.width/8),Math.ceil(f.height/8));
++		pass.end();
++		device.queue.submit([encoder.finish()]);
++		const cache=this.cache!;
++		cache.clearRect(0,0,f.width,f.height);
++		cache.drawImage(this.gpu!.canvas,0,0);
++	}
++
+ 	public release(): void {
+ 		for (const slot of this.slots) slot.release();
+ 		this.gpu?.unconfigure();
+@@ -396,6 +441,7 @@
+ 		this.bandsKey = '';
+ 		this.heatPan = new HeatPan();
+ 		this.packed = new Uint32Array(0);
++		this.heatSlots = new Uint8Array(0);
+ 
+ 		this.bounds = new Uint32Array(0);
+ 		this.bands = new PriceBands();
+diff --git a/packages/core/src/marks/gpu/device.ts b/packages/core/src/marks/gpu/device.ts
+--- a/packages/core/src/marks/gpu/device.ts
++++ b/packages/core/src/marks/gpu/device.ts
+@@ -1,13 +1,13 @@
+ import type { GpuBackend, GpuLease, MarkRendererReason } from '../backend';
+ import { GpuMarkBackend } from './renderer';
+-import { columnShader, heatShader, tileShader } from './shaders';
++import { centerShader, columnShader, heatShader, resolveShader, tileShader } from './shaders';
+ 
+ export type MarkTextureFormat = 'bgra8unorm' | 'rgba8unorm';
+ export type GpuPath = 'heatmap' | 'scatter-tiles' | 'scatter-columns';
+ export interface GpuResources {
+ 	device: GPUDevice;
+ 	format: MarkTextureFormat;
+-	pipelines: Record<GpuPath, GPUComputePipeline>;
++	pipelines: Record<GpuPath | 'centers' | 'resolve', GPUComputePipeline>;
+ }
+ type Listener = (backend: GpuBackend | null, reason: MarkRendererReason | null) => void;
+ const pools = new WeakMap<Document, Pool>();
+@@ -49,16 +49,18 @@
+ 					layout: 'auto',
+ 					compute: { module: device.createShaderModule({ code }), entryPoint: 'main' },
+ 				});
+-			const [heat, tiles, columns] = await Promise.all([
++			const [heat, tiles, columns, centers, resolve] = await Promise.all([
+ 				compile(heatShader(format)),
+ 				compile(tileShader(format)),
+ 				compile(columnShader(format)),
++				compile(centerShader(format)),
++				compile(resolveShader(format)),
+ 			]);
+ 			if (this.disposed || this.failure) return;
+ 			this.resources = {
+ 				device,
+ 				format,
+-				pipelines: { heatmap: heat, 'scatter-tiles': tiles, 'scatter-columns': columns },
++				pipelines: { centers, resolve, heatmap: heat, 'scatter-tiles': tiles, 'scatter-columns': columns },
+ 			};
+ 			for (const listener of this.listeners) this.notify(listener);
+ 		} catch {
