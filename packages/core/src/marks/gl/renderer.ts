@@ -254,7 +254,9 @@ class GlLayer {
 
 	paint(f: MarkFrame, target: CanvasRenderingContext2D, full: boolean) {
 		const { width, height, window: w } = f;
-		if (full || this.version !== w.version || this.revision !== w.revision) {
+		// A heatmap that goes over to its slots, or back to its values, is drawn again from them.
+		const modeChanged = f.type === 'heatmap' && (f.slots != null) !== this.slots;
+		if (full || modeChanged || this.version !== w.version || this.revision !== w.revision) {
 			const kind = f.type === 'scatter' ? 'scatter' : f.slots ? 'heatmap-slots' : 'heatmap';
 			const program = this.pool.begin(this.listener, kind, width, height);
 			full = this.resize(width, height) || full;

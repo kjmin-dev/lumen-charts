@@ -138,6 +138,14 @@ async function check(mode: 'webgl2' | 'webgpu') {
 		await compare('log price scale', s => s.chart.priceScale().applyOptions({ mode: 'logarithmic' }));
 		await compare('normal price scale', s => s.chart.priceScale().applyOptions({ mode: 'normal' }));
 		await compare('automatic value range', s => s.heat.applyOptions({ valueMin: null, valueMax: null }));
+		// The range stays: after a number of draws the GPU draws from palette slots.
+		for (let i = 0; i < 36; i++)
+			await compare('steady automatic range ' + i, s =>
+				s.chart.timeScale().setVisibleLogicalRange({ from: 64.3 + (i % 2) * 0.5, to: 75.9 + (i % 2) * 0.5 }),
+			);
+		const internal = b.heat as unknown as { glHeatPath(): string | null; gpuKernel(): string | null };
+		const fromSlots = mode === 'webgl2' ? internal.glHeatPath() === 'slots' : internal.gpuKernel() === 'heatmap-slots';
+		if (!fromSlots) throw Error('A steady automatic range did not go over to slots');
 		await compare('back to a wide view', s => s.chart.timeScale().setVisibleLogicalRange({ from: 17.1, to: 218.4 }));
 		const live = book(3999, 2);
 		await compare('last column on rows of its own', s =>

@@ -52,6 +52,13 @@ import { GlMarkClient } from './gl/renderer';
 import type { TimeMap } from './time-map';
 import { MarksWindow } from './window';
 
+/**
+ * Draws a heatmap's automatic value range must stay the same before its GPU renderer draws from
+ * palette slots, and the cells quantized for that per draw (about a millisecond on an M1).
+ */
+export const AUTO_SLOTS_DRAWS = 30;
+export const AUTO_SLOTS_CELLS = 262_144;
+
 /** Rows of a scatter window whose lowest and highest price are kept together, for the autoscale. */
 const EXTENT_BLOCK = 4096;
 /** Screens of rows asked for on either side of the view. */
@@ -601,7 +608,7 @@ export abstract class MarkSeries {
 					ratio,
 					from,
 					to,
-					slots: this._fixedSlots(),
+					slots: this._fixedSlots(from, to),
 				},
 				target.context,
 				!same,
@@ -659,8 +666,11 @@ export abstract class MarkSeries {
 		return false;
 	}
 
-	/** The slots of a heatmap whose options fix the mapping of values; null otherwise. */
-	protected _fixedSlots(): HeatSlots | null {
+	/**
+	 * A heatmap's palette slots for the GPU renderers to draw held columns `[from, to)` from, while
+	 * they serve (see `HeatmapSeries`); null: draw from the values.
+	 */
+	protected _fixedSlots(_from: number, _to: number): HeatSlots | null {
 		return null;
 	}
 
@@ -1020,6 +1030,14 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 	 * come into view into slots, and a new window only those in view.
 	 */
 	private _quantize(from: number, to: number): void {
+		this._quantizeSome(from, to, Infinity);
+	}
+
+	/**
+	 * Brings the slots of up to `budget` cells of columns `[from, to)` up to date, those nearest the
+	 * slots there are first. Returns whether every column of `[from, to)` has its slots.
+	 */
+	private _quantizeSome(from: number, to: number, budget: number): boolean {
 		const window = this.window;
 		const mapping = this._mapping;
 		const cells = window.cellCapacity;
@@ -1043,24 +1061,35 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 			this._quantizePatches();
 		}
 		if (to <= from) {
-			return;
+			return true;
 		}
 		const values = window.values;
 		const at = (column: number) => window.cellStart(column);
 		if (this._slotsTo <= this._slotsFrom || from > this._slotsTo || to < this._slotsFrom) {
-			quantize(values, this._slots, at(from), at(to), mapping);
 			this._slotsFrom = from;
-			this._slotsTo = to;
-			return;
+			this._slotsTo = from;
 		}
-		if (from < this._slotsFrom) {
-			quantize(values, this._slots, at(from), at(this._slotsFrom), mapping);
-			this._slotsFrom = from;
+		// Columns after the slots, then before them, as far as the budget goes.
+		let end = this._slotsTo;
+		while (end < to && (end === this._slotsTo || at(end + 1) - at(this._slotsTo) <= budget)) {
+			end++;
 		}
-		if (to > this._slotsTo) {
-			quantize(values, this._slots, at(this._slotsTo), at(to), mapping);
-			this._slotsTo = to;
+		if (end > this._slotsTo) {
+			quantize(values, this._slots, at(this._slotsTo), at(end), mapping);
+			budget -= at(end) - at(this._slotsTo);
+			this._slotsTo = end;
 		}
+		let start = this._slotsFrom;
+		if (budget > 0) {
+			while (start > from && (start === this._slotsFrom || at(this._slotsFrom) - at(start - 1) <= budget)) {
+				start--;
+			}
+		}
+		if (start < this._slotsFrom) {
+			quantize(values, this._slots, at(start), at(this._slotsFrom), mapping);
+			this._slotsFrom = start;
+		}
+		return from >= this._slotsFrom && to <= this._slotsTo;
 	}
 
 	/** Whether the slots were made from the rows held and the mapping of values of this frame. */
@@ -1109,14 +1138,56 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 	};
 
 	/**
-	 * With `valueMin` and `valueMax` set, a value's slot depends on the value alone: renderers can
-	 * keep the slots of cells and update those of the cells that change. Otherwise a change of the
-	 * value range would change the slots of every cell.
+	 * With `valueMin` and `valueMax` set, a value's slot depends on the value alone: renderers keep
+	 * the slots of cells and update those of the cells that change.
+	 *
+	 * With an automatic value range, a new extreme changes the slot of every cell: the GPU renderers
+	 * draw from the values, which a change of the range only recolors. Once the range has stayed the
+	 * same for `AUTO_SLOTS_DRAWS` draws, the slots of the columns in view are made, at most
+	 * `AUTO_SLOTS_CELLS` cells a draw so no frame takes the whole view's work, and drawn from until
+	 * the range changes again.
 	 */
-	protected override _fixedSlots(): HeatSlots | null {
+	protected override _fixedSlots(from: number, to: number): HeatSlots | null {
 		const options = this.seriesOptions as HeatmapOptions;
-		return options.valueMin !== null && options.valueMax !== null ? this._heatSlots : null;
+		if (options.valueMin !== null && options.valueMax !== null) {
+			return this._heatSlots;
+		}
+		const mapping = this._mapping;
+		if (mapping.min !== this._autoMin || mapping.factor !== this._autoFactor || mapping.log !== this._autoLog) {
+			this._autoMin = mapping.min;
+			this._autoFactor = mapping.factor;
+			this._autoLog = mapping.log;
+			this._stableDraws = 0;
+			if (this._autoSlots) {
+				this._autoSlots = false;
+				this.slotSwitches++;
+			}
+			return null;
+		}
+		if (this._autoSlots) {
+			return this._heatSlots;
+		}
+		if (++this._stableDraws < AUTO_SLOTS_DRAWS) {
+			return null;
+		}
+		if (this._quantizeSome(from, to, AUTO_SLOTS_CELLS)) {
+			this._autoSlots = true;
+			this.slotSwitches++;
+			return this._heatSlots;
+		}
+		// The next frame goes on with the slots, though nothing else asks for it.
+		this._primitiveHost?.requestUpdate();
+		return null;
 	}
+
+	/** An automatic value range as of the last draw; draws since it last changed; whether the slots serve. */
+	private _autoMin = Number.NaN;
+	private _autoFactor = Number.NaN;
+	private _autoLog = false;
+	private _stableDraws = 0;
+	private _autoSlots = false;
+	/** Internal, read by tests and the benchmark harness: switches between values and slots. */
+	public slotSwitches = 0;
 
 	private readonly panRanges = new HeatRanges();
 	private readonly pan = new HeatPan();

@@ -246,7 +246,9 @@ export class GpuMarkBackend implements GpuBackend {
 		const scatter = f.type === 'scatter';
 		const size = scatter ? Math.max(1, Math.round((f.options as ScatterOptions).pointSize * f.ratio)) : 1;
 		const path: GpuPath = scatter ? (fitsTileIndex(f) ? 'scatter-tiles' : 'scatter-columns') : 'heatmap';
-		full ||= fresh || this.lastPath !== path || this.version !== w.version;
+		// A heatmap that goes over to its slots, or back to its values, is drawn again from them.
+		full ||=
+			fresh || this.lastPath !== path || this.version !== w.version || (!scatter && !!f.slots !== this.heatSlots);
 		if (!full && scatter && this.revision !== w.revision) this.appendPatch(f, size);
 		if (full || this.revision !== w.revision) {
 			const { uniform, data, style } = this.buffers;
