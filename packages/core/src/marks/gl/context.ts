@@ -39,6 +39,8 @@ function program(gl: WebGL2RenderingContext, vertex: string, fragment: string) {
 			stamp: location('stamp'),
 			circle: location('circle'),
 			rows: location('rows'),
+			table: location('table'),
+			rowBase: location('rowBase'),
 			recordsStride: location('recordsStride'),
 			rangesStride: location('rangesStride'),
 			styleStride: location('styleStride'),

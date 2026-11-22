@@ -71,10 +71,28 @@ void main() {
 	gl_Position = vec4(corner * 2.0 - 1.0, 0, 1);
 }`;
 
+// The cells of a heatmap column: `rows` from grid row 0 each, or, where the grid follows the price,
+// those a table in `ranges` gives from word `table` on (three words per column: where its cells
+// start, its first grid row plus 2^30, its number of cells). Grid rows count from `rowBase`.
+const heatCells = `
+uniform int rows;
+uniform int table;
+uniform int rowBase;
+// Cells [x, y) of column c that lie on grid rows [low, high).
+ivec2 cells(int c, int low, int high) {
+	if (table < 0) return ivec2(c*rows+low, c*rows+high);
+	int t = table + 3*c;
+	int start = int(rangeWord(t));
+	int first = int(rangeWord(t+1)) - 0x40000000 - rowBase;
+	int lo = max(low, first), hi = max(lo, min(high, first + int(rangeWord(t+2))));
+	return ivec2(start + lo - first, start + hi - first);
+}
+`;
+
 export const heatFragment =
 	header +
+	heatCells +
 	`
-uniform int rows;
 out vec4 pixel;
 void main() {
 	int x = int(gl_FragCoord.x) * 2;
@@ -83,7 +101,8 @@ void main() {
 	int low = int(rangeWord(y)), high = int(rangeWord(y+1));
 	uint best = 0u;
 	for (int c = from; c < to; ++c) {
-		for (int i = c*rows+low, end = c*rows+high; i < end; ++i) {
+		ivec2 span = cells(c, low, high);
+		for (int i = span.x; i < span.y; ++i) {
 			uint bits = recordWord(i);
 			if ((bits & 0x7fffffffu) <= 0x7f800000u)
 				best = max(best, (bits >> 31u) != 0u ? ~bits : bits ^ 0x80000000u);
@@ -105,8 +124,8 @@ void main() {
 // slot of the cells a pixel covers picks its color, without a search.
 export const heatSlotsFragment =
 	header +
+	heatCells +
 	`
-uniform int rows;
 out vec4 pixel;
 void main() {
 	int x = int(gl_FragCoord.x) * 2;
@@ -117,7 +136,9 @@ void main() {
 	if (low < high) {
 		for (int c = from; c < to; ++c) {
 			// Cells [a, b) lie in words [a >> 2, (b - 1) >> 2]; bytes of other cells are masked off.
-			int a = c*rows+low, b = c*rows+high;
+			ivec2 span = cells(c, low, high);
+			int a = span.x, b = span.y;
+			if (a >= b) continue;
 			for (int i = a >> 2, last = (b - 1) >> 2; i <= last; ++i) {
 				int lo = max(a - (i << 2), 0), hi = min(b - (i << 2), 4);
 				uint bits = recordWord(i) & (0xffffffffu << uint(lo << 3)) & (0xffffffffu >> uint((4 - hi) << 3));

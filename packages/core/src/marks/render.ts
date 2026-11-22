@@ -222,13 +222,12 @@ export function priceExtent(price: Float64Array, from: number, to: number, out: 
 }
 
 /**
- * Turns the values of heatmap columns `[from, to)` into slots of a color table: 0 for a cell
- * without a value, 1 to 255 from the lowest value to the highest. `slots` is laid out like `values`.
+ * Turns the values of heatmap cells `[from, to)` into slots of a color table: 0 for a cell without
+ * a value, 1 to 255 from the lowest value to the highest. `slots` is laid out like `values`.
  */
 export function quantize(
 	values: Float32Array,
 	slots: Uint8Array,
-	rows: number,
 	from: number,
 	to: number,
 	mapping: ValueMapping,
@@ -236,8 +235,7 @@ export function quantize(
 	const min = mapping.min;
 	const factor = (mapping.factor * (PALETTE_SIZE - 2)) / (PALETTE_SIZE - 1);
 	const log = mapping.log;
-	const end = to * rows;
-	for (let i = from * rows; i < end; i++) {
+	for (let i = from; i < to; i++) {
 		const v = values[i]!;
 		if (v !== v) {
 			slots[i] = 0;
@@ -256,10 +254,31 @@ export function slotColors(palette: Uint32Array, out: Uint32Array): void {
 	}
 }
 
+/**
+ * Where a heatmap window's cells are, column by column: what `MarksWindow` tells of them. Cell `r`
+ * of held column `c` is grid row `cellOffset(c) + r`, for `r` below `cellLength(c)`, and is
+ * `values[cellStart(c) + r]`. Row `g` of the grid covers prices `[priceStart + g * priceStep, ...)`.
+ */
+export interface HeatLayout {
+	rows: number;
+	priceStart: number;
+	priceStep: number;
+	/** Columns start at grid rows of their own: `cellOffset` is not always 0. */
+	readonly varying: boolean;
+	cellStart(column: number): number;
+	cellOffset(column: number): number;
+	cellLength(column: number): number;
+}
+
 /** Buffers a heatmap is drawn with, kept between frames. */
 export class HeatmapScratch {
 	/** Device x of the left edge of each column drawn, and of the right edge of the last. */
 	public edges = new Int32Array(0);
+	/**
+	 * Grid row that the rows below count from: the lowest first row of the columns drawn (0 on a grid
+	 * that does not follow the price). `firstRow`, `endRow`, `rowTop` and `rowBottom` count from it.
+	 */
+	public rowBase = 0;
 	public firstRow = 0;
 	public endRow = 0;
 	public top = 0;
@@ -294,16 +313,40 @@ export function heatEdge(time: Float64Array, count: number, column: number, map:
 	return Math.round(map.x(t) - map.spacing / 2);
 }
 
-/** Shared pixel boundaries for Canvas 2D and WebGPU. */
+/**
+ * The grid rows columns `[from, to)` span: `[low, high)`, written to `out`. On a grid that does not
+ * follow the price, `[0, rows)`.
+ */
+export function heatRowSpan(layout: HeatLayout, from: number, to: number, out: { low: number; high: number }): void {
+	if (!layout.varying) {
+		out.low = 0;
+		out.high = layout.rows;
+		return;
+	}
+	let low = Infinity;
+	let high = -Infinity;
+	for (let c = from; c < to; c++) {
+		const length = layout.cellLength(c);
+		if (length > 0) {
+			const offset = layout.cellOffset(c);
+			low = Math.min(low, offset);
+			high = Math.max(high, offset + length);
+		}
+	}
+	out.low = low < high ? low : 0;
+	out.high = low < high ? high : 0;
+}
+
+const SPAN = { low: 0, high: 0 };
+
+/** Shared pixel boundaries for Canvas 2D, WebGL2 and WebGPU. */
 export function heatGeometry(
 	height: number,
 	time: Float64Array,
-	rows: number,
+	layout: HeatLayout,
 	count: number,
 	from: number,
 	to: number,
-	priceStart: number,
-	priceStep: number,
 	map: TimeMap,
 	projection: PriceProjection,
 	scratch: HeatmapScratch,
@@ -314,7 +357,11 @@ export function heatGeometry(
 		return false;
 	}
 	const columns = to - from;
+	heatRowSpan(layout, from, to, SPAN);
+	const base = SPAN.low;
+	const rows = SPAN.high - SPAN.low;
 	scratch.reserve(columns, rows);
+	scratch.rowBase = base;
 	const edges = scratch.edges;
 	const rowTop = scratch.rowTop;
 	const rowBottom = scratch.rowBottom;
@@ -324,18 +371,19 @@ export function heatGeometry(
 	}
 	const left = edges[0]!;
 	const right = edges[columns]!;
-	if (right <= left) {
+	if (right <= left || rows <= 0) {
 		return false;
 	}
 	// The cell rows that are in the pane, `[firstRow, endRow)`, and the pixel rows they cover.
 	const { offset, scale, log } = projection;
+	const { priceStart, priceStep } = layout;
 	let firstRow = rows;
 	let endRow = 0;
 	let top = height;
 	let bottom = 0;
 	let previous = 0;
 	for (let r = 0; r <= rows; r++) {
-		const price = priceStart + r * priceStep;
+		const price = priceStart + (base + r) * priceStep;
 		const y = offset - (log ? Math.log10(price) : price) * scale;
 		// A price a logarithmic scale cannot show is below everything it can.
 		const edge = y === y ? Math.round(y) : scale > 0 ? Infinity : -Infinity;
@@ -373,7 +421,8 @@ export function heatGeometry(
  * wide when it is the only one. Cell `r` covers the pixels between the rows of its two prices. Edges
  * are rounded to device pixels once, so neighbors share an edge and leave no seam. Where several
  * cells fall into one pixel (more columns than pixels across, or more rows than pixels down), the
- * pixel takes the highest of them, so a peak survives zooming out.
+ * pixel takes the highest of them, so a peak survives zooming out. Grid rows a column has no cell
+ * on (where the grid follows the price) are transparent in it.
  *
  * The cost is one pass over the cells in view and a copy of the pixels they cover: a column of
  * pixels is computed once per heatmap column, from the cell rows that are in the pane, and copied
@@ -385,12 +434,10 @@ export function drawHeatmap(
 	height: number,
 	time: Float64Array,
 	slots: Uint8Array,
-	rows: number,
+	layout: HeatLayout,
 	count: number,
 	from: number,
 	to: number,
-	priceStart: number,
-	priceStep: number,
 	map: TimeMap,
 	projection: PriceProjection,
 	colors: Uint32Array,
@@ -399,25 +446,10 @@ export function drawHeatmap(
 	clipRight: number,
 	box: PixelBox,
 ): void {
-	if (
-		!heatGeometry(
-			height,
-			time,
-			rows,
-			count,
-			from,
-			to,
-			priceStart,
-			priceStep,
-			map,
-			projection,
-			scratch,
-			clipLeft,
-			clipRight,
-		)
-	)
+	if (!heatGeometry(height, time, layout, count, from, to, map, projection, scratch, clipLeft, clipRight)) {
 		return;
-	const { edges, rowTop, rowBottom, merged, firstRow, endRow, top, bottom } = scratch;
+	}
+	const { edges, rowTop, rowBottom, merged, firstRow, endRow, top, bottom, rowBase } = scratch;
 	const columns = to - from;
 	const left = edges[0]!;
 	const right = edges[columns]!;
@@ -426,22 +458,29 @@ export function drawHeatmap(
 	for (let c = 0; c < columns; c++) {
 		const x0 = edges[c]!;
 		const x1 = edges[c + 1]!;
+		const column = from + c;
+		// The column's cells as rows counted from `rowBase`: `[lo, hi)`, cell `g - lo` at `at + g - lo`.
+		const lo = layout.cellOffset(column) - rowBase;
+		const hi = lo + layout.cellLength(column);
 		let source = slots;
-		let at = (from + c) * rows;
+		let at = layout.cellStart(column) - lo;
+		let low = Math.max(firstRow, lo);
+		let high = Math.min(endRow, hi);
 		if (x1 <= x0 || gathered) {
 			if (x1 <= clipLeft) {
 				// Left of the columns drawn: it shares no pixel with them.
 				continue;
 			}
 			if (gathered) {
-				for (let r = firstRow; r < endRow; r++) {
+				for (let r = low; r < high; r++) {
 					const s = slots[at + r]!;
 					if (s > merged[r]!) {
 						merged[r] = s;
 					}
 				}
 			} else {
-				for (let r = firstRow; r < endRow; r++) {
+				merged.fill(0, firstRow, endRow);
+				for (let r = low; r < high; r++) {
 					merged[r] = slots[at + r]!;
 				}
 				gathered = true;
@@ -452,15 +491,19 @@ export function drawHeatmap(
 			gathered = false;
 			source = merged;
 			at = 0;
+			low = firstRow;
+			high = endRow;
 		}
 		// The first pixel column of this heatmap column. Cell rows shorter than a pixel share the
 		// pixel of the next row that has one, which takes the highest of them.
 		const base = x0 * height;
 		let slot = 0;
 		for (let r = firstRow; r < endRow; r++) {
-			const s = source[at + r]!;
-			if (s > slot) {
-				slot = s;
+			if (r >= low && r < high) {
+				const s = source[at + r]!;
+				if (s > slot) {
+					slot = s;
+				}
 			}
 			const y0 = rowTop[r]!;
 			const y1 = rowBottom[r]!;

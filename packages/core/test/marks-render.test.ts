@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { type ValueMapping, buildPalette, packColor, paletteIndex, setValueMapping } from '../src/marks/palette';
 import {
+	type HeatLayout,
 	HeatmapScratch,
 	type PixelBox,
 	type PriceProjection,
@@ -261,6 +262,19 @@ function heat(count: number, rows: number, slot: (c: number, r: number) => numbe
 /** Slot `s` is drawn as the number `s`, so a pixel tells which cell it shows. */
 const IDENTITY = Uint32Array.from({ length: 256 }, (_, i) => i);
 
+/** Cells of `rows` per column from grid row 0: a grid that does not follow the price. */
+function layoutOf(rows: number, priceStart: number, priceStep: number): HeatLayout {
+	return {
+		rows,
+		priceStart,
+		priceStep,
+		varying: false,
+		cellStart: column => column * rows,
+		cellOffset: () => 0,
+		cellLength: () => rows,
+	};
+}
+
 function heatmap(
 	data: Heat,
 	map: TimeMap,
@@ -283,12 +297,10 @@ function heatmap(
 		HEIGHT,
 		data.time,
 		data.slots,
-		data.rows,
+		layoutOf(data.rows, options.priceStart ?? 0, options.priceStep ?? 5),
 		data.count,
 		options.from ?? 0,
 		options.to ?? data.count,
-		options.priceStart ?? 0,
-		options.priceStep ?? 5,
 		map,
 		options.projection ?? LINEAR,
 		IDENTITY,
@@ -467,14 +479,14 @@ describe('slots of heatmap cells', () => {
 	it('turns values into slots 1 to 255, and a cell without a value into slot 0', () => {
 		const values = Float32Array.of(0, 50, 100, Number.NaN, -10, 1000);
 		const slots = new Uint8Array(6);
-		quantize(values, slots, 1, 0, 6, mappingOf(0, 100));
+		quantize(values, slots, 0, 6, mappingOf(0, 100));
 		expect([...slots]).toEqual([1, 128, 255, 0, 1, 255]);
 		// Only the columns asked for.
 		const part = new Uint8Array(6);
-		quantize(values, part, 2, 1, 2, mappingOf(0, 100));
+		quantize(values, part, 2, 4, mappingOf(0, 100));
 		expect([...part]).toEqual([0, 0, 255, 0, 0, 0]);
 		const log = new Uint8Array(3);
-		quantize(Float32Array.of(1, 10, 100), log, 1, 0, 3, mappingOf(1, 100, true));
+		quantize(Float32Array.of(1, 10, 100), log, 0, 3, mappingOf(1, 100, true));
 		expect([...log]).toEqual([1, 128, 255]);
 	});
 

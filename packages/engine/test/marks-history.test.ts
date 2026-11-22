@@ -278,7 +278,10 @@ function mergedColumns(raw: Column[], first: number, l: number): Column[] {
 		buckets.set(bucket, list);
 	});
 	const out: Column[] = [];
-	for (const members of [...buckets.entries()].toSorted((a, b) => a[0] - b[0]).map(entry => entry[1])) {
+	// Buckets follow one another from the first column's on.
+	const last = Math.floor((first + raw.length - 1) / size);
+	for (let bucket = Math.floor(first / size); bucket <= last; bucket++) {
+		const members = buckets.get(bucket)!;
 		let low = Infinity;
 		let high = -Infinity;
 		for (const member of members) {

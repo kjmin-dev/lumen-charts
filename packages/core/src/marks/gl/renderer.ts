@@ -1,12 +1,14 @@
 import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
 import type { HeatSlots, MarkFrame, MarkRendererReason } from '../backend';
 import { heatStyle, scatterBounds, scatterRecords } from '../gpu/geometry';
-import { heatEdge, slotColors } from '../render';
+import { heatEdge, heatRowSpan, slotColors } from '../render';
 import { HeatRanges } from '../heat-ranges';
 import type { ScatterOptions } from '../options';
 import { parseColor } from '../palette';
 import { GlBudget, GlContext, type GlProgram } from './context';
 import { WordTexture } from './texture';
+
+const SPAN = { low: 0, high: 0 };
 
 class GlLayer {
 	private cache: CanvasRenderingContext2D;
@@ -31,6 +33,12 @@ class GlLayer {
 	private slotsBuffer: Uint8Array | null = null;
 	private slotsFrom = 0;
 	private slotsTo = 0;
+	/** A grid that follows the price: the column table, the window it was written for, and where. */
+	private table = new Uint32Array(0);
+	private tableVersion = -1;
+	private tableAt = -1;
+	/** The grid rows the columns in view spanned when the pixel ranges were made. */
+	private span = '';
 	constructor(
 		private pool: GlContext,
 		private listener: () => void,
@@ -110,11 +118,10 @@ class GlLayer {
 	 * and starts over when the view leaves it: a pan uploads the columns that come into view.
 	 */
 	private uploadSlots(f: MarkFrame, slots: HeatSlots, mappingChanged: boolean): boolean {
-		const w = f.window,
-			rows = w.rows;
+		const w = f.window;
 		const cells = slots.update(f.from, f.to);
 		const fresh =
-			this.records.bind(Math.ceil((w.capacity * rows) / 4)) ||
+			this.records.bind(Math.ceil(w.cellCapacity / 4)) ||
 			w.version !== this.version ||
 			!this.slots ||
 			mappingChanged ||
@@ -122,7 +129,7 @@ class GlLayer {
 			!slots.holds(this.slotsFrom, this.slotsTo);
 		const words = new Uint32Array(cells.buffer, cells.byteOffset, cells.length >> 2);
 		const upload = (from: number, to: number) => {
-			if (to > from) this.records.write(words, Math.floor((from * rows) / 4), Math.ceil((to * rows) / 4));
+			if (to > from) this.records.write(words, Math.floor(w.cellStart(from) / 4), Math.ceil(w.cellStart(to) / 4));
 		};
 		if (fresh || f.to <= this.slotsFrom || f.from >= this.slotsTo) {
 			upload(f.from, f.to);
@@ -139,6 +146,29 @@ class GlLayer {
 		return fresh;
 	}
 
+	/**
+	 * Where the grid follows the price, writes the column table after the pixel ranges: where each
+	 * column's cells start, its first grid row plus 2^30, and its number of cells. Columns
+	 * `[from, to)` are written, or all held after a new window.
+	 */
+	private uploadTable(f: MarkFrame, at: number, all: boolean, from: number, to: number): void {
+		const w = f.window;
+		if (all || this.tableVersion !== w.version) {
+			from = 0;
+			to = w.count;
+		}
+		this.tableVersion = w.version;
+		if (to <= from) return;
+		if (this.table.length < w.capacity * 3) this.table = new Uint32Array(w.capacity * 3);
+		const table = this.table;
+		for (let c = from; c < to; c++) {
+			table[c * 3] = w.cellStart(c);
+			table[c * 3 + 1] = w.cellOffset(c) + 0x40000000;
+			table[c * 3 + 2] = w.cellLength(c);
+		}
+		this.ranges.write(table, from * 3, to * 3, at + from * 3);
+	}
+
 	private heatmap(f: MarkFrame, p: GlProgram, full: boolean, styleChanged: boolean, mappingChanged: boolean) {
 		const { window: w, width, height } = f;
 		const slots = f.slots ?? null;
@@ -149,12 +179,12 @@ class GlLayer {
 		if (slots) {
 			fresh = this.uploadSlots(f, slots, mappingChanged);
 		} else {
-			fresh = this.records.bind(w.capacity * w.rows) || w.version !== this.version || modeChanged;
+			fresh = this.records.bind(w.cellCapacity) || w.version !== this.version || modeChanged;
 			const from = fresh ? 0 : w.dirtyFrom,
 				to = fresh ? w.count : w.dirtyTo;
 			if (to > from) {
 				const data = new Uint32Array(w.values.buffer as ArrayBuffer, w.values.byteOffset, w.values.length);
-				this.records.write(data, from * w.rows, to * w.rows);
+				this.records.write(data, w.cellStart(from), w.cellStart(to));
 			}
 			this.slotsBuffer = null;
 		}
@@ -162,11 +192,22 @@ class GlLayer {
 		const from = fresh ? 0 : w.dirtyFrom,
 			to = fresh ? w.count : w.dirtyTo;
 		const n = (width + height) * 2;
-		const sameGrid = !this.ranges.bind(n) && !full && !fresh && w.count === this.count;
+		const varying = w.varying;
+		const rebound = this.ranges.bind(n + (varying ? w.capacity * 3 : 0));
+		// Where the grid follows the price, the rows a pixel row reads change with the rows in view.
+		let span = '';
+		if (varying) {
+			heatRowSpan(w, f.from, f.to, SPAN);
+			span = `${SPAN.low},${SPAN.high}`;
+		}
+		const sameGrid = !rebound && !full && !fresh && w.count === this.count && span === this.span;
 		if (!sameGrid) {
 			this.heat.project(f);
 			this.ranges.write(this.heat.data, 0, n);
+			this.span = span;
 		}
+		if (varying) this.uploadTable(f, n, rebound || fresh || this.tableAt !== n, from, to);
+		this.tableAt = varying ? n : -1;
 		if (this.style.bind(512) || styleChanged || modeChanged) {
 			// Slots need only their colors; values the first value of each slot too.
 			if (slots) slotColors(f.palette, this.colors);
@@ -187,6 +228,8 @@ class GlLayer {
 		this.ranges.layout(p.rangesStride);
 		this.style.layout(p.styleStride);
 		gl.uniform1i(p.rows, w.rows);
+		gl.uniform1i(p.table, varying ? n : -1);
+		gl.uniform1i(p.rowBase, this.heat.rowBase);
 		gl.scissor(left, 0, right - left, height);
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 		this.copy(left, right, height);

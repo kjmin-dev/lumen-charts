@@ -33,7 +33,7 @@ function slotsOf(values: Float32Array, min: number, max: number, log = false): n
 	const mapping = { min: 0, factor: 0, log: false };
 	setValueMapping(mapping, min, max, log);
 	const slots = new Uint8Array(values.length);
-	quantize(values, slots, ROWS, 0, values.length / ROWS, mapping);
+	quantize(values, slots, 0, values.length, mapping);
 	return [...slots];
 }
 
@@ -128,7 +128,7 @@ describe('WebGL2 heatmap from palette slots', () => {
 		// Column 9 holds cells 180 to 199: words 45 to 49.
 		expect(t.uploaded(0)).toBe(5);
 		expect(t.gl!.uploads.filter(u => u.unit === 0)).toEqual([{ unit: 0, x: 45, y: 0, width: 5, height: 1 }]);
-		const cells = vi.mocked(quantize).mock.calls.reduce((sum, [, , rows, from, to]) => sum + (to - from) * rows, 0);
+		const cells = vi.mocked(quantize).mock.calls.reduce((sum, [, , from, to]) => sum + (to - from), 0);
 		expect(cells).toBe(ROWS);
 		data.values.set(column, 9 * ROWS);
 		expect([...t.records().subarray(0, COLUMNS * ROWS)]).toEqual(slotsOf(data.values, 0, 199));
@@ -155,7 +155,7 @@ describe('WebGL2 heatmap from palette slots', () => {
 		// Four columns come into view, of five words each, and the edge columns around them.
 		expect(t.uploaded(0)).toBeGreaterThanOrEqual(20);
 		expect(t.uploaded(0)).toBeLessThanOrEqual(30);
-		const quantized = vi.mocked(quantize).mock.calls.reduce((sum, [, , rows, from, to]) => sum + (to - from) * rows, 0);
+		const quantized = vi.mocked(quantize).mock.calls.reduce((sum, [, , from, to]) => sum + (to - from), 0);
 		expect(quantized).toBe(t.uploaded(0) * 4);
 		expect([...t.records().subarray(...cells(101, 143))]).toEqual(expected.slice(...cells(101, 143)));
 	});

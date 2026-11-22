@@ -30,6 +30,7 @@ import {
 	drawHeatmap,
 	heatEdge,
 	heatEndTime,
+	heatRowSpan,
 	drawScatter,
 	emptyBox,
 	makeStamp,
@@ -567,7 +568,7 @@ export abstract class MarkSeries {
 				!same,
 			);
 			if (path !== 'canvas2d') {
-				this._marks = Math.max(0, to - from) * (scatter ? 1 : window.rows);
+				this._marks = scatter ? Math.max(0, to - from) : heatCells(window, from, to);
 				this._peakBytes = Math.max(this._peakBytes, (this._gpu.backend?.bytes ?? 0) + this._gl.bytes);
 			}
 		}
@@ -638,6 +639,11 @@ export abstract class MarkSeries {
 	 * was drawn, over it; `box` gets the pixels to hand over, and the surface's box grows with them.
 	 */
 	protected abstract _drawRows(map: TimeMap, from: number, to: number, box: PixelBox): void;
+}
+
+/** Cells of held heatmap columns `[from, to)`. */
+function heatCells(window: MarksWindow, from: number, to: number): number {
+	return to > from ? window.cellStart(to) - window.cellStart(from) : 0;
 }
 
 /** Asks the engine to remove the marks of a range of times; throws a RangeError for a range that is not one. */
@@ -848,6 +854,7 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 	private readonly _colors = new Uint32Array(256);
 	private _colorsPalette: Uint32Array | null = null;
 	private readonly _scratch = new HeatmapScratch();
+	private readonly _span = { low: 0, high: 0 };
 
 	public constructor(host: MarkSeriesHost, id: string, options: Partial<HeatmapOptions>) {
 		// In the series layer, below the series.
@@ -907,8 +914,10 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 			return null;
 		}
 		const column = window.upperBound(time) - 1;
-		const row = Math.floor((price - window.priceStart) / window.priceStep);
-		if (column < 0 || !(row >= 0 && row < window.rows)) {
+		// The column's cells from the grid row of its first one.
+		const row =
+			Math.floor((price - window.priceStart) / window.priceStep) - (column < 0 ? 0 : window.cellOffset(column));
+		if (column < 0 || !(row >= 0 && row < window.cellLength(column))) {
 			return null;
 		}
 		if (column === window.count - 1) {
@@ -918,7 +927,7 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 				return null;
 			}
 		}
-		const value = window.values[column * window.rows + row]!;
+		const value = window.values[window.cellStart(column) + row]!;
 		return value === value ? value : null;
 	}
 
@@ -933,9 +942,14 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		out.high = -Infinity;
 		// A column before the view reaches into it.
 		const from = Math.max(0, window.upperBound(this.viewFrom) - 1);
-		if (window.level >= 0 && window.upperBound(this.viewTo) > from) {
-			out.low = window.priceStart;
-			out.high = window.priceStart + window.rows * window.priceStep;
+		const to = window.upperBound(this.viewTo);
+		if (window.level >= 0 && to > from) {
+			// The grid rows the columns in view span: all of the grid unless it follows the price.
+			heatRowSpan(window, from, to, this._span);
+			if (this._span.high > this._span.low) {
+				out.low = window.priceStart + this._span.low * window.priceStep;
+				out.high = window.priceStart + this._span.high * window.priceStep;
+			}
 		}
 	}
 
@@ -947,8 +961,7 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 	private _quantize(from: number, to: number): void {
 		const window = this.window;
 		const mapping = this._mapping;
-		const rows = window.rows;
-		const cells = window.capacity * rows;
+		const cells = window.cellCapacity;
 		if (this._colorsPalette !== this._palette) {
 			slotColors(this._palette, this._colors);
 			this._colorsPalette = this._palette;
@@ -971,18 +984,20 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		if (to <= from) {
 			return;
 		}
+		const values = window.values;
+		const at = (column: number) => window.cellStart(column);
 		if (this._slotsTo <= this._slotsFrom || from > this._slotsTo || to < this._slotsFrom) {
-			quantize(window.values, this._slots, rows, from, to, mapping);
+			quantize(values, this._slots, at(from), at(to), mapping);
 			this._slotsFrom = from;
 			this._slotsTo = to;
 			return;
 		}
 		if (from < this._slotsFrom) {
-			quantize(window.values, this._slots, rows, from, this._slotsFrom, mapping);
+			quantize(values, this._slots, at(from), at(this._slotsFrom), mapping);
 			this._slotsFrom = from;
 		}
 		if (to > this._slotsTo) {
-			quantize(window.values, this._slots, rows, this._slotsTo, to, mapping);
+			quantize(values, this._slots, at(this._slotsTo), at(to), mapping);
 			this._slotsTo = to;
 		}
 	}
@@ -996,7 +1011,7 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 			mapping.min === this._slotsMin &&
 			mapping.factor === this._slotsFactor &&
 			mapping.log === this._slotsLog &&
-			this._slots.length >= window.capacity * window.rows
+			this._slots.length >= window.cellCapacity
 		);
 	}
 
@@ -1010,7 +1025,7 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		const from = Math.max(window.dirtyFrom, this._slotsFrom);
 		const to = Math.min(window.dirtyTo, this._slotsTo);
 		if (to > from) {
-			quantize(window.values, this._slots, window.rows, from, to, this._mapping);
+			quantize(window.values, this._slots, window.cellStart(from), window.cellStart(to), this._mapping);
 		}
 	}
 
@@ -1054,14 +1069,16 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		const { width, height } = surface;
 		this.panRanges.project({ window: w, map, projection: this._projection, width, height, from, to });
 		const ranges = this.panRanges.data;
-		const delta = this.pan.translation(map.x(w.time[0]!), ranges, width, height, compatible);
+		const delta = this.pan.translation(map.x(w.time[0]!), ranges, width, height, compatible, this.panRanges.rowBase);
 		if (delta === null || Math.abs(delta) > width / 4) return false;
-		this._marks = Math.max(0, to - from) * w.rows;
+		this._marks = heatCells(w, from, to);
 		if (!delta) return true;
 		surface.shiftColumns(delta);
 		const left = delta > 0 ? 0 : width + delta,
 			right = delta > 0 ? delta : width;
 		this._quantize(from, to);
+		const base = this.panRanges.rowBase;
+		const slots = this._slots;
 		for (let x = left; x < right; x++) {
 			const c0 = ranges[x * 2]!,
 				c1 = ranges[x * 2 + 1]!;
@@ -1070,7 +1087,13 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 					lo = ranges[k]!,
 					hi = ranges[k + 1]!;
 				let slot = 0;
-				for (let c = c0; c < c1; c++) for (let r = lo; r < hi; r++) slot = Math.max(slot, this._slots[c * w.rows + r]!);
+				for (let c = c0; c < c1; c++) {
+					// Rows `[lo, hi)` count from `base`; the column's cells from its own first row.
+					const first = w.cellOffset(c) - base;
+					const at = w.cellStart(c) - first;
+					const end = Math.min(hi, first + w.cellLength(c));
+					for (let r = Math.max(lo, first); r < end; r++) slot = Math.max(slot, slots[at + r]!);
+				}
 				surface.pixels[x * height + y] = this._colors[slot]!;
 			}
 		}
@@ -1085,19 +1108,17 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		const from = Math.max(0, window.upperBound(this.viewFrom) - 1);
 		const to = Math.min(window.count, window.upperBound(this.viewTo) + 1);
 		this._quantize(from, to);
-		this._marks = Math.max(0, to - from) * window.rows;
+		this._marks = heatCells(window, from, to);
 		drawHeatmap(
 			surface.pixels,
 			surface.width,
 			surface.height,
 			window.time,
 			this._slots,
-			window.rows,
+			window,
 			window.count,
 			from,
 			to,
-			window.priceStart,
-			window.priceStep,
 			map,
 			this._projection,
 			this._colors,
@@ -1142,12 +1163,10 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 			surface.height,
 			window.time,
 			this._slots,
-			window.rows,
+			window,
 			window.count,
 			first,
 			end,
-			window.priceStart,
-			window.priceStep,
 			map,
 			this._projection,
 			this._colors,
