@@ -1,6 +1,7 @@
 import { CHUNK_MASK, CHUNK_ROWS, CHUNK_SHIFT, TIME } from './chunk';
 import { IndicatorEngine } from './indicators/engine';
 import { MarksEngine } from './marks/engine';
+import type { MarksChange } from './marks/protocol';
 import {
 	ALL_LEVELS,
 	type Command,
@@ -261,6 +262,13 @@ export class EngineCore {
 	private readonly _indicators: IndicatorEngine;
 	/** Scatter and heatmap series, which are not on the main timeline. */
 	private readonly _marks = new MarksEngine();
+	/**
+	 * Main rows whose bars hold marks of a series that changed in the command being run, as
+	 * `[from, to)` pairs: what the indicators reading that series take as changed input rows.
+	 */
+	private readonly _marksRuns = new Map<number, number[]>();
+	/** Times of the bars an indicator reads marks over, and one past them; reused. */
+	private _bounds = new Float64Array(0);
 	/** `seq` of the last command answered, which a notice repeats. */
 	private _lastAck = 0;
 	/** Background work threw once: this engine runs none any more (see `stopBackground`). */
@@ -286,7 +294,7 @@ export class EngineCore {
 			first: () => (this._main === null ? 0 : this._main.store.first),
 			end: () => (this._main === null ? 0 : this._main.store.end),
 			read: (series, column, from, to, out, offset) => this._readColumn(series, column, from, to, out, offset),
-			runs: series => this._series.get(series)?.runs ?? NO_RUNS,
+			runs: series => this._series.get(series)?.runs ?? this._marksRuns.get(series) ?? NO_RUNS,
 			ensure: (from, to, ahead) => this._ensureRows(from, to, ahead),
 		});
 		this._indicators.onwake = () => this.onwake?.();
@@ -418,13 +426,28 @@ export class EngineCore {
 				if (event.rejected > 0) {
 					event.rejectedSeries = [command.series, event.rejected];
 				}
+				this._marksChanged(command.series, command.change, event);
 				break;
 			case 'marksWindow':
 				this._marks.window(command.series, command.seq, command.request, event);
 				break;
-			case 'marksRows':
-				yield* this._marks.restore(command.request, command.data, event);
+			case 'marksRows': {
+				const times = this._marks.requestTimes(command.request);
+				const applied = yield* this._marks.restore(command.request, command.data, event);
+				const outcome = event.marksRestored;
+				if (outcome !== undefined) {
+					if (applied > 0) {
+						// Changes that waited for the marks ran: the indicators reading them start over.
+						this._indicators.seriesChanged(outcome.series);
+					}
+					if (outcome.outcome === 'restored') {
+						this._indicators.rowsRestored();
+					} else if (times !== null && this._main !== null && this._main.store.length > 0) {
+						this._indicators.rowsFailed(this._mainIndex(times.from), this._mainIndex(times.to) + 1);
+					}
+				}
 				break;
+			}
 		}
 	}
 
@@ -505,8 +528,15 @@ export class EngineCore {
 		this._specs.clear();
 		const swapped = this._indicators.takeNotice(this._specs);
 		const plugins = this._indicators.takePlugins();
-		const { fetch, cancel } = this._background;
-		if (!swapped && plugins === null && fetch === undefined && cancel === undefined) {
+		const { fetch, cancel, marksFetch, marksCancel } = this._background;
+		if (
+			!swapped &&
+			plugins === null &&
+			fetch === undefined &&
+			cancel === undefined &&
+			marksFetch === undefined &&
+			marksCancel === undefined
+		) {
 			return null;
 		}
 		const event: EngineEvent = { ack: this._lastAck, epoch: 0, first: 0, end: 0, stale: swapped, rejected: 0 };
@@ -520,6 +550,14 @@ export class EngineCore {
 		if (cancel !== undefined) {
 			event.cancel = cancel;
 			delete this._background.cancel;
+		}
+		if (marksFetch !== undefined) {
+			event.marksFetch = marksFetch;
+			delete this._background.marksFetch;
+		}
+		if (marksCancel !== undefined) {
+			event.marksCancel = marksCancel;
+			delete this._background.marksCancel;
 		}
 		if (swapped) {
 			this._emit(event);
@@ -1197,9 +1235,61 @@ export class EngineCore {
 				}
 			}
 		}
+		// A new bar takes the marks from its time on from the bar before it, which indicators reading
+		// marks take as changed.
+		if (end > endBefore) {
+			this._marksReadRuns(Math.max(main.store.first, endBefore - 1), end);
+		}
 		// Indicator values change with their inputs and travel in the same message: new bars, ticks,
 		// and corrections, also those that waited for rows let go or came back changed at the source.
 		this._indicators.ticks(endBefore, specs, held);
+		this._marksRuns.clear();
+		this._emit(event);
+	}
+
+	/** Gives every marks series an indicator reads the changed main rows `[from, to)`. */
+	private _marksReadRuns(from: number, to: number): void {
+		const read = new Set<number>();
+		this._indicators.readSeries(read);
+		for (const series of read) {
+			if (this._marks.has(series)) {
+				this._marksRuns.set(series, [from, to]);
+			}
+		}
+	}
+
+	/**
+	 * A marks series changed: indicators reading it follow. An append changes the bars its marks fall
+	 * in, which are recomputed in place with the patches of their outputs in this event; any other
+	 * change recomputes them in the background.
+	 */
+	private _marksChanged(series: number, change: MarksChange, event: EngineEvent): void {
+		if (change.op === 'add' || !this._indicators.reads(series)) {
+			return;
+		}
+		const main = this._main;
+		if (change.op !== 'append' || main === null || main.store.length === 0) {
+			this._indicators.seriesChanged(series);
+			return;
+		}
+		let first = Infinity;
+		const times = change.data.time;
+		for (let i = 0; i < change.data.count; i++) {
+			const time = times[i]!;
+			if (time < first) {
+				first = time;
+			}
+		}
+		if (!(first < Infinity)) {
+			return;
+		}
+		const store = main.store;
+		const row = first < store.firstTime() ? store.first : this._mainIndex(first);
+		this._beginChanges();
+		this._marksRuns.set(series, [row, store.end]);
+		this._specs.clear();
+		this._indicators.ticks(store.end, this._specs, this._patchLevels);
+		this._marksRuns.clear();
 		this._emit(event);
 	}
 
@@ -1529,6 +1619,10 @@ export class EngineCore {
 		if (to <= from) {
 			return;
 		}
+		if (state === undefined && this._marks.has(series)) {
+			this._readMarks(series, column, from, to, out, offset);
+			return;
+		}
 		if (main === null || state === undefined || (column > state.valueColumns && column !== TIME)) {
 			out.fill(NaN, offset, offset + to - from);
 			return;
@@ -1588,11 +1682,62 @@ export class EngineCore {
 		const lo = Math.max(from, store.first);
 		const hi = Math.min(to, store.end);
 		this._needReading(lo, hi);
-		const held = !this._missing(0);
+		const held = !this._missing(0) && this._marksHeld(lo, hi);
 		if (!this._running) {
 			this._readFrom = lo;
 			this._readTo = Math.min(Math.max(hi, ahead), store.end);
 			this._reconcile(this._background);
+		}
+		return held;
+	}
+
+	/**
+	 * Column `column` of a marks series over main rows `[from, to)`: each bar over the marks from its
+	 * time to the next bar's, the last bar's on to any time.
+	 */
+	private _readMarks(
+		series: number,
+		column: number,
+		from: number,
+		to: number,
+		out: Float64Array,
+		offset: number,
+	): void {
+		const main = this._main;
+		if (main === null) {
+			out.fill(NaN, offset, offset + to - from);
+			return;
+		}
+		const store = main.store;
+		const n = to - from;
+		if (this._bounds.length < n + 1) {
+			this._bounds = new Float64Array(Math.max(n + 1, this._bounds.length * 2));
+		}
+		const bounds = this._bounds;
+		const end = Math.min(to + 1, store.end);
+		this._readColumn(main.id, TIME, from, end, bounds, 0);
+		if (to + 1 > store.end) {
+			bounds[n] = Infinity;
+		}
+		this._marks.aggregate(series, column, bounds, n, out, offset);
+	}
+
+	/**
+	 * Whether the marks the bars of main rows `[from, to)` read are held, for every marks series an
+	 * indicator reads; outside a command, those let go are asked for.
+	 */
+	private _marksHeld(from: number, to: number): boolean {
+		const read = new Set<number>();
+		this._indicators.readSeries(read);
+		const store = this._main!.store;
+		let held = true;
+		for (const series of read) {
+			if (!this._marks.has(series) || to <= from) {
+				continue;
+			}
+			const t0 = this._rowTime(from);
+			const t1 = to < store.end ? this._rowTime(to) : Infinity;
+			held = this._marks.held(series, t0, t1, this._running ? null : this._background) && held;
 		}
 		return held;
 	}
@@ -1992,7 +2137,16 @@ export class EngineCore {
 		}
 		// The bars go first; then the marks of series with a datafeed, far from their views.
 		if (this._limit !== Infinity) {
-			const { more } = this._marks.evict(bytes - this._limit, EVICT_SLICE);
+			// Marks a recomputation has yet to read stay: let go, they would only be fetched again.
+			const reading = this._indicators.readFrom;
+			const main = this._main;
+			const readTime =
+				reading === Infinity || main === null || main.store.length === 0
+					? Infinity
+					: this._rowTime(Math.min(Math.max(reading, main.store.first), main.store.end - 1));
+			const read = new Set<number>();
+			this._indicators.readSeries(read);
+			const { more } = this._marks.evict(bytes - this._limit, EVICT_SLICE, read, readTime);
 			this._overLimit = more;
 		}
 	}

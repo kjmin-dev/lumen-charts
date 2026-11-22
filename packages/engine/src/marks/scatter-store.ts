@@ -1,4 +1,12 @@
-import type { MarksChunk, MarksData, MarksRequest, MarksSelection, MarksStore, MarksUpdate } from './protocol';
+import {
+	MARK_COLUMNS,
+	type MarksChunk,
+	type MarksData,
+	type MarksRequest,
+	type MarksSelection,
+	type MarksStore,
+	type MarksUpdate,
+} from './protocol';
 import { Checksum, MARKS_SUMMARY_BYTES } from './summary';
 
 /** Rows per chunk of a scatter column store. */
@@ -584,6 +592,58 @@ export class ScatterColumns {
 	}
 }
 
+/** Column `column` (see `MARK_COLUMNS`) of points `[from, to)`, which are held. */
+function pointsColumn(points: ScatterColumns, column: number, from: number, to: number): number {
+	switch (column) {
+		case MARK_COLUMNS.count:
+			return to - from;
+		case MARK_COLUMNS.open:
+			return to > from ? points.priceAt(from) : Number.NaN;
+		case MARK_COLUMNS.close:
+			return to > from ? points.priceAt(to - 1) : Number.NaN;
+		case MARK_COLUMNS.high:
+		case MARK_COLUMNS.low: {
+			let high = -Infinity;
+			let low = Infinity;
+			for (let row = from; row < to; row++) {
+				const price = points.priceAt(row);
+				high = Math.max(high, price);
+				low = Math.min(low, price);
+			}
+			return to <= from ? Number.NaN : column === MARK_COLUMNS.high ? high : low;
+		}
+	}
+	let sum = 0;
+	let weighted = 0;
+	let max = -Infinity;
+	let min = Infinity;
+	let values = 0;
+	for (let row = from; row < to; row++) {
+		const value = points.valueAt(row);
+		if (value === value) {
+			sum += value;
+			weighted += value * points.priceAt(row);
+			max = Math.max(max, value);
+			min = Math.min(min, value);
+			values++;
+		}
+	}
+	switch (column) {
+		case MARK_COLUMNS.sum:
+			return sum;
+		case MARK_COLUMNS.max:
+			return values > 0 ? max : Number.NaN;
+		case MARK_COLUMNS.min:
+			return values > 0 ? min : Number.NaN;
+		case MARK_COLUMNS.mean:
+			return values > 0 ? sum / values : Number.NaN;
+		case MARK_COLUMNS.vwap:
+			return sum !== 0 ? weighted / sum : Number.NaN;
+		default:
+			return Number.NaN;
+	}
+}
+
 /** Feeds one point to the checksum of a chunk: its time, price, value and, in a store with sizes, size. */
 function feedPoint(checksum: Checksum, time: number, price: number, value: number, size: number, sized: boolean): void {
 	checksum.double(time);
@@ -1148,6 +1208,38 @@ export class ScatterStore implements MarksStore {
 			const high = points.lowerBucket(level.step, Math.floor(to / level.step) + 1);
 			points.missing(low, a, out);
 			points.missing(b, high, out);
+		}
+	}
+
+	// Indicators over the points
+
+	public missingTimes(from: number, to: number, out: number[]): void {
+		const points = this._points;
+		if (points.evictedCount > 0 && to > from) {
+			points.missing(points.lowerBound(from), points.lowerBound(to), out);
+		}
+	}
+
+	public aggregate(column: number, bounds: Float64Array, n: number, out: Float64Array, offset: number): void {
+		const points = this._points;
+		let a = points.lowerBound(bounds[0]!);
+		const missing: number[] = [];
+		for (let k = 0; k < n; k++) {
+			const low = bounds[k]!;
+			const high = bounds[k + 1]!;
+			if (!(low <= high)) {
+				// A bar whose time is not known (let go with its chunk of the main series).
+				out[offset + k] = Number.NaN;
+				if (high === high) {
+					a = points.lowerBound(high);
+				}
+				continue;
+			}
+			const b = points.lowerBound(high);
+			missing.length = 0;
+			points.missing(a, b, missing);
+			out[offset + k] = missing.length > 0 ? Number.NaN : pointsColumn(points, column, a, b);
+			a = b;
 		}
 	}
 

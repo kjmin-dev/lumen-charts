@@ -163,6 +163,40 @@ export interface MarksRestoreResult {
 	outcome: 'restored' | 'failed' | 'mismatch';
 }
 
+/**
+ * Columns an indicator input can read of a marks series: one value per bar of the main timeline,
+ * over the marks with times from the bar's to the next bar's (the last bar's run on).
+ *
+ * Scatter: `count` points, `sum` of their values (0 for a bar without points), the largest (`max`)
+ * and smallest (`min`) value and the `mean` value, the `open`, `high`, `low` and `close` of their
+ * prices, and the value-weighted mean price (`vwap`).
+ *
+ * Heatmap, as the book stood in the bar (its last column, or the last column before it when it has
+ * none): the `sum` of the last column's cells, the largest (`max`) and smallest (`min`) cell of the
+ * bar's columns, and `center`, the value-weighted mean price of the last column's cells.
+ */
+export const MARK_COLUMNS = {
+	count: 0,
+	sum: 1,
+	max: 2,
+	min: 3,
+	mean: 4,
+	open: 5,
+	high: 6,
+	low: 7,
+	close: 8,
+	vwap: 9,
+	center: 10,
+} as const;
+
+export type MarkColumn = keyof typeof MARK_COLUMNS;
+
+/** The columns of each kind of marks series. */
+export const MARK_COLUMNS_OF: Readonly<Record<MarksKind, readonly MarkColumn[]>> = {
+	scatter: ['count', 'sum', 'max', 'min', 'mean', 'open', 'high', 'low', 'close', 'vwap'],
+	heatmap: ['sum', 'max', 'min', 'center'],
+};
+
 /** A level and rows of it, as a store picks them for a request. */
 export interface MarksSelection {
 	level: number;
@@ -207,6 +241,17 @@ export interface MarksStore {
 	fetchRange(chunk: number): { from: number; to: number; count: number } | null;
 	/** Gives a chunk its marks back from what a datafeed returned; false when they are not those let go. */
 	restore(chunk: number, data: MarksData): boolean;
+
+	// Indicators over the marks
+
+	/**
+	 * Column `column` (see `MARK_COLUMNS`) for `n` bars, bar `k` spanning times
+	 * `[bounds[k], bounds[k + 1])`, into `out` from `offset` on. NaN for a bar whose marks were let
+	 * go, and for a column the series does not have.
+	 */
+	aggregate(column: number, bounds: Float64Array, n: number, out: Float64Array, offset: number): void;
+	/** Chunks let go that hold marks the bars of times `[from, to)` read. */
+	missingTimes(from: number, to: number, out: number[]): void;
 }
 
 /** A chunk of level 0 that could be let go: its number, the times it spans and the bytes it would free. */

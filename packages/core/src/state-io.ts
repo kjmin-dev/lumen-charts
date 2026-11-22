@@ -22,12 +22,18 @@ import {
 	planRestore,
 } from './state';
 
+import type { HeatmapSeriesApi, ScatterSeriesApi } from './marks/series';
+
 /** What saving and restoring a state needs from the chart. */
 export interface StateHost {
 	addSeries<T extends SeriesType>(type: T, options?: SeriesCreateOptions<T>): SeriesApi<T>;
 	removeSeries(series: SeriesApi): void;
 	/** The series with this id that is not the output of an indicator. */
 	seriesNamed(id: string): Series | undefined;
+	/** The heatmap or scatter series with this id. */
+	markNamed(id: string): ScatterSeriesApi | HeatmapSeriesApi | undefined;
+	/** The heatmap and scatter series a state's indicators may read, by id (see `RestoreContext.markKinds`). */
+	markKinds(): ReadonlyMap<string, 'heatmap' | 'scatter'>;
 	/** Takes `input` in place of the options applied so far. */
 	replaceOptions(input: DeepPartial<ChartOptions>): void;
 	/** Runs `changes` with one invalidation at the end, whatever they change. */
@@ -111,6 +117,7 @@ export class StateIo {
 		const plan = planRestore(state, selection.parts, {
 			definition: name => this._indicators.definition(name),
 			seriesIds: () => this._series.filter(series => !series.derived).map(series => series.id),
+			markKinds: () => this._host.markKinds(),
 			outputDefaults: outputSeriesDefaults,
 		});
 		let input: DeepPartial<ChartOptions> | null = null;
@@ -131,7 +138,11 @@ export class StateIo {
 			this._restoreSeries(plan.series, order);
 		}
 		if (plan.indicators !== null) {
-			const restored = this._indicators.restore(plan.indicators, id => this._host.seriesNamed(id));
+			const restored = this._indicators.restore(
+				plan.indicators,
+				id => this._host.seriesNamed(id),
+				id => this._host.markNamed(id),
+			);
 			for (const entry of plan.indicators) {
 				order.set(restored.get(entry.id)!, entry.order);
 			}

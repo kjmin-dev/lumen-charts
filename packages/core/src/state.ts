@@ -1,4 +1,4 @@
-import { type IndicatorInfo, resolveParams } from '@lumen-charts/engine';
+import { MARK_COLUMNS_OF, type MarkColumn, type IndicatorInfo, resolveParams } from '@lumen-charts/engine';
 import { type Drawing, checkPoints } from './drawings/drawing';
 import {
 	DRAWING_STATE_VERSION,
@@ -83,7 +83,7 @@ export type SeriesReference = { series: string } | { indicator: string; output: 
 /** One input of an indicator in a state (see `IndicatorInput`). */
 export type IndicatorInputState =
 	| SourceColumn
-	| { series: string; column: SourceColumn }
+	| { series: string; column: SourceColumn | MarkColumn }
 	| { indicator: string; output: string };
 
 /** An indicator in a state. Its values are computed again from the bars. */
@@ -171,6 +171,11 @@ export interface RestoreContext {
 	definition(name: string): IndicatorInfo | undefined;
 	/** Ids of the chart's series, for indicators restored without the series section. */
 	seriesIds(): string[];
+	/**
+	 * The heatmap and scatter series indicators of the state may read, by id: the state's when it
+	 * restores its series, the chart's otherwise.
+	 */
+	markKinds(): ReadonlyMap<string, 'heatmap' | 'scatter'>;
 	/** Options an indicator output has when its state sets none. */
 	outputDefaults(info: IndicatorInfo, output: number): LineOptions | HistogramOptions;
 }
@@ -441,6 +446,7 @@ function planSeries(value: unknown): SeriesPlan[] {
 
 function planIndicators(value: unknown, seriesIds: ReadonlySet<string>, context: RestoreContext): IndicatorPlan[] {
 	const ids = new Set<string>();
+	const marks = context.markKinds();
 	/** Output names of the indicators before the one being checked: it may read only those. */
 	const earlier = new Map<string, readonly string[]>();
 	const reference = (ref: Plain, path: string): void => {
@@ -454,7 +460,7 @@ function planIndicators(value: unknown, seriesIds: ReadonlySet<string>, context:
 			}
 		} else if (typeof ref.series !== 'string') {
 			fail(path, 'must name a series or an indicator');
-		} else if (!seriesIds.has(ref.series)) {
+		} else if (!seriesIds.has(ref.series) && !marks.has(ref.series)) {
 			fail(path, `reads series "${ref.series}", which the chart would not have`);
 		}
 	};
@@ -515,6 +521,14 @@ function planIndicators(value: unknown, seriesIds: ReadonlySet<string>, context:
 				reference(input, at);
 				if (typeof input.indicator === 'string') {
 					return { indicator: input.indicator, output: input.output as string };
+				}
+				const kind = marks.get(input.series as string);
+				if (kind !== undefined) {
+					const field = input.column;
+					if (typeof field !== 'string' || !MARK_COLUMNS_OF[kind].includes(field as MarkColumn)) {
+						fail(`${at}.column`, `must be one of ${MARK_COLUMNS_OF[kind].join(', ')}`);
+					}
+					return { series: input.series as string, column: field as MarkColumn };
 				}
 				const column = input.column ?? info.inputs[k];
 				if (typeof column !== 'string' || !SOURCE_COLUMN_NAMES.includes(column)) {

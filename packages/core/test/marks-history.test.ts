@@ -394,3 +394,61 @@ describe('marks fetched again from a datafeed under the memory limit', () => {
 		expect(wrong.warnings).toEqual([expect.stringContaining('do not match')]);
 	});
 });
+
+describe('indicators over heatmap and scatter series', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it('read a column of a scatter per bar, follow trades as they come, and go with the series', async () => {
+		vi.stubGlobal('ImageData', FakeImageData);
+		const t = new Chart();
+		try {
+			const candlesSeries = t.chart.addSeries('candlestick', { id: 'bars' });
+			candlesSeries.setData(candles(100));
+			const trades = t.chart.addSeries('scatter', { id: 'trades' });
+			// Three trades in the last bar, of 2, 3 and 5 at 101, 102 and 104.
+			trades.setData({
+				time: [99 * MINUTE + 1000, 99 * MINUTE + 2000, 99 * MINUTE + 3000],
+				price: [101, 102, 104],
+				value: [2, 3, 5],
+			});
+			const count = candlesSeries.addIndicator('sma', {
+				id: 'trade-count',
+				params: { period: 1 },
+				inputs: [{ series: trades, column: 'count' }],
+			});
+			const vwap = candlesSeries.addIndicator('sma', {
+				params: { period: 1 },
+				inputs: [{ series: trades, column: 'vwap' }],
+			});
+			await t.settle();
+			expect(count.output().lastValue()).toBe(3);
+			expect(vwap.output().lastValue()).toBeCloseTo((2 * 101 + 3 * 102 + 5 * 104) / 10, 12);
+			trades.update({ time: 99 * MINUTE + 4000, price: 100, value: 10 });
+			await t.settle();
+			expect(count.output().lastValue()).toBe(4);
+			// A column a scatter does not have.
+			expect(() =>
+				candlesSeries.addIndicator('sma', { inputs: [{ series: trades, column: 'center' as 'count' }] }),
+			).toThrow(RangeError);
+			// Saved by the series' id and the column, and restored onto the same series.
+			const state = t.chart.saveState();
+			expect(state.indicators!.find(entry => entry.id === 'trade-count')!.inputs).toEqual([
+				{ series: 'trades', column: 'count' },
+			]);
+			t.chart.restoreState(state);
+			await t.settle();
+			const restored = t.chart.indicators().find(entry => entry.id === 'trade-count')!;
+			expect(restored.output().lastValue()).toBe(4);
+			// A state that reads a column a heatmap does not have is refused.
+			const wrong = JSON.parse(JSON.stringify(state)) as typeof state;
+			wrong.indicators![0]!.inputs = [{ series: 'trades', column: 'center' as 'close' }];
+			expect(() => t.chart.restoreState(wrong)).toThrow(/must be one of count/);
+			t.chart.removeSeries(trades);
+			expect(t.chart.indicators()).toEqual([]);
+		} finally {
+			t.destroy();
+		}
+	});
+});

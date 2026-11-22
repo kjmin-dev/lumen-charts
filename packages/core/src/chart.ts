@@ -268,6 +268,7 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 			attachSeriesPrimitive: (series, primitive) => this.attachSeriesPrimitive(series, primitive),
 			detachSeriesPrimitive: (series, primitive) => this.detachSeriesPrimitive(series, primitive),
 			baseUrl: () => container.ownerDocument.baseURI,
+			markOf: value => this._marks.list.find(entry => entry === value) ?? null,
 			addIndicator: (source, name, settings) => this.addIndicator(source, name, settings),
 			removeIndicator: indicator => this.removeIndicator(indicator),
 			priceAxisOf: series => this.priceAxisOf(series),
@@ -307,6 +308,11 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 				addSeries: (type, seriesOptions) => this.addSeries(type, seriesOptions),
 				removeSeries: series => this.removeSeries(series),
 				seriesNamed: id => this._seriesNamed(id),
+				markNamed: id => this._marks.named(id) as unknown as ScatterSeriesApi | HeatmapSeriesApi | undefined,
+				markKinds: () =>
+					new Map(
+						(this._markPlans ?? this._marks.list).map(entry => [entry.id, entry.type] as [string, MarkSeriesType]),
+					),
 				replaceOptions: replaced => {
 					this._settings.apply(replaced);
 					this._update();
@@ -475,7 +481,11 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 	}
 
 	public removeSeries(series: SeriesApi | MarkSeriesApi): void {
-		if (this._marks.remove(series)) {
+		const mark = this._marks.list.find(entry => entry === series);
+		if (mark !== undefined) {
+			// Indicators that read it go with it, as with any series.
+			this._indicators.removeReadersOf(mark.engineId);
+			this._marks.remove(mark);
 			return;
 		}
 		const index = this._series.indexOf(series as unknown as Series);
@@ -575,13 +585,10 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 			const plans = this._markPlans;
 			this._markPlans = null;
 			if (plans !== null) {
-				// Free the names of removed marks before restoring the other series.
-				this._marks.drop(plans);
-			}
-			changes();
-			if (plans !== null) {
+				// Before the other series and the indicators, which may read them.
 				this._marks.restore(plans);
 			}
+			changes();
 		} finally {
 			this._batching = false;
 			this.invalidate(this._batchLevel);

@@ -306,17 +306,18 @@ export class MarksEngine {
 
 	/**
 	 * Takes marks fetched again for request `request` (null: fetching failed). Changes that waited for
-	 * them run, and the client whose view needed them is told to ask again.
+	 * them run, and the client whose view needed them is told to ask again. Returns the number of
+	 * changes that ran.
 	 */
 	public *restore(
 		request: number,
 		data: MarksData | null,
 		outcome: MarksOutcome,
-	): Generator<undefined, void, undefined> {
+	): Generator<undefined, number, undefined> {
 		const entry = this._requests.get(request);
 		if (entry === undefined) {
 			// Cancelled, or for a series that is gone: nothing needs it.
-			return;
+			return 0;
 		}
 		this._requests.delete(request);
 		const hosted = this._series.get(entry.series)!;
@@ -329,9 +330,10 @@ export class MarksEngine {
 			outcome: data === null ? 'failed' : restored ? 'restored' : 'mismatch',
 		};
 		if (!restored) {
-			return;
+			return 0;
 		}
 		// The changes that waited, while nothing they read is missing.
+		let applied = 0;
 		while (hosted.queue.length > 0) {
 			const change = hosted.queue[0]!;
 			if (change.op === 'delete') {
@@ -364,6 +366,7 @@ export class MarksEngine {
 				this._notice(entry.series, hosted, outcome);
 			}
 		}
+		return applied;
 	}
 
 	/**
@@ -371,10 +374,15 @@ export class MarksEngine {
 	 * first, until `excess` bytes are freed or `max` chunks went. Returns the bytes freed, and whether
 	 * more could go.
 	 */
-	public evict(excess: number, max: number): { freed: number; more: boolean } {
+	public evict(
+		excess: number,
+		max: number,
+		read: ReadonlySet<number> = NO_SERIES,
+		readTime = Infinity,
+	): { freed: number; more: boolean } {
 		const candidates: (MarksChunk & { hosted: Hosted; distance: number })[] = [];
 		const out: MarksChunk[] = [];
-		for (const hosted of this._series.values()) {
+		for (const [series, hosted] of this._series) {
 			if (!hosted.fetchable) {
 				continue;
 			}
@@ -388,8 +396,10 @@ export class MarksEngine {
 					hosted.store.needs(change.from, change.to, waiting);
 				}
 			}
+			// Marks a recomputation of an indicator has yet to read.
+			const keepAfter = read.has(series) ? readTime : Infinity;
 			for (const chunk of out) {
-				if (hosted.fetching.has(chunk.chunk) || waiting.includes(chunk.chunk)) {
+				if (hosted.fetching.has(chunk.chunk) || waiting.includes(chunk.chunk) || chunk.to >= keepAfter) {
 					continue;
 				}
 				const distance =
@@ -408,6 +418,52 @@ export class MarksEngine {
 		return { freed, more: freed < excess && i < candidates.length };
 	}
 
+	// Indicators over marks
+
+	/**
+	 * Column `column` of a marks series for `n` bars (see `MarksStore.aggregate`); NaN for a series
+	 * the engine does not have.
+	 */
+	public aggregate(
+		series: number,
+		column: number,
+		bounds: Float64Array,
+		n: number,
+		out: Float64Array,
+		offset: number,
+	): void {
+		const store = this._series.get(series)?.store;
+		if (store === undefined) {
+			out.fill(Number.NaN, offset, offset + n);
+			return;
+		}
+		store.aggregate(column, bounds, n, out, offset);
+	}
+
+	/**
+	 * Whether the marks the bars of times `[from, to)` read are held. Those let go are asked for when
+	 * `outcome` is given: a recomputation of the indicators that read them waits until they are back.
+	 */
+	public held(series: number, from: number, to: number, outcome: MarksOutcome | null): boolean {
+		const hosted = this._series.get(series);
+		if (hosted === undefined) {
+			return true;
+		}
+		const missing: number[] = [];
+		hosted.store.missingTimes(from, to, missing);
+		if (missing.length > 0 && outcome !== null) {
+			this._fetch(series, hosted, missing, outcome);
+		}
+		return missing.length === 0;
+	}
+
+	/** The times a fetch request is for, while it is out. */
+	public requestTimes(request: number): { from: number; to: number } | null {
+		const entry = this._requests.get(request);
+		const range = entry === undefined ? null : this._series.get(entry.series)?.store.fetchRange(entry.chunk);
+		return range == null ? null : { from: range.from, to: range.to };
+	}
+
 	/** Chunks every series has let go. */
 	public get evicted(): number {
 		let evicted = 0;
@@ -417,6 +473,8 @@ export class MarksEngine {
 		return evicted;
 	}
 }
+
+const NO_SERIES: ReadonlySet<number> = new Set();
 
 function emptyUpdate(series: number, generation: number): MarksUpdate {
 	// Arrays of their own: the update's buffers are transferred to the client.

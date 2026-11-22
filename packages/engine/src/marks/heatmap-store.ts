@@ -1,11 +1,12 @@
-import type {
-	HeatmapColumns,
-	MarksChunk,
-	MarksData,
-	MarksRequest,
-	MarksSelection,
-	MarksStore,
-	MarksUpdate,
+import {
+	type HeatmapColumns,
+	MARK_COLUMNS,
+	type MarksChunk,
+	type MarksData,
+	type MarksRequest,
+	type MarksSelection,
+	type MarksStore,
+	type MarksUpdate,
 } from './protocol';
 import { Checksum, MARKS_SUMMARY_BYTES } from './summary';
 
@@ -846,6 +847,86 @@ export class HeatmapStore implements MarksStore {
 		}
 		raw.missing(a - 8, a, out);
 		raw.missing(b, b + 8, out);
+	}
+
+	// Indicators over the columns
+
+	public missingTimes(from: number, to: number, out: number[]): void {
+		const raw = this._levels[0]!;
+		if (raw.evicted > 0 && to > from) {
+			// The column before the first time, which a bar without columns of its own reads.
+			raw.missing(raw.lowerBound(from) - 1, raw.lowerBound(to), out);
+		}
+	}
+
+	public aggregate(column: number, bounds: Float64Array, n: number, out: Float64Array, offset: number): void {
+		const raw = this._levels[0]!;
+		let a = raw.lowerBound(bounds[0]!);
+		const missing: number[] = [];
+		for (let k = 0; k < n; k++) {
+			const low = bounds[k]!;
+			const high = bounds[k + 1]!;
+			if (!(low <= high)) {
+				out[offset + k] = Number.NaN;
+				if (high === high) {
+					a = raw.lowerBound(high);
+				}
+				continue;
+			}
+			const b = raw.lowerBound(high);
+			// The bar's columns, or the last one before it: the book as it stood.
+			const from = b > a ? a : a - 1;
+			missing.length = 0;
+			raw.missing(from, b > a ? b : a, missing);
+			out[offset + k] =
+				from < raw.first || missing.length > 0 ? Number.NaN : this._aggregate(raw, column, from, Math.max(b, a));
+			a = b;
+		}
+	}
+
+	/** Column `column` (see `MARK_COLUMNS`) of held columns `[from, to)`, of which the last stands for the bar. */
+	private _aggregate(raw: HeatmapLevel, column: number, from: number, to: number): number {
+		if (column === MARK_COLUMNS.max || column === MARK_COLUMNS.min) {
+			let max = -Infinity;
+			let min = Infinity;
+			for (let c = from; c < to; c++) {
+				const cells = raw.chunk(c).cells;
+				const at = raw.cellsAt(c);
+				const end = at + raw.lengthAt(c);
+				for (let i = at; i < end; i++) {
+					const value = cells[i]!;
+					if (value === value) {
+						max = Math.max(max, value);
+						min = Math.min(min, value);
+					}
+				}
+			}
+			if (!(max >= min)) {
+				return Number.NaN;
+			}
+			return column === MARK_COLUMNS.max ? max : min;
+		}
+		const last = to - 1;
+		const cells = raw.chunk(last).cells;
+		const at = raw.cellsAt(last);
+		const length = raw.lengthAt(last);
+		const base = this._priceStart + (raw.offsetAt(last) + 0.5) * this._priceStep;
+		let sum = 0;
+		let weighted = 0;
+		for (let r = 0; r < length; r++) {
+			const value = cells[at + r]!;
+			if (value === value) {
+				sum += value;
+				weighted += value * (base + r * this._priceStep);
+			}
+		}
+		if (column === MARK_COLUMNS.sum) {
+			return sum;
+		}
+		if (column === MARK_COLUMNS.center) {
+			return sum !== 0 ? weighted / sum : Number.NaN;
+		}
+		return Number.NaN;
 	}
 
 	public first(level: number): number {
