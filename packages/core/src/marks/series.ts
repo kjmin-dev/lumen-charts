@@ -370,6 +370,14 @@ export abstract class MarkSeries {
 	public glHeatPath(): 'values' | 'slots' | null {
 		return this.type === 'heatmap' && this._effective === 'webgl2' ? this._gl.heatPath : null;
 	}
+	/**
+	 * Internal, read by the benchmark harness: the WebGPU kernel of the series' last dispatch, which
+	 * names its path or a variant of it; null on another renderer.
+	 */
+	public gpuKernel(): string | null {
+		const path = this._effective;
+		return path === 'canvas2d' || path === 'webgl2' ? null : (this._gpu.backend?.kernel ?? null);
+	}
 	public preferenceChanged(): void {
 		this._gpu.release();
 		this._effective = 'canvas2d';

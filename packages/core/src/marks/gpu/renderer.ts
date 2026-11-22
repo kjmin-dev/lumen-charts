@@ -4,7 +4,7 @@ import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
 import type { GpuBackend, MarkFrame } from '../backend';
 import type { ScatterOptions } from '../options';
 import { parseColor, paletteIndex, unpackColor } from '../palette';
-import type { GpuPath, GpuResources } from './device';
+import type { GpuKernel, GpuPath, GpuResources } from './device';
 import { heatStyle, PriceBands, scatterBounds, scatterRecords, fitsTileIndex } from './geometry';
 
 // WebGPU IDL flag values. The DOM declarations shipped by the supported TypeScript
@@ -15,6 +15,12 @@ const BUFFER_COPY_DST = 0x08,
 const TEXTURE_STORAGE = 0x08,
 	TEXTURE_ATTACHMENT = 0x10;
 class Budget extends Error {}
+/**
+ * From this square size (device pixels) a whole column draw takes one atomic per point and reads
+ * the marker's rows back, rather than one atomic per row a marker covers. Smaller squares and the
+ * strips of a patch keep the row kernel, which costs less there.
+ */
+const WIDE_COLUMNS = 5;
 
 interface Upload {
 	newWindow: boolean;
@@ -105,6 +111,8 @@ export class GpuMarkBackend implements GpuBackend {
 	private readonly cssColors = new Map<number, string>();
 	private lastPath: GpuPath | null = null;
 	private heatPan = new HeatPan();
+	/** The kernel of the last dispatch, read by the benchmark harness. */
+	public kernel: GpuKernel | null = null;
 	public get bytes(): number {
 		return this.width * this.height * 8 + this.slots.reduce((n, s) => n + s.capacity, 0);
 	}
@@ -344,7 +352,12 @@ export class GpuMarkBackend implements GpuBackend {
 
 		this.params.set([f.width, f.height, left, right, size, w.rows, 0, 0]);
 		uniform.write(this.params);
-		const pipeline = this.resources.pipelines[path];
+		const kernel: GpuKernel =
+			path === 'scatter-columns' && size >= WIDE_COLUMNS && left === 0 && right === f.width
+				? 'scatter-columns-wide'
+				: path;
+		this.kernel = kernel;
+		const pipeline = this.resources.pipelines[kernel];
 		const entries: GPUBindGroupEntry[] = [
 			{ binding: 0, resource: { buffer: uniform.buffer! } },
 			{ binding: 1, resource: { buffer: data.buffer! } },
@@ -391,6 +404,7 @@ export class GpuMarkBackend implements GpuBackend {
 		this.pending = Infinity;
 		this.count = 0;
 		this.lastPath = null;
+		this.kernel = null;
 		this.palette = null;
 		this.version = -1;
 		this.bandsKey = '';

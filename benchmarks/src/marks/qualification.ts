@@ -108,6 +108,10 @@ type Fixture = ReturnType<typeof fixture>;
 function heatPath(s: Fixture): string | null {
 	return (s.heat as unknown as { glHeatPath(): string | null }).glHeatPath();
 }
+/** Internal to the library: the WebGPU kernel of the scatter's last dispatch. */
+function kernel(s: Fixture): string | null {
+	return (s.scatter as unknown as { gpuKernel(): string | null }).gpuKernel();
+}
 function read(source: HTMLCanvasElement) {
 	const copy = document.createElement('canvas');
 	copy.width = source.width;
@@ -284,6 +288,21 @@ async function check(
 			});
 			if (b.scatter.renderer().path !== (mode === 'hardware' ? 'scatter-columns' : 'webgl2'))
 				throw Error('Dense column kernel not exercised: ' + JSON.stringify(b.scatter.drawn()));
+			// Squares of 5, 7 and 9 device pixels at the three ratios, in a pane taller than one
+			// 1024-row strip at 2, take the kernel that reads a marker's rows back.
+			await compare('large squares in a tall pane', s => {
+				s.chart.resize(380, 620);
+				s.scatter.applyOptions({ pointSize: 4.5 });
+			});
+			if (mode === 'hardware' && kernel(b) !== 'scatter-columns-wide')
+				throw Error('Wide column kernel not exercised: ' + kernel(b));
+			await compare('point appended to large squares', s =>
+				s.scatter.update({ time: barTime(82) + 60000, price: 81, value: 64 }),
+			);
+			await compare('large squares restored', s => {
+				s.chart.resize(365, 231);
+				s.scatter.applyOptions({ pointSize: 2 });
+			});
 			await compare('runtime canvas preference', s => s.chart.applyOptions({ markRenderer: 'canvas2d' }));
 			const requested = mode === 'hardware' ? 'webgpu' : 'webgl2';
 			b.chart.applyOptions({ markRenderer: requested });

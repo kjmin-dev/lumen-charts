@@ -66,6 +66,8 @@ export interface GpuBackend {
 		full: boolean,
 	): 'heatmap' | 'scatter-tiles' | 'scatter-columns' | 'budget';
 	readonly bytes: number;
+	/** The compute kernel of the last dispatch: the path's own, or a variant of it. */
+	readonly kernel: string | null;
 	release(): void;
 }
 
