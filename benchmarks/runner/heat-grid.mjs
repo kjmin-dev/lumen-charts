@@ -18,12 +18,8 @@ const { values } = parseArgs({
 });
 const configFile = new URL('../vite.config.ts', import.meta.url).pathname;
 await build({ configFile, logLevel: 'warn' });
-// A port of its own on IPv4: another harness's preview server may hold the default one.
-const server = await preview({
-	configFile,
-	logLevel: 'warn',
-	preview: { host: '127.0.0.1', port: 4391, strictPort: false },
-});
+// A port of its own on 127.0.0.1: another checkout's preview server may hold the default one.
+const { server, url } = await servePreview({ configFile, logLevel: 'warn' });
 let browser;
 try {
 	const engine = { chromium, firefox, webkit }[values.browser];
