@@ -514,7 +514,7 @@ describe('scatter appends on WebGL2', () => {
 		const red = `rgb(${top & 255},${(top >>> 8) & 255},${(top >>> 16) & 255})`;
 		const [x0, y0] = t.center(scatter, 160 * MINUTE, 100);
 		const [x1, y1] = t.center(scatter, 161 * MINUTE, 100);
-		expect(image.filter(call => call.name === 'fillRect').map(call => [...call.args, call.fillStyle])).toEqual([
+		expect(image.filter(call => call.name === 'fillRect').map(call => call.args.concat(call.fillStyle))).toEqual([
 			[x0 - 1, y0 - 1, 3, 3, 'rgb(16,32,48)'],
 			[x1 - 1, y1 - 1, 3, 3, red],
 		]);

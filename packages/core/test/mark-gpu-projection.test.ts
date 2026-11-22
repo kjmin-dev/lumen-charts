@@ -123,4 +123,3 @@ describe('scatter column ranges', () => {
 		}
 	});
 });
-

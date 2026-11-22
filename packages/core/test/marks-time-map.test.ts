@@ -3,6 +3,11 @@ import { TimeMap } from '../src/marks/time-map';
 
 const MINUTE = 60_000;
 
+/** The segment a map loaded last. */
+function segmentOf(map: TimeMap): number[] {
+	return [map.t0, map.t1, map.x0, map.pace];
+}
+
 /** A map of `count` one-minute bars from index `start`, bar `i` centered at `10 + 4 * i` device pixels. */
 function minutes(count: number, start = 0): TimeMap {
 	const times = new Float64Array(count);
@@ -104,7 +109,8 @@ describe('TimeMap', () => {
 			return map;
 		};
 		const walked = fresh();
-		const state = (map: TimeMap) => [map.t0, map.t1, map.x0, map.pace];
+		const walkedStates: number[][] = [];
+		const freshStates: number[][] = [];
 		let seed = 7;
 		const random = (): number => {
 			seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
@@ -112,20 +118,20 @@ describe('TimeMap', () => {
 		};
 		for (let i = 0; i < 2000; i++) {
 			const pick = random();
+			const map = fresh();
 			if (i % 2 === 0) {
 				// Knot times themselves, times between them and beyond both ends.
-				const time =
-					pick < 0.3 ? times[Math.floor(random() * times.length)]! : (random() * 430 - 10) * MINUTE;
+				const time = pick < 0.3 ? times[Math.floor(random() * times.length)]! : (random() * 430 - 10) * MINUTE;
 				walked.segment(time);
-				const map = fresh();
 				map.segment(time);
-				expect(state(walked)).toEqual(state(map));
+				walkedStates.push(segmentOf(walked));
+				freshStates.push(segmentOf(map));
 			} else {
 				const x = pick < 0.3 ? walked.knotX(Math.floor(random() * times.length)) : random() * 100 - 20;
-				const map = fresh();
-				expect(walked.time(x)).toBe(map.time(x));
-				expect(state(walked)).toEqual(state(map));
+				walkedStates.push([walked.time(x), ...segmentOf(walked)]);
+				freshStates.push([map.time(x), ...segmentOf(map)]);
 			}
 		}
+		expect(walkedStates).toEqual(freshStates);
 	});
 });

@@ -1,0 +1,5 @@
+---
+'@lumen-charts/core': patch
+---
+
+Close gaps of the GPU mark renderers found on a physical Android phone. A WebGL2 scatter writes the points of a small append into its retained image in Canvas 2D, as the Canvas 2D and WebGPU paths do, instead of drawing a strip of the pane and copying it back, and a WebGL2 heatmap translates its retained image on a pan by whole device pixels. The column ranges of WebGL2 and WebGPU scatter draws search the rows near the previous column instead of the whole window. WebGL2 draws into a premultiplied drawing buffer with colors premultiplied as the page's Canvas 2D premultiplies them, so the browser no longer converts the buffer when it copies it, a conversion whose rounding differs from Canvas 2D's on some devices; Firefox, which rounds up, now matches byte for byte as before. WebGPU writes a retained, transposed image and copies the strip it drew into a canvas configured without storage usage, which spares Chrome on Android a copy of the whole canvas per frame, and composites it with the same transposed draw as the other two paths.

@@ -46,6 +46,9 @@ function documentPremultiplying(rule: (c: number, a: number) => number) {
 	return { doc: doc as unknown as Document, canvases };
 }
 
+/** Each channel times alpha over 255, rounded up, as Firefox premultiplies. */
+const up = (c: number, a: number) => Math.ceil((c * a) / 255);
+
 describe('premultiplication of WebGL2 mark colors', () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
@@ -71,7 +74,6 @@ describe('premultiplication of WebGL2 mark colors', () => {
 
 	it("measures the document's own rounding, and lets its canvases go", () => {
 		vi.stubGlobal('ImageData', FakeImageData);
-		const up = (c: number, a: number) => Math.ceil((c * a) / 255);
 		const { doc, canvases } = documentPremultiplying(up);
 		const table = premultiplyTable(doc);
 		expect(table[1 * 256 + 1]).toBe(1);
