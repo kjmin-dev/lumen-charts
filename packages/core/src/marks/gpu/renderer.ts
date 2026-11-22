@@ -23,6 +23,22 @@ const SPAN = { low: 0, high: 0 };
  * strips of a patch keep the row kernel, which costs less there.
  */
 const WIDE_COLUMNS = 5;
+/**
+ * A column draw that starts over projects the scatter rows in view, and later pans project those
+ * that come into view, unless that would leave out fewer than this share of the rows held: then it
+ * projects them all at once, because pans would soon project most of them anyway, one strip per
+ * frame. Calibrated on the 1M cloud and the 5M trade-history pan (docs/benchmarks/projection-threshold.md).
+ */
+export const MIN_UNPROJECTED_SHARE = 0.4;
+
+/**
+ * The rows `[from, to)` that a column draw starting over projects: the rows in view,
+ * `[viewFrom, viewTo)`, or all `count` rows held when the rows left out would be fewer than
+ * `MIN_UNPROJECTED_SHARE` of them.
+ */
+export function startRows(viewFrom: number, viewTo: number, count: number): [number, number] {
+	return count - (viewTo - viewFrom) < MIN_UNPROJECTED_SHARE * count ? [0, count] : [viewFrom, viewTo];
+}
 
 interface Upload {
 	newWindow: boolean;
@@ -306,9 +322,10 @@ export class GpuMarkBackend implements GpuBackend {
 		const from = path === 'scatter-tiles' ? 0 : f.from,
 			to = path === 'scatter-tiles' ? w.count : f.to;
 		if (all || this.projectedTo <= from || to <= this.projectedFrom) {
-			this.project(f, from, to, color);
-			this.projectedFrom = from;
-			this.projectedTo = to;
+			const [first, end] = startRows(from, to, w.count);
+			this.project(f, first, end, color);
+			this.projectedFrom = first;
+			this.projectedTo = end;
 		} else {
 			// A patch can change rows projected before, in view or not.
 			this.project(f, Math.max(dirtyFrom, this.projectedFrom), Math.min(dirtyTo, this.projectedTo), color);

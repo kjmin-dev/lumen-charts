@@ -1,0 +1,164 @@
+{
+	"createdAt": "2026-11-22T09:23:45.902Z",
+	"machine": {
+		"platform": "darwin",
+		"arch": "arm64",
+		"cpu": "Apple M1",
+		"cores": 8
+	},
+	"rows": 1000000,
+	"runs": [
+		{
+			"engine": "node",
+			"version": "node v26.13.1, V8 14.6.202.34-node.40",
+			"loadAverageStart": [14.20654296875, 25.70751953125, 54.3447265625],
+			"loadAverageEnd": [14.20654296875, 25.70751953125, 54.3447265625],
+			"results": [
+				{
+					"scan": "whole series, chunk by chunk",
+					"rows": 1000000,
+					"chunkedNsPerRow": 1.2885249999999817,
+					"contiguousNsPerRow": 1.225562500000001,
+					"ratio": 1.0513743689122181,
+					"chunkedUs": 1288.5249999999814,
+					"contiguousUs": 1225.562500000001,
+					"passes": 15
+				},
+				{
+					"scan": "2,000-row view, chunk by chunk",
+					"rows": 2000,
+					"chunkedNsPerRow": 2.0731958000000077,
+					"contiguousNsPerRow": 2.2083708000000115,
+					"ratio": 0.9387897177412402,
+					"chunkedUs": 4.146391600000015,
+					"contiguousUs": 4.416741600000023,
+					"passes": 15
+				},
+				{
+					"scan": "whole series, row by row through the index",
+					"rows": 1000000,
+					"chunkedNsPerRow": 4.824862499999972,
+					"contiguousNsPerRow": 1.547854099999995,
+					"ratio": 3.117130031829219,
+					"chunkedUs": 4824.862499999972,
+					"contiguousUs": 1547.854099999995,
+					"passes": 15
+				}
+			]
+		},
+		{
+			"engine": "chromium",
+			"version": "chromium 156.0.8078.4",
+			"loadAverageStart": [14.20654296875, 25.70751953125, 54.3447265625],
+			"loadAverageEnd": [17.71337890625, 26.2431640625, 54.36572265625],
+			"results": [
+				{
+					"scan": "whole series, chunk by chunk",
+					"rows": 1000000,
+					"chunkedNsPerRow": 1.2300000190734863,
+					"contiguousNsPerRow": 1.1200000047683716,
+					"ratio": 1.0982142980685647,
+					"chunkedUs": 1230.0000190734863,
+					"contiguousUs": 1120.0000047683716,
+					"passes": 15
+				},
+				{
+					"scan": "2,000-row view, chunk by chunk",
+					"rows": 2000,
+					"chunkedNsPerRow": 2.1799999952316282,
+					"contiguousNsPerRow": 2.390000009536743,
+					"ratio": 0.912133885578595,
+					"chunkedUs": 4.359999990463257,
+					"contiguousUs": 4.780000019073486,
+					"passes": 15
+				},
+				{
+					"scan": "whole series, row by row through the index",
+					"rows": 1000000,
+					"chunkedNsPerRow": 4.25,
+					"contiguousNsPerRow": 1.0900000095367433,
+					"ratio": 3.899082534693074,
+					"chunkedUs": 4250,
+					"contiguousUs": 1090.0000095367432,
+					"passes": 15
+				}
+			]
+		},
+		{
+			"engine": "webkit",
+			"version": "webkit 27.2",
+			"loadAverageStart": [17.71337890625, 26.2431640625, 54.36572265625],
+			"loadAverageEnd": [17.015625, 25.95654296875, 54.099609375],
+			"results": [
+				{
+					"scan": "whole series, chunk by chunk",
+					"rows": 1000000,
+					"chunkedNsPerRow": 1,
+					"contiguousNsPerRow": 0.9,
+					"ratio": 1.1111111111111112,
+					"chunkedUs": 1000,
+					"contiguousUs": 900,
+					"passes": 15
+				},
+				{
+					"scan": "2,000-row view, chunk by chunk",
+					"rows": 2000,
+					"chunkedNsPerRow": 1.4,
+					"contiguousNsPerRow": 8.9,
+					"ratio": 0.15730337078651685,
+					"chunkedUs": 2.8,
+					"contiguousUs": 17.8,
+					"passes": 15
+				},
+				{
+					"scan": "whole series, row by row through the index",
+					"rows": 1000000,
+					"chunkedNsPerRow": 4.3,
+					"contiguousNsPerRow": 0.9,
+					"ratio": 4.777777777777778,
+					"chunkedUs": 4300,
+					"contiguousUs": 900,
+					"passes": 15
+				}
+			]
+		},
+		{
+			"engine": "firefox",
+			"version": "firefox 157.0",
+			"loadAverageStart": [17.015625, 25.95654296875, 54.099609375],
+			"loadAverageEnd": [15.97802734375, 25.44580078125, 53.58935546875],
+			"results": [
+				{
+					"scan": "whole series, chunk by chunk",
+					"rows": 1000000,
+					"chunkedNsPerRow": 1.9,
+					"contiguousNsPerRow": 2.1,
+					"ratio": 0.9047619047619047,
+					"chunkedUs": 1900,
+					"contiguousUs": 2100,
+					"passes": 15
+				},
+				{
+					"scan": "2,000-row view, chunk by chunk",
+					"rows": 2000,
+					"chunkedNsPerRow": 2.1,
+					"contiguousNsPerRow": 4,
+					"ratio": 0.5249999999999999,
+					"chunkedUs": 4.2,
+					"contiguousUs": 8,
+					"passes": 15
+				},
+				{
+					"scan": "whole series, row by row through the index",
+					"rows": 1000000,
+					"chunkedNsPerRow": 9.5,
+					"contiguousNsPerRow": 2.3,
+					"ratio": 4.130434782608696,
+					"chunkedUs": 9500,
+					"contiguousUs": 2300,
+					"passes": 15
+				}
+			]
+		}
+	]
+}

@@ -149,9 +149,10 @@ export async function study(sizes) {
 	const checks = [];
 	const changes = [
 		['initial', () => {}],
-		['one pixel', s => s.applyOptions({ pointSize: 0.5 })],
-		['even size', s => s.applyOptions({ pointSize: 2 })],
-		['nine pixels', s => s.applyOptions({ pointSize: 4.5 })],
+		// 1, 4 and 9 device pixels at any ratio.
+		['one pixel', s => s.applyOptions({ pointSize: 1 / window.devicePixelRatio })],
+		['even size', s => s.applyOptions({ pointSize: 4 / window.devicePixelRatio })],
+		['nine pixels', s => s.applyOptions({ pointSize: 9 / window.devicePixelRatio })],
 		['fractional zoom', (_, f) => f.chart.timeScale().setVisibleLogicalRange({ from: 14.135, to: 107.7 })],
 		['inverted', (_, f) => f.chart.priceScale().applyOptions({ invertScale: true })],
 		['log', (_, f) => f.chart.priceScale().applyOptions({ mode: 'logarithmic' })],
@@ -223,7 +224,8 @@ export async function study(sizes) {
 			const before = points.renderer().bytes;
 			js = 0;
 			const started = performance.now();
-			points.applyOptions({ pointSize: pixels / 2 });
+			// Squares of `pixels` device pixels at any ratio.
+			points.applyOptions({ pointSize: pixels / window.devicePixelRatio });
 			await f.chart.whenIdle();
 			const switchMs = performance.now() - started,
 				switchJsMs = js;

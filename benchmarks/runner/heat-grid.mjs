@@ -6,7 +6,8 @@ import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { chromium, firefox, webkit } from 'playwright';
-import { build, preview } from 'vite';
+import { build } from 'vite';
+import { servePreview } from './serve.ts';
 const { values } = parseArgs({
 	options: {
 		out: { type: 'string' },
@@ -33,7 +34,7 @@ try {
 			const page = await browser.newPage({ viewport: { width: 1000, height: 800 }, deviceScaleFactor: dpr });
 			page.on('pageerror', error => console.error(error.message));
 			try {
-				await page.goto(server.resolvedUrls.local[0] + 'heat-grid.html');
+				await page.goto(url + 'heat-grid.html');
 				await page.waitForFunction(() => typeof window.checkHeatGrid === 'function');
 				if (mode === 'webgpu' && !(await page.evaluate(async () => !!(await navigator.gpu?.requestAdapter())))) {
 					console.log(values.browser, mode, dpr, 'skipped: no WebGPU adapter');

@@ -1,6 +1,6 @@
 /// <reference types="node" />
-// Runs the benchmark matrix in Chromium through Playwright and writes a JSON results file.
-// Usage: pnpm bench [options]; pnpm bench --help lists them.
+// Runs the benchmark matrix in Chromium (or Firefox, or Chrome on an Android device) through
+// Playwright and writes a JSON results file. Usage: pnpm bench [options]; pnpm bench --help lists them.
 
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -9,8 +9,8 @@ import os from 'node:os';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { type Browser, type BrowserContext, type CDPSession, type Page, chromium } from 'playwright';
-import { build, preview } from 'vite';
+import { type Browser, type CDPSession, type Page, chromium, firefox } from 'playwright';
+import { build } from 'vite';
 import { adapters, knownFailure } from '../src/adapters/index.ts';
 import { ALLOCATION_TRACE_CATEGORIES, type SamplingNode, allocationsHeadline } from '../src/allocations.ts';
 import type { SeriesKind } from '../src/data.ts';
@@ -45,6 +45,8 @@ import {
 	writeProfile,
 	writeSummary,
 } from './profile.ts';
+import { type AndroidConnection, connectAndroid } from './android.ts';
+import { servePreview } from './serve.ts';
 
 const benchDir = fileURLToPath(new URL('..', import.meta.url));
 const repoDir = resolve(benchDir, '..');
@@ -78,6 +80,16 @@ Selection
   --list               print the jobs and exit
 
 Browser
+  --browser <name>     chromium or firefox (default: chromium). Firefox has no DevTools protocol, so
+                       its runs record no heap, worker or renderer memory, no main-thread counters,
+                       no garbage collections forced between runs, and no --profile or --allocations
+  --android <serial>   run in Chrome on the Android device with this adb serial, over USB: the page
+                       is served from this computer (adb reverse) and Chrome is driven over its
+                       DevTools socket (adb forward). Pages open at the device's own viewport and
+                       device pixel ratio, so --viewport, --dpr, --headed and --channel do not
+                       apply; --chart still sets the chart's CSS size. The screen is kept on while
+                       USB powers the device, and each run records the battery and thermal state
+  --cdp-port <n>       local port for the device's DevTools socket (default: 9222)
   --headed             open a browser window (stage 0 and 1 were measured headed). By default
                        runs are headless, in Chromium's new headless mode, which keeps GPU
                        rasterization (Playwright's default headless shell renders in software)
@@ -86,8 +98,8 @@ Browser
                        interval and miss raster and presentation stalls: measure those headed
   --channel <name>     Playwright channel, e.g. chrome for the installed Google Chrome
                        (default: Playwright's bundled Chromium)
-  --viewport <WxH>     page viewport in CSS pixels (default: 1280x720)
-  --dpr <n>            device pixel ratio (default: 2)
+  --viewport <WxH>     page viewport in CSS pixels (default: 1280x720; not with --android)
+  --dpr <n>            device pixel ratio (default: 2; not with --android)
   --chart <WxH>        chart size in CSS pixels (default: 1200x600)
 
 Profiling
@@ -157,8 +169,11 @@ const { values: args } = parseArgs({
 		list: { type: 'boolean', default: false },
 		headed: { type: 'boolean', default: false },
 		channel: { type: 'string' },
-		viewport: { type: 'string', default: '1280x720' },
-		dpr: { type: 'string', default: '2' },
+		browser: { type: 'string', default: 'chromium' },
+		android: { type: 'string' },
+		'cdp-port': { type: 'string', default: '9222' },
+		viewport: { type: 'string' },
+		dpr: { type: 'string' },
 		chart: { type: 'string', default: '1200x600' },
 		timeout: { type: 'string', default: '900' },
 		port: { type: 'string' },
@@ -175,9 +190,27 @@ if (args.help) {
 	process.exit(0);
 }
 
-const viewport = parseDimensions(args.viewport, '--viewport');
+const engine = oneOf(['chromium', 'firefox'], args.browser, '--browser');
+const androidSerial = args.android ?? null;
+if (androidSerial !== null) {
+	for (const [flag, given] of [
+		['--browser', engine !== 'chromium'],
+		['--viewport', args.viewport !== undefined],
+		['--dpr', args.dpr !== undefined],
+		['--headed', args.headed],
+		['--channel', args.channel !== undefined],
+	] as const) {
+		if (given) {
+			throw new Error(`${flag} does not apply with --android: the device's own Chrome, viewport and ratio are used`);
+		}
+	}
+}
+/** Whether the browser speaks the DevTools protocol: Chromium on the desktop and Chrome on Android. */
+const speaksCdp = engine === 'chromium';
+const viewport = parseDimensions(args.viewport ?? '1280x720', '--viewport');
 const chart = parseDimensions(args.chart, '--chart');
-const dpr = Number(args.dpr);
+const dpr = Number(args.dpr ?? '2');
+const cdpPort = Number(args['cdp-port']);
 const timeoutMs = Number(args.timeout) * 1000;
 const budgetMs = args.budget !== undefined ? Number(args.budget) * 1000 : DEFAULT_BUDGET_MS;
 if (!(budgetMs >= 0)) {
@@ -199,6 +232,9 @@ const profileDir = args.profile !== undefined ? resolve(invokedFrom, args.profil
 const allocationsDir = args.allocations !== undefined ? resolve(invokedFrom, args.allocations) : null;
 if (profileDir !== null && allocationsDir !== null) {
 	throw new Error('--profile and --allocations each record a trace of their own: use one per run');
+}
+if (!speaksCdp && (profileDir !== null || allocationsDir !== null)) {
+	throw new Error('--profile and --allocations record through the DevTools protocol, which Firefox lacks');
 }
 if (profileDir !== null || allocationsDir !== null) {
 	// Read by the Vite configuration, which runs in this process.
@@ -298,11 +334,22 @@ function localPrefixes(): [string, string][] {
 	return prefixes;
 }
 
-/** Text of a `chrome://` page, with local paths removed (see `redactLocalPaths`). */
-async function scrapeChromePage(browser: Browser, url: string, selector: string): Promise<string | null> {
-	const context = await browser.newContext();
+/** Text of a `chrome://` page, with local paths removed (see `redactLocalPaths`); null in Firefox. */
+async function scrapeChromePage(session: Session, url: string, selector: string): Promise<string | null> {
+	if (!speaksCdp) {
+		return null;
+	}
+	let close: (() => Promise<void>) | null = null;
 	try {
-		const page = await context.newPage();
+		let page: Page;
+		if (session.android !== null) {
+			page = await session.android.newPage();
+			close = () => page.close();
+		} else {
+			const context = await session.browser.newContext();
+			close = () => context.close();
+			page = await context.newPage();
+		}
 		await page.goto(url, { timeout: 10_000 });
 		await page.waitForTimeout(500);
 		const text = await page.locator(selector).first().innerText({ timeout: 5_000 });
@@ -310,7 +357,7 @@ async function scrapeChromePage(browser: Browser, url: string, selector: string)
 	} catch {
 		return null;
 	} finally {
-		await context.close();
+		await close?.().catch(() => undefined);
 	}
 }
 
@@ -319,6 +366,8 @@ async function scrapeChromePage(browser: Browser, url: string, selector: string)
 interface Session {
 	browser: Browser;
 	baseUrl: string;
+	/** The Android device the pages run on (`--android`), or null on this computer. */
+	android: AndroidConnection | null;
 }
 
 /**
@@ -327,10 +376,19 @@ interface Session {
  * build that rasterizes with SwiftShader on the CPU; the `chromium` channel runs the full browser
  * in new headless mode instead, which rasterizes on the GPU like a window does.
  */
-const headless = !args.headed;
-const channel = args.channel ?? (headless ? 'chromium' : undefined);
+const headless = !args.headed && androidSerial === null;
+const channel = engine === 'chromium' ? (args.channel ?? (headless ? 'chromium' : undefined)) : undefined;
 
-function launch(): Promise<Browser> {
+/** Starts the browser, or connects to the device's Chrome again (`--android`). */
+function launch(session?: Session): Promise<Browser> {
+	if (session?.android) {
+		return session.android.reconnect();
+	}
+	if (engine === 'firefox') {
+		// Playwright's ratio override does not survive the process switch into a cross-origin
+		// isolated page in Firefox 157, which then draws at 1; the preference sets it for every page.
+		return firefox.launch({ headless, firefoxUserPrefs: { 'layout.css.devPixelsPerPx': String(dpr) } });
+	}
 	return chromium.launch({ headless, ...(channel !== undefined ? { channel } : {}) });
 }
 
@@ -414,15 +472,19 @@ async function measureWorkers(cdp: CDPSession): Promise<WorkerHeapUsage | null> 
  * Resident memory of the browser's renderer processes, summed, in bytes: what `ps` reports for
  * them. Null where the processes cannot be listed or `ps` is missing (Windows).
  */
-async function rendererResidentBytes(browser: Browser): Promise<number | null> {
+async function rendererResidentBytes(session: Session): Promise<number | null> {
 	try {
-		const cdp = await browser.newBrowserCDPSession();
+		const browserCdp = await session.browser.newBrowserCDPSession();
 		let pids: string[];
 		try {
-			const { processInfo } = await cdp.send('SystemInfo.getProcessInfo');
+			const { processInfo } = await browserCdp.send('SystemInfo.getProcessInfo');
 			pids = processInfo.filter(process => process.type === 'renderer').map(process => String(process.id));
 		} finally {
-			await cdp.detach().catch(() => undefined);
+			await browserCdp.detach().catch(() => undefined);
+		}
+		if (session.android !== null) {
+			// The processes run on the device: its `ps` reports them.
+			return session.android.residentBytes(pids.map(Number));
 		}
 		const output = pids.length === 0 ? null : command('ps', ['-o', 'rss=', '-p', pids.join(',')]);
 		if (output === null) {
@@ -451,17 +513,46 @@ interface Sampled {
 }
 
 interface BenchPage {
-	context: BrowserContext;
 	page: Page;
+	/** Closes the page, and its browser context where it has one of its own. */
+	close: () => Promise<void>;
 	/** What the page recorded, once it has stopped the record (`--allocations`). */
 	sampled: () => Sampled | null;
 }
 
 async function newPage(session: Session): Promise<BenchPage> {
-	const context = await session.browser.newContext({ viewport, deviceScaleFactor: dpr });
-	const page = await context.newPage();
-	const cdp = await context.newCDPSession(page);
+	let page: Page;
+	let close: () => Promise<void>;
+	if (session.android !== null) {
+		page = await session.android.newPage();
+		close = () => page.close();
+	} else {
+		const context = await session.browser.newContext({ viewport, deviceScaleFactor: dpr });
+		page = await context.newPage();
+		close = () => context.close();
+	}
 	if (args['mark-gpu-timers']) await page.addInitScript(installMarkPassTimer);
+	let sampled: Sampled | null = null;
+	if (speaksCdp) {
+		await exposeProtocolProbes(session, page, record => {
+			sampled = record;
+		});
+	}
+	const query = new URLSearchParams({ auto: '', width: String(chart.width), height: String(chart.height) });
+	if (args['mark-renderer'])
+		query.set('markRenderer', oneOf(['canvas2d', 'webgl2', 'webgpu'], args['mark-renderer'], '--mark-renderer'));
+	await page.goto(`${session.baseUrl}?${query.toString()}`);
+	await page.waitForFunction(() => window.bench !== undefined);
+	return { page, close, sampled: () => sampled };
+}
+
+/**
+ * Gives the page the probes that need the DevTools protocol: garbage collection, heap and worker
+ * memory, main-thread counters, renderer memory and allocation sampling. Without them (Firefox)
+ * the page falls back to what it can do itself (see `harness/probes.ts`).
+ */
+async function exposeProtocolProbes(session: Session, page: Page, onSampled: (record: Sampled) => void): Promise<void> {
+	const cdp = await page.context().newCDPSession(page);
 	await page.exposeFunction('__benchCollectGarbage', async () => {
 		await cdp.send('HeapProfiler.collectGarbage');
 	});
@@ -494,8 +585,7 @@ async function newPage(session: Session): Promise<BenchPage> {
 			styleMs: ms('RecalcStyleDuration'),
 		};
 	});
-	await page.exposeFunction('__benchRendererMemory', () => rendererResidentBytes(session.browser));
-	let sampled: Sampled | null = null;
+	await page.exposeFunction('__benchRendererMemory', () => rendererResidentBytes(session));
 	if (allocationsDir !== null) {
 		await cdp.send('HeapProfiler.enable');
 		await page.exposeFunction('__benchAllocations', async (edge: 'start' | 'end', ticks: number) => {
@@ -507,16 +597,10 @@ async function newPage(session: Session): Promise<BenchPage> {
 					includeObjectsCollectedByMinorGC: true,
 				});
 			} else {
-				sampled = { head: (await cdp.send('HeapProfiler.stopSampling')).profile.head, ticks };
+				onSampled({ head: (await cdp.send('HeapProfiler.stopSampling')).profile.head, ticks });
 			}
 		});
 	}
-	const query = new URLSearchParams({ auto: '', width: String(chart.width), height: String(chart.height) });
-	if (args['mark-renderer'])
-		query.set('markRenderer', oneOf(['canvas2d', 'webgl2', 'webgpu'], args['mark-renderer'], '--mark-renderer'));
-	await page.goto(`${session.baseUrl}?${query.toString()}`);
-	await page.waitForFunction(() => window.bench !== undefined);
-	return { context, page, sampled: () => sampled };
 }
 
 function delay<T>(ms: number, value: T): { promise: Promise<T>; cancel: () => void } {
@@ -527,10 +611,10 @@ function delay<T>(ms: number, value: T): { promise: Promise<T>; cancel: () => vo
 	return { promise, cancel: () => clearTimeout(timer) };
 }
 
-async function closeContext(session: Session, context: BrowserContext): Promise<void> {
+async function closePage(session: Session, benchPage: BenchPage): Promise<void> {
 	const closing = delay(20_000, 'stuck' as const);
 	// Closing fails when the browser has gone away, which leaves nothing to close.
-	const close = context.close().then(
+	const close = benchPage.close().then(
 		() => 'closed' as const,
 		() => 'closed' as const,
 	);
@@ -539,8 +623,10 @@ async function closeContext(session: Session, context: BrowserContext): Promise<
 	if (result === 'stuck') {
 		// A renderer busy in a long synchronous call can keep the context from closing.
 		process.stdout.write('  context did not close; restarting the browser\n');
-		await session.browser.close().catch(() => undefined);
-		session.browser = await launch();
+		if (session.android === null) {
+			await session.browser.close().catch(() => undefined);
+		}
+		session.browser = await launch(session);
 	}
 }
 
@@ -569,13 +655,16 @@ const resolveSource = sourceResolver();
 async function runOne(session: Session, planned: PlannedJob): Promise<CompletedJob> {
 	const started = performance.now();
 	const cpuStart = cpuTimes();
-	if (!session.browser.isConnected()) {
-		// The browser process is gone (it crashed or was killed during the previous run). Starting a
-		// new one costs that run, not the rest of the matrix.
+	if (!session.browser.isConnected() || session.android?.mapped() === false) {
+		// The browser process is gone (it crashed or was killed during the previous run), or the adb
+		// server restarted and dropped the device's port mappings. Starting a new one costs that run,
+		// not the rest of the matrix.
 		process.stdout.write('  browser disconnected; restarting it\n');
-		session.browser = await launch();
+		session.browser = await launch(session);
 	}
-	const { context, page, sampled } = await newPage(session);
+	const deviceBefore = session.android?.state() ?? null;
+	const benchPage = await newPage(session);
+	const { page, sampled } = benchPage;
 	let library: AdapterInfo | null = null;
 	let outcome: RunOutcome;
 	try {
@@ -639,9 +728,13 @@ async function runOne(session: Session, planned: PlannedJob): Promise<CompletedJ
 			durationMs: performance.now() - started,
 		};
 	} finally {
-		await closeContext(session, context);
+		await closePage(session, benchPage);
 	}
-	return { planned, outcome: { ...outcome, host: hostLoad(cpuStart) }, library };
+	const host = hostLoad(cpuStart);
+	if (session.android !== null && deviceBefore !== null) {
+		host.device = { before: deviceBefore, after: session.android.state() };
+	}
+	return { planned, outcome: { ...outcome, host }, library };
 }
 
 // Main ---------------------------------------------------------------------------------------------
@@ -674,28 +767,36 @@ async function main(): Promise<void> {
 		build: { outDir: buildDir, emptyOutDir: true },
 	};
 	await build(viteOptions);
-	const port = args.port === undefined ? null : Number(args.port);
-	if (port !== null && !(Number.isInteger(port) && port > 0 && port < 65536)) {
+	const requested = args.port === undefined ? undefined : Number(args.port);
+	if (requested !== undefined && !(Number.isInteger(requested) && requested > 0 && requested < 65536)) {
 		throw new Error(`--port expects a port number, got "${args.port}"`);
 	}
-	const server = await preview(
-		port === null ? viteOptions : { ...viteOptions, preview: { host: '127.0.0.1', port, strictPort: true } },
-	);
-	const baseUrl = server.resolvedUrls?.local[0];
-	if (baseUrl === undefined) {
-		throw new Error('Preview server has no local URL');
-	}
+	// On 127.0.0.1 at a port of its own (`--port`, or one the system hands out), which `adb reverse`
+	// also reaches from a device.
+	const { server, port, url: localUrl } = await servePreview(viteOptions, requested);
 	const caffeinate = keepAwake();
-	const session: Session = { browser: await launch(), baseUrl };
+	let session: Session;
+	if (androidSerial !== null) {
+		const android = await connectAndroid(androidSerial, port, cdpPort);
+		// localhost on the device is a secure context, as on the desktop: WebGPU and isolation work.
+		session = { browser: android.browser, baseUrl: `http://localhost:${port}/`, android };
+		const { device } = android;
+		process.stdout.write(
+			`Device: ${device.manufacturer} ${device.model} (${device.soc}), Android ${device.android}, ` +
+				`Chrome ${device.chrome}, ${device.display}\n`,
+		);
+	} else {
+		session = { browser: await launch(), baseUrl: localUrl, android: null };
+	}
 	const loadStart = os.loadavg();
 	reportSkipped();
 
 	try {
-		const commandLine = await scrapeChromePage(session.browser, 'chrome://version', '#command_line');
-		const gpuStatus = await scrapeChromePage(session.browser, 'chrome://gpu', 'body');
+		const commandLine = await scrapeChromePage(session, 'chrome://version', '#command_line');
+		const gpuStatus = await scrapeChromePage(session, 'chrome://gpu', 'body');
 		const probe = await newPage(session);
 		const page = await probe.page.evaluate(() => window.bench?.environment() ?? null);
-		await closeContext(session, probe.context);
+		await closePage(session, probe);
 		if (page === null) {
 			throw new Error('Harness page did not expose its environment');
 		}
@@ -704,14 +805,30 @@ async function main(): Promise<void> {
 		const completed: CompletedJob[] = [];
 		const runStart = performance.now();
 		for (const [index, planned] of plan.entries()) {
-			const result = await runOne(session, planned);
+			let result = await runOne(session, planned);
+			if (
+				session.android !== null &&
+				result.outcome.status === 'failed' &&
+				/has been closed|disconnected/i.test(result.outcome.message)
+			) {
+				// The DevTools connection to the device dropped (another adb client restarted the adb
+				// server): the run says nothing about the chart, so it runs again once, reconnected.
+				process.stdout.write(`  ${planned.id}: connection to the device lost; running it again\n`);
+				result = await runOne(session, planned);
+			}
 			completed.push(result);
 			const elapsed = (performance.now() - runStart) / 1000;
 			const eta = (elapsed / (index + 1)) * (plan.length - index - 1);
 			const one = aggregate([result])[0];
 			const summary = one === undefined ? '' : headline(one);
 			const host = result.outcome.host;
-			const idle = host === undefined ? '' : `cpu idle ${Math.round(host.cpuIdle * 100)}%, `;
+			const thermal = host?.device?.after;
+			const idle =
+				host === undefined
+					? ''
+					: thermal !== undefined
+						? `battery ${thermal.battery.temperatureC ?? '–'} °C, thermal status ${thermal.thermal.status ?? '–'}, `
+						: `cpu idle ${Math.round(host.cpuIdle * 100)}%, `;
 			process.stdout.write(
 				`[${index + 1}/${plan.length}] ${planned.id} ${result.outcome.status} ` +
 					`${format(result.outcome.durationMs / 1000)}  ${summary}  (${idle}eta ${format(eta)})\n`,
@@ -730,15 +847,17 @@ async function main(): Promise<void> {
 				},
 				machine: { ...machineEnvironment(), loadAverageStart: loadStart, loadAverageEnd: os.loadavg() },
 				browser: {
-					engine: 'chromium',
+					engine,
 					version: session.browser.version(),
-					channel: channel ?? 'playwright-bundled',
+					channel: session.android !== null ? 'android' : (channel ?? 'playwright-bundled'),
 					headless,
 					commandLine,
 					gpuStatus,
 				},
-				viewport,
-				deviceScaleFactor: dpr,
+				// On a device, the page's own viewport and ratio, as it reported them.
+				viewport: session.android !== null ? page.viewport : viewport,
+				deviceScaleFactor: session.android !== null ? page.devicePixelRatio : dpr,
+				...(session.android !== null ? { device: session.android.device } : {}),
 				chart,
 				page,
 				git: {
@@ -772,7 +891,11 @@ async function main(): Promise<void> {
 		}
 		process.stdout.write(`\nWrote ${relative(process.cwd(), out)}\n`);
 	} finally {
-		await session.browser.close().catch(() => undefined);
+		if (session.android !== null) {
+			await session.android.close();
+		} else {
+			await session.browser.close().catch(() => undefined);
+		}
 		await server.close();
 		caffeinate?.kill();
 	}
