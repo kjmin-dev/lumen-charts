@@ -89,6 +89,11 @@ Browser
                        device pixel ratio, so --viewport, --dpr, --headed and --channel do not
                        apply; --chart still sets the chart's CSS size. The screen is kept on while
                        USB powers the device, and each run records the battery and thermal state
+  --firefox-pref <list>
+                       Firefox preferences for the run, name=value pairs separated by commas (true,
+                       false and numbers as such), recorded in the results file. Headless Firefox
+                       rasterizes Canvas 2D in software by default; gfx.canvas.accelerated=true,
+                       gfx.canvas.accelerated.force-enabled=true has it draw through the GPU
   --cdp-port <n>       local port for the device's DevTools socket (default: 9222)
   --headed             open a browser window (stage 0 and 1 were measured headed). By default
                        runs are headless, in Chromium's new headless mode, which keeps GPU
@@ -178,6 +183,7 @@ const { values: args } = parseArgs({
 		browser: { type: 'string', default: 'chromium' },
 		android: { type: 'string' },
 		'cdp-port': { type: 'string', default: '9222' },
+		'firefox-pref': { type: 'string' },
 		viewport: { type: 'string' },
 		dpr: { type: 'string' },
 		chart: { type: 'string', default: '1200x600' },
@@ -214,6 +220,26 @@ if (androidSerial !== null) {
 }
 /** Whether the browser speaks the DevTools protocol: Chromium on the desktop and Chrome on Android. */
 const speaksCdp = engine === 'chromium';
+/** Preferences of a Firefox run (`--firefox-pref`). */
+const firefoxPrefs: Record<string, string | number | boolean> = {};
+for (const pair of list(args['firefox-pref'])) {
+	const at = pair.indexOf('=');
+	if (at <= 0) {
+		throw new Error(`--firefox-pref expects name=value, got "${pair}"`);
+	}
+	const value = pair.slice(at + 1);
+	firefoxPrefs[pair.slice(0, at)] =
+		value === 'true'
+			? true
+			: value === 'false'
+				? false
+				: value !== '' && Number.isFinite(Number(value))
+					? Number(value)
+					: value;
+}
+if (Object.keys(firefoxPrefs).length > 0 && engine !== 'firefox') {
+	throw new Error('--firefox-pref applies to --browser firefox only');
+}
 /** Factor the page's CPU is slowed down by (`--cpu-throttle`), or null for none. */
 const cpuThrottle = args['cpu-throttle'] === undefined ? null : Number(args['cpu-throttle']);
 if (cpuThrottle !== null) {
@@ -408,7 +434,10 @@ function launch(session?: Session): Promise<Browser> {
 	if (engine === 'firefox') {
 		// Playwright's ratio override does not survive the process switch into a cross-origin
 		// isolated page in Firefox 157, which then draws at 1; the preference sets it for every page.
-		return firefox.launch({ headless, firefoxUserPrefs: { 'layout.css.devPixelsPerPx': String(dpr) } });
+		return firefox.launch({
+			headless,
+			firefoxUserPrefs: { 'layout.css.devPixelsPerPx': String(dpr), ...firefoxPrefs },
+		});
 	}
 	return chromium.launch({ headless, ...(channel !== undefined ? { channel } : {}) });
 }
@@ -880,6 +909,7 @@ async function main(): Promise<void> {
 					headless,
 					commandLine,
 					gpuStatus,
+					...(engine === 'firefox' ? { firefoxPrefs } : {}),
 				},
 				// The factor the page's CPU was slowed down by (`--cpu-throttle`); 1 for none.
 				cpuThrottlingRate: cpuThrottle ?? 1,
