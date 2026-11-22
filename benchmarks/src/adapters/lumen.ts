@@ -18,6 +18,7 @@ import type { DrawingsAdapter } from '../scenarios/drawings.ts';
 import type { AppliedAdapter, IndicatorAdapter } from '../scenarios/indicators.ts';
 import type { LineStyleAdapter, LineTickStyle } from '../scenarios/line-ticks.ts';
 import type { HeatmapInput, MarksAdapter, ScatterInput, ValueRange } from '../scenarios/marks.ts';
+import type { ScatterStyleAdapter, ScatterStyleOptions } from '../scenarios/scatter-style.ts';
 import type { IdleAdapter, WorkerLimitFactory } from '../scenarios/multi.ts';
 import type { DatafeedAdapter, HistoryOperationsAdapter, SeveralDatafeedsAdapter } from '../scenarios/refetch.ts';
 import type { StateAdapter } from '../scenarios/state.ts';
@@ -62,7 +63,8 @@ class LumenAdapter
 		StateAdapter,
 		IdleAdapter,
 		LineStyleAdapter,
-		MarksAdapter
+		MarksAdapter,
+		ScatterStyleAdapter
 {
 	private readonly _chart: ChartApi;
 	private readonly _markRenderer =
@@ -78,6 +80,7 @@ class LumenAdapter
 	private _lineStyle: LineTickStyle = 'solid';
 	private _lineCopies = 0;
 	private _scatter: lumen.ScatterSeriesApi | null = null;
+	private _scatterStyle: ScatterStyleOptions | null = null;
 	private _heatmap: lumen.HeatmapSeriesApi | null = null;
 
 	public constructor(container: HTMLElement, size: ChartSize | 'auto', worker: boolean) {
@@ -112,9 +115,15 @@ class LumenAdapter
 		return this._chart.whenApplied();
 	}
 
+	public styleScatter(style: ScatterStyleOptions): void {
+		this._scatterStyle = style;
+	}
+
 	public setScatter(points: ScatterInput, pointSize: number): void {
-		this._scatter ??= this._chart.addSeries('scatter', { pointSize });
-		this._scatter.setData(points);
+		const style = this._scatterStyle;
+		this._scatter ??= this._chart.addSeries('scatter', { pointSize, colorBy: style?.colorBy ?? 'value' });
+		const size = style?.size ?? null;
+		this._scatter.setData(size === null ? points : { ...points, size: points.value.map(size) });
 		if (this._markRenderer)
 			this._chart
 				.drawings()
@@ -122,7 +131,8 @@ class LumenAdapter
 	}
 
 	public appendScatter(time: number, price: number, value: number): void {
-		this._scatter?.update({ time, price, value });
+		const size = this._scatterStyle?.size ?? null;
+		this._scatter?.update(size === null ? { time, price, value } : { time, price, value, size: size(value) });
 	}
 
 	public setHeatmap(data: HeatmapInput, range?: ValueRange): void {

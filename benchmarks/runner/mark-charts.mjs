@@ -10,11 +10,17 @@ const { values } = parseArgs({
 		browser: { type: 'string', default: 'chromium' },
 		mode: { type: 'string', default: 'webgl2,native,unavailable,rejected,pending,canvas-only' },
 		dpr: { type: 'string', default: '1,1.5,2' },
+		// A port of its own on 127.0.0.1, so another checkout's preview server cannot answer.
+		port: { type: 'string' },
 	},
 });
 const configFile = new URL('../vite.config.ts', import.meta.url).pathname;
 await build({ configFile, logLevel: 'warn' });
-const server = await preview({ configFile, logLevel: 'warn' });
+const server = await preview({
+	configFile,
+	logLevel: 'warn',
+	...(values.port ? { preview: { host: '127.0.0.1', port: Number(values.port), strictPort: true } } : {}),
+});
 let browser;
 try {
 	const engine = { chromium, firefox, webkit }[values.browser];

@@ -104,6 +104,9 @@ Profiling
 
 Output
   --timeout <s>        per-run timeout in seconds (default: 900)
+  --port <n>           serve the page on 127.0.0.1 at this port, and fail if it is taken, rather
+                       than on the first free port from 4173: another checkout's server there
+                       cannot answer for this one
   --out <file>         results file (default: benchmarks/results/<time>.json)
 `;
 
@@ -158,6 +161,7 @@ const { values: args } = parseArgs({
 		dpr: { type: 'string', default: '2' },
 		chart: { type: 'string', default: '1200x600' },
 		timeout: { type: 'string', default: '900' },
+		port: { type: 'string' },
 		out: { type: 'string' },
 		profile: { type: 'string' },
 		allocations: { type: 'string' },
@@ -670,7 +674,13 @@ async function main(): Promise<void> {
 		build: { outDir: buildDir, emptyOutDir: true },
 	};
 	await build(viteOptions);
-	const server = await preview(viteOptions);
+	const port = args.port === undefined ? null : Number(args.port);
+	if (port !== null && !(Number.isInteger(port) && port > 0 && port < 65536)) {
+		throw new Error(`--port expects a port number, got "${args.port}"`);
+	}
+	const server = await preview(
+		port === null ? viteOptions : { ...viteOptions, preview: { host: '127.0.0.1', port, strictPort: true } },
+	);
 	const baseUrl = server.resolvedUrls?.local[0];
 	if (baseUrl === undefined) {
 		throw new Error('Preview server has no local URL');

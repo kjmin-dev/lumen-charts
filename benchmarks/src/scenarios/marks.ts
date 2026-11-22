@@ -209,7 +209,7 @@ function marksAdapter(adapter: object): MarksAdapter {
  * bars in view, so a pan goes one screen into history and half a screen beyond the first bar, and a
  * zoom from half the bars in view to all of them. Frame JavaScript time is the step and the draw.
  */
-async function runMarks(job: ScatterJob | HeatmapJob, { factory, container }: RunContext): Promise<MarksRun> {
+export async function runMarks(job: ScatterJob | HeatmapJob, { factory, container }: RunContext): Promise<MarksRun> {
 	const candles = generateSeries('candles', { seed: job.seed, count: job.dataset.size }) as CandleColumns;
 	const adapter = await createSettled(factory, container, job.chart);
 	const marks = marksAdapter(adapter);
