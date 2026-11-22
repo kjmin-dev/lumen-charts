@@ -74,11 +74,61 @@ export function makeStamp(size: number, circle: boolean): PointStamp {
 }
 
 /**
+ * The widest point in device pixels. A cap keeps a size from the data (Infinity, or a typo of a
+ * few orders of magnitude) from asking for a stamp, a padding of the WebGL2 column ranges and a
+ * hit-test reach of that many pixels. Up to this width the disc of a WebGL2 circle, computed in
+ * 32-bit floats, rounds as the disc of `makeStamp` does in 64-bit ones (see `gl/shaders.ts`).
+ */
+export const MAX_POINT_PIXELS = 256;
+
+/**
+ * The device pixels across of a point `css` CSS pixels wide: rounded, at least 1 and at most
+ * `MAX_POINT_PIXELS`. A size that is not a number is the caller's to resolve (the series' size).
+ */
+export function pointPixels(css: number, ratio: number): number {
+	const size = Math.round(css * ratio);
+	return size >= 1 ? (size <= MAX_POINT_PIXELS ? size : MAX_POINT_PIXELS) : 1;
+}
+
+/** No sizes: every point is the series' stamp. */
+const NO_SIZES = new Float32Array(0);
+
+/**
+ * The stamps of points with sizes of their own, one per size in device pixels, made the first
+ * time a size is drawn and kept: a frame of sized points allocates nothing once its sizes were seen.
+ */
+export class StampCache {
+	private _stamps: (PointStamp | undefined)[] = [];
+	private _circle = false;
+
+	/** Stamps are discs (`makeStamp`); a change drops the stamps made the other way. */
+	public setCircle(circle: boolean): void {
+		if (circle !== this._circle) {
+			this._circle = circle;
+			this._stamps = [];
+		}
+	}
+
+	public get(size: number): PointStamp {
+		let stamp = this._stamps[size];
+		if (stamp === undefined) {
+			stamp = makeStamp(size, this._circle);
+			this._stamps[size] = stamp;
+		}
+		return stamp;
+	}
+}
+
+/**
  * Draws points `[from, to)` of a scatter window, which are in time order. A point is stamped with
  * its center on the device pixel its time and price round to; a later point overwrites an earlier
  * one where they overlap. Its color is the palette's for its value, or `color` without one. `shift`
  * is added to every x (half a bar to the left for points placed from the start of their bar).
  * `box` grows by the pixels written.
+ *
+ * `stamp` is the series' point. With `sizes` (CSS pixels per row, NaN for the series' size) and
+ * `stamps`, a row is stamped at its own size, `pointPixels` of it at `ratio`. Without them the loop
+ * is the one it always was: the branch that looks a row's size up is never taken.
  */
 export function drawScatter(
 	pixels: Uint32Array,
@@ -97,26 +147,31 @@ export function drawScatter(
 	color: number,
 	stamp: PointStamp,
 	box: PixelBox,
+	sizes: Float32Array = NO_SIZES,
+	ratio = 1,
+	stamps: StampCache | null = null,
 ): void {
 	if (to <= from || map.count === 0) {
 		return;
 	}
 	const { offset, scale, log } = projection;
-	const size = stamp.size;
-	const spans = stamp.spans;
+	const sized = sizes.length > 0 && stamps !== null;
+	let current = stamp;
+	let size = stamp.size;
+	let spans = stamp.spans;
 	// The sizes most points have are written without a loop.
-	const shape = !stamp.square || size > 3 ? 0 : size;
-	const half = size >> 1;
-	const maxX = width - size;
-	const maxY = height - size;
+	let shape = !stamp.square || size > 3 ? 0 : size;
+	let half = size >> 1;
+	let maxX = width - size;
+	let maxY = height - size;
 	const valueMin = mapping.min;
 	const factor = mapping.factor;
 	const valueLog = mapping.log;
 	const top = PALETTE_SIZE - 1;
 	let left = width;
-	let right = -size - 1;
+	let right = -0x40000000;
 	let minY = height;
-	let maxRow = -size - 1;
+	let bottom = -0x40000000;
 	map.segment(time[from]!);
 	let t0 = map.t0;
 	let t1 = map.t1;
@@ -130,6 +185,19 @@ export function drawScatter(
 			t1 = map.t1;
 			x0 = map.x0 + shift;
 			pace = map.pace;
+		}
+		if (sized) {
+			const css = sizes[i]!;
+			const own = css === css ? stamps.get(pointPixels(css, ratio)) : stamp;
+			if (own !== current) {
+				current = own;
+				size = own.size;
+				spans = own.spans;
+				shape = !own.square || size > 3 ? 0 : size;
+				half = size >> 1;
+				maxX = width - size;
+				maxY = height - size;
+			}
 		}
 		const p = price[i]!;
 		const px = Math.round(x0 + (t - t0) * pace) - half;
@@ -188,23 +256,209 @@ export function drawScatter(
 				}
 			}
 		}
-		// Points are in time order, so the first one drawn is the leftmost and the last the rightmost.
-		if (left > px) {
+		// With one size for all, the first point drawn is the leftmost and the last the rightmost;
+		// with sizes of their own a wide point before a narrow one may reach further.
+		if (px < left) {
 			left = px;
 		}
-		right = px;
+		if (px + size > right) {
+			right = px + size;
+		}
 		if (py < minY) {
 			minY = py;
 		}
-		if (py > maxRow) {
-			maxRow = py;
+		if (py + size > bottom) {
+			bottom = py + size;
 		}
 	}
-	if (right >= left) {
+	if (right > left) {
 		box.left = Math.min(box.left, Math.max(0, left));
-		box.right = Math.max(box.right, Math.min(width, right + size));
+		box.right = Math.max(box.right, Math.min(width, right));
 		box.top = Math.min(box.top, Math.max(0, minY));
-		box.bottom = Math.max(box.bottom, Math.min(height, maxRow + size));
+		box.bottom = Math.max(box.bottom, Math.min(height, bottom));
+	}
+}
+
+/**
+ * Adds points `[from, to)` of a scatter window into `density`, a buffer laid out as the pixels are:
+ * every device pixel a point's stamp covers (the pixels `drawScatter` would write) gains the point's
+ * count, 1 at level 0 and the number of points a cell of a coarse level holds (`counts`, empty for
+ * none). Stamps and sizes are those of `drawScatter`. `box` grows by the pixels written. Returns the
+ * largest density written.
+ *
+ * Densities are 32-bit floats, added in row order and rounded after every addition, as a GPU's
+ * float blending adds them in the order of its instances: counts are whole numbers, so every sum
+ * below 2^24 is exact, and equal to the WebGL2 renderer's.
+ */
+export function accumulateScatter(
+	density: Float32Array,
+	width: number,
+	height: number,
+	time: Float64Array,
+	price: Float64Array,
+	counts: Float32Array,
+	from: number,
+	to: number,
+	map: TimeMap,
+	shift: number,
+	projection: PriceProjection,
+	stamp: PointStamp,
+	box: PixelBox,
+	sizes: Float32Array = NO_SIZES,
+	ratio = 1,
+	stamps: StampCache | null = null,
+): number {
+	if (to <= from || map.count === 0) {
+		return 0;
+	}
+	const { offset, scale, log } = projection;
+	const sized = sizes.length > 0 && stamps !== null;
+	const counted = counts.length > 0;
+	let current = stamp;
+	let size = stamp.size;
+	let spans = stamp.spans;
+	let half = size >> 1;
+	let maxX = width - size;
+	let maxY = height - size;
+	let peak = 0;
+	let left = width;
+	let right = -0x40000000;
+	let minY = height;
+	let bottom = -0x40000000;
+	map.segment(time[from]!);
+	let t0 = map.t0;
+	let t1 = map.t1;
+	let x0 = map.x0 + shift;
+	let pace = map.pace;
+	for (let i = from; i < to; i++) {
+		const t = time[i]!;
+		while (t >= t1) {
+			map.next();
+			t0 = map.t0;
+			t1 = map.t1;
+			x0 = map.x0 + shift;
+			pace = map.pace;
+		}
+		if (sized) {
+			const css = sizes[i]!;
+			const own = css === css ? stamps.get(pointPixels(css, ratio)) : stamp;
+			if (own !== current) {
+				current = own;
+				size = own.size;
+				spans = own.spans;
+				half = size >> 1;
+				maxX = width - size;
+				maxY = height - size;
+			}
+		}
+		const p = price[i]!;
+		const px = Math.round(x0 + (t - t0) * pace) - half;
+		const py = Math.round(offset - (log ? Math.log10(p) : p) * scale) - half;
+		if (!(px > -size && px < width && py > -size && py < height)) {
+			continue;
+		}
+		const c = counted ? counts[i]! : 1;
+		if (px >= 0 && px <= maxX && py >= 0 && py <= maxY) {
+			let base = px * height + py;
+			for (let column = 0; column < size; column++) {
+				const end = base + spans[column * 2 + 1]!;
+				for (let at = base + spans[column * 2]!; at < end; at++) {
+					const sum = Math.fround(density[at]! + c);
+					density[at] = sum;
+					if (sum > peak) {
+						peak = sum;
+					}
+				}
+				base += height;
+			}
+		} else {
+			for (let column = 0; column < size; column++) {
+				const x = px + column;
+				if (x < 0 || x >= width) {
+					continue;
+				}
+				const end = x * height + Math.min(height, py + spans[column * 2 + 1]!);
+				for (let at = x * height + Math.max(0, py + spans[column * 2]!); at < end; at++) {
+					const sum = Math.fround(density[at]! + c);
+					density[at] = sum;
+					if (sum > peak) {
+						peak = sum;
+					}
+				}
+			}
+		}
+		if (px < left) {
+			left = px;
+		}
+		if (px + size > right) {
+			right = px + size;
+		}
+		if (py < minY) {
+			minY = py;
+		}
+		if (py + size > bottom) {
+			bottom = py + size;
+		}
+	}
+	if (right > left) {
+		box.left = Math.min(box.left, Math.max(0, left));
+		box.right = Math.max(box.right, Math.min(width, right));
+		box.top = Math.min(box.top, Math.max(0, minY));
+		box.bottom = Math.max(box.bottom, Math.min(height, bottom));
+	}
+	return peak;
+}
+
+/** What `colorDensity` maps densities to palette entries with: see `DensityScale`. */
+export interface DensitySlots {
+	/** The entry of every whole density below `lutSize`. */
+	readonly lut: Uint8Array;
+	readonly lutSize: number;
+	/** The entry of a density above 0. */
+	slot(density: number): number;
+}
+
+/**
+ * Writes the color of every pixel of `box` with a density above 0: the palette's entry for its
+ * density. Pixels without one keep what they have, which is nothing: a pixel is only ever written
+ * where a point covers it, and its density and pixel are made 0 together.
+ */
+export function colorDensity(
+	density: Float32Array,
+	pixels: Uint32Array,
+	height: number,
+	box: PixelBox,
+	slots: DensitySlots,
+	palette: Uint32Array,
+): void {
+	const lut = slots.lut;
+	const lutSize = slots.lutSize;
+	const top = Math.max(0, box.top);
+	const bottom = Math.min(height, box.bottom);
+	for (let x = Math.max(0, box.left); x < box.right; x++) {
+		const end = x * height + bottom;
+		for (let i = x * height + top; i < end; i++) {
+			const d = density[i]!;
+			if (d === 0) {
+				continue;
+			}
+			pixels[i] = palette[d < lutSize ? lut[d | 0]! : slots.slot(d)]!;
+		}
+	}
+}
+
+/** Makes the densities of `box` 0 again. */
+export function clearDensity(density: Float32Array, height: number, box: PixelBox): void {
+	if (!(box.right > box.left && box.bottom > box.top)) {
+		return;
+	}
+	const left = Math.max(0, box.left);
+	if (box.top <= 0 && box.bottom >= height) {
+		density.fill(0, left * height, box.right * height);
+		return;
+	}
+	for (let x = left; x < box.right; x++) {
+		density.fill(0, x * height + Math.max(0, box.top), x * height + Math.min(height, box.bottom));
 	}
 }
 

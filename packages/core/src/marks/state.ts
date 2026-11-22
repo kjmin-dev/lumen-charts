@@ -37,6 +37,7 @@ const CHOICES: Readonly<Record<string, readonly string[]>> = {
 	valueScale: ['linear', 'log'],
 	shape: ['square', 'circle'],
 	barAlign: ['center', 'start'],
+	colorBy: ['value', 'density'],
 };
 
 /** Every option of a series: its defaults, then what `value` sets of them, each of the right kind. */

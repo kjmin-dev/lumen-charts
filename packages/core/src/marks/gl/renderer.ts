@@ -1,11 +1,12 @@
 import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
 import type { HeatSlots, MarkFrame, MarkRendererReason } from '../backend';
 import { heatStyle, scatterBounds, scatterRecords } from '../gpu/geometry';
-import { heatEdge, slotColors } from '../render';
+import { heatEdge, pointPixels, slotColors } from '../render';
 import { HeatRanges } from '../heat-ranges';
 import type { ScatterOptions } from '../options';
 import { parseColor } from '../palette';
-import { GlBudget, GlContext, type GlProgram } from './context';
+import { GlBudget, GlContext, type GlProgram, GlUnsupported } from './context';
+import { GlDensity, packScatterRows } from './density';
 import { WordTexture } from './texture';
 
 class GlLayer {
@@ -14,6 +15,8 @@ class GlLayer {
 	private records: WordTexture;
 	private ranges: WordTexture;
 	private style: WordTexture;
+	/** A scatter's densities (`colorBy: 'density'`), made with the first frame that has them. */
+	private density: GlDensity | null = null;
 	private heat = new HeatRanges();
 	private bounds = new Uint32Array(0);
 	private packed = new Uint32Array(0);
@@ -43,7 +46,7 @@ class GlLayer {
 		this.style = new WordTexture(pool, 2);
 	}
 	get bytes() {
-		return 4 * (this.pixels + this.records.words + this.ranges.words + this.style.words);
+		return 4 * (this.pixels + this.records.words + this.ranges.words + this.style.words) + (this.density?.bytes ?? 0);
 	}
 
 	private resize(width: number, height: number): boolean {
@@ -62,42 +65,68 @@ class GlLayer {
 	}
 
 	private scatter(f: MarkFrame, p: GlProgram, full: boolean, styleChanged: boolean) {
-		const { window: w, width, height, projection } = f;
+		const { window: w, width, height, projection, ratio } = f;
 		const options = f.options as ScatterOptions;
-		const key = [projection.offset, projection.scale, projection.log].join(',');
-		const fresh = this.records.bind(w.capacity * 2) || w.version !== this.version;
-		const all = fresh || styleChanged || key !== this.projection || options.color !== this.fallback;
+		const density = options.colorBy === 'density';
+		// A size per row takes a third word; densities put the count where the color was.
+		const words = w.sizes.length > 0 ? 3 : 2;
+		const key = [projection.offset, projection.scale, projection.log, words, density, words > 2 ? ratio : 0].join(',');
+		const fresh = this.records.bind(w.capacity * words) || w.version !== this.version;
+		const all = fresh || key !== this.projection || (!density && (styleChanged || options.color !== this.fallback));
 		const from = all ? 0 : w.dirtyFrom,
 			to = all ? w.count : w.dirtyTo;
 		if (to > from) {
-			if (this.packed.length < w.capacity * 2) this.packed = new Uint32Array(w.capacity * 2);
-			scatterRecords(f, this.packed, from, to, parseColor(options.color) ?? 0);
-			this.records.write(this.packed, from * 2, to * 2);
+			if (this.packed.length < w.capacity * words) this.packed = new Uint32Array(w.capacity * words);
+			const fallback = parseColor(options.color) ?? 0;
+			if (words === 2 && !density) scatterRecords(f, this.packed, from, to, fallback);
+			else packScatterRows(f, this.packed, from, to, fallback, words, density);
+			this.records.write(this.packed, from * words, to * words);
 		}
 		this.projection = key;
 		this.fallback = options.color;
 
-		const size = Math.max(1, Math.round(options.pointSize * f.ratio));
+		// The column ranges are padded by the widest point, so none that reaches a column is left out.
+		const base = pointPixels(options.pointSize, ratio);
+		const size = Math.max(base, f.stampMax ?? base);
 		const n = width + size;
 		this.ranges.bind(n);
 		if (this.bounds.length < n) this.bounds = new Uint32Array(n);
 		scatterBounds(f, size, this.bounds);
 		this.ranges.write(this.bounds, 0, n);
+		// Densities add up: a patch can only add the rows appended since they were summed.
+		const patch = !full && !all && w.level === 0 && to > from && (!density || from >= this.count);
 		let left = 0,
 			right = width;
-		if (!full && !all && w.level === 0 && to > from) {
+		if (patch) {
 			const shift = options.barAlign === 'start' ? -f.map.spacing / 2 : 0;
 			left = Math.min(width, Math.max(0, Math.floor(f.map.x(w.time[from]!) + shift) - size));
 			right = Math.max(left, Math.min(width, Math.ceil(f.map.x(w.time[to - 1]!) + shift) + size + 1));
 		}
 		const gl = this.pool.gl;
-		const first = this.bounds[left]!,
-			end = this.bounds[right + size - 1]!;
 		this.records.layout(p.recordsStride);
 		this.ranges.layout(p.rangesStride);
-		gl.uniform1i(p.first, first);
 		gl.uniform1i(p.stamp, size);
+		gl.uniform1i(p.base, base);
+		gl.uniform1i(p.recordWords, words);
 		gl.uniform1i(p.circle, Number(options.shape === 'circle'));
+		if (density) {
+			// Every row of the pane, or those appended that are in it.
+			let first = this.bounds[0]!,
+				end = this.bounds[n - 1]!;
+			if (patch) {
+				first = Math.max(first, from);
+				end = Math.min(end, to);
+			}
+			this.density ??= new GlDensity(this.pool);
+			const strip = this.density.draw(f, p, first, end, patch, left, right);
+			this.copy(strip.left, strip.right, height);
+			return;
+		}
+		this.density?.release();
+		this.density = null;
+		const first = this.bounds[left]!,
+			end = this.bounds[right + size - 1]!;
+		gl.uniform1i(p.first, first);
 		gl.scissor(left, 0, right - left, height);
 		gl.clear(gl.COLOR_BUFFER_BIT);
 		if (right > left && end > first) gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, end - first);
@@ -212,7 +241,14 @@ class GlLayer {
 	paint(f: MarkFrame, target: CanvasRenderingContext2D, full: boolean) {
 		const { width, height, window: w } = f;
 		if (full || this.version !== w.version || this.revision !== w.revision) {
-			const kind = f.type === 'scatter' ? 'scatter' : f.slots ? 'heatmap-slots' : 'heatmap';
+			const kind =
+				f.type === 'scatter'
+					? (f.options as ScatterOptions).colorBy === 'density'
+						? 'scatter-density'
+						: 'scatter'
+					: f.slots
+						? 'heatmap-slots'
+						: 'heatmap';
 			const program = this.pool.begin(this.listener, kind, width, height);
 			full = this.resize(width, height) || full;
 			const mapping = [f.mapping.min, f.mapping.factor, f.mapping.log].join(',');
@@ -244,6 +280,8 @@ class GlLayer {
 		this.records.release();
 		this.ranges.release();
 		this.style.release();
+		this.density?.release();
+		this.density = null;
 		this.cache.canvas.width = this.cache.canvas.height = 1;
 		trackCanvas(this.pixels, 0);
 		this.pixels = 0;
@@ -283,6 +321,11 @@ export class GlMarkClient {
 			this.pool ??= GlContext.acquire(this.doc, this.change);
 			if (!this.pool) return (this.failure = 'unavailable');
 			if (this.pool.gl.isContextLost()) return 'context-lost';
+			if (f.type === 'scatter' && (f.options as ScatterOptions).colorBy === 'density' && !this.pool.floatBlend()) {
+				// Densities need float blending: Canvas 2D sums them instead.
+				this.resetLayer();
+				return 'unsupported-style';
+			}
 			this.layer ??= new GlLayer(this.pool, this.change);
 			this.layer.paint(f, target, full);
 			return null;
@@ -290,6 +333,7 @@ export class GlMarkClient {
 			this.resetLayer();
 			if (this.pool?.gl.isContextLost()) return 'context-lost';
 			if (error instanceof GlBudget) return 'budget';
+			if (error instanceof GlUnsupported) return 'unsupported-style';
 			this.release();
 			return (this.failure = 'render-failed');
 		}

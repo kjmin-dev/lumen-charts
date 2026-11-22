@@ -46,7 +46,10 @@ export interface HeatmapOptions extends MarkSeriesOptionsCommon {}
 export interface ScatterOptions extends MarkSeriesOptionsCommon {
 	/** Color of points without a value, written like a palette color. */
 	color: string;
-	/** Width and height of a point in CSS pixels; a point is at least one device pixel. */
+	/**
+	 * Width and height of a point in CSS pixels, for the points without a `size` of their own. A point
+	 * is drawn whole device pixels wide, at least one and at most 256.
+	 */
 	pointSize: number;
 	/** A `circle` needs a few pixels to look like one: below 3 device pixels points are squares. */
 	shape: 'square' | 'circle';
@@ -57,6 +60,14 @@ export interface ScatterOptions extends MarkSeriesOptionsCommon {
 	 * bar's period spread over the width of that bar, as trades inside their candle.
 	 */
 	barAlign: 'center' | 'start';
+	/**
+	 * What a point's color shows. `value`: the palette's color for the point's value (`color` without
+	 * one). `density`: the number of points that cover a device pixel, a mark of a coarse level of
+	 * detail counting the points it holds, so the picture stays the same as the level changes. The
+	 * palette then spans from 1 to the largest number in the frame, unless `valueMin` and `valueMax`
+	 * fix it; `valueScale: 'log'` applies, and pixels without a point stay transparent.
+	 */
+	colorBy: 'value' | 'density';
 }
 
 const COMMON: MarkSeriesOptionsCommon = {
@@ -84,6 +95,7 @@ export const DEFAULT_SCATTER_OPTIONS: ScatterOptions = {
 	pointSize: 3,
 	shape: 'square',
 	barAlign: 'center',
+	colorBy: 'value',
 };
 
 /** The two kinds of series drawn through a pixel buffer. */
