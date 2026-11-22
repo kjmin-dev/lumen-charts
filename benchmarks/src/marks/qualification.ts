@@ -108,9 +108,31 @@ type Fixture = ReturnType<typeof fixture>;
 function heatPath(s: Fixture): string | null {
 	return (s.heat as unknown as { glHeatPath(): string | null }).glHeatPath();
 }
-/** Internal to the library: the WebGPU kernel of the scatter's last dispatch. */
-function kernel(s: Fixture): string | null {
-	return (s.scatter as unknown as { gpuKernel(): string | null }).gpuKernel();
+/** Internal to the library: the WebGPU kernel of a series' last dispatch, the scatter's by default. */
+function kernel(s: Fixture, series: object = s.scatter): string | null {
+	return (series as { gpuKernel(): string | null }).gpuKernel();
+}
+
+/** Bytes written to each labelled WebGPU buffer during one settled public operation. */
+async function gpuUploads(active: boolean, operation: () => Promise<void>) {
+	const bytes: Record<string, number> = {};
+	if (!active) {
+		await operation();
+		return bytes;
+	}
+	const original = GPUQueue.prototype.writeBuffer;
+	GPUQueue.prototype.writeBuffer = function (buffer, offset, data, dataOffset, size) {
+		// The renderer passes ArrayBuffers, whose offsets and sizes are in bytes.
+		const length = size ?? (data as ArrayBuffer).byteLength - (dataOffset ?? 0);
+		bytes[buffer.label] = (bytes[buffer.label] ?? 0) + length;
+		return original.call(this, buffer, offset, data as ArrayBuffer, dataOffset, size);
+	};
+	try {
+		await operation();
+	} finally {
+		GPUQueue.prototype.writeBuffer = original;
+	}
+	return bytes;
 }
 function read(source: HTMLCanvasElement) {
 	const copy = document.createElement('canvas');
@@ -197,19 +219,29 @@ async function check(
 		// A fixed value range draws from palette slots; one that follows the values from the values.
 		const heatGl = mode === 'webgl2' ? window.testMarkContexts.find(context => !context.isContextLost()) : undefined;
 		if (heatGl && heatPath(b) !== 'slots') throw Error('Fixed value range did not draw from slots: ' + heatPath(b));
+		const gpu = mode === 'hardware';
+		if (gpu && kernel(b, b.heat) !== 'heatmap-slots')
+			throw Error('Fixed value range did not draw from WebGPU slots: ' + kernel(b, b.heat));
 		await compare('automatic value range', s => s.heat.applyOptions({ valueMin: null, valueMax: null }));
 		if (heatGl && heatPath(b) !== 'values') throw Error('Automatic value range did not draw from values');
+		if (gpu && kernel(b, b.heat) !== 'heatmap') throw Error('Automatic value range did not draw WebGPU values');
 		await compare('changed last column, automatic value range', s =>
 			s.heat.update({ time: barTime(95) + 24000, values: s.column.map(value => value * 1.5) }),
 		);
 		await compare('fixed value range again', s => s.heat.applyOptions({ valueMin: 1, valueMax: 73 }));
 		if (heatGl && heatPath(b) !== 'slots') throw Error('Fixed value range did not draw from slots again');
-		const paletteBytes = await uploadBytes(heatGl, () =>
-			compare('palette only', s => s.heat.applyOptions({ palette: 'inferno' })),
-		);
+		if (gpu && kernel(b, b.heat) !== 'heatmap-slots') throw Error('Fixed value range did not draw WebGPU slots again');
+		let gpuPalette: Record<string, number> = {};
+		const paletteBytes = await uploadBytes(heatGl, async () => {
+			gpuPalette = await gpuUploads(gpu, () =>
+				compare('palette only', s => s.heat.applyOptions({ palette: 'inferno' })),
+			);
+		});
 		// The pixel ranges are projected again with every change of the options; the slots stay.
 		if (heatGl && (paletteBytes[0] || paletteBytes[2] !== 1024))
 			throw Error('Palette-only change uploaded slots, or more than the colors: ' + paletteBytes);
+		if (gpu && (gpuPalette['lumen-marks-data'] || gpuPalette['lumen-marks-style'] !== 1024))
+			throw Error('Palette-only WebGPU change uploaded slots, or more than the colors: ' + JSON.stringify(gpuPalette));
 		await compare('center and duplicate times', s => {
 			s.scatter.applyOptions({ barAlign: 'start', opacity: 0.66 });
 			s.scatter.append([
@@ -224,14 +256,19 @@ async function check(
 		b.chart.applyOptions({ redraw: 'auto' });
 		await b.chart.whenIdle();
 		const liveGL = mode === 'webgl2' ? window.testMarkContexts.find(gl => !gl.isContextLost()) : undefined;
-		const columnBytes = await uploadBytes(liveGL, () =>
-			compare('partial heatmap composition with foreground bars and drawing', s => {
-				s.heat.update({ time: barTime(95) + 45000, values: s.column.map(value => 100 - value) });
-			}),
-		);
+		let gpuColumn: Record<string, number> = {};
+		const columnBytes = await uploadBytes(liveGL, async () => {
+			gpuColumn = await gpuUploads(gpu, () =>
+				compare('partial heatmap composition with foreground bars and drawing', s => {
+					s.heat.update({ time: barTime(95) + 45000, values: s.column.map(value => 100 - value) });
+				}),
+			);
+		});
 		if (liveGL && (!columnBytes[0] || columnBytes[1])) throw Error('Value-only heatmap upload ' + columnBytes);
 		// Slots of one column of 141 rows: 37 words, 38 where the column starts within a word.
 		if (liveGL && columnBytes[0]! > 4 * 38) throw Error('Slot column upload ' + columnBytes);
+		if (gpu && (!gpuColumn['lumen-marks-data'] || gpuColumn['lumen-marks-data'] > 4 * 38))
+			throw Error('WebGPU slot column upload ' + JSON.stringify(gpuColumn));
 
 		await compare('partial heatmap transparency', s => {
 			s.heat.update({ time: barTime(95) + 45000, values: s.column.map(() => NaN) });

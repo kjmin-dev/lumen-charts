@@ -1,11 +1,11 @@
 import type { GpuBackend, GpuLease, MarkRendererReason } from '../backend';
 import { GpuMarkBackend } from './renderer';
-import { columnShader, heatShader, tileShader, wideColumnShader } from './shaders';
+import { columnShader, heatShader, heatSlotsShader, tileShader, wideColumnShader } from './shaders';
 
 export type MarkTextureFormat = 'bgra8unorm' | 'rgba8unorm';
 export type GpuPath = 'heatmap' | 'scatter-tiles' | 'scatter-columns';
 /** The compute kernels behind the paths: a path can take more than one, by the workload. */
-export type GpuKernel = GpuPath | 'scatter-columns-wide';
+export type GpuKernel = GpuPath | 'heatmap-slots' | 'scatter-columns-wide';
 export interface GpuResources {
 	device: GPUDevice;
 	format: MarkTextureFormat;
@@ -51,8 +51,9 @@ class Pool {
 					layout: 'auto',
 					compute: { module: device.createShaderModule({ code }), entryPoint: 'main' },
 				});
-			const [heat, tiles, columns, wideColumns] = await Promise.all([
+			const [heat, heatSlots, tiles, columns, wideColumns] = await Promise.all([
 				compile(heatShader(format)),
+				compile(heatSlotsShader(format)),
 				compile(tileShader(format)),
 				compile(columnShader(format)),
 				compile(wideColumnShader(format)),
@@ -63,6 +64,7 @@ class Pool {
 				format,
 				pipelines: {
 					heatmap: heat,
+					'heatmap-slots': heatSlots,
 					'scatter-tiles': tiles,
 					'scatter-columns': columns,
 					'scatter-columns-wide': wideColumns,

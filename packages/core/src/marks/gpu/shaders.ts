@@ -43,6 +43,26 @@ fn main(@builtin(global_invocation_id) gid:vec3u) {
 	textureStore(image,vec2u(x,y),color(style[slot]));
 }`;
 
+// As the heatmap kernel, for a fixed range of values: the cells hold their palette slots, four to
+// a word, and a pixel takes the color of the highest slot among its cells.
+export const heatSlotsShader = (format: MarkTextureFormat) =>
+	common(format) +
+	`
+@compute @workgroup_size(8,8)
+fn main(@builtin(global_invocation_id) gid:vec3u) {
+	let x=v.left+gid.x; let y=gid.y;
+	if (x>=v.right || y>=v.height) {return;}
+	let row=(v.width+y)*2u;
+	var slot=0u;
+	for(var c=spans[x*2u];c<spans[x*2u+1u];c++){
+		for(var r=spans[row];r<spans[row+1u];r++){
+			let i=c*v.rows+r;
+			slot=max(slot,(data[i>>2u]>>((i&3u)*8u))&255u);
+		}
+	}
+	textureStore(image,vec2u(x,y),color(style[slot]));
+}`;
+
 // One group owns a vertical strip. Split tall panes into strips fitting the guaranteed
 // workgroup storage limit. Absolute IDs settle overlaps regardless of execution order.
 export const columnShader = (format: MarkTextureFormat) =>
