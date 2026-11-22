@@ -382,6 +382,17 @@ async function check(
 				s.chart.priceScale().applyOptions({ invertScale: true }),
 			);
 			await compare('price scale restored', s => s.chart.priceScale().applyOptions({ invertScale: false }));
+			// With most rows held in view, a draw that starts over projects all of them, and a pan
+			// then has none left to project.
+			const wide: [string, number, number][] = [
+				['dense scatter, most rows in view', 50.2, 90.4],
+				['dense scatter, pan over rows all projected', 49.6, 89.8],
+			];
+			for (const [name, from, to] of wide) {
+				await compare(name, s => s.chart.timeScale().setVisibleLogicalRange({ from, to }));
+				if (mode === 'hardware' && b.scatter.renderer().path !== 'scatter-columns')
+					throw Error(name + ' left the column kernel: ' + b.scatter.renderer().path);
+			}
 			await compare('large squares restored', s => {
 				s.chart.resize(365, 231);
 				s.scatter.applyOptions({ pointSize: 2 });
