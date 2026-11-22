@@ -1,0 +1,203 @@
+{
+	"description": "WebGL2 heatmap frame JS on the Apple M1, headless Chromium 156, lumen-worker, DPR 2, --budget 2: main (9ee1ef4), this branch, and two variants of the branch, run in rotation, one run per case per invocation",
+	"variants": {
+		"main": "main at 9ee1ef4",
+		"branch": "this branch",
+		"straight": "this branch with premultipliedAlpha: false",
+		"no-pan-reuse": "this branch without the translation of the retained image on integer pans"
+	},
+	"runs": [
+		{
+			"round": 1,
+			"variant": "branch",
+			"case": "heatmap/candles-4800/2400x600/pan",
+			"jsP50": 0.7050001621246338,
+			"jsP95": 0.820000171661377,
+			"loadAverage": 18.9
+		},
+		{
+			"round": 1,
+			"variant": "branch",
+			"case": "heatmap/candles-4800/2400x600/zoom",
+			"jsP50": 0.7150001525878906,
+			"jsP95": 0.9099998474121094,
+			"loadAverage": 18.9
+		},
+		{
+			"round": 1,
+			"variant": "straight",
+			"case": "heatmap/candles-4800/2400x600/pan",
+			"jsP50": 0.7349998950958252,
+			"jsP95": 1.0800001621246338,
+			"loadAverage": 16.9
+		},
+		{
+			"round": 1,
+			"variant": "straight",
+			"case": "heatmap/candles-4800/2400x600/zoom",
+			"jsP50": 0.6849997043609619,
+			"jsP95": 0.9300000667572021,
+			"loadAverage": 15.9
+		},
+		{
+			"round": 1,
+			"variant": "no-pan-reuse",
+			"case": "heatmap/candles-4800/2400x600/pan",
+			"jsP50": 0.6749999523162842,
+			"jsP95": 0.994999885559082,
+			"loadAverage": 15
+		},
+		{
+			"round": 1,
+			"variant": "no-pan-reuse",
+			"case": "heatmap/candles-4800/2400x600/zoom",
+			"jsP50": 0.6999998092651367,
+			"jsP95": 0.9700000286102295,
+			"loadAverage": 15
+		},
+		{
+			"round": 1,
+			"variant": "main",
+			"case": "heatmap/candles-4800/2400x600/pan",
+			"jsP50": 0.6399998664855957,
+			"jsP95": 0.7699999809265137,
+			"loadAverage": 14
+		},
+		{
+			"round": 1,
+			"variant": "main",
+			"case": "heatmap/candles-4800/2400x600/zoom",
+			"jsP50": 0.7249999046325684,
+			"jsP95": 1.1899998188018799,
+			"loadAverage": 13.6
+		},
+		{
+			"round": 2,
+			"variant": "branch",
+			"case": "heatmap/candles-4800/2400x600/pan",
+			"jsP50": 0.7799999713897705,
+			"jsP95": 0.934999942779541,
+			"loadAverage": 18.7
+		},
+		{
+			"round": 2,
+			"variant": "branch",
+			"case": "heatmap/candles-4800/2400x600/zoom",
+			"jsP50": 0.7950000762939453,
+			"jsP95": 1.3550000190734863,
+			"loadAverage": 20.5
+		},
+		{
+			"round": 2,
+			"variant": "straight",
+			"case": "heatmap/candles-4800/2400x600/pan",
+			"jsP50": 0.6549999713897705,
+			"jsP95": 0.7500002384185791,
+			"loadAverage": 34.2
+		},
+		{
+			"round": 2,
+			"variant": "straight",
+			"case": "heatmap/candles-4800/2400x600/zoom",
+			"jsP50": 0.7650001049041748,
+			"jsP95": 1.2799997329711914,
+			"loadAverage": 32
+		},
+		{
+			"round": 2,
+			"variant": "no-pan-reuse",
+			"case": "heatmap/candles-4800/2400x600/pan",
+			"jsP50": 0.6700000762939453,
+			"jsP95": 0.8549997806549072,
+			"loadAverage": 30.3
+		},
+		{
+			"round": 2,
+			"variant": "no-pan-reuse",
+			"case": "heatmap/candles-4800/2400x600/zoom",
+			"jsP50": 0.7199997901916504,
+			"jsP95": 0.9550001621246338,
+			"loadAverage": 28.2
+		},
+		{
+			"round": 2,
+			"variant": "main",
+			"case": "heatmap/candles-4800/2400x600/pan",
+			"jsP50": 0.6699998378753662,
+			"jsP95": 0.8199999332427979,
+			"loadAverage": 29.8
+		},
+		{
+			"round": 2,
+			"variant": "main",
+			"case": "heatmap/candles-4800/2400x600/zoom",
+			"jsP50": 0.7000000476837158,
+			"jsP95": 0.9749999046325684,
+			"loadAverage": 27.6
+		},
+		{
+			"round": 3,
+			"variant": "branch",
+			"case": "heatmap/candles-4800/2400x600/pan",
+			"jsP50": 0.7099997997283936,
+			"jsP95": 0.8500001430511475,
+			"loadAverage": 25.6
+		},
+		{
+			"round": 3,
+			"variant": "branch",
+			"case": "heatmap/candles-4800/2400x600/zoom",
+			"jsP50": 0.6850001811981201,
+			"jsP95": 0.9700002670288086,
+			"loadAverage": 23.8
+		},
+		{
+			"round": 3,
+			"variant": "straight",
+			"case": "heatmap/candles-4800/2400x600/pan",
+			"jsP50": 0.7350001335144043,
+			"jsP95": 1.1549997329711914,
+			"loadAverage": 22.5
+		},
+		{
+			"round": 3,
+			"variant": "straight",
+			"case": "heatmap/candles-4800/2400x600/zoom",
+			"jsP50": 0.7200000286102295,
+			"jsP95": 0.9749999046325684,
+			"loadAverage": 22.5
+		},
+		{
+			"round": 3,
+			"variant": "no-pan-reuse",
+			"case": "heatmap/candles-4800/2400x600/pan",
+			"jsP50": 0.75,
+			"jsP95": 0.8899998664855957,
+			"loadAverage": 19.7
+		},
+		{
+			"round": 3,
+			"variant": "no-pan-reuse",
+			"case": "heatmap/candles-4800/2400x600/zoom",
+			"jsP50": 0.7300000190734863,
+			"jsP95": 1.2300000190734863,
+			"loadAverage": 18.7
+		},
+		{
+			"round": 3,
+			"variant": "main",
+			"case": "heatmap/candles-4800/2400x600/pan",
+			"jsP50": 0.6550002098083496,
+			"jsP95": 0.815000057220459,
+			"loadAverage": 17.4
+		},
+		{
+			"round": 3,
+			"variant": "main",
+			"case": "heatmap/candles-4800/2400x600/zoom",
+			"jsP50": 0.7649998664855957,
+			"jsP95": 1.0900001525878906,
+			"loadAverage": 17.4
+		}
+	]
+}

@@ -112,3 +112,4 @@ The JSON files beside each document are the runs its numbers come from.
 - [Firefox on the M1](firefox-frames.md) runs the gate and mark cases in headless Firefox against Chromium.
 - [Automatic renderer selection](mark-renderer-auto.md) compares the three backends on the M1 and the phone and keeps `auto` on WebGL2.
 - [Review experiments](review-remeasure.md) measures the chunked store's scan cost again.
+- [GPU mark renderer gaps](mark-gpu-device-gaps.md) takes the phone's open questions to the M1: the WebGL2 scatter append and 1M zoom, the cause of the one-step pixel differences (the browser's premultiplication of a straight-alpha drawing buffer), Chrome's extra WebGPU canvas copy, and the cost of the WebGPU compute pass.

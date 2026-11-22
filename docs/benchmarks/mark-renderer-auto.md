@@ -2,7 +2,7 @@
 
 Today `auto` resolves to the WebGL2 default ([renderer guide](../guide/heatmap-scatter.md#choosing-a-renderer)). Stage 5's step 6 allows an automatic choice only if paired whole-chart runs show a repeatable benefit across the intended devices, including the cost of switching. This compares the three backends on the same nine integrated cases on the Apple M1 and on the [physical Android phone](android-physical.md), measured with this branch.
 
-**Recommendation: keep `auto` on WebGL2.** No workload shows a crossover that holds on both devices. Where WebGPU takes less JavaScript per frame, the phone's GPU needs longer than a frame for the compute pass, and WebGL2 is the only backend that keeps the phone at 60 Hz in pan and zoom. Canvas 2D is faster than WebGL2 only on a one-point scatter append, which is a gap in the WebGL2 renderer rather than a reason to switch backends.
+**Recommendation: keep `auto` on WebGL2.** No workload shows a crossover that holds on both devices. Where WebGPU takes less JavaScript per frame, the phone's GPU needs longer than a frame for the compute pass, and WebGL2 is the only backend that keeps the phone at 60 Hz in pan and zoom. Canvas 2D is faster than WebGL2 only on a one-point scatter append, which is a gap in the WebGL2 renderer rather than a reason to switch backends. (Since closed on the M1: WebGL2 writes an append into its retained image as the other two paths do, [GPU mark renderer gaps](mark-gpu-device-gaps.md#webgl2-scatter-append); the phone is still to be measured.)
 
 ## Frame JS p95 by backend
 
@@ -35,6 +35,8 @@ Every other difference changes sign between runs or between devices. The 300k-po
 - **The cost of switching.** A switch rebuilds the series' GPU resources (index, uploads, pipelines on first use) and the first frames after it draw through the fallback. None of the measured workloads gains enough on both devices to pay that back.
 
 Rule to adopt now: `auto` = WebGL2, as today. Revisit with a mid-range Android device, an x86 machine with a discrete GPU and a WebGL2 append patch in place; until then, applications that measure a benefit on their own target can still request `webgpu` explicitly.
+
+The WebGL2 append patch is now in place ([GPU mark renderer gaps](mark-gpu-device-gaps.md#webgl2-scatter-append)): on the M1 the 1M-point append takes 0.280 ms of frame JS at p95 with WebGL2 (three runs, 0.265–0.455), against 1.07 ms before, and does the same work as the Canvas 2D and WebGPU patches. That removes the one place where the M1 table above favored WebGPU without a cadence cost only because of WebGL2's append; the phone's numbers, and with them the rule, await a run on the device.
 
 ## Raw runs
 
