@@ -1,13 +1,15 @@
 import type { GpuBackend, GpuLease, MarkRendererReason } from '../backend';
 import { GpuMarkBackend } from './renderer';
-import { columnShader, heatShader, tileShader } from './shaders';
+import { columnShader, heatShader, heatSlotsShader, tileShader, wideColumnShader } from './shaders';
 
 export type MarkTextureFormat = 'bgra8unorm' | 'rgba8unorm';
 export type GpuPath = 'heatmap' | 'scatter-tiles' | 'scatter-columns';
+/** The compute kernels behind the paths: a path can take more than one, by the workload. */
+export type GpuKernel = GpuPath | 'heatmap-slots' | 'scatter-columns-wide';
 export interface GpuResources {
 	device: GPUDevice;
 	format: MarkTextureFormat;
-	pipelines: Record<GpuPath, GPUComputePipeline>;
+	pipelines: Record<GpuKernel, GPUComputePipeline>;
 }
 type Listener = (backend: GpuBackend | null, reason: MarkRendererReason | null) => void;
 const pools = new WeakMap<Document, Pool>();
@@ -49,16 +51,24 @@ class Pool {
 					layout: 'auto',
 					compute: { module: device.createShaderModule({ code }), entryPoint: 'main' },
 				});
-			const [heat, tiles, columns] = await Promise.all([
+			const [heat, heatSlots, tiles, columns, wideColumns] = await Promise.all([
 				compile(heatShader(format)),
+				compile(heatSlotsShader(format)),
 				compile(tileShader(format)),
 				compile(columnShader(format)),
+				compile(wideColumnShader(format)),
 			]);
 			if (this.disposed || this.failure) return;
 			this.resources = {
 				device,
 				format,
-				pipelines: { heatmap: heat, 'scatter-tiles': tiles, 'scatter-columns': columns },
+				pipelines: {
+					heatmap: heat,
+					'heatmap-slots': heatSlots,
+					'scatter-tiles': tiles,
+					'scatter-columns': columns,
+					'scatter-columns-wide': wideColumns,
+				},
 			};
 			for (const listener of this.listeners) this.notify(listener);
 		} catch {

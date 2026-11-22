@@ -370,6 +370,14 @@ export abstract class MarkSeries {
 	public glHeatPath(): 'values' | 'slots' | null {
 		return this.type === 'heatmap' && this._effective === 'webgl2' ? this._gl.heatPath : null;
 	}
+	/**
+	 * Internal, read by the benchmark harness: the WebGPU kernel of the series' last dispatch, which
+	 * names its path or a variant of it; null on another renderer.
+	 */
+	public gpuKernel(): string | null {
+		const path = this._effective;
+		return path === 'canvas2d' || path === 'webgl2' ? null : (this._gpu.backend?.kernel ?? null);
+	}
 	public preferenceChanged(): void {
 		this._gpu.release();
 		this._effective = 'canvas2d';
@@ -583,6 +591,7 @@ export abstract class MarkSeries {
 		}
 		this.drawnCount = window.count;
 		this._drawnRevision = window.revision;
+		this._beforeClearDirty();
 		window.clearDirty();
 	}
 
@@ -594,6 +603,12 @@ export abstract class MarkSeries {
 	protected _fixedSlots(): HeatSlots | null {
 		return null;
 	}
+
+	/**
+	 * The window's patches are about to be cleared: what is kept from its rows and was not brought
+	 * up to date by this frame's renderer takes them now.
+	 */
+	protected _beforeClearDirty(): void {}
 
 	/** Writes the rows in view into the surface, which is empty, and sets its box. */
 	protected abstract _drawAll(map: TimeMap): void;
@@ -788,6 +803,8 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 	/** The columns that have slots: `[_slotsFrom, _slotsTo)`. */
 	private _slotsFrom = 0;
 	private _slotsTo = 0;
+	/** The revision of the window whose patches the slots hold. */
+	private _slotsRevision = -1;
 	private readonly _colors = new Uint32Array(256);
 	private _colorsPalette: Uint32Array | null = null;
 	private readonly _scratch = new HeatmapScratch();
@@ -883,13 +900,7 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 			slotColors(this._palette, this._colors);
 			this._colorsPalette = this._palette;
 		}
-		if (
-			window.version !== this._slotsVersion ||
-			mapping.min !== this._slotsMin ||
-			mapping.factor !== this._slotsFactor ||
-			mapping.log !== this._slotsLog ||
-			this._slots.length < cells
-		) {
+		if (!this._slotsMatch()) {
 			if (this._slots.length < cells) {
 				// Whole words: the WebGL2 renderer uploads the slots four to a word.
 				this._slots = new Uint8Array((cells + 3) & ~3);
@@ -900,13 +911,9 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 			this._slotsLog = mapping.log;
 			this._slotsFrom = 0;
 			this._slotsTo = 0;
-		} else if (window.dirtyTo > window.dirtyFrom) {
-			// Columns a patch changed, where they have slots already.
-			const dirtyFrom = Math.max(window.dirtyFrom, this._slotsFrom);
-			const dirtyTo = Math.min(window.dirtyTo, this._slotsTo);
-			if (dirtyTo > dirtyFrom) {
-				quantize(window.values, this._slots, rows, dirtyFrom, dirtyTo, mapping);
-			}
+			this._slotsRevision = window.revision;
+		} else {
+			this._quantizePatches();
 		}
 		if (to <= from) {
 			return;
@@ -924,6 +931,43 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		if (to > this._slotsTo) {
 			quantize(window.values, this._slots, rows, this._slotsTo, to, mapping);
 			this._slotsTo = to;
+		}
+	}
+
+	/** Whether the slots were made from the rows held and the mapping of values of this frame. */
+	private _slotsMatch(): boolean {
+		const window = this.window,
+			mapping = this._mapping;
+		return (
+			window.version === this._slotsVersion &&
+			mapping.min === this._slotsMin &&
+			mapping.factor === this._slotsFactor &&
+			mapping.log === this._slotsLog &&
+			this._slots.length >= window.capacity * window.rows
+		);
+	}
+
+	/** Brings the slots of the columns patches changed up to date, where they have slots already. */
+	private _quantizePatches(): void {
+		const window = this.window;
+		if (window.dirtyTo <= window.dirtyFrom || window.revision === this._slotsRevision) {
+			return;
+		}
+		this._slotsRevision = window.revision;
+		const from = Math.max(window.dirtyFrom, this._slotsFrom);
+		const to = Math.min(window.dirtyTo, this._slotsTo);
+		if (to > from) {
+			quantize(window.values, this._slots, window.rows, from, to, this._mapping);
+		}
+	}
+
+	/**
+	 * A frame drawn from the values, or not drawn, leaves the slots of the columns its patches
+	 * changed as they were; renderers that read the slots later would show the old colors.
+	 */
+	protected override _beforeClearDirty(): void {
+		if (this._slotsTo > this._slotsFrom && this._slotsMatch()) {
+			this._quantizePatches();
 		}
 	}
 

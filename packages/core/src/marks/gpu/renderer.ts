@@ -1,10 +1,10 @@
-import { heatEdge } from '../render';
+import { heatEdge, slotColors } from '../render';
 import { HeatRanges, HeatPan } from '../heat-ranges';
 import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
-import type { GpuBackend, MarkFrame } from '../backend';
+import type { GpuBackend, HeatSlots, MarkFrame } from '../backend';
 import type { ScatterOptions } from '../options';
 import { parseColor, paletteIndex, unpackColor } from '../palette';
-import type { GpuPath, GpuResources } from './device';
+import type { GpuKernel, GpuPath, GpuResources } from './device';
 import { heatStyle, PriceBands, scatterBounds, scatterRecords, fitsTileIndex } from './geometry';
 
 // WebGPU IDL flag values. The DOM declarations shipped by the supported TypeScript
@@ -15,10 +15,17 @@ const BUFFER_COPY_DST = 0x08,
 const TEXTURE_STORAGE = 0x08,
 	TEXTURE_ATTACHMENT = 0x10;
 class Budget extends Error {}
+/**
+ * From this square size (device pixels) a whole column draw takes one atomic per point and reads
+ * the marker's rows back, rather than one atomic per row a marker covers. Smaller squares and the
+ * strips of a patch keep the row kernel, which costs less there.
+ */
+const WIDE_COLUMNS = 5;
 
 interface Upload {
 	newWindow: boolean;
 	styleChanged: boolean;
+	mappingChanged: boolean;
 	projection: string;
 	dirtyFrom: number;
 	dirtyTo: number;
@@ -32,8 +39,11 @@ class BufferSlot {
 	public capacity = 0;
 	private readonly device: GPUDevice;
 	private readonly uniform: boolean;
-	constructor(device: GPUDevice, uniform = false) {
+	/** Names the buffer in GPU tools and to the qualification suite, which counts uploads by it. */
+	private readonly label: string;
+	constructor(device: GPUDevice, label: string, uniform = false) {
 		this.device = device;
+		this.label = label;
 		this.uniform = uniform;
 	}
 	public reserve(bytes: number): boolean {
@@ -46,6 +56,7 @@ class BufferSlot {
 		)
 			throw new Budget();
 		const buffer = this.device.createBuffer({
+			label: this.label,
 			size: bytes,
 			usage: BUFFER_COPY_DST | (this.uniform ? BUFFER_UNIFORM : BUFFER_STORAGE),
 		});
@@ -99,12 +110,26 @@ export class GpuMarkBackend implements GpuBackend {
 	private mapping = '';
 	private palette: Uint32Array | null = null;
 	private fallback = '';
+	/**
+	 * Rows `[projectedFrom, projectedTo)` of a scatter's window have records on the GPU, at the
+	 * projection, style and colors of the last draw. A pan projects the rows that come into view.
+	 */
+	private projectedFrom = 0;
+	private projectedTo = 0;
 	private bandsKey = '';
+	/** Whether a heatmap's data holds its palette slots, four to a word, rather than its values. */
+	private heatSlots = false;
+	/** The slots the data was uploaded from, and its columns that hold them: `[slotsFrom, slotsTo)`. */
+	private slotsBuffer: Uint8Array | null = null;
+	private slotsFrom = 0;
+	private slotsTo = 0;
 	private count = 0;
 	private pending = Infinity;
 	private readonly cssColors = new Map<number, string>();
 	private lastPath: GpuPath | null = null;
 	private heatPan = new HeatPan();
+	/** The kernel of the last dispatch, read by the benchmark harness. */
+	public kernel: GpuKernel | null = null;
 	public get bytes(): number {
 		return this.width * this.height * 8 + this.slots.reduce((n, s) => n + s.capacity, 0);
 	}
@@ -113,14 +138,14 @@ export class GpuMarkBackend implements GpuBackend {
 	constructor(doc: Document, resources: GpuResources) {
 		this.doc = doc;
 		this.resources = resources;
-		const buffer = () => new BufferSlot(resources.device);
+		const buffer = (name: string) => new BufferSlot(resources.device, 'lumen-marks-' + name);
 		this.buffers = {
-			uniform: new BufferSlot(resources.device, true),
-			data: buffer(),
-			spans: buffer(),
-			style: buffer(),
-			bands: buffer(),
-			ids: buffer(),
+			uniform: new BufferSlot(resources.device, 'lumen-marks-uniform', true),
+			data: buffer('data'),
+			spans: buffer('spans'),
+			style: buffer('style'),
+			bands: buffer('bands'),
+			ids: buffer('ids'),
 		};
 		this.slots = Object.values(this.buffers);
 	}
@@ -216,16 +241,23 @@ export class GpuMarkBackend implements GpuBackend {
 		if (!full && scatter && this.revision !== w.revision) this.appendPatch(f, size);
 		if (full || this.revision !== w.revision) {
 			const { uniform, data, style } = this.buffers;
-			const newData = data.reserve(scatter ? w.capacity * 8 : w.capacity * w.rows * 4);
+			const slots = !scatter && !!f.slots;
+			// Slots take a quarter of the bytes of values: the data is made again at its size.
+			const modeChanged = !scatter && slots !== this.heatSlots;
+			if (modeChanged) data.release();
+			const newData = data.reserve(
+				scatter ? w.capacity * 8 : slots ? Math.ceil((w.capacity * w.rows) / 4) * 4 : w.capacity * w.rows * 4,
+			);
 			const mapping = [f.mapping.min, f.mapping.factor, Number(f.mapping.log)].join(',');
 			const projection = [f.projection.offset, f.projection.scale, Number(f.projection.log)].join(',');
 			const newWindow = newData || this.version !== w.version;
-			const styleChanged = mapping !== this.mapping || this.palette !== f.palette;
+			const mappingChanged = mapping !== this.mapping;
+			const styleChanged = mappingChanged || this.palette !== f.palette || modeChanged;
 			uniform.reserve(32);
 			style.reserve(this.style.byteLength);
 			const dirtyFrom = newWindow ? 0 : Math.min(this.pending, w.dirtyFrom),
 				dirtyTo = newWindow ? w.count : Math.max(w.dirtyTo, this.pending < Infinity ? this.count : 0);
-			const change = { newWindow, styleChanged, projection, dirtyFrom, dirtyTo };
+			const change = { newWindow, styleChanged, mappingChanged, projection, dirtyFrom, dirtyTo };
 			const strip = scatter
 				? this.prepareScatter(f, path, size, full, change)
 				: this.prepareHeatmap(f, full, fresh, change);
@@ -249,19 +281,30 @@ export class GpuMarkBackend implements GpuBackend {
 	}
 	private prepareScatter(f: MarkFrame, path: GpuPath, size: number, full: boolean, change: Upload): Strip {
 		const w = f.window;
-		const { data, spans, bands, ids } = this.buffers;
+		const { spans, bands, ids } = this.buffers;
 		const { newWindow, styleChanged, projection, dirtyFrom, dirtyTo } = change;
 		let left = 0,
 			right = f.width;
 
-		const fallback = (f.options as ScatterOptions).color;
-		const all = newWindow || styleChanged || projection !== this.projection || fallback !== this.fallback;
-		const from = all ? 0 : dirtyFrom,
-			to = all ? w.count : dirtyTo;
-		if (this.packed.length < w.capacity * 2) this.packed = new Uint32Array(w.capacity * 2);
-		if (to > from) {
-			scatterRecords(f, this.packed, from, to, parseColor(fallback) ?? 0);
-			data.write(this.packed, from * 2, to * 2);
+		const fallback = (f.options as ScatterOptions).color,
+			color = parseColor(fallback) ?? 0;
+		const grown = this.packed.length < w.capacity * 2;
+		if (grown) this.packed = new Uint32Array(w.capacity * 2);
+		const all = grown || newWindow || styleChanged || projection !== this.projection || fallback !== this.fallback;
+		// The column kernel reads the rows in view only; the tile index is built from all of them.
+		const from = path === 'scatter-tiles' ? 0 : f.from,
+			to = path === 'scatter-tiles' ? w.count : f.to;
+		if (all || this.projectedTo <= from || to <= this.projectedFrom) {
+			this.project(f, from, to, color);
+			this.projectedFrom = from;
+			this.projectedTo = to;
+		} else {
+			// A patch can change rows projected before, in view or not.
+			this.project(f, Math.max(dirtyFrom, this.projectedFrom), Math.min(dirtyTo, this.projectedTo), color);
+			this.project(f, from, this.projectedFrom, color);
+			this.project(f, this.projectedTo, to, color);
+			this.projectedFrom = Math.min(this.projectedFrom, from);
+			this.projectedTo = Math.max(this.projectedTo, to);
 		}
 		if (this.bounds.length < f.width + size) this.bounds = new Uint32Array(f.width + size);
 		scatterBounds(f, size, this.bounds);
@@ -288,6 +331,12 @@ export class GpuMarkBackend implements GpuBackend {
 		this.fallback = fallback;
 		return { left, right };
 	}
+	/** Projects rows `[from, to)` into their records and uploads them. */
+	private project(f: MarkFrame, from: number, to: number, fallback: number): void {
+		if (to <= from) return;
+		scatterRecords(f, this.packed, from, to, fallback);
+		this.buffers.data.write(this.packed, from * 2, to * 2);
+	}
 	private prepareHeatmap(f: MarkFrame, full: boolean, fresh: boolean, change: Upload): Strip {
 		const w = f.window;
 		const { data, spans, style } = this.buffers;
@@ -295,10 +344,19 @@ export class GpuMarkBackend implements GpuBackend {
 		let left = 0,
 			right = f.width;
 
-		data.write(w.values, dirtyFrom * w.rows, dirtyTo * w.rows);
+		const slots = f.slots ?? null;
+		if (slots) {
+			this.uploadSlots(f, slots, change);
+		} else {
+			data.write(w.values, dirtyFrom * w.rows, dirtyTo * w.rows);
+			this.slotsBuffer = null;
+		}
+		this.heatSlots = slots !== null;
 		if (styleChanged || newWindow || fresh) {
-			heatStyle(f.palette, f.mapping, this.style);
-			style.write(this.style);
+			// Slots need their colors only; values the first value of each slot too.
+			if (slots) slotColors(f.palette, this.style);
+			else heatStyle(f.palette, f.mapping, this.style);
+			style.write(this.style, 0, slots ? 256 : 512);
 		}
 		if (!full && !fresh && !newWindow && this.count === w.count && dirtyFrom === w.count - 1 && dirtyTo === w.count) {
 			left = Math.max(0, Math.min(f.width, heatEdge(w.time, w.count, dirtyFrom, f.map)));
@@ -337,6 +395,38 @@ export class GpuMarkBackend implements GpuBackend {
 		}
 		return { left, right };
 	}
+	/**
+	 * Uploads the slots of the columns in view that the data lacks, and of those a patch changed.
+	 * The data holds the slots of columns `[slotsFrom, slotsTo)`, a range that grows with the view
+	 * and starts over when the view leaves it: a pan uploads the columns that come into view.
+	 */
+	private uploadSlots(f: MarkFrame, slots: HeatSlots, change: Upload): void {
+		const w = f.window,
+			rows = w.rows,
+			data = this.buffers.data;
+		const cells = slots.update(f.from, f.to);
+		const fresh =
+			change.newWindow ||
+			change.mappingChanged ||
+			cells !== this.slotsBuffer ||
+			!slots.holds(this.slotsFrom, this.slotsTo);
+		const words = new Uint32Array(cells.buffer, cells.byteOffset, cells.length >> 2);
+		const upload = (from: number, to: number) => {
+			if (to > from) data.write(words, Math.floor((from * rows) / 4), Math.ceil((to * rows) / 4));
+		};
+		if (fresh || f.to <= this.slotsFrom || f.from >= this.slotsTo) {
+			upload(f.from, f.to);
+			this.slotsFrom = f.from;
+			this.slotsTo = f.to;
+		} else {
+			upload(Math.max(change.dirtyFrom, this.slotsFrom), Math.min(change.dirtyTo, this.slotsTo));
+			if (f.from < this.slotsFrom) upload(f.from, this.slotsFrom);
+			if (f.to > this.slotsTo) upload(this.slotsTo, f.to);
+			this.slotsFrom = Math.min(this.slotsFrom, f.from);
+			this.slotsTo = Math.max(this.slotsTo, f.to);
+		}
+		this.slotsBuffer = cells;
+	}
 	private dispatch(f: MarkFrame, path: GpuPath, size: number, { left, right }: Strip): void {
 		const w = f.window,
 			device = this.resources.device;
@@ -344,7 +434,14 @@ export class GpuMarkBackend implements GpuBackend {
 
 		this.params.set([f.width, f.height, left, right, size, w.rows, 0, 0]);
 		uniform.write(this.params);
-		const pipeline = this.resources.pipelines[path];
+		const kernel: GpuKernel =
+			path === 'scatter-columns' && size >= WIDE_COLUMNS && left === 0 && right === f.width
+				? 'scatter-columns-wide'
+				: path === 'heatmap' && this.heatSlots
+					? 'heatmap-slots'
+					: path;
+		this.kernel = kernel;
+		const pipeline = this.resources.pipelines[kernel];
 		const entries: GPUBindGroupEntry[] = [
 			{ binding: 0, resource: { buffer: uniform.buffer! } },
 			{ binding: 1, resource: { buffer: data.buffer! } },
@@ -391,9 +488,14 @@ export class GpuMarkBackend implements GpuBackend {
 		this.pending = Infinity;
 		this.count = 0;
 		this.lastPath = null;
+		this.kernel = null;
 		this.palette = null;
 		this.version = -1;
 		this.bandsKey = '';
+		this.heatSlots = false;
+		this.slotsBuffer = null;
+		this.projectedFrom = 0;
+		this.projectedTo = 0;
 		this.heatPan = new HeatPan();
 		this.packed = new Uint32Array(0);
 

@@ -108,6 +108,32 @@ type Fixture = ReturnType<typeof fixture>;
 function heatPath(s: Fixture): string | null {
 	return (s.heat as unknown as { glHeatPath(): string | null }).glHeatPath();
 }
+/** Internal to the library: the WebGPU kernel of a series' last dispatch, the scatter's by default. */
+function kernel(s: Fixture, series: object = s.scatter): string | null {
+	return (series as { gpuKernel(): string | null }).gpuKernel();
+}
+
+/** Bytes written to each labelled WebGPU buffer during one settled public operation. */
+async function gpuUploads(active: boolean, operation: () => Promise<void>) {
+	const bytes: Record<string, number> = {};
+	if (!active) {
+		await operation();
+		return bytes;
+	}
+	const original = GPUQueue.prototype.writeBuffer;
+	GPUQueue.prototype.writeBuffer = function (buffer, offset, data, dataOffset, size) {
+		// The renderer passes ArrayBuffers, whose offsets and sizes are in bytes.
+		const length = size ?? (data as ArrayBuffer).byteLength - (dataOffset ?? 0);
+		bytes[buffer.label] = (bytes[buffer.label] ?? 0) + length;
+		return original.call(this, buffer, offset, data as ArrayBuffer, dataOffset, size);
+	};
+	try {
+		await operation();
+	} finally {
+		GPUQueue.prototype.writeBuffer = original;
+	}
+	return bytes;
+}
 function read(source: HTMLCanvasElement) {
 	const copy = document.createElement('canvas');
 	copy.width = source.width;
@@ -193,19 +219,29 @@ async function check(
 		// A fixed value range draws from palette slots; one that follows the values from the values.
 		const heatGl = mode === 'webgl2' ? window.testMarkContexts.find(context => !context.isContextLost()) : undefined;
 		if (heatGl && heatPath(b) !== 'slots') throw Error('Fixed value range did not draw from slots: ' + heatPath(b));
+		const gpu = mode === 'hardware';
+		if (gpu && kernel(b, b.heat) !== 'heatmap-slots')
+			throw Error('Fixed value range did not draw from WebGPU slots: ' + kernel(b, b.heat));
 		await compare('automatic value range', s => s.heat.applyOptions({ valueMin: null, valueMax: null }));
 		if (heatGl && heatPath(b) !== 'values') throw Error('Automatic value range did not draw from values');
+		if (gpu && kernel(b, b.heat) !== 'heatmap') throw Error('Automatic value range did not draw WebGPU values');
 		await compare('changed last column, automatic value range', s =>
 			s.heat.update({ time: barTime(95) + 24000, values: s.column.map(value => value * 1.5) }),
 		);
 		await compare('fixed value range again', s => s.heat.applyOptions({ valueMin: 1, valueMax: 73 }));
 		if (heatGl && heatPath(b) !== 'slots') throw Error('Fixed value range did not draw from slots again');
-		const paletteBytes = await uploadBytes(heatGl, () =>
-			compare('palette only', s => s.heat.applyOptions({ palette: 'inferno' })),
-		);
+		if (gpu && kernel(b, b.heat) !== 'heatmap-slots') throw Error('Fixed value range did not draw WebGPU slots again');
+		let gpuPalette: Record<string, number> = {};
+		const paletteBytes = await uploadBytes(heatGl, async () => {
+			gpuPalette = await gpuUploads(gpu, () =>
+				compare('palette only', s => s.heat.applyOptions({ palette: 'inferno' })),
+			);
+		});
 		// The pixel ranges are projected again with every change of the options; the slots stay.
 		if (heatGl && (paletteBytes[0] || paletteBytes[2] !== 1024))
 			throw Error('Palette-only change uploaded slots, or more than the colors: ' + paletteBytes);
+		if (gpu && (gpuPalette['lumen-marks-data'] || gpuPalette['lumen-marks-style'] !== 1024))
+			throw Error('Palette-only WebGPU change uploaded slots, or more than the colors: ' + JSON.stringify(gpuPalette));
 		await compare('center and duplicate times', s => {
 			s.scatter.applyOptions({ barAlign: 'start', opacity: 0.66 });
 			s.scatter.append([
@@ -220,14 +256,19 @@ async function check(
 		b.chart.applyOptions({ redraw: 'auto' });
 		await b.chart.whenIdle();
 		const liveGL = mode === 'webgl2' ? window.testMarkContexts.find(gl => !gl.isContextLost()) : undefined;
-		const columnBytes = await uploadBytes(liveGL, () =>
-			compare('partial heatmap composition with foreground bars and drawing', s => {
-				s.heat.update({ time: barTime(95) + 45000, values: s.column.map(value => 100 - value) });
-			}),
-		);
+		let gpuColumn: Record<string, number> = {};
+		const columnBytes = await uploadBytes(liveGL, async () => {
+			gpuColumn = await gpuUploads(gpu, () =>
+				compare('partial heatmap composition with foreground bars and drawing', s => {
+					s.heat.update({ time: barTime(95) + 45000, values: s.column.map(value => 100 - value) });
+				}),
+			);
+		});
 		if (liveGL && (!columnBytes[0] || columnBytes[1])) throw Error('Value-only heatmap upload ' + columnBytes);
 		// Slots of one column of 141 rows: 37 words, 38 where the column starts within a word.
 		if (liveGL && columnBytes[0]! > 4 * 38) throw Error('Slot column upload ' + columnBytes);
+		if (gpu && (!gpuColumn['lumen-marks-data'] || gpuColumn['lumen-marks-data'] > 4 * 38))
+			throw Error('WebGPU slot column upload ' + JSON.stringify(gpuColumn));
 
 		await compare('partial heatmap transparency', s => {
 			s.heat.update({ time: barTime(95) + 45000, values: s.column.map(() => NaN) });
@@ -284,6 +325,60 @@ async function check(
 			});
 			if (b.scatter.renderer().path !== (mode === 'hardware' ? 'scatter-columns' : 'webgl2'))
 				throw Error('Dense column kernel not exercised: ' + JSON.stringify(b.scatter.drawn()));
+			// Squares of 5, 7 and 9 device pixels at the three ratios, in a pane taller than one
+			// 1024-row strip at 2, take the kernel that reads a marker's rows back.
+			await compare('large squares in a tall pane', s => {
+				s.chart.resize(380, 620);
+				s.scatter.applyOptions({ pointSize: 4.5 });
+			});
+			if (mode === 'hardware' && kernel(b) !== 'scatter-columns-wide')
+				throw Error('Wide column kernel not exercised: ' + kernel(b));
+			await compare('point appended to large squares', s =>
+				s.scatter.update({ time: barTime(82) + 60000, price: 81, value: 64 }),
+			);
+			// The column kernel reads the rows in view: a pan that overlaps the rows projected adds
+			// those that come into view, one past them starts over, and a point appended out of view
+			// shows when the view reaches it.
+			await compare('dense scatter over many bars, part in view', s => {
+				const n = 1_320_000;
+				const time = new Float64Array(n),
+					price = new Float64Array(n),
+					value = new Float32Array(n);
+				let seed = 23;
+				for (let i = 0; i < n; i++) {
+					const bar = (i / n) * 55;
+					time[i] = barTime(40 + Math.floor(bar)) + Math.floor((bar % 1) * 60000);
+					seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+					price[i] = 70 + (25 * seed) / 4294967296;
+					value[i] = i % 100;
+				}
+				s.scatter.setData({ time, price, value });
+				s.chart.timeScale().setVisibleLogicalRange({ from: 60.3, to: 66.8 });
+			});
+			const pans: [string, number, number][] = [
+				['dense scatter, small pan right', 60.9, 67.4],
+				['dense scatter, small pan left', 59.8, 66.3],
+				['dense scatter, tail out of view', 86.1, 92.6],
+			];
+			for (const [name, from, to] of pans) {
+				await compare(name, s => s.chart.timeScale().setVisibleLogicalRange({ from, to }));
+				if (mode === 'hardware' && b.scatter.renderer().path !== 'scatter-columns')
+					throw Error(name + ' left the column kernel: ' + b.scatter.renderer().path);
+			}
+			await compare('point appended out of view', s =>
+				s.scatter.update({ time: barTime(95) + 30000, price: 79, value: 12 }),
+			);
+			await compare('appended point in view', s =>
+				s.chart.timeScale().setVisibleLogicalRange({ from: 89.7, to: 96.2 }),
+			);
+			await compare('price scale change on part of the rows', s =>
+				s.chart.priceScale().applyOptions({ invertScale: true }),
+			);
+			await compare('price scale restored', s => s.chart.priceScale().applyOptions({ invertScale: false }));
+			await compare('large squares restored', s => {
+				s.chart.resize(365, 231);
+				s.scatter.applyOptions({ pointSize: 2 });
+			});
 			await compare('runtime canvas preference', s => s.chart.applyOptions({ markRenderer: 'canvas2d' }));
 			const requested = mode === 'hardware' ? 'webgpu' : 'webgl2';
 			b.chart.applyOptions({ markRenderer: requested });

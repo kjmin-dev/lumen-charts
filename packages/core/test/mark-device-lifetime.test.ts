@@ -26,7 +26,7 @@ describe('mark device lease lifetime', () => {
 		const client = new MarkGpuClient();
 		client.start(doc, invalidate);
 		await vi.waitFor(() => expect(pool.acquire).toHaveBeenCalledTimes(1));
-		const backend = { paint: vi.fn<GpuBackend['paint']>(), bytes: 0, release: vi.fn<() => void>() };
+		const backend = { paint: vi.fn<GpuBackend['paint']>(), bytes: 0, kernel: null, release: vi.fn<() => void>() };
 		notify(backend, null);
 		expect(client.backend).toBe(backend);
 		client.release();

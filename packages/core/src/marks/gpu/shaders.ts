@@ -43,6 +43,26 @@ fn main(@builtin(global_invocation_id) gid:vec3u) {
 	textureStore(image,vec2u(x,y),color(style[slot]));
 }`;
 
+// As the heatmap kernel, for a fixed range of values: the cells hold their palette slots, four to
+// a word, and a pixel takes the color of the highest slot among its cells.
+export const heatSlotsShader = (format: MarkTextureFormat) =>
+	common(format) +
+	`
+@compute @workgroup_size(8,8)
+fn main(@builtin(global_invocation_id) gid:vec3u) {
+	let x=v.left+gid.x; let y=gid.y;
+	if (x>=v.right || y>=v.height) {return;}
+	let row=(v.width+y)*2u;
+	var slot=0u;
+	for(var c=spans[x*2u];c<spans[x*2u+1u];c++){
+		for(var r=spans[row];r<spans[row+1u];r++){
+			let i=c*v.rows+r;
+			slot=max(slot,(data[i>>2u]>>((i&3u)*8u))&255u);
+		}
+	}
+	textureStore(image,vec2u(x,y),color(style[slot]));
+}`;
+
 // One group owns a vertical strip. Split tall panes into strips fitting the guaranteed
 // workgroup storage limit. Absolute IDs settle overlaps regardless of execution order.
 export const columnShader = (format: MarkTextureFormat) =>
@@ -59,6 +79,30 @@ fn main(@builtin(workgroup_id) g:vec3u,@builtin(local_invocation_index) lane:u32
 	workgroupBarrier();
 	for(var r=lane;r<h;r+=64u){
 		let last=atomicLoad(&winners[r]);
+		var c=vec4f(0); if(last!=0u){c=color(data[(last-1u)*2u+1u]);}
+		textureStore(image,vec2u(x,top+r),c);
+	}
+}`;
+
+// As the column kernel, with one atomic per point instead of one per row it covers: a point
+// takes the slot of its marker's bottom row, and each pixel takes the highest ID of the slots of
+// the `size` rows from it down. Eight more slots hold the bottom rows of markers that reach past
+// the strip's last row, up to the largest square the WebGPU path draws (nine pixels).
+export const wideColumnShader = (format: MarkTextureFormat) =>
+	common(format) +
+	`
+var<workgroup> winners:array<atomic<u32>,1032>;
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) g:vec3u,@builtin(local_invocation_index) lane:u32) {
+	let x=v.left+g.x; let top=g.y*1024u; let h=min(v.height-top,1024u);
+	for(var id=spans[x]+lane;id<spans[x+v.size];id+=64u) {
+		let bottom=bitcast<i32>(data[id*2u])-i32(v.size/2u)-i32(top)+i32(v.size)-1;
+		if(bottom>=0 && bottom<i32(h+v.size-1u)){atomicMax(&winners[u32(bottom)],id+1u);}
+	}
+	workgroupBarrier();
+	for(var r=lane;r<h;r+=64u){
+		var last=0u;
+		for(var dy=0u;dy<v.size;dy++){last=max(last,atomicLoad(&winners[r+dy]));}
 		var c=vec4f(0); if(last!=0u){c=color(data[(last-1u)*2u+1u]);}
 		textureStore(image,vec2u(x,top+r),c);
 	}

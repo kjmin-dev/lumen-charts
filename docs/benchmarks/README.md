@@ -100,3 +100,5 @@ The JSON files beside each document are the runs its numbers come from.
 - [merged-pan.md](merged-pan.md): a pan keeps the merged pixel columns of every series instead of merging them again; pan frames with 20 indicators take 12–21% less JavaScript.
 - [held-level-patches.md](held-level-patches.md): ticks send patches of the levels the chart's window cache holds only; `ind-apply` on 1M candles and `multi` before and after (measurements pending).
 - [WebGL2 heatmap](webgl2-heatmap.md) measures shift-and-mask word lookups and palette-slot heatmaps for a fixed value range, with WebGL2 GPU timer queries.
+- [WebGPU workload specialization](webgpu-workload-specialization.md) prototypes a single-pass column kernel for large scatter squares, packed palette slots for heatmaps and projection of only the visible scatter rows, against the shipping WebGPU paths.
+- [WebGPU specialized paths](webgpu-specialized-paths.md) measures the integrated large-square kernel, visible-row scatter projection and heatmap palette slots against `main`, with the 1M cloud A/B of the projection change.
