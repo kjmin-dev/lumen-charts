@@ -1,4 +1,5 @@
 import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
+import { premultiplyTable } from './premultiply';
 import {
 	densityColorFragment,
 	densityFragment,
@@ -92,6 +93,8 @@ export class GlContext {
 	private readonly programs = new Map<GlProgramKind, ReturnType<typeof program>>();
 	public readonly limit: number;
 	private pixels = 0;
+	/** How the document's Canvas 2D premultiplies colors: what the colors uploaded are premultiplied by. */
+	public readonly premultiply: Uint8Array;
 	/** Whether 32-bit float targets can be drawn and blended into; null until asked. */
 	private _floatBlend: boolean | null = null;
 	private corners: WebGLBuffer | null = null;
@@ -101,6 +104,7 @@ export class GlContext {
 		public gl: WebGL2RenderingContext,
 	) {
 		this.limit = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+		this.premultiply = premultiplyTable(doc);
 		canvas.addEventListener('webglcontextlost', this.change);
 		canvas.addEventListener('webglcontextrestored', this.change);
 	}
@@ -109,12 +113,13 @@ export class GlContext {
 		if (!pool) {
 			const canvas = doc.createElement('canvas');
 			canvas.width = canvas.height = 1;
+			// Premultiplied, as the colors the shaders write are (see premultiply.ts).
 			const gl = canvas.getContext('webgl2', {
 				alpha: true,
 				antialias: false,
 				depth: false,
 				stencil: false,
-				premultipliedAlpha: false,
+				premultipliedAlpha: true,
 			});
 			if (!gl || typeof gl.createProgram !== 'function') return null;
 			pool = new GlContext(doc, canvas, gl);

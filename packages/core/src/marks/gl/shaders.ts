@@ -18,6 +18,8 @@ uint word(usampler2D source, ivec2 stride, int i) {
 uint recordWord(int i) { return word(records, recordsStride, i); }
 uint rangeWord(int i) { return word(ranges, rangesStride, i); }
 uint styleWord(int i) { return word(style, styleStride, i); }
+// Colors arrive premultiplied as the page's Canvas 2D premultiplies them (see premultiply.ts), and
+// the drawing buffer is premultiplied: the browser draws it into the retained image as it is.
 vec4 color(uint bits) {
 	return vec4(uvec4(bits, bits >> 8u, bits >> 16u, bits >> 24u) & 255u) / 255.0;
 }

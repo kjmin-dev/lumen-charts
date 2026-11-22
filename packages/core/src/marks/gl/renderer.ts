@@ -4,9 +4,10 @@ import { heatStyle, scatterBounds, scatterRecords } from '../gpu/geometry';
 import { heatEdge, heatRowSpan, pointPixels, slotColors, StampCache } from '../render';
 import { HeatRanges } from '../heat-ranges';
 import type { ScatterOptions } from '../options';
-import { paletteIndex, parseColor, unpackColor } from '../palette';
+import { PALETTE_SIZE, paletteIndex, parseColor, unpackColor } from '../palette';
 import { GlBudget, GlContext, type GlProgram, GlUnsupported } from './context';
 import { GlDensity, packScatterRows } from './density';
+import { premultiplyColor, premultiplyPalette } from './premultiply';
 import { WordTexture } from './texture';
 
 const SPAN = { low: 0, high: 0 };
@@ -56,6 +57,9 @@ class GlLayer {
 	private pendingFrom = Infinity;
 	private pendingTo = -Infinity;
 	private readonly stamps = new StampCache();
+	/** The palette of the scatter records, and its colors premultiplied. */
+	private straight: Uint32Array | null = null;
+	private readonly premultiplied = new Uint32Array(PALETTE_SIZE);
 	private readonly cssColors = new Map<number, string>();
 	constructor(
 		private pool: GlContext,
@@ -107,9 +111,17 @@ class GlLayer {
 				this.packed = new Uint32Array(w.capacity * words);
 				this.packedFloats = new Float32Array(this.packed.buffer);
 			}
-			const fallback = parseColor(options.color) ?? 0;
-			if (words === 2 && !density) scatterRecords(f, this.packed, from, to, fallback);
-			else packScatterRows(f, this.packed, this.packedFloats, from, to, fallback, words, density);
+			// Records hold colors premultiplied, as the drawing buffer takes them.
+			const table = this.pool.premultiply;
+			const fallback = premultiplyColor(table, parseColor(options.color) ?? 0);
+			if (this.straight !== f.palette) {
+				this.premultiplied.set(f.palette);
+				premultiplyPalette(table, this.premultiplied);
+				this.straight = f.palette;
+			}
+			const frame = { ...f, palette: this.premultiplied };
+			if (words === 2 && !density) scatterRecords(frame, this.packed, from, to, fallback);
+			else packScatterRows(frame, this.packed, this.packedFloats, from, to, fallback, words, density);
 			this.records.write(this.packed, from * words, to * words);
 		}
 		this.projection = key;
@@ -263,6 +275,7 @@ class GlLayer {
 			// Slots need only their colors; values the first value of each slot too.
 			if (slots) slotColors(f.palette, this.colors);
 			else heatStyle(f.palette, f.mapping, this.colors);
+			premultiplyPalette(this.pool.premultiply, this.colors);
 			this.style.write(this.colors, 0, slots ? 256 : 512);
 		}
 		let left = 0,

@@ -64,8 +64,10 @@ class ScatterChart extends TestChart {
 
 	public puts(): Call[] {
 		const layers = new Set(this.canvases());
+		// Not the layers, nor the canvases the WebGL2 renderer measures Canvas 2D's premultiplication
+		// with, which it lets go at once.
 		return [...this.recorders.keys()]
-			.filter(canvas => !layers.has(canvas))
+			.filter(canvas => !layers.has(canvas) && canvas.width > 1)
 			.flatMap(canvas => this.calls(canvas).filter(call => call.name === 'putImageData'));
 	}
 
@@ -523,7 +525,8 @@ describe('scatter appends on WebGL2', () => {
 		expect(gl.draws.map(draw => draw.fragment)).toEqual([scatterFragment]);
 		const records = gl.bound(0)!.data;
 		const color = (row: number) => records[row * 2 + 1];
-		expect([color(2), color(3), color(4)]).toEqual([parseColor('#102030'), top, buildPalette('heat')[0]]);
+		// Premultiplied, as the drawing buffer takes them: the bottom of 'heat' is transparent.
+		expect([color(2), color(3), color(4)]).toEqual([parseColor('#102030'), top, 0]);
 		expect(records[2 * 2]).toBe(y0);
 	});
 

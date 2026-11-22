@@ -5,6 +5,7 @@ import { PALETTE_SIZE, type ValueMapping, setValueMapping } from '../palette';
 import { MAX_POINT_PIXELS } from '../render';
 import { DensityScale, exactDensities } from '../scatter-style';
 import { GlBudget, type GlContext, type GlProgram, GlUnsupported } from './context';
+import { premultiplyPalette } from './premultiply';
 import { WordTexture } from './texture';
 
 /** Texels of the level below that one texel of a reduction pass takes the largest of, across and down. */
@@ -187,6 +188,7 @@ export class GlDensity {
 				// The thresholds, unless the entries are computed on the GPU; then the colors.
 				if (!exact) this.table.set(this.scale.thresholds);
 				this.table.set(f.palette, PALETTE_SIZE);
+				premultiplyPalette(this.pool.premultiply, this.table.subarray(PALETTE_SIZE));
 				this.style.write(this.table, 0, PALETTE_SIZE * 2);
 				this.palette = f.palette;
 				this.exact = exact;
