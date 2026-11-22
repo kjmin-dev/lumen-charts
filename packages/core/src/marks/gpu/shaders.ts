@@ -37,7 +37,7 @@ export const heatShader = (format: MarkTextureFormat) =>
 	`
 @compute @workgroup_size(8,8)
 fn main(@builtin(global_invocation_id) gid:vec3u) {
-	let x=v.left+gid.x; let y=gid.y;
+	let x=v.left+gid.y; let y=gid.x;
 	if (x>=v.right || y>=v.height) {return;}
 	let row=(v.width+y)*2u;
 	var best=0u;
@@ -70,7 +70,7 @@ export const heatSlotsShader = (format: MarkTextureFormat) =>
 	`
 @compute @workgroup_size(8,8)
 fn main(@builtin(global_invocation_id) gid:vec3u) {
-	let x=v.left+gid.x; let y=gid.y;
+	let x=v.left+gid.y; let y=gid.x;
 	if (x>=v.right || y>=v.height) {return;}
 	let row=(v.width+y)*2u;
 	var slot=0u;

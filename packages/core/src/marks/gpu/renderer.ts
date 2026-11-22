@@ -549,11 +549,17 @@ export class GpuMarkBackend implements GpuBackend {
 		const pass = encoder.beginComputePass({ label: 'lumen-marks' });
 		pass.setPipeline(pipeline);
 		pass.setBindGroup(0, device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries }));
-		const stride = path === 'heatmap' ? 8 : path === 'scatter-tiles' ? 16 : 1;
-		pass.dispatchWorkgroups(
-			Math.ceil((right - left) / stride),
-			Math.ceil(f.height / (path === 'scatter-columns' ? 1024 : stride)),
-		);
+		if (path === 'heatmap')
+			// Pixel rows across the first dimension: neighboring invocations read neighboring cells
+			// of a column and store neighboring texels of the transposed image.
+			pass.dispatchWorkgroups(Math.ceil(f.height / 8), Math.ceil((right - left) / 8));
+		else {
+			const stride = path === 'scatter-tiles' ? 16 : 1;
+			pass.dispatchWorkgroups(
+				Math.ceil((right - left) / stride),
+				Math.ceil(f.height / (path === 'scatter-columns' ? 1024 : stride)),
+			);
+		}
 		pass.end();
 		// The strip drawn, from the image into the canvas: rows `[left, right)` of both.
 		const width = right - left;
