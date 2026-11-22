@@ -884,8 +884,9 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxesHost {
 
 	// PriceAxesHost and SeriesHost
 
-	public priceScaleRemoved(id: string): void {
-		this._primitives.forgetView(id);
+	public priceScaleRemoved(axis: PriceAxis): void {
+		this._primitives.forgetView(axis.id);
+		this._overlayRenderer.forgetAxis(axis);
 	}
 
 	public applyPriceScaleOptions(id: string, options: DeepPartial<PriceScaleOptions>): void {

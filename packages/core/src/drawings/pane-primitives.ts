@@ -335,6 +335,10 @@ export class PanePrimitives {
 			for (let c = mode === 'magnet' && series.kind === 'ohlcv' ? 0 : 3; c < 4; c++) {
 				const price = (c === 0 ? series.open : c === 1 ? series.high : c === 2 ? series.low : series.close)[row]!;
 				const at = series.deviceY(price) / ratio;
+				// As the crosshair: a value its scale does not show is out of reach (NaN fails too).
+				if (!axis.scale.contains(at)) {
+					continue;
+				}
 				const d = Math.abs(at - y);
 				if (d < distance) {
 					distance = d;

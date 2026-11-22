@@ -989,6 +989,14 @@ describe('price axes', () => {
 			chart.removeSeries(lower);
 			await settle();
 			expect(scaleIds()).toEqual(['default']);
+			// Nothing keeps the removed scale, or the series that was last on it.
+			const parts = chart as unknown as {
+				_overlayRenderer: { tags: Map<{ id: string }, unknown> };
+				_axes: { list: { id: string }[] };
+			};
+			expect([...parts._overlayRenderer.tags.keys()].map(axis => axis.id)).not.toContain('lower');
+			const handle = chart.priceScale('lower') as unknown as { first: unknown };
+			expect(handle.first ?? null).toBeNull();
 		});
 	});
 

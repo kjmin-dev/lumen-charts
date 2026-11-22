@@ -877,6 +877,11 @@ export class OverlayRenderer {
 		}
 	}
 
+	/** Lets go of the value labels of a price scale the chart removed, and the series they held. */
+	public forgetAxis(axis: PriceAxis): void {
+		this.tags.delete(axis);
+	}
+
 	/** The crosshair: its lines, markers and labels, in the order they are drawn, into `list`. */
 	private _crosshairItems(list: ItemList): void {
 		list.count = 0;

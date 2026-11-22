@@ -65,8 +65,8 @@ export interface PriceAxisHost {
 
 /** What the price axes need from the chart. */
 export interface PriceAxesHost extends PriceAxisHost {
-	/** The scale `id` was removed: nothing uses it, and no option lists it. */
-	priceScaleRemoved(id: string): void;
+	/** The scale `axis` was removed: nothing uses it, and no option lists it. */
+	priceScaleRemoved(axis: PriceAxis): void;
 }
 
 export const MIN_AXIS_WIDTH = 40;
@@ -511,7 +511,9 @@ export class PriceAxes {
 				if (this.grid === axis) {
 					this.grid = list[0]!;
 				}
-				this._host.priceScaleRemoved(axis.id);
+				// A handle of the id may outlive the scale: it keeps no series.
+				axis.first = null;
+				this._host.priceScaleRemoved(axis);
 				continue;
 			}
 			if (axis.setInUse(used)) {
