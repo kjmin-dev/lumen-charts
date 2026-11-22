@@ -7,7 +7,6 @@ import type { ScatterOptions } from '../options';
 import { PALETTE_SIZE, paletteIndex, parseColor, unpackColor } from '../palette';
 import { GlBudget, GlContext, type GlProgram, GlUnsupported } from './context';
 import { GlDensity, packScatterRows } from './density';
-import { premultiplyColor, premultiplyPalette } from './premultiply';
 import { WordTexture } from './texture';
 
 const SPAN = { low: 0, high: 0 };
@@ -115,11 +114,11 @@ class GlLayer {
 				this.packedFloats = new Float32Array(this.packed.buffer);
 			}
 			// Records hold colors premultiplied, as the drawing buffer takes them.
-			const table = this.pool.premultiply;
-			const fallback = premultiplyColor(table, parseColor(options.color) ?? 0);
+			const premultiply = this.pool.premultiply;
+			const fallback = premultiply.color(parseColor(options.color) ?? 0);
 			if (this.straight !== f.palette) {
 				this.premultiplied.set(f.palette);
-				premultiplyPalette(table, this.premultiplied);
+				premultiply.palette(this.premultiplied);
 				this.straight = f.palette;
 			}
 			const frame = { ...f, palette: this.premultiplied };
@@ -154,6 +153,9 @@ class GlLayer {
 		gl.uniform1i(p.base, base);
 		gl.uniform1i(p.recordWords, words);
 		gl.uniform1i(p.circle, Number(options.shape === 'circle'));
+		// Point sprites where the context draws them as large as the widest point: one search per point.
+		const guard = this.pool.pointGuard(size, width, height);
+		gl.uniform1i(p.guard, guard);
 		if (density) {
 			// Every row of the pane, or those appended that are in it.
 			let first = this.bounds[0]!,
@@ -163,7 +165,7 @@ class GlLayer {
 				end = Math.min(end, to);
 			}
 			this.density ??= new GlDensity(this.pool);
-			const strip = this.density.draw(f, p, first, end, patch, left, right);
+			const strip = this.density.draw(f, p, first, end, patch, left, right, guard);
 			this.copy(strip.left, strip.right, height);
 			return;
 		}
@@ -174,7 +176,7 @@ class GlLayer {
 		gl.uniform1i(p.first, first);
 		gl.scissor(left, 0, right - left, height);
 		gl.clear(gl.COLOR_BUFFER_BIT);
-		if (right > left && end > first) gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, end - first);
+		if (right > left && end > first) this.pool.drawScatter(guard, width, height, end - first);
 		this.copy(left, right, height);
 	}
 
@@ -303,7 +305,7 @@ class GlLayer {
 			// Slots need only their colors; values the first value of each slot too.
 			if (slots) slotColors(f.palette, this.colors);
 			else heatStyle(f.palette, f.mapping, this.colors);
-			premultiplyPalette(this.pool.premultiply, this.colors);
+			this.pool.premultiply.palette(this.colors);
 			this.style.write(this.colors, 0, slots ? 256 : 512);
 		}
 		let left = 0,

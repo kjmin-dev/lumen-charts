@@ -42,6 +42,8 @@ class ScatterChart extends TestChart {
 	/** Extensions the fake WebGL2 context offers, and what its `readPixels` reads. */
 	public extensions: string[] = [];
 	public readValue = 0;
+	/** The largest point sprite of the fake context: 0 draws quads. */
+	public maxPointSize = 0;
 
 	public constructor(markRenderer: 'canvas2d' | 'webgl2' = 'canvas2d') {
 		super({ markRenderer });
@@ -51,6 +53,7 @@ class ScatterChart extends TestChart {
 		const created = (gl: FakeWebGl): FakeWebGl => {
 			for (const name of this.extensions) gl.extensions.add(name);
 			gl.readValue = this.readValue;
+			gl.maxPointSize = this.maxPointSize;
 			return (this.gl = gl);
 		};
 		getContext.mockImplementation(function (this: HTMLCanvasElement, kind: string, ...rest: unknown[]) {
@@ -564,5 +567,48 @@ describe('scatter appends on WebGL2', () => {
 		scatter.update(at(160));
 		await t.settle();
 		expect(gl.draws.some(draw => draw.fragment === densityFragment)).toBe(true);
+	});
+});
+
+describe('scatter point sprites on WebGL2', () => {
+	let t: ScatterChart;
+
+	beforeEach(async () => {
+		t = new ScatterChart('webgl2');
+		t.maxPointSize = 64;
+		t.chart.addSeries('candlestick', { id: 'bars' }).setData(candles(200));
+		await t.settle();
+	});
+
+	afterEach(() => {
+		t.destroy();
+	});
+
+	it('draws a point a vertex in a viewport that reaches beyond the pane, and quads above the largest sprite', async () => {
+		t.extensions = ['EXT_color_buffer_float', 'EXT_float_blend'];
+		const scatter = t.chart.addSeries('scatter', { pointSize: 3 });
+		scatter.setData([plain(150), plain(155), plain(160)]);
+		await t.settle();
+		const gl = t.gl!;
+		const { width, height } = t.probe.view!;
+		const draw = gl.draws.at(-1)!;
+		expect(draw).toMatchObject({ fragment: scatterFragment, mode: gl.POINTS, vertices: 3, instances: 1 });
+		expect(draw.uniforms['guard']).toEqual([3]);
+		expect(draw.viewport).toEqual([-3, -3, width + 6, height + 6]);
+
+		// Densities are summed from the same sprites.
+		scatter.applyOptions({ colorBy: 'density' });
+		await t.settle();
+		const sums = gl.draws.filter(d => d.fragment === densityFragment);
+		const sum = sums[sums.length - 1]!;
+		expect(sum).toMatchObject({ mode: gl.POINTS, vertices: 3, offscreen: true, blend: true });
+
+		// A point wider than the context's sprites: every point is drawn as an instance of a quad.
+		scatter.applyOptions({ colorBy: 'value' });
+		scatter.setData([plain(150), at(155, 70), plain(160)]);
+		await t.settle();
+		const quads = gl.draws.at(-1)!;
+		expect(quads).toMatchObject({ mode: gl.TRIANGLE_STRIP, vertices: 4, instances: 3 });
+		expect(quads.uniforms['guard']).toEqual([0]);
 	});
 });

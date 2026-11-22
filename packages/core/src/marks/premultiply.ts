@@ -1,15 +1,16 @@
-import { PALETTE_SIZE, packColor, unpackColor } from '../palette';
+import { PALETTE_SIZE, packColor, unpackColor } from './palette';
 
 /**
  * How the Canvas 2D of a document premultiplies the pixels `putImageData` hands it: `table[a * 256 +
  * c]` is what a channel `c` at alpha `a` becomes. The Canvas 2D path of a mark series writes its
- * pixels with `putImageData`; the WebGL2 path writes colors premultiplied by this table into a
- * premultiplied drawing buffer, so the two retain the same bytes. Browsers round differently here:
+ * pixels with `putImageData`; the WebGL2 and WebGPU paths write colors premultiplied by this table
+ * into premultiplied images, so all three retain the same bytes. Browsers round differently here:
  * Chromium and WebKit to the nearest byte, Firefox up.
  *
- * A drawing buffer of straight colors would leave the conversion to the browser when the buffer is
- * drawn into a 2D canvas, where it can take another path than `putImageData` (a GPU pass, at a
- * precision and rounding of its own).
+ * A WebGL2 drawing buffer of straight colors would leave the conversion to the browser when the
+ * buffer is drawn into a 2D canvas, where it can take another path than `putImageData` (a GPU pass,
+ * at a precision and rounding of its own); a WebGPU kernel that premultiplied in floats would round
+ * to the nearest byte whatever the browser's Canvas 2D does.
  */
 const tables = new WeakMap<Document, Uint8Array>();
 
@@ -82,15 +83,35 @@ function measure(doc: Document): Uint8Array | null {
 	}
 }
 
-/** A straight color (as `ImageData` holds it), premultiplied by `table`. */
-export function premultiplyColor(table: Uint8Array, color: number): number {
-	const [r, g, b, a] = unpackColor(color);
-	if (a === 255) return color;
-	const row = a * 256;
-	return packColor(table[row + r]!, table[row + g]!, table[row + b]!, a);
-}
+/**
+ * Premultiplies straight colors (as `ImageData` holds them) as a document's Canvas 2D does. Opaque
+ * and fully transparent colors come out the same under every rounding, so the table is measured
+ * only with the first translucent color, and a page whose colors are all opaque never measures it.
+ */
+export class Premultiplier {
+	private table: Uint8Array | null = null;
+	private readonly doc: Document;
 
-/** Colors `[0, PALETTE_SIZE)` of `colors`, premultiplied in place. */
-export function premultiplyPalette(table: Uint8Array, colors: Uint32Array, count = PALETTE_SIZE): void {
-	for (let i = 0; i < count; i++) colors[i] = premultiplyColor(table, colors[i]!);
+	public constructor(doc: Document) {
+		this.doc = doc;
+	}
+
+	/** Whether a translucent color has needed the table. */
+	public get measured(): boolean {
+		return this.table !== null;
+	}
+
+	public color(color: number): number {
+		const [r, g, b, a] = unpackColor(color);
+		if (a === 255) return color;
+		if (a === 0) return 0;
+		const table = (this.table ??= premultiplyTable(this.doc));
+		const row = a * 256;
+		return packColor(table[row + r]!, table[row + g]!, table[row + b]!, a);
+	}
+
+	/** Colors `[0, count)` of `colors`, premultiplied in place. */
+	public palette(colors: Uint32Array, count = PALETTE_SIZE): void {
+		for (let i = 0; i < count; i++) colors[i] = this.color(colors[i]!);
+	}
 }

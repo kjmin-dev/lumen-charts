@@ -1,5 +1,5 @@
 import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
-import { premultiplyTable } from './premultiply';
+import { Premultiplier } from '../premultiply';
 import {
 	densityColorFragment,
 	densityFragment,
@@ -62,6 +62,7 @@ function program(gl: WebGL2RenderingContext, vertex: string, fragment: string) {
 			pane: location('pane'),
 			first: location('first'),
 			stamp: location('stamp'),
+			guard: location('guard'),
 			base: location('base'),
 			recordWords: location('recordWords'),
 			circle: location('circle'),
@@ -93,8 +94,10 @@ export class GlContext {
 	private readonly programs = new Map<GlProgramKind, ReturnType<typeof program>>();
 	public readonly limit: number;
 	private pixels = 0;
-	/** How the document's Canvas 2D premultiplies colors: what the colors uploaded are premultiplied by. */
-	public readonly premultiply: Uint8Array;
+	/** Premultiplies the colors uploaded as the document's Canvas 2D does. */
+	public readonly premultiply: Premultiplier;
+	/** The largest point sprite and viewport the context draws; null until asked. */
+	private _pointLimits: { point: number; width: number; height: number } | null = null;
 	/** Whether 32-bit float targets can be drawn and blended into; null until asked. */
 	private _floatBlend: boolean | null = null;
 	private corners: WebGLBuffer | null = null;
@@ -104,7 +107,7 @@ export class GlContext {
 		public gl: WebGL2RenderingContext,
 	) {
 		this.limit = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-		this.premultiply = premultiplyTable(doc);
+		this.premultiply = new Premultiplier(doc);
 		canvas.addEventListener('webglcontextlost', this.change);
 		canvas.addEventListener('webglcontextrestored', this.change);
 	}
@@ -113,7 +116,7 @@ export class GlContext {
 		if (!pool) {
 			const canvas = doc.createElement('canvas');
 			canvas.width = canvas.height = 1;
-			// Premultiplied, as the colors the shaders write are (see premultiply.ts).
+			// Premultiplied, as the colors the shaders write are (see marks/premultiply.ts).
 			const gl = canvas.getContext('webgl2', {
 				alpha: true,
 				antialias: false,
@@ -133,6 +136,7 @@ export class GlContext {
 		this.programs.clear();
 		// A restored context has its extensions to enable again.
 		this._floatBlend = null;
+		this._pointLimits = null;
 		this.corners = null;
 		trackCanvas(this.pixels, 0);
 		this.pixels = 0;
@@ -213,6 +217,41 @@ export class GlContext {
 			this._floatBlend = !!gl.getExtension('EXT_color_buffer_float') && !!gl.getExtension('EXT_float_blend');
 		}
 		return this._floatBlend;
+	}
+	/**
+	 * How far beyond a `width` by `height` pane the viewport reaches when a scatter's points of at
+	 * most `size` device pixels are drawn as point sprites (see `scatterVertex`): `size`, or 0 to draw
+	 * them as quads, where the context's sprites or viewports are not that large.
+	 */
+	pointGuard(size: number, width: number, height: number): number {
+		if (this._pointLimits === null) {
+			const gl = this.gl;
+			const range = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE) as Float32Array | null;
+			const dims = gl.getParameter(gl.MAX_VIEWPORT_DIMS) as Int32Array | null;
+			this._pointLimits = { point: range?.[1] ?? 0, width: dims?.[0] ?? 0, height: dims?.[1] ?? 0 };
+		}
+		const { point, width: maxWidth, height: maxHeight } = this._pointLimits;
+		return size <= point && width + 2 * size <= maxWidth && height + 2 * size <= maxHeight ? size : 0;
+	}
+	/**
+	 * Draws `count` scatter points of the current program into a `width` by `height` pane: point
+	 * sprites, one vertex each, in a viewport `guard` pixels larger on each side (see `pointGuard`),
+	 * or instances of a four-corner quad.
+	 *
+	 * The sprites are drawn without instancing: on the M1 (ANGLE on Metal), a million instances of one
+	 * vertex took twice as long as a million instanced quads, and a million vertices a third of it.
+	 * The corner attribute stays bound for the quads, read once per instance (a divisor of 1) so that
+	 * a draw of more vertices than its buffer holds is valid.
+	 */
+	drawScatter(guard: number, width: number, height: number, count: number) {
+		const gl = this.gl;
+		if (guard > 0) {
+			gl.vertexAttribDivisor(0, 1);
+			gl.viewport(-guard, -guard, width + 2 * guard, height + 2 * guard);
+			gl.drawArrays(gl.POINTS, 0, count);
+			gl.viewport(0, 0, width, height);
+			gl.vertexAttribDivisor(0, 0);
+		} else gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
 	}
 	/** Float targets turned out not to work (an incomplete framebuffer): densities go to Canvas 2D. */
 	noFloatBlend() {

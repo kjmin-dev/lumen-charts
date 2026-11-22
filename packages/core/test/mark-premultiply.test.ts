@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { nearestTable, premultiplyColor, premultiplyPalette, premultiplyTable } from '../src/marks/gl/premultiply';
+import { Premultiplier, nearestTable, premultiplyTable } from '../src/marks/premultiply';
 import { buildPalette, packColor } from '../src/marks/palette';
 
 /** Stands in for `ImageData`, which the test environment lacks. */
@@ -49,7 +49,7 @@ function documentPremultiplying(rule: (c: number, a: number) => number) {
 /** Each channel times alpha over 255, rounded up, as Firefox premultiplies. */
 const up = (c: number, a: number) => Math.ceil((c * a) / 255);
 
-describe('premultiplication of WebGL2 mark colors', () => {
+describe('premultiplication of GPU mark colors', () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
 	});
@@ -95,15 +95,31 @@ describe('premultiplication of WebGL2 mark colors', () => {
 	});
 
 	it('premultiplies translucent colors and keeps opaque ones', () => {
-		const table = nearestTable();
-		expect(premultiplyColor(table, packColor(200, 100, 3, 128))).toBe(packColor(100, 50, 2, 128));
-		expect(premultiplyColor(table, packColor(200, 100, 3, 255))).toBe(packColor(200, 100, 3, 255));
-		expect(premultiplyColor(table, packColor(200, 100, 3, 0))).toBe(0);
+		const premultiply = new Premultiplier({} as Document);
+		expect(premultiply.color(packColor(200, 100, 3, 128))).toBe(packColor(100, 50, 2, 128));
+		expect(premultiply.color(packColor(200, 100, 3, 255))).toBe(packColor(200, 100, 3, 255));
+		expect(premultiply.color(packColor(200, 100, 3, 0))).toBe(0);
 		const palette = buildPalette('heat');
 		const colors = palette.slice();
-		premultiplyPalette(table, colors);
+		premultiply.palette(colors);
 		expect(colors[0]).toBe(0);
 		expect(colors[255]).toBe(palette[255]);
-		expect(colors[100]).toBe(premultiplyColor(table, palette[100]!));
+		expect(colors[100]).toBe(premultiply.color(palette[100]!));
+	});
+
+	it('measures only with the first translucent color', () => {
+		vi.stubGlobal('ImageData', FakeImageData);
+		const { doc, canvases } = documentPremultiplying(up);
+		const premultiply = new Premultiplier(doc);
+		// Opaque and fully transparent colors are the same under every rounding.
+		const opaque = buildPalette('viridis');
+		premultiply.palette(opaque.slice());
+		expect(premultiply.color(packColor(9, 8, 7, 0))).toBe(0);
+		expect([premultiply.measured, canvases.length]).toEqual([false, 0]);
+		expect(premultiply.color(packColor(3, 1, 1, 128))).toBe(packColor(up(3, 128), up(1, 128), up(1, 128), 128));
+		expect([premultiply.measured, canvases.length]).toEqual([true, 2]);
+		// A second premultiplier of the document takes the table measured.
+		new Premultiplier(doc).color(packColor(3, 1, 1, 64));
+		expect(canvases.length).toBe(2);
 	});
 });

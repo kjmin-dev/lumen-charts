@@ -3,7 +3,8 @@ import { HeatRanges, HeatPan } from '../heat-ranges';
 import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
 import type { GpuBackend, HeatSlots, MarkFrame } from '../backend';
 import type { ScatterOptions } from '../options';
-import { parseColor, paletteIndex, unpackColor } from '../palette';
+import { PALETTE_SIZE, parseColor, paletteIndex, unpackColor } from '../palette';
+import { Premultiplier } from '../premultiply';
 import type { GpuKernel, GpuPath, GpuResources } from './device';
 import { heatStyle, PriceBands, scatterBounds, scatterRecords, fitsTileIndex } from './geometry';
 
@@ -116,6 +117,11 @@ export class GpuMarkBackend implements GpuBackend {
 	private readonly slots: BufferSlot[];
 	private readonly params = new Uint32Array(12);
 	private readonly style = new Uint32Array(512);
+	/** Colors go to the GPU premultiplied, as the page's Canvas 2D premultiplies them (see shaders.ts). */
+	private readonly premultiply: Premultiplier;
+	/** The palette of the scatter records, and its colors premultiplied. */
+	private straight: Uint32Array | null = null;
+	private readonly premultiplied = new Uint32Array(PALETTE_SIZE);
 	private bounds = new Uint32Array(0);
 	private packed = new Uint32Array(0);
 	private bands = new PriceBands();
@@ -173,6 +179,7 @@ export class GpuMarkBackend implements GpuBackend {
 	constructor(doc: Document, resources: GpuResources) {
 		this.doc = doc;
 		this.resources = resources;
+		this.premultiply = new Premultiplier(doc);
 		const buffer = (name: string) => new BufferSlot(resources.device, 'lumen-marks-' + name);
 		this.buffers = {
 			uniform: new BufferSlot(resources.device, 'lumen-marks-uniform', true),
@@ -334,7 +341,7 @@ export class GpuMarkBackend implements GpuBackend {
 			right = f.width;
 
 		const fallback = (f.options as ScatterOptions).color,
-			color = parseColor(fallback) ?? 0;
+			color = this.premultiply.color(parseColor(fallback) ?? 0);
 		const grown = this.packed.length < w.capacity * 2;
 		if (grown) this.packed = new Uint32Array(w.capacity * 2);
 		const all = grown || newWindow || styleChanged || projection !== this.projection || fallback !== this.fallback;
@@ -382,7 +389,12 @@ export class GpuMarkBackend implements GpuBackend {
 	/** Projects rows `[from, to)` into their records and uploads them. */
 	private project(f: MarkFrame, from: number, to: number, fallback: number): void {
 		if (to <= from) return;
-		scatterRecords(f, this.packed, from, to, fallback);
+		if (this.straight !== f.palette) {
+			this.premultiplied.set(f.palette);
+			this.premultiply.palette(this.premultiplied);
+			this.straight = f.palette;
+		}
+		scatterRecords({ ...f, palette: this.premultiplied }, this.packed, from, to, fallback);
 		this.buffers.data.write(this.packed, from * 2, to * 2);
 	}
 	private prepareHeatmap(f: MarkFrame, full: boolean, fresh: boolean, change: Upload): Strip {
@@ -404,6 +416,7 @@ export class GpuMarkBackend implements GpuBackend {
 			// Slots need their colors only; values the first value of each slot too.
 			if (slots) slotColors(f.palette, this.style);
 			else heatStyle(f.palette, f.mapping, this.style);
+			this.premultiply.palette(this.style);
 			style.write(this.style, 0, slots ? 256 : 512);
 		}
 		const n = (f.width + f.height) * 2;
