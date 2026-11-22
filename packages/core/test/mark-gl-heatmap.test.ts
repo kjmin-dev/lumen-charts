@@ -1,5 +1,7 @@
 import type { HeatmapSeriesApi } from '@lumen-charts/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { GpuBackend } from '../src/marks/backend';
+import type { acquire } from '../src/marks/gpu/device';
 import { heatFragment, heatSlotsFragment } from '../src/marks/gl/shaders';
 import { setValueMapping } from '../src/marks/palette';
 import type * as render from '../src/marks/render';
@@ -12,6 +14,9 @@ vi.mock('../src/marks/render', async importOriginal => {
 	const actual = await importOriginal<typeof render>();
 	return { ...actual, quantize: vi.fn<typeof render.quantize>(actual.quantize) };
 });
+// A WebGPU device for the series that ask for one, whose backend the test hands over.
+const pool = vi.hoisted(() => ({ acquire: vi.fn<typeof acquire>() }));
+vi.mock('../src/marks/gpu/device.js', () => pool);
 
 const COLUMNS = 10;
 const ROWS = 20;
@@ -201,5 +206,45 @@ describe('WebGL2 heatmap from palette slots', () => {
 		t.destroy();
 		expect(canvasPixelsInUse()).toBe(before);
 		t = new GlChart();
+	});
+
+	it('keeps the slots of a column patched while another renderer drew from the values', async () => {
+		// WebGPU draws the patch from the values, then gives up for the memory budget: WebGL2 draws
+		// from the slots, which must hold the patch although no frame asked for them in between.
+		const paint = vi.fn<GpuBackend['paint']>(() => 'heatmap');
+		const backend: GpuBackend = { paint, bytes: 0, kernel: 'heatmap', release: vi.fn<() => void>() };
+		pool.acquire.mockImplementation((_doc, listener) => {
+			listener(backend, null);
+			return { release: vi.fn<() => void>() };
+		});
+		Object.defineProperty(window.navigator, 'gpu', { value: {}, configurable: true });
+		try {
+			const data = grid((c, r) => c * 20 + r);
+			t.chart.applyOptions({ markRenderer: 'webgpu' });
+			const heat = t.chart.addSeries('heatmap', { valueMin: 0, valueMax: 199 });
+			heat.setData(data);
+			// The device module loads, and the frame after it draws through WebGPU.
+			await vi.waitFor(async () => {
+				await t.settle();
+				expect(paint).toHaveBeenCalled();
+			});
+			expect(heat.renderer().effective).toBe('webgpu');
+
+			const column = Float32Array.from({ length: ROWS }, (_, r) => 199 - r * 9);
+			heat.update({ time: 109 * MINUTE, values: column });
+			await t.settle();
+			expect(heat.renderer().effective).toBe('webgpu');
+
+			paint.mockReturnValue('budget');
+			heat.applyOptions({ opacity: 0.5 });
+			await t.settle();
+			expect(heat.renderer().reason).toBe('budget');
+			expect(path(heat)).toBe('slots');
+			data.values.set(column, 9 * ROWS);
+			expect([...t.records().subarray(0, COLUMNS * ROWS)]).toEqual(slotsOf(data.values, 0, 199));
+		} finally {
+			Reflect.deleteProperty(window.navigator, 'gpu');
+			pool.acquire.mockReset();
+		}
 	});
 });
