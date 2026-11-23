@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { SkippedCase } from '../src/jobs.ts';
 import { type Report, caseIds, number, table } from '../src/report.ts';
-import type { ResultsFile } from '../src/results.ts';
+import { type StoredResultsFile, loadResults } from '../src/results.ts';
 import { scenarios } from '../src/scenarios/index.ts';
 
 const files = process.argv.slice(2);
@@ -16,7 +16,9 @@ if (files.length === 0) {
 }
 
 const cwd = process.env['INIT_CWD'] ?? process.cwd();
-const results = files.map(file => JSON.parse(readFileSync(resolve(cwd, file), 'utf8')) as ResultsFile);
+const results = files.map(file =>
+	loadResults(JSON.parse(readFileSync(resolve(cwd, file), 'utf8')) as StoredResultsFile),
+);
 const cases = results.flatMap(r => r.cases);
 const report: Report = { cases };
 

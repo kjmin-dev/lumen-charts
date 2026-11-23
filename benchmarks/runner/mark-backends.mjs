@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright';
+import { formatJson } from '../src/json.ts';
 import { summarize } from '../src/stats.ts';
 import { selectStudy } from '../prototypes/mark-backends/studies.js';
 
@@ -204,7 +205,7 @@ try {
 	}
 	if (errors.length) throw new Error(errors.join('\n'));
 	report.loadEnd = os.loadavg();
-	if (values.out) await writeFile(values.out, JSON.stringify(report, null, '\t') + '\n');
+	if (values.out) await writeFile(values.out, formatJson(report));
 } finally {
 	await browser.close();
 }

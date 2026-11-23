@@ -27,6 +27,7 @@ pnpm bench:profile benchmarks/results/traces    # the breakdowns again from the 
 pnpm bench --case ind-apply,tick --allocations benchmarks/results/allocations   # what the main thread allocates per tick, by call site, and its collections
 pnpm bench:report <results.json>        # Markdown tables from a results file
 pnpm bench:merge <out.json> <a.json> <b.json>   # join runs of the same cases into one file
+pnpm bench:tidy [file.json ...]         # write JSON files again in the stored form (all of docs/benchmarks by default)
 pnpm bench:pixels                       # partial redraws of the series layer and the overlay against full redraws, pixel for pixel (--dpr, --raster, --redraw, --case)
 pnpm bench:serve                        # production build of the harness page, to run by hand
 pnpm bench --case drawings/candles-1m/1000/hover --cpu-throttle 4   # the page's CPU four times slower, as a stand-in for a slower device (Chromium only)
@@ -72,7 +73,11 @@ as under Vite. A scenario module must not import `scenarios/index.ts` or a modul
 ## Results
 
 One line per document, in the order they were written. A new document adds one line at the end.
-The JSON files beside each document are the runs its numbers come from.
+The JSON files beside each document are the runs its numbers come from. They are stored compactly
+(`benchmarks/src/json.ts`): a value that fits 240 columns stays on one line, and lists of numbers are
+never spread. Results files of `pnpm bench` leave out the summary of each case, which `bench:report`
+and `bench:merge` make again from its runs. `pnpm bench:tidy` writes files from other tools, or older
+ones, in that form and checks that each still holds what it held; GitHub shows them as generated.
 
 - [stage-0-baseline.md](stage-0-baseline.md): the stage 0 baseline and the definition of every metric.
 - [stage-1.md](stage-1.md): stage 1 results against it.

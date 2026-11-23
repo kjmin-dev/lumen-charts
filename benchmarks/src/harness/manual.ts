@@ -7,7 +7,8 @@ import type { SeriesKind } from '../data.ts';
 import { K, M, type PlannedJob, type RunOutcome, sizeLabel } from '../jobs.ts';
 import { planJobs } from '../plan.ts';
 import { SCENARIOS } from '../scenarios/index.ts';
-import { type CompletedJob, RESULTS_SCHEMA_VERSION, type ResultsFile, aggregate } from '../results.ts';
+import { formatJson } from '../json.ts';
+import { type CompletedJob, RESULTS_SCHEMA_VERSION, type ResultsFile, aggregate, storedResults } from '../results.ts';
 import type { BenchApi } from './api.ts';
 import { headline } from '../headline.ts';
 
@@ -138,7 +139,7 @@ async function runPlan(
 			),
 		),
 	);
-	const json = JSON.stringify(file, null, '\t');
+	const json = formatJson(storedResults(file));
 	output.value = json;
 	URL.revokeObjectURL(download.href);
 	download.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));

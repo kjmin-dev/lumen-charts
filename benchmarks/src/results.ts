@@ -31,6 +31,45 @@ export interface ResultsFile {
 	cases: CaseResult[];
 }
 
+/**
+ * A results file as written: its cases without their summaries, which are made again from the
+ * runs when it is read (`loadResults`). A case may keep the summary of an older file that the runs
+ * do not give again (see `pnpm bench:tidy`).
+ */
+export interface StoredResultsFile extends Omit<ResultsFile, 'cases'> {
+	cases: (Omit<CaseResult, 'summary'> & { summary?: Record<string, RunSpread> })[];
+}
+
+/** What a results file stores of `file`: every case without its summary. */
+export function storedResults(file: ResultsFile): StoredResultsFile {
+	return { ...file, cases: file.cases.map(({ summary: _summary, ...rest }) => rest) };
+}
+
+/** A results file as read: the summary of every case that has none made from its runs. */
+export function loadResults(file: StoredResultsFile): ResultsFile {
+	return {
+		...file,
+		cases: file.cases.map(c => {
+			if (c.summary !== undefined) {
+				return c as CaseResult;
+			}
+			const group: CaseResult = { ...c, summary: {} };
+			summarizeCase(group);
+			return group;
+		}),
+	};
+}
+
+/** Whether a parsed JSON value is a results file of the runner. */
+export function isResultsFile(value: unknown): value is StoredResultsFile {
+	return (
+		value !== null &&
+		typeof value === 'object' &&
+		typeof (value as { schema?: unknown }).schema === 'number' &&
+		Array.isArray((value as { cases?: unknown }).cases)
+	);
+}
+
 /** Collects `path -> value` for every finite number in `value`. */
 export function numericLeaves(value: unknown, prefix = '', out: Map<string, number> = new Map()): Map<string, number> {
 	if (typeof value === 'number') {
@@ -99,7 +138,7 @@ export function aggregate(completed: readonly CompletedJob[]): CaseResult[] {
 }
 
 /** Sets the status and the summary of a case from its runs. */
-function summarizeCase(group: CaseResult): void {
+export function summarizeCase(group: CaseResult): void {
 	const ok = group.runs.flatMap(run => (run.status === 'ok' ? [run.result] : []));
 	group.status = ok.length === group.runs.length ? 'ok' : ok.length > 0 ? 'partial' : 'failed';
 	group.summary = summarizeRuns(ok);
