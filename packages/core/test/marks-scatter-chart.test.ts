@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GpuBackend } from '../src/marks/backend';
 import type { acquire } from '../src/marks/gpu/device';
 import { densityColorFragment, densityFragment, reduceFragment, scatterFragment } from '../src/marks/gl/shaders';
-import { buildPalette, paletteIndex, setValueMapping } from '../src/marks/palette';
+import { buildPalette, paletteIndex, parseColor, setValueMapping } from '../src/marks/palette';
 import { DensityScale } from '../src/marks/scatter-style';
 import { type Call, MINUTE, TestChart, candles } from './drawing-helpers';
 import { FakeWebGl } from './fake-webgl';
@@ -42,6 +42,8 @@ class ScatterChart extends TestChart {
 	/** Extensions the fake WebGL2 context offers, and what its `readPixels` reads. */
 	public extensions: string[] = [];
 	public readValue = 0;
+	/** The largest point sprite of the fake context: 0 draws quads. */
+	public maxPointSize = 0;
 
 	public constructor(markRenderer: 'canvas2d' | 'webgl2' = 'canvas2d') {
 		super({ markRenderer });
@@ -51,6 +53,7 @@ class ScatterChart extends TestChart {
 		const created = (gl: FakeWebGl): FakeWebGl => {
 			for (const name of this.extensions) gl.extensions.add(name);
 			gl.readValue = this.readValue;
+			gl.maxPointSize = this.maxPointSize;
 			return (this.gl = gl);
 		};
 		getContext.mockImplementation(function (this: HTMLCanvasElement, kind: string, ...rest: unknown[]) {
@@ -64,8 +67,10 @@ class ScatterChart extends TestChart {
 
 	public puts(): Call[] {
 		const layers = new Set(this.canvases());
+		// Not the layers, nor the canvases the WebGL2 renderer measures Canvas 2D's premultiplication
+		// with, which it lets go at once.
 		return [...this.recorders.keys()]
-			.filter(canvas => !layers.has(canvas))
+			.filter(canvas => !layers.has(canvas) && canvas.width > 1)
 			.flatMap(canvas => this.calls(canvas).filter(call => call.name === 'putImageData'));
 	}
 
@@ -459,5 +464,151 @@ describe('scatter sizes and densities on WebGL2 and WebGPU', () => {
 			Reflect.deleteProperty(window.navigator, 'gpu');
 			pool.acquire.mockReset();
 		}
+	});
+});
+
+describe('scatter appends on WebGL2', () => {
+	let t: ScatterChart;
+
+	beforeEach(async () => {
+		t = new ScatterChart('webgl2');
+		t.chart.addSeries('candlestick', { id: 'bars' }).setData(candles(200));
+		await t.settle();
+	});
+
+	afterEach(() => {
+		t.destroy();
+	});
+
+	/** Calls on the image the WebGL2 layer retains: the canvas it copies the GL canvas into. */
+	function retained(): Call[] {
+		const gl = t.gl!.canvas;
+		for (const canvas of t.recorders.keys()) {
+			const calls = t.calls(canvas);
+			if (calls.some(call => call.name === 'drawImage' && call.args[0] === gl)) return calls;
+		}
+		throw new Error('No retained image');
+	}
+
+	it('writes appended opaque points into the retained image, and uploads their records with the next draw', async () => {
+		const scatter = t.chart.addSeries('scatter', {
+			pointSize: 3,
+			palette: 'heat',
+			valueMin: 0,
+			valueMax: 10,
+			color: '#102030',
+		});
+		scatter.setData([valued(150, 10), plain(155)]);
+		await t.settle();
+		expect(scatter.renderer()).toMatchObject({ effective: 'webgl2', reason: null });
+		const gl = t.gl!;
+		gl.draws.length = 0;
+		gl.uploads.length = 0;
+		const image = retained();
+		image.length = 0;
+
+		// A point without a value and one at the top of the palette: opaque, written as squares.
+		scatter.update(plain(160));
+		scatter.update(valued(161, 10));
+		await t.settle();
+		expect(gl.draws).toEqual([]);
+		expect(gl.uploads).toEqual([]);
+		const top = buildPalette('heat')[255]!;
+		const red = `rgb(${top & 255},${(top >>> 8) & 255},${(top >>> 16) & 255})`;
+		const [x0, y0] = t.center(scatter, 160 * MINUTE, 100);
+		const [x1, y1] = t.center(scatter, 161 * MINUTE, 100);
+		expect(image.filter(call => call.name === 'fillRect').map(call => call.args.concat(call.fillStyle))).toEqual([
+			[x0 - 1, y0 - 1, 3, 3, 'rgb(16,32,48)'],
+			[x1 - 1, y1 - 1, 3, 3, red],
+		]);
+
+		// A translucent point is drawn in WebGL2, with the records of the points before it.
+		scatter.update(valued(162, 0));
+		await t.settle();
+		expect(gl.draws.map(draw => draw.fragment)).toEqual([scatterFragment]);
+		const records = gl.bound(0)!.data;
+		const color = (row: number) => records[row * 2 + 1];
+		// Premultiplied, as the drawing buffer takes them: the bottom of 'heat' is transparent.
+		expect([color(2), color(3), color(4)]).toEqual([parseColor('#102030'), top, 0]);
+		expect(records[2 * 2]).toBe(y0);
+	});
+
+	it('writes the columns of a disc, and points of their own size', async () => {
+		const scatter = t.chart.addSeries('scatter', { pointSize: 5, shape: 'circle', color: '#102030' });
+		scatter.setData([at(150, 3), at(155)]);
+		await t.settle();
+		const image = retained();
+		image.length = 0;
+		t.gl!.draws.length = 0;
+		scatter.update(plain(160));
+		scatter.update({ ...plain(161), size: 2 });
+		await t.settle();
+		expect(t.gl!.draws).toEqual([]);
+		const [x, y] = t.center(scatter, 160 * MINUTE, 100);
+		const [x1, y1] = t.center(scatter, 161 * MINUTE, 100);
+		// The columns of a disc 5 pixels across (`makeStamp`), then a square of 2.
+		expect(image.filter(call => call.name === 'fillRect').map(call => call.args)).toEqual([
+			[x - 2, y - 1, 1, 3],
+			[x - 1, y - 2, 1, 5],
+			[x, y - 2, 1, 5],
+			[x + 1, y - 2, 1, 5],
+			[x + 2, y - 1, 1, 3],
+			[x1 - 1, y1 - 1, 2, 2],
+		]);
+	});
+
+	it('draws appended densities in WebGL2', async () => {
+		t.extensions = ['EXT_color_buffer_float', 'EXT_float_blend'];
+		const scatter = t.chart.addSeries('scatter', { colorBy: 'density' });
+		scatter.setData([at(150), at(155)]);
+		await t.settle();
+		const gl = t.gl!;
+		gl.draws.length = 0;
+		scatter.update(at(160));
+		await t.settle();
+		expect(gl.draws.some(draw => draw.fragment === densityFragment)).toBe(true);
+	});
+});
+
+describe('scatter point sprites on WebGL2', () => {
+	let t: ScatterChart;
+
+	beforeEach(async () => {
+		t = new ScatterChart('webgl2');
+		t.maxPointSize = 64;
+		t.chart.addSeries('candlestick', { id: 'bars' }).setData(candles(200));
+		await t.settle();
+	});
+
+	afterEach(() => {
+		t.destroy();
+	});
+
+	it('draws a point a vertex in a viewport that reaches beyond the pane, and quads above the largest sprite', async () => {
+		t.extensions = ['EXT_color_buffer_float', 'EXT_float_blend'];
+		const scatter = t.chart.addSeries('scatter', { pointSize: 3 });
+		scatter.setData([plain(150), plain(155), plain(160)]);
+		await t.settle();
+		const gl = t.gl!;
+		const { width, height } = t.probe.view!;
+		const draw = gl.draws.at(-1)!;
+		expect(draw).toMatchObject({ fragment: scatterFragment, mode: gl.POINTS, vertices: 3, instances: 1 });
+		expect(draw.uniforms['guard']).toEqual([3]);
+		expect(draw.viewport).toEqual([-3, -3, width + 6, height + 6]);
+
+		// Densities are summed from the same sprites.
+		scatter.applyOptions({ colorBy: 'density' });
+		await t.settle();
+		const sums = gl.draws.filter(d => d.fragment === densityFragment);
+		const sum = sums[sums.length - 1]!;
+		expect(sum).toMatchObject({ mode: gl.POINTS, vertices: 3, offscreen: true, blend: true });
+
+		// A point wider than the context's sprites: every point is drawn as an instance of a quad.
+		scatter.applyOptions({ colorBy: 'value' });
+		scatter.setData([plain(150), at(155, 70), plain(160)]);
+		await t.settle();
+		const quads = gl.draws.at(-1)!;
+		expect(quads).toMatchObject({ mode: gl.TRIANGLE_STRIP, vertices: 4, instances: 3 });
+		expect(quads.uniforms['guard']).toEqual([0]);
 	});
 });

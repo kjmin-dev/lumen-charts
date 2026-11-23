@@ -3,6 +3,11 @@ import { TimeMap } from '../src/marks/time-map';
 
 const MINUTE = 60_000;
 
+/** The segment a map loaded last. */
+function segmentOf(map: TimeMap): number[] {
+	return [map.t0, map.t1, map.x0, map.pace];
+}
+
 /** A map of `count` one-minute bars from index `start`, bar `i` centered at `10 + 4 * i` device pixels. */
 function minutes(count: number, start = 0): TimeMap {
 	const times = new Float64Array(count);
@@ -93,5 +98,40 @@ describe('TimeMap', () => {
 		const none = new TimeMap();
 		expect(none.x(0)).toBeNaN();
 		expect(none.time(0)).toBeNaN();
+	});
+
+	it('loads the segment of a time or a position the same whatever it loaded before', () => {
+		// Duplicate times, a gap and buckets that start before the timeline: knots at the same x.
+		const times = Float64Array.from([3, 3, 4, 5, 9, 9, 9, 10, 400, 401, 402, 410], minute => minute * MINUTE);
+		const fresh = (): TimeMap => {
+			const map = new TimeMap();
+			map.set(times, 0, times.length, 0, 1, 5, 7, 3.5);
+			return map;
+		};
+		const walked = fresh();
+		const walkedStates: number[][] = [];
+		const freshStates: number[][] = [];
+		let seed = 7;
+		const random = (): number => {
+			seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+			return seed / 4294967296;
+		};
+		for (let i = 0; i < 2000; i++) {
+			const pick = random();
+			const map = fresh();
+			if (i % 2 === 0) {
+				// Knot times themselves, times between them and beyond both ends.
+				const time = pick < 0.3 ? times[Math.floor(random() * times.length)]! : (random() * 430 - 10) * MINUTE;
+				walked.segment(time);
+				map.segment(time);
+				walkedStates.push(segmentOf(walked));
+				freshStates.push(segmentOf(map));
+			} else {
+				const x = pick < 0.3 ? walked.knotX(Math.floor(random() * times.length)) : random() * 100 - 20;
+				walkedStates.push([walked.time(x), ...segmentOf(walked)]);
+				freshStates.push([map.time(x), ...segmentOf(map)]);
+			}
+		}
+		expect(walkedStates).toEqual(freshStates);
 	});
 });

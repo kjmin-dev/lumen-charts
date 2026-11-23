@@ -197,8 +197,8 @@ export class GlDensity {
 	 * Sums rows `[first, end)` into the densities, which are made 0 first unless `patch` (the rows were
 	 * appended since the densities were summed), then colors pixel columns `[left, right)` of the
 	 * pane, or all of them when the palette's mapping may have changed. The scatter program `p` is
-	 * current, with its records and ranges bound and its uniforms set but `first`. Returns the columns
-	 * colored.
+	 * current, with its records and ranges bound and its uniforms set but `first`; `guard` draws the
+	 * points as sprites (see `GlContext.pointGuard`). Returns the columns colored.
 	 */
 	draw(
 		f: MarkFrame,
@@ -208,6 +208,7 @@ export class GlDensity {
 		patch: boolean,
 		left: number,
 		right: number,
+		guard: number,
 	): { left: number; right: number } {
 		const { width, height } = f;
 		const options = f.options as ScatterOptions;
@@ -228,7 +229,7 @@ export class GlDensity {
 				gl.enable(gl.BLEND);
 				gl.blendEquation(gl.FUNC_ADD);
 				gl.blendFunc(gl.ONE, gl.ONE);
-				gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, end - first);
+				this.pool.drawScatter(guard, width, height, end - first);
 				gl.disable(gl.BLEND);
 			}
 			let remapped = false;
@@ -261,6 +262,7 @@ export class GlDensity {
 				// The thresholds, unless the entries are computed on the GPU; then the colors.
 				if (!exact) this.table.set(this.scale.thresholds);
 				this.table.set(f.palette, PALETTE_SIZE);
+				this.pool.premultiply.palette(this.table.subarray(PALETTE_SIZE));
 				this.style.write(this.table, 0, PALETTE_SIZE * 2);
 				this.palette = f.palette;
 				this.exact = exact;

@@ -26,23 +26,73 @@ export function heatStyle(palette: Uint32Array, mapping: ValueMapping, out: Uint
 	}
 }
 
-/** Binary64 time comparisons keep session gaps and fractional pixel ties on the same
- * side as Canvas 2D. The GPU receives original row indices, never epoch milliseconds. */
-export function scatterBounds(f: MarkFrame, size: number, out: Uint32Array): void {
+/**
+ * The first of rows `[from, to)` whose time is `time` or later, or `to`. The search starts at
+ * `guess` and doubles its step away from it, so for a guess near the row it reads a few rows close
+ * together: the rows of a large window are megabytes, and a binary search across them misses the
+ * cache at nearly every step, which costs more than the comparisons.
+ */
+function firstAtOrAfter(times: Float64Array, from: number, to: number, time: number, guess: number): number {
+	if (from >= to || !(times[from]! < time)) return from;
+	// Rows before `lo` are earlier than `time`; `hi` is `to` or a row at `time` or later.
+	let lo = from + 1,
+		hi: number,
+		step = 1;
+	const at = Math.min(Math.max(guess, lo), to);
+	if (at < to && times[at]! < time) {
+		lo = at + 1;
+		hi = lo;
+		while (hi < to && times[hi]! < time) {
+			lo = hi + 1;
+			step *= 2;
+			hi = at + step;
+		}
+		if (hi > to) hi = to;
+	} else {
+		hi = at;
+		let probe = at - 1;
+		while (probe >= lo && !(times[probe]! < time)) {
+			hi = probe;
+			step *= 2;
+			probe = at - step;
+		}
+		if (probe >= lo) lo = probe + 1;
+	}
+	while (lo < hi) {
+		const mid = (lo + hi) >>> 1;
+		if (times[mid]! < time) lo = mid + 1;
+		else hi = mid;
+	}
+	return lo;
+}
+
+/**
+ * Binary64 time comparisons keep session gaps and fractional pixel ties on the same side as Canvas
+ * 2D. The GPU receives original row indices, never epoch milliseconds.
+ *
+ * `out[i]` is the first row in view whose center is at or right of column `i - pad`. Columns from
+ * `start` on are written; those before it must hold what a call for all of them would have written
+ * (the rows they find did not change).
+ */
+export function scatterBounds(f: MarkFrame, size: number, out: Uint32Array, start = 0): void {
 	const w = f.window,
-		map = f.map;
+		map = f.map,
+		times = w.time;
 	const shift = (f.options as ScatterOptions).barAlign === 'start' ? -map.spacing / 2 : 0;
 	const pad = size - 1 - (size >> 1);
-	let previous = f.from;
+	let previous = start > 0 ? out[start - 1]! : f.from;
+	// Columns are equally wide: the rows of a column are a guess for those of the next.
+	let gap = 0;
 	const center = (id: number) => {
-		const t = w.time[id]!;
+		const t = times[id]!;
 		map.segment(t);
 		return Math.round(map.x0 + shift + (t - map.t0) * map.pace);
 	};
-	for (let i = 0; i < f.width + size; i++) {
+	for (let i = start; i < f.width + size; i++) {
 		const x = i - pad;
 		const t = map.time(x - 0.5 - shift);
-		let id = Math.max(previous, Math.min(f.to, w.lowerBound(t)));
+		// As `max(previous, min(f.to, w.lowerBound(t)))`: the rows are in time order.
+		let id = firstAtOrAfter(times, previous, f.to, t, previous + gap);
 		if ((id > previous && center(id - 1) >= x) || (id < f.to && center(id) < x)) {
 			let lo = previous,
 				hi = f.to;
@@ -54,6 +104,7 @@ export function scatterBounds(f: MarkFrame, size: number, out: Uint32Array): voi
 			id = lo;
 		}
 		out[i] = id;
+		gap = id - previous;
 		previous = id;
 	}
 }

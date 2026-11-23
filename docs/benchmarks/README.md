@@ -116,3 +116,4 @@ The JSON files beside each document are the runs its numbers come from.
 - [Automatic renderer selection](mark-renderer-auto.md) compares the three backends on the M1 and the phone and keeps `auto` on WebGL2.
 - [Review experiments](review-remeasure.md) measures the chunked store's scan cost again.
 - [Slow-device gates](slow-device-gates.md): the hover and indicator gates the phone misses, traced on the M1 with `--cpu-throttle`; the overlay draws only what changed; why headless Firefox misses its frame budgets (Canvas 2D in software, WebGL read back), with `--firefox-pref`.
+- [GPU mark renderer gaps](mark-gpu-device-gaps.md) takes the phone's open questions to the M1: the WebGL2 scatter append, 1M zoom and GPU draw (now point sprites), the cause of the one-step pixel differences (the browser's premultiplication of a straight-alpha drawing buffer), Chrome's extra WebGPU canvas copy, and the cost of the WebGPU compute pass.

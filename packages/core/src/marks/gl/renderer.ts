@@ -1,15 +1,18 @@
 import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
 import type { HeatSlots, MarkFrame, MarkRendererReason } from '../backend';
 import { heatStyle, scatterBounds, scatterRecords } from '../gpu/geometry';
-import { heatEdge, heatRowSpan, pointPixels, slotColors } from '../render';
-import { HeatRanges } from '../heat-ranges';
+import { heatEdge, heatRowSpan, pointPixels, slotColors, StampCache } from '../render';
+import { HeatPan, HeatRanges } from '../heat-ranges';
 import type { ScatterOptions } from '../options';
-import { parseColor } from '../palette';
+import { PALETTE_SIZE, paletteIndex, parseColor, unpackColor } from '../palette';
 import { GlBudget, GlContext, type GlProgram, GlUnsupported } from './context';
 import { GlDensity, packScatterCellRows, packScatterRows } from './density';
 import { WordTexture } from './texture';
 
 const SPAN = { low: 0, high: 0 };
+
+/** The most rows one frame's append writes into the retained image in Canvas 2D (see `GlLayer.appendPatch`). */
+const PATCH_ROWS = 32;
 
 class GlLayer {
 	private cache: CanvasRenderingContext2D;
@@ -44,6 +47,22 @@ class GlLayer {
 	private tableAt = -1;
 	/** The grid rows the columns in view spanned when the pixel ranges were made. */
 	private span = '';
+	/** A heatmap's integer pans, which translate the retained image, and the projection it was drawn at. */
+	private heatPan = new HeatPan();
+	private heatProjection = '';
+	/** Words per scatter record of the last draw: 2, or 3 with sizes; 0 for none. */
+	private words = 0;
+	/**
+	 * Rows `[pendingFrom, pendingTo)` were appended into the retained image in Canvas 2D: their
+	 * records are uploaded with the next WebGL2 draw.
+	 */
+	private pendingFrom = Infinity;
+	private pendingTo = -Infinity;
+	private readonly stamps = new StampCache();
+	/** The palette of the scatter records, and its colors premultiplied. */
+	private straight: Uint32Array | null = null;
+	private readonly premultiplied = new Uint32Array(PALETTE_SIZE);
+	private readonly cssColors = new Map<number, string>();
 	constructor(
 		private pool: GlContext,
 		private listener: () => void,
@@ -85,8 +104,23 @@ class GlLayer {
 				this.packed = new Uint32Array(Math.max(count * 5, 64));
 				this.packedFloats = new Float32Array(this.packed.buffer);
 			}
-			const fallback = parseColor(options.color) ?? 0;
-			const visible = packScatterCellRows(f, this.packed, this.packedFloats, f.from, f.to, fallback, density);
+			// Records hold colors premultiplied, as the drawing buffer takes them (densities hold counts).
+			const premultiply = this.pool.premultiply;
+			const fallback = premultiply.color(parseColor(options.color) ?? 0);
+			if (this.straight !== f.palette) {
+				this.premultiplied.set(f.palette);
+				premultiply.palette(this.premultiplied);
+				this.straight = f.palette;
+			}
+			const visible = packScatterCellRows(
+				{ ...f, palette: this.premultiplied },
+				this.packed,
+				this.packedFloats,
+				f.from,
+				f.to,
+				fallback,
+				density,
+			);
 			if (visible > 0) {
 				this.records.bind(visible * 5);
 				this.records.write(this.packed, 0, visible * 5);
@@ -98,10 +132,12 @@ class GlLayer {
 			gl.uniform1i(p.stamp, base);
 			gl.uniform1i(p.base, base);
 			gl.uniform1i(p.recordWords, 5);
+			// A cell's box may be wider or taller than its stamp: quads, never sprites.
+			gl.uniform1i(p.guard, 0);
 			gl.uniform1i(p.circle, Number(options.shape === 'circle'));
 			if (density) {
 				this.density ??= new GlDensity(this.pool);
-				const strip = this.density.draw(f, p, 0, visible, false, 0, width);
+				const strip = this.density.draw(f, p, 0, visible, false, 0, width, 0);
 				this.copy(strip.left, strip.right, height);
 				return;
 			}
@@ -119,16 +155,28 @@ class GlLayer {
 		const key = [projection.offset, projection.scale, projection.log, words, density, words > 2 ? ratio : 0].join(',');
 		const fresh = this.records.bind(w.capacity * words) || w.version !== this.version;
 		const all = fresh || key !== this.projection || (!density && (styleChanged || options.color !== this.fallback));
-		const from = all ? 0 : w.dirtyFrom,
-			to = all ? w.count : w.dirtyTo;
+		// Rows appended in Canvas 2D since the last draw have their records uploaded now.
+		const from = all ? 0 : Math.min(w.dirtyFrom, this.pendingFrom),
+			to = all ? w.count : Math.max(w.dirtyTo, this.pendingTo);
+		this.pendingFrom = Infinity;
+		this.pendingTo = -Infinity;
+		this.words = words;
 		if (to > from) {
 			if (this.packed.length < w.capacity * words) {
 				this.packed = new Uint32Array(w.capacity * words);
 				this.packedFloats = new Float32Array(this.packed.buffer);
 			}
-			const fallback = parseColor(options.color) ?? 0;
-			if (words === 2 && !density) scatterRecords(f, this.packed, from, to, fallback);
-			else packScatterRows(f, this.packed, this.packedFloats, from, to, fallback, words, density);
+			// Records hold colors premultiplied, as the drawing buffer takes them.
+			const premultiply = this.pool.premultiply;
+			const fallback = premultiply.color(parseColor(options.color) ?? 0);
+			if (this.straight !== f.palette) {
+				this.premultiplied.set(f.palette);
+				premultiply.palette(this.premultiplied);
+				this.straight = f.palette;
+			}
+			const frame = { ...f, palette: this.premultiplied };
+			if (words === 2 && !density) scatterRecords(frame, this.packed, from, to, fallback);
+			else packScatterRows(frame, this.packed, this.packedFloats, from, to, fallback, words, density);
 			this.records.write(this.packed, from * words, to * words);
 		}
 		this.projection = key;
@@ -157,6 +205,9 @@ class GlLayer {
 		gl.uniform1i(p.base, base);
 		gl.uniform1i(p.recordWords, words);
 		gl.uniform1i(p.circle, Number(options.shape === 'circle'));
+		// Point sprites where the context draws them as large as the widest point: one search per point.
+		const guard = this.pool.pointGuard(size, width, height);
+		gl.uniform1i(p.guard, guard);
 		if (density) {
 			// Every row of the pane, or those appended that are in it.
 			let first = this.bounds[0]!,
@@ -166,7 +217,7 @@ class GlLayer {
 				end = Math.min(end, to);
 			}
 			this.density ??= new GlDensity(this.pool);
-			const strip = this.density.draw(f, p, first, end, patch, left, right);
+			const strip = this.density.draw(f, p, first, end, patch, left, right, guard);
 			this.copy(strip.left, strip.right, height);
 			return;
 		}
@@ -177,7 +228,7 @@ class GlLayer {
 		gl.uniform1i(p.first, first);
 		gl.scissor(left, 0, right - left, height);
 		gl.clear(gl.COLOR_BUFFER_BIT);
-		if (right > left && end > first) gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, end - first);
+		if (right > left && end > first) this.pool.drawScatter(guard, width, height, end - first);
 		this.copy(left, right, height);
 	}
 
@@ -238,7 +289,14 @@ class GlLayer {
 		this.ranges.write(table, from * 3, to * 3, at + from * 3);
 	}
 
-	private heatmap(f: MarkFrame, p: GlProgram, full: boolean, styleChanged: boolean, mappingChanged: boolean) {
+	private heatmap(
+		f: MarkFrame,
+		p: GlProgram,
+		full: boolean,
+		styleChanged: boolean,
+		mappingChanged: boolean,
+		resized: boolean,
+	) {
 		const { window: w, width, height } = f;
 		const slots = f.slots ?? null;
 		const modeChanged = (slots !== null) !== this.slots;
@@ -270,17 +328,36 @@ class GlLayer {
 			span = `${SPAN.low},${SPAN.high}`;
 		}
 		const sameGrid = !rebound && !full && !fresh && w.count === this.count && span === this.span;
+		const projection = `${f.projection.offset},${f.projection.scale},${f.projection.log}`;
+		let delta: number | null = null;
 		if (!sameGrid) {
 			this.heat.project(f);
 			this.ranges.write(this.heat.data, 0, n);
 			this.span = span;
+			// As the WebGPU path: an integer pan whose overlapping columns and rows read the cells they
+			// read before translates the retained image, and draws the columns it exposes.
+			delta = this.heatPan.translation(
+				f.map.x(w.time[0]!),
+				this.heat.data,
+				width,
+				height,
+				!resized &&
+					!fresh &&
+					!styleChanged &&
+					!modeChanged &&
+					this.revision === w.revision &&
+					projection === this.heatProjection,
+				this.heat.rowBase,
+			);
 		}
+		this.heatProjection = projection;
 		if (varying) this.uploadTable(f, n, rebound || fresh || this.tableAt !== n, from, to);
 		this.tableAt = varying ? n : -1;
 		if (this.style.bind(512) || styleChanged || modeChanged) {
 			// Slots need only their colors; values the first value of each slot too.
 			if (slots) slotColors(f.palette, this.colors);
 			else heatStyle(f.palette, f.mapping, this.colors);
+			this.pool.premultiply.palette(this.colors);
 			this.style.write(this.colors, 0, slots ? 256 : 512);
 		}
 		let left = 0,
@@ -291,7 +368,20 @@ class GlLayer {
 		} else if (!full && !fresh && to > from) {
 			// The column before an append or replacement shares its edge.
 			left = Math.max(0, Math.min(width, Math.round(f.map.x(w.time[Math.max(0, from - 1)]!) - f.map.spacing / 2)));
+		} else if (delta !== null) {
+			if (delta !== 0) {
+				// The image is transposed: the pane's columns are its rows.
+				const cache = this.cache;
+				cache.save();
+				cache.setTransform(1, 0, 0, 1, 0, 0);
+				cache.globalCompositeOperation = 'copy';
+				cache.drawImage(cache.canvas, 0, delta);
+				cache.restore();
+			}
+			if (delta >= 0) right = delta;
+			else left = width + delta;
 		}
+		if (right <= left) return;
 		const gl = this.pool.gl;
 		this.records.layout(p.recordsStride);
 		this.ranges.layout(p.rangesStride);
@@ -302,6 +392,82 @@ class GlLayer {
 		gl.scissor(left, 0, right - left, height);
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 		this.copy(left, right, height);
+	}
+
+	/**
+	 * Writes the rows of a scatter append into the retained image in Canvas 2D, as the Canvas 2D and
+	 * WebGPU paths do, rather than drawing a strip of the pane and copying it back from the GL
+	 * canvas; their records wait for the next draw. A WebGL2 draw writes each pixel of a point as the
+	 * color of the last row that covers it: for opaque colors, a `fillRect` of each point over the
+	 * image in row order writes the same bytes. Returns false, having drawn nothing, where that does
+	 * not hold or the patch is not one of appended rows at the finest level: the frame is drawn in
+	 * WebGL2.
+	 */
+	private appendPatch(f: MarkFrame): boolean {
+		const w = f.window;
+		const options = f.options as ScatterOptions;
+		if (
+			options.colorBy === 'density' ||
+			w.level !== 0 ||
+			w.version !== this.version ||
+			w.dirtyFrom < this.count ||
+			!(w.dirtyTo > w.dirtyFrom) ||
+			w.dirtyTo - w.dirtyFrom > PATCH_ROWS ||
+			(w.sizes.length > 0 ? 3 : 2) !== this.words ||
+			this.cache.canvas.width !== f.height ||
+			this.cache.canvas.height !== f.width
+		)
+			return false;
+		const first = Math.max(f.from, w.dirtyFrom),
+			end = Math.min(f.to, w.dirtyTo);
+		const fallback = parseColor(options.color) ?? 0;
+		for (let i = first; i < end; i++) {
+			const value = w.values[i]!;
+			const color = value === value ? f.palette[paletteIndex(f.mapping, value)]! : fallback;
+			if (unpackColor(color)[3] !== 255) return false;
+		}
+		const map = f.map;
+		const { offset, scale, log } = f.projection;
+		const shift = options.barAlign === 'start' ? -map.spacing / 2 : 0;
+		const base = pointPixels(options.pointSize, f.ratio);
+		const sizes = w.sizes;
+		this.stamps.setCircle(options.shape === 'circle');
+		const cache = this.cache;
+		for (let i = first; i < end; i++) {
+			const value = w.values[i]!;
+			const color = value === value ? f.palette[paletteIndex(f.mapping, value)]! : fallback;
+			let css = this.cssColors.get(color);
+			if (css === undefined) {
+				const [r, g, b] = unpackColor(color);
+				css = `rgb(${r},${g},${b})`;
+				if (this.cssColors.size >= 257) this.cssColors.clear();
+				this.cssColors.set(color, css);
+			}
+			const own = sizes.length > 0 ? sizes[i]! : Number.NaN;
+			const stamp = this.stamps.get(own === own ? pointPixels(own, f.ratio) : base);
+			const size = stamp.size,
+				half = size >> 1;
+			// The pixel the point is centered on, as the column ranges and records place it.
+			const t = w.time[i]!;
+			map.segment(t);
+			const x = Math.round(map.x0 + shift + (t - map.t0) * map.pace) - half;
+			const price = w.price[i]!;
+			const y = Math.round(offset - (log ? Math.log10(price) : price) * scale) - half;
+			if (!(x > -size && x < f.width && y > -size && y < f.height)) continue;
+			cache.fillStyle = css;
+			if (stamp.square) cache.fillRect(x, y, size, size);
+			else
+				for (let c = 0; c < size; c++) {
+					const top = stamp.spans[c * 2]!,
+						bottom = stamp.spans[c * 2 + 1]!;
+					if (bottom > top) cache.fillRect(x + c, y + top, 1, bottom - top);
+				}
+		}
+		this.pendingFrom = Math.min(this.pendingFrom, w.dirtyFrom);
+		this.pendingTo = Math.max(this.pendingTo, w.dirtyTo);
+		this.count = w.count;
+		this.revision = w.revision;
+		return true;
 	}
 
 	private copy(left: number, right: number, height: number) {
@@ -325,7 +491,9 @@ class GlLayer {
 		const { width, height, window: w } = f;
 		// A heatmap that goes over to its slots, or back to its values, is drawn again from them.
 		const modeChanged = f.type === 'heatmap' && (f.slots != null) !== this.slots;
-		if (full || modeChanged || this.version !== w.version || this.revision !== w.revision) {
+		const patched =
+			!full && f.type === 'scatter' && this.revision !== w.revision && this.pixels > 0 && this.appendPatch(f);
+		if (!patched && (full || modeChanged || this.version !== w.version || this.revision !== w.revision)) {
 			const kind =
 				f.type === 'scatter'
 					? (f.options as ScatterOptions).colorBy === 'density'
@@ -335,13 +503,14 @@ class GlLayer {
 						? 'heatmap-slots'
 						: 'heatmap';
 			const program = this.pool.begin(this.listener, kind, width, height);
-			full = this.resize(width, height) || full;
+			const resized = this.resize(width, height);
+			full ||= resized;
 			const mapping = [f.mapping.min, f.mapping.factor, f.mapping.log].join(',');
 			const mappingChanged = mapping !== this.mapping;
 			const styleChanged = this.palette !== f.palette || mappingChanged;
 			this.pool.gl.enable(this.pool.gl.SCISSOR_TEST);
 			if (f.type === 'scatter') this.scatter(f, program, full, styleChanged);
-			else this.heatmap(f, program, full, styleChanged, mappingChanged);
+			else this.heatmap(f, program, full, styleChanged, mappingChanged, resized);
 			this.count = w.count;
 			this.version = w.version;
 			this.revision = w.revision;
@@ -360,6 +529,9 @@ class GlLayer {
 	/** Frames were drawn without this layer: the records may have missed patches. */
 	stale() {
 		this.version = -1;
+		this.heatPan = new HeatPan();
+		this.pendingFrom = Infinity;
+		this.pendingTo = -Infinity;
 	}
 	release() {
 		this.records.release();

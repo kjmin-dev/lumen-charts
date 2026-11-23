@@ -18,6 +18,8 @@ uint word(usampler2D source, ivec2 stride, int i) {
 uint recordWord(int i) { return word(records, recordsStride, i); }
 uint rangeWord(int i) { return word(ranges, rangesStride, i); }
 uint styleWord(int i) { return word(style, styleStride, i); }
+// Colors arrive premultiplied as the page's Canvas 2D premultiplies them (marks/premultiply.ts), and
+// the drawing buffer is premultiplied: the browser draws it into the retained image as it is.
 vec4 color(uint bits) {
 	return vec4(uvec4(bits, bits >> 8u, bits >> 16u, bits >> 24u) & 255u) / 255.0;
 }
@@ -28,6 +30,14 @@ vec4 color(uint bits) {
 // row of its center, its color (or, for densities, its count as float bits), and with sizes its
 // width in device pixels (0: the series' size). The column comes from `ranges`, padded by the
 // widest point in view (`stamp`), so any point that covers a column of the strip is drawn.
+//
+// With `guard` above 0 a point is one vertex of a draw of point sprites, not an instance of four
+// corners: one vertex shaded per point rather than four, and no instancing, which some GPUs shade
+// an instance at a time (see `GlContext.drawScatter`). The viewport then reaches `guard` pixels
+// beyond the pane on every side, so a point whose center lies outside the pane but which covers
+// pixels of it is not clipped away by its center; the scissor keeps it to the pane. A sprite covers
+// the pixels whose centers lie inside the square around its center, which are the quad's pixels:
+// its edges are on whole or half pixels, never on a pixel center.
 export const scatterVertex =
 	header +
 	`
@@ -36,12 +46,13 @@ uniform int first;
 uniform int stamp;
 uniform int base;
 uniform int recordWords;
+uniform int guard;
 flat out uint rgba;
 flat out ivec2 origin;
 flat out ivec2 box;
 flat out int size;
 void main() {
-	int id = first + gl_InstanceID;
+	int id = first + (guard > 0 ? gl_VertexID : gl_InstanceID);
 	int at = recordWords * id;
 	if (recordWords == 5) {
 		origin = ivec2(int(recordWord(at)), int(recordWord(at + 1)));
@@ -66,8 +77,16 @@ void main() {
 		rgba = recordWord(at + 1);
 		box = ivec2(size);
 	}
-	vec2 p = vec2(origin + box * ivec2(corner)) / vec2(pane);
-	gl_Position = vec4(p * vec2(2,-2) + vec2(-1,1), 0, 1);
+	// A cell's box can be wider or taller than its stamp: those records are drawn as quads (guard 0).
+	gl_PointSize = float(size);
+	if (guard > 0) {
+		// The center, in window coordinates (y up), within a viewport guard pixels larger on each side.
+		vec2 c = vec2(float(origin.x), float(pane.y - origin.y)) + vec2(0.5, -0.5) * float(size);
+		gl_Position = vec4((c + float(guard)) / vec2(pane + 2 * guard) * 2.0 - 1.0, 0, 1);
+	} else {
+		vec2 p = vec2(origin + box * ivec2(corner)) / vec2(pane);
+		gl_Position = vec4(p * vec2(2,-2) + vec2(-1,1), 0, 1);
+	}
 }`;
 
 // The pixels of a disc (or rounded rectangle when `box > size` for a super-pixel coarse cell) whose
