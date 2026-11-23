@@ -1,0 +1,193 @@
+/*
+ * The site wears Lumen Charts's own palette from packages/core/src/options.ts:
+ * dark canvas #0e1116, light canvas #ffffff, borders #2a3140 / #dcdfe5, and
+ * brand cobalt #2962ff alongside bullish teal #26a69a and bearish coral #ef5350.
+ */
+
+:root {
+	--lumen-radius-sm: 0.375rem;
+	--lumen-radius-md: 0.5rem;
+	--lumen-radius-lg: 0.75rem;
+	--lumen-radius-full: 9999px;
+
+	--lumen-accent: #2962ff;
+	--lumen-accent-high: #7ca2ff;
+	--lumen-accent-low: rgba(41, 98, 255, 0.16);
+	--lumen-up: #26a69a;
+	--lumen-down: #ef5350;
+
+	/* Dark mode (Starlight default) matches themes.dark in packages/core/src/options.ts */
+	--sl-color-accent-low: var(--lumen-accent-low);
+	--sl-color-accent: var(--lumen-accent);
+	--sl-color-accent-high: var(--lumen-accent-high);
+	--sl-color-white: #f0f3f8;
+	--sl-color-gray-1: #dce1ea;
+	--sl-color-gray-2: #aab2c0;
+	--sl-color-gray-3: #7d8696;
+	--sl-color-gray-4: #444d5e;
+	--sl-color-gray-5: #2a3140;
+	--sl-color-gray-6: #161b24;
+	--sl-color-gray-7: #12161e;
+	--sl-color-black: #0e1116;
+	--sl-color-bg-nav: #0e1116;
+	--sl-color-bg-sidebar: #0e1116;
+	--sl-color-hairline: #1f2533;
+	--sl-color-hairline-light: #1c2230;
+	--sl-color-hairline-shade: #1c2230;
+	--sl-color-text-accent: #7ca2ff;
+	--sl-color-text-invert: #0e1116;
+}
+
+:root[data-theme='light'],
+:root[data-theme='light'] ::backdrop {
+	/* Light mode matches themes.light in packages/core/src/options.ts */
+	--sl-color-accent-low: rgba(41, 98, 255, 0.1);
+	--sl-color-accent: #2962ff;
+	--sl-color-accent-high: #1d4ed8;
+	--sl-color-white: #181c24;
+	--sl-color-gray-1: #242a36;
+	--sl-color-gray-2: #4a5160;
+	--sl-color-gray-3: #6b7280;
+	--sl-color-gray-4: #9aa2b1;
+	--sl-color-gray-5: #dcdfe5;
+	--sl-color-gray-6: #f5f6f8;
+	--sl-color-gray-7: #eceef2;
+	--sl-color-black: #ffffff;
+	--sl-color-bg-nav: #ffffff;
+	--sl-color-bg-sidebar: #ffffff;
+	--sl-color-hairline: #e5e7ec;
+	--sl-color-hairline-light: #eceef2;
+	--sl-color-hairline-shade: #eceef2;
+	--sl-color-text-accent: #1e4ed8;
+	--sl-color-text-invert: #ffffff;
+}
+
+.card,
+.sl-link-card {
+	border-radius: var(--lumen-radius-lg);
+}
+
+.sl-link-button {
+	border-radius: var(--lumen-radius-full);
+}
+
+.sl-link-button.primary {
+	background-color: #2962ff;
+	border-color: #2962ff;
+	color: #ffffff;
+}
+
+.sl-link-button.primary:hover {
+	background-color: #1e50e0;
+	border-color: #1e50e0;
+	color: #ffffff;
+}
+
+.sl-markdown-content code:not(pre code) {
+	border-radius: var(--lumen-radius-sm);
+}
+
+.sl-markdown-content table {
+	font-variant-numeric: tabular-nums;
+}
+
+/* Live demo caption below embedded chart frames. */
+.demo-caption {
+	margin-top: 0.65rem;
+	font-size: var(--sl-text-sm);
+	color: var(--sl-color-gray-2);
+}
+
+/* Color swatches and palette ramps on reference pages, matching xds's token tables. */
+.sl-markdown-content td:has(.swatch) {
+	white-space: nowrap;
+}
+
+.swatch {
+	display: inline-block;
+	width: 1.15rem;
+	height: 1.15rem;
+	margin-inline-end: 0.45rem;
+	vertical-align: -0.24rem;
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: var(--lumen-radius-sm);
+}
+
+.ramp {
+	display: flex;
+	overflow: hidden;
+	height: 2.25rem;
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: var(--lumen-radius-md);
+	background-image:
+		linear-gradient(45deg, rgba(128, 128, 128, 0.16) 25%, transparent 25%),
+		linear-gradient(-45deg, rgba(128, 128, 128, 0.16) 25%, transparent 25%),
+		linear-gradient(45deg, transparent 75%, rgba(128, 128, 128, 0.16) 75%),
+		linear-gradient(-45deg, transparent 75%, rgba(128, 128, 128, 0.16) 75%);
+	background-size: 12px 12px;
+	background-position:
+		0 0,
+		0 6px,
+		6px -6px,
+		-6px 0;
+}
+
+.ramp > span {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+.theme-sample {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+	gap: 0;
+	overflow: hidden;
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: var(--lumen-radius-lg);
+}
+
+.theme-sample > div {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	margin: 0;
+	padding: 1rem 1.15rem;
+}
+
+.theme-sample__bar {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: 0.8125rem;
+	font-family: var(--sl-font-mono);
+}
+
+.theme-sample__pill {
+	display: inline-block;
+	padding: 0.15rem 0.5rem;
+	border-radius: var(--lumen-radius-sm);
+	font-size: 0.75rem;
+	font-weight: 600;
+}
+
+/* Status badges for sidebar/reference pills. */
+.pill {
+	display: inline-block;
+	padding: 0.05rem 0.5rem;
+	border-radius: var(--lumen-radius-full);
+	background: var(--sl-color-accent-low);
+	color: var(--sl-color-text-accent);
+	font-size: var(--sl-text-xs);
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+/* Splash hero tuning so the live chart sits cleanly above the fold. */
+.hero {
+	padding-block: clamp(2rem, calc(1rem + 4vmin), 4.5rem);
+}
+
+.hero .tagline {
+	max-width: 56ch;
+}

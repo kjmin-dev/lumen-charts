@@ -1,0 +1,156 @@
+---
+title: Framework bindings
+description: Use Lumen Charts with Vanilla TypeScript, React, Vue 3, Svelte 5, or SolidJS.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Lumen Charts keeps framework adapters intentionally thin: each adapter creates the chart on mount, forwards option changes to `applyOptions`, and calls `destroy()` on unmount.
+
+**Data always goes through the `ChartApi`**, never through reactive framework props. Passing millions of bars through component props would force unnecessary diffing and allocations on every tick.
+
+<Tabs>
+	<TabItem label="Vanilla">
+		```sh
+		pnpm add lumen-charts
+		```
+
+    	```ts
+    	import { createChart } from 'lumen-charts';
+
+    	const chart = createChart(document.getElementById('chart')!, { theme: 'dark' });
+    	const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+    	candles.setData(bars);
+    	chart.timeScale().fitContent();
+
+    	// Clean up when leaving the page or view:
+    	chart.destroy();
+    	```
+    </TabItem>
+    <TabItem label="React">
+    	```sh
+    	pnpm add @lumen-charts/react react
+    	```
+
+    	`LumenChart` renders a `<div>` and exposes the `ChartApi` instance through a `ref` (`null` until mounted).
+
+    	```tsx
+    	import { LumenChart, type ChartApi } from '@lumen-charts/react';
+    	import { useEffect, useMemo, useRef } from 'react';
+
+    	export function PriceChart({ dark, bars }: { dark: boolean; bars: OhlcColumns }) {
+    		const chartRef = useRef<ChartApi | null>(null);
+    		const options = useMemo(
+    			() => ({ theme: dark ? ('dark' as const) : ('light' as const) }),
+    			[dark],
+    		);
+
+    		useEffect(() => {
+    			const chart = chartRef.current;
+    			if (chart === null) return;
+    			const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+    			candles.setData(bars);
+    			chart.timeScale().fitContent();
+    			return () => chart.removeSeries(candles);
+    		}, [bars]);
+
+    		return <LumenChart ref={chartRef} options={options} style={{ height: 420 }} />;
+    	}
+    	```
+    </TabItem>
+    <TabItem label="Vue 3">
+    	```sh
+    	pnpm add @lumen-charts/vue vue
+    	```
+
+    	`LumenChart` exposes the `ChartApi` instance as `chart` on the template ref.
+
+    	```vue
+    	<script setup lang="ts">
+    	import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+    	import { computed, onMounted, useTemplateRef } from 'vue';
+
+    	const props = defineProps<{ dark: boolean; bars: OhlcColumns }>();
+    	const chartEl = useTemplateRef<{ chart: ChartApi | null }>('chartEl');
+    	const options = computed(() => ({ theme: props.dark ? ('dark' as const) : ('light' as const) }));
+
+    	onMounted(() => {
+    		const chart = chartEl.value?.chart;
+    		if (!chart) return;
+    		const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+    		candles.setData(props.bars);
+    		chart.timeScale().fitContent();
+    	});
+    	</script>
+
+    	<template>
+    		<LumenChart ref="chartEl" :options="options" style="height: 420px" />
+    	</template>
+    	```
+    </TabItem>
+    <TabItem label="Svelte 5">
+    	```sh
+    	pnpm add @lumen-charts/svelte svelte
+    	```
+
+    	`@lumen-charts/svelte` exports the `lumenChart` action. Receive the `ChartApi` once in `onReady`.
+
+    	```svelte
+    	<script lang="ts">
+    		import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+
+    		let { dark = false, bars } = $props();
+
+    		function onReady(chart: ChartApi) {
+    			const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+    			candles.setData(bars);
+    			chart.timeScale().fitContent();
+    		}
+    	</script>
+
+    	<div
+    		style="height: 420px"
+    		use:lumenChart={{ options: { theme: dark ? 'dark' : 'light' }, onReady }}
+    	></div>
+    	```
+    </TabItem>
+    <TabItem label="Solid">
+    	```sh
+    	pnpm add @lumen-charts/solid solid-js
+    	```
+
+    	`@lumen-charts/solid` renders a client-side `<div>` and passes the `ChartApi` instance to `onReady`.
+
+    	```tsx
+    	import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+
+    	export function PriceChart(props: { dark: boolean; bars: OhlcColumns }) {
+    		const handleReady = (chart: ChartApi) => {
+    			const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+    			candles.setData(props.bars);
+    			chart.timeScale().fitContent();
+    		};
+
+    		return (
+    			<LumenChart
+    				class="chart-box"
+    				options={{ theme: props.dark ? 'dark' : 'light' }}
+    				onReady={handleReady}
+    			/>
+    		);
+    	}
+    	```
+    </TabItem>
+
+</Tabs>
+
+## Package summary
+
+| Package                | Export        | Lifecycle                                                     |
+| ---------------------- | ------------- | ------------------------------------------------------------- |
+| `lumen-charts`         | `createChart` | Manual `destroy()`                                            |
+| `@lumen-charts/core`   | `createChart` | Manual `destroy()`                                            |
+| `@lumen-charts/react`  | `LumenChart`  | Mount/unmount via `useEffect`, exposes `ChartApi` on `ref`    |
+| `@lumen-charts/vue`    | `LumenChart`  | `onMounted` / `onBeforeUnmount`, exposes `{ chart }`          |
+| `@lumen-charts/svelte` | `lumenChart`  | Svelte action `update` / `destroy`, callback `onReady(chart)` |
+| `@lumen-charts/solid`  | `LumenChart`  | `onMount` / `onCleanup`, callback `onReady(chart)`            |

@@ -1,0 +1,22 @@
+---
+title: Playground
+description: Interactive studio to test Lumen Charts indicators, independent panes, GPU mark layers, drawing tools, price scale modes, and JSON state save/restore.
+---
+
+import ChartDemo from '../../components/ChartDemo.astro';
+
+<ChartDemo name="playground" title="Lumen Charts interactive playground" height={580} />
+
+<p class="demo-caption">
+	5,000 candlesticks with toggleable Bollinger Bands, EMA 50, independent RSI and volume panes, order-book heatmap +
+	trade scatter overlay, price scale modes, drawing tools, and live JSON state serialization.
+</p>
+
+## Things to try
+
+- **Pan & zoom**: drag horizontally to pan, scroll or pinch to zoom, drag any price axis vertically to scale it manually, and double-click the axis to turn autoscaling back on.
+- **Independent indicator panes**: toggle **RSI pane** to switch `paneWeight` between an independent oscillator pane and a hidden overlay.
+- **GPU mark layers**: toggle **Book + Trades** to reveal the WebGL2 order-book heatmap behind the candles and trade execution scatters on top.
+- **Interactive drawings**: choose a tool from the **Draw** dropdown, click or drag on the chart to place points (with `nearest` crosshair), then drag handles to edit or press `Delete` to remove.
+- **Save & restore state**: click **Save state** to inspect the exact versioned `ChartState` JSON, pan or change tools, and click **Restore** to jump back atomically.
+- **Keyboard navigation**: press `Tab` to focus the chart navigator, then use Arrow keys, `Home`/`End`, `+`/`-`, and `0` to explore bars with screen-reader announcements.

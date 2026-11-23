@@ -10,7 +10,13 @@
 		"browser": true,
 		"es2024": true
 	},
-	"ignorePatterns": ["**/dist/**", "**/node_modules/**", "coverage/**"],
+	"ignorePatterns": [
+		"**/dist/**",
+		"**/node_modules/**",
+		"coverage/**",
+		"apps/docs/.astro/**",
+		"apps/docs/.wrangler/**"
+	],
 	"rules": {
 		"import/no-cycle": "error",
 		"typescript/consistent-type-imports": "error",
@@ -21,7 +27,14 @@
 	},
 	"overrides": [
 		{
-			"files": ["**/test/**", "*.config.ts", "benchmarks/runner/**", "scripts/**"],
+			"files": [
+				"**/test/**",
+				"*.config.ts",
+				"benchmarks/runner/**",
+				"scripts/**",
+				"apps/docs/scripts/**",
+				"apps/docs/astro.config.mjs"
+			],
 			"env": {
 				"node": true
 			}
@@ -30,6 +43,12 @@
 			"files": ["benchmarks/**"],
 			"rules": {
 				"no-await-in-loop": "off"
+			}
+		},
+		{
+			"files": ["apps/docs/**/*.astro"],
+			"rules": {
+				"import/no-unassigned-import": "off"
 			}
 		}
 	]

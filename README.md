@@ -2,6 +2,8 @@
 
 High-performance financial charting engine for the web.
 
+- **Documentation:** [lumen-charts.studiocyf.app](https://lumen-charts.studiocyf.app) (with interactive chart demos and [`llms.txt`](https://lumen-charts.studiocyf.app/llms.txt))
+
 > Status: stage 4 of the [design](docs/design.md) is complete; of the optional steps of stage 5, [these](docs/design/stage-5.md) are decided or built.
 
 ## Usage
@@ -76,6 +78,8 @@ Requires Node 20+ and pnpm.
 ```sh
 pnpm install
 pnpm dev          # vanilla example with live reload
+pnpm docs:dev     # documentation site at http://localhost:4321
+pnpm docs:build   # build the static documentation site into apps/docs/dist
 pnpm test         # unit tests (run against sources, no build needed)
 pnpm typecheck    # tsrs (Rust port of the TypeScript 7 checker)
 pnpm lint         # Oxlint
@@ -102,10 +106,12 @@ feature in a guide of its own, what a stage built and measured in files of their
 ## Layout
 
 ```
+apps/         documentation site (Astro Starlight, deployed to lumen-charts.studiocyf.app)
 packages/     libraries published to npm
 examples/     runnable examples (not published)
 benchmarks/   benchmark harness (not published)
 docs/         guides, the design and what each stage built, benchmark results
+tools/        private release and deployment tooling
 ```
 
 ## License
