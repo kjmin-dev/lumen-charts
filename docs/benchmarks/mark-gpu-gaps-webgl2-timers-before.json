@@ -3,23 +3,7 @@
 	"createdAt": "2026-11-22T17:03:51.010Z",
 	"environment": {
 		"runner": {
-			"arguments": [
-				"--lib",
-				"lumen-worker",
-				"--mark-renderer",
-				"webgl2",
-				"--mark-gpu-timers",
-				"--case",
-				"scatter/candles-2k/cloud-1m/zoom,scatter/candles-2k/cloud-1m/tick,scatter/candles-2k/cloud-1m/tick-redraw,heatmap/candles-4800/2400x600/pan,heatmap/candles-4800/2400x600/zoom",
-				"--budget",
-				"2",
-				"--repeats",
-				"1",
-				"--packages",
-				"$TMPDIR/main-base/packages",
-				"--out",
-				"$TMPDIR/ab/webgl2-timers-before-1.json"
-			],
+			"arguments": ["--lib","lumen-worker","--mark-renderer","webgl2","--mark-gpu-timers","--case","scatter/candles-2k/cloud-1m/zoom,scatter/candles-2k/cloud-1m/tick,scatter/candles-2k/cloud-1m/tick-redraw,heatmap/candles-4800/2400x600/pan,heatmap/candles-4800/2400x600/zoom","--budget","2","--repeats","1","--packages","$TMPDIR/main-base/packages","--out","$TMPDIR/ab/webgl2-timers-before-1.json"],
 			"node": "v26.13.1",
 			"durationSeconds": 19.079759458,
 			"skipped": []
@@ -32,8 +16,8 @@
 			"cpuCores": 8,
 			"totalMemoryBytes": 17179869184,
 			"power": "Now drawing from 'AC Power'",
-			"loadAverageStart": [11.876953125, 6.525390625, 4.58349609375],
-			"loadAverageEnd": [9.9775390625, 6.5126953125, 4.63427734375]
+			"loadAverageStart": [11.876953125,6.525390625,4.58349609375],
+			"loadAverageEnd": [9.9775390625,6.5126953125,4.63427734375]
 		},
 		"browser": {
 			"engine": "chromium",
@@ -43,157 +27,60 @@
 			"commandLine": "~/Library/Caches/ms-playwright/chromium-1248/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-edgeupdater --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,BlockOriginHeaderModificationOnRedirect,AvoidCorsURLLoaderRestartOnRedirect,Translate,AutoDeElevate,OptimizationHints,NetworkTimeServiceQuerying,AimEnabled,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion --enable-features=CDPScreenshotNewSurface --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --disable-updater-scheduler --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=<temporary-profile> --remote-debugging-pipe --no-startup-window --noerrdialogs --flag-switches-begin --flag-switches-end --enable-unsafe-swiftshader",
 			"gpuStatus": ""
 		},
-		"viewport": {
-			"width": 1280,
-			"height": 720
-		},
+		"viewport": {"width":1280,"height":720},
 		"deviceScaleFactor": 2,
-		"chart": {
-			"width": 1200,
-			"height": 600
-		},
+		"chart": {"width":1200,"height":600},
 		"page": {
 			"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
 			"userAgentData": {
 				"architecture": "arm",
-				"brands": [
-					{
-						"brand": "Not:A-Brand",
-						"version": "8"
-					},
-					{
-						"brand": "Chromium",
-						"version": "156"
-					}
-				],
-				"fullVersionList": [
-					{
-						"brand": "Not:A-Brand",
-						"version": "8.0.0.0"
-					},
-					{
-						"brand": "Chromium",
-						"version": "156.0.8078.4"
-					}
-				],
+				"brands": [{"brand":"Not:A-Brand","version":"8"},{"brand":"Chromium","version":"156"}],
+				"fullVersionList": [{"brand":"Not:A-Brand","version":"8.0.0.0"},{"brand":"Chromium","version":"156.0.8078.4"}],
 				"mobile": false,
 				"model": "",
 				"platform": "macOS",
 				"platformVersion": "26.5.2"
 			},
 			"devicePixelRatio": 2,
-			"viewport": {
-				"width": 1280,
-				"height": 720
-			},
-			"screen": {
-				"width": 1280,
-				"height": 720
-			},
-			"chart": {
-				"width": 1200,
-				"height": 600
-			},
+			"viewport": {"width":1280,"height":720},
+			"screen": {"width":1280,"height":720},
+			"chart": {"width":1200,"height":600},
 			"hardwareConcurrency": 8,
 			"deviceMemoryGb": 16,
 			"crossOriginIsolated": true,
-			"timer": {
-				"minStepMs": 0.004999876022338867,
-				"medianStepMs": 0.005000114440917969,
-				"steps": 2000
-			},
-			"idleFrameInterval": {
-				"count": 120,
-				"mean": 16.666,
-				"min": 16.659999999999968,
-				"p50": 16.664999999999964,
-				"p90": 16.670000000000016,
-				"p95": 16.670000000000073,
-				"p99": 16.670000000000073,
-				"max": 16.670000000000073
-			},
-			"webgl": {
-				"vendor": "Google Inc. (Apple)",
-				"renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"
-			},
+			"timer": {"minStepMs":0.004999876022338867,"medianStepMs":0.005000114440917969,"steps":2000},
+			"idleFrameInterval": {"count":120,"mean":16.666,"min":16.659999999999968,"p50":16.664999999999964,"p90":16.670000000000016,"p95":16.670000000000073,"p99":16.670000000000073,"max":16.670000000000073},
+			"webgl": {"vendor":"Google Inc. (Apple)","renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"},
 			"buildMode": "production",
-			"probes": {
-				"garbageCollection": "runner: CDP HeapProfiler.collectGarbage",
-				"memory": "runner: CDP Runtime.getHeapUsage of the page and of each dedicated worker"
-			}
+			"probes": {"garbageCollection":"runner: CDP HeapProfiler.collectGarbage","memory":"runner: CDP Runtime.getHeapUsage of the page and of each dedicated worker"}
 		},
-		"git": {
-			"commit": "25a57bc9f682c4da85a4df664fc15d9b0053c492",
-			"dirty": true
-		},
+		"git": {"commit":"25a57bc9f682c4da85a4df664fc15d9b0053c492","dirty":true},
 		"sources": "$TMPDIR/main-base/packages",
-		"packages": {
-			"lightweight-charts": "5.3.0",
-			"playwright": "1.64.1",
-			"vite": "8.3.8"
-		},
+		"packages": {"lightweight-charts":"5.3.0","playwright":"1.64.1","vite":"8.3.8"},
 		"merged": [
 			{
 				"createdAt": "2026-11-22T17:03:51.010Z",
 				"runner": {
-					"arguments": [
-						"--lib",
-						"lumen-worker",
-						"--mark-renderer",
-						"webgl2",
-						"--mark-gpu-timers",
-						"--case",
-						"scatter/candles-2k/cloud-1m/zoom,scatter/candles-2k/cloud-1m/tick,scatter/candles-2k/cloud-1m/tick-redraw,heatmap/candles-4800/2400x600/pan,heatmap/candles-4800/2400x600/zoom",
-						"--budget",
-						"2",
-						"--repeats",
-						"1",
-						"--packages",
-						"$TMPDIR/main-base/packages",
-						"--out",
-						"$TMPDIR/ab/webgl2-timers-before-1.json"
-					],
+					"arguments": ["--lib","lumen-worker","--mark-renderer","webgl2","--mark-gpu-timers","--case","scatter/candles-2k/cloud-1m/zoom,scatter/candles-2k/cloud-1m/tick,scatter/candles-2k/cloud-1m/tick-redraw,heatmap/candles-4800/2400x600/pan,heatmap/candles-4800/2400x600/zoom","--budget","2","--repeats","1","--packages","$TMPDIR/main-base/packages","--out","$TMPDIR/ab/webgl2-timers-before-1.json"],
 					"node": "v26.13.1",
 					"durationSeconds": 19.079759458,
 					"skipped": []
 				},
-				"loadAverageStart": [11.876953125, 6.525390625, 4.58349609375],
-				"loadAverageEnd": [9.9775390625, 6.5126953125, 4.63427734375],
-				"git": {
-					"commit": "25a57bc9f682c4da85a4df664fc15d9b0053c492",
-					"dirty": true
-				}
+				"loadAverageStart": [11.876953125,6.525390625,4.58349609375],
+				"loadAverageEnd": [9.9775390625,6.5126953125,4.63427734375],
+				"git": {"commit":"25a57bc9f682c4da85a4df664fc15d9b0053c492","dirty":true}
 			},
 			{
 				"createdAt": "2026-11-22T17:04:42.611Z",
 				"runner": {
-					"arguments": [
-						"--lib",
-						"lumen-worker",
-						"--mark-renderer",
-						"webgl2",
-						"--mark-gpu-timers",
-						"--case",
-						"scatter/candles-2k/cloud-1m/zoom,scatter/candles-2k/cloud-1m/tick,scatter/candles-2k/cloud-1m/tick-redraw,heatmap/candles-4800/2400x600/pan,heatmap/candles-4800/2400x600/zoom",
-						"--budget",
-						"2",
-						"--repeats",
-						"1",
-						"--packages",
-						"$TMPDIR/main-base/packages",
-						"--out",
-						"$TMPDIR/ab/webgl2-timers-before-2.json"
-					],
+					"arguments": ["--lib","lumen-worker","--mark-renderer","webgl2","--mark-gpu-timers","--case","scatter/candles-2k/cloud-1m/zoom,scatter/candles-2k/cloud-1m/tick,scatter/candles-2k/cloud-1m/tick-redraw,heatmap/candles-4800/2400x600/pan,heatmap/candles-4800/2400x600/zoom","--budget","2","--repeats","1","--packages","$TMPDIR/main-base/packages","--out","$TMPDIR/ab/webgl2-timers-before-2.json"],
 					"node": "v26.13.1",
 					"durationSeconds": 19.461776999999998,
 					"skipped": []
 				},
-				"loadAverageStart": [10.560546875, 6.92138671875, 4.8349609375],
-				"loadAverageEnd": [10.10205078125, 7.0908203125, 4.95458984375],
-				"git": {
-					"commit": "25a57bc9f682c4da85a4df664fc15d9b0053c492",
-					"dirty": true
-				}
+				"loadAverageStart": [10.560546875,6.92138671875,4.8349609375],
+				"loadAverageEnd": [10.10205078125,7.0908203125,4.95458984375],
+				"git": {"commit":"25a57bc9f682c4da85a4df664fc15d9b0053c492","dirty":true}
 			}
 		]
 	},
@@ -203,15 +90,9 @@
 			"adapter": "lumen-worker",
 			"job": {
 				"scenario": "scatter",
-				"dataset": {
-					"kind": "candles",
-					"size": 2000
-				},
+				"dataset": {"kind":"candles","size":2000},
 				"seed": 1,
-				"chart": {
-					"width": 1200,
-					"height": 600
-				},
+				"chart": {"width":1200,"height":600},
 				"points": 1000000,
 				"shape": "cloud",
 				"variant": "zoom",
@@ -224,15 +105,7 @@
 				"warmupFrames": 30,
 				"adapter": "lumen-worker"
 			},
-			"library": {
-				"library": {
-					"name": "@lumen-charts/core",
-					"version": "workspace"
-				},
-				"options": {
-					"worker": true
-				}
-			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
 			"status": "ok",
 			"runs": [
 				{
@@ -242,40 +115,11 @@
 						"rendererPath": "webgl2",
 						"rendererBytes": 26420224,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 97,
-							"mean": 17.87465455670103,
-							"min": 9.799374,
-							"p50": 18.183124,
-							"p90": 23.917166,
-							"p95": 24.644541,
-							"p99": 26.480749,
-							"max": 26.480749
-						},
-						"backendFrames": {
-							"webgl2": 96
-						},
+						"gpuPass": {"count":97,"mean":17.87465455670103,"min":9.799374,"p50":18.183124,"p90":23.917166,"p95":24.644541,"p99":26.480749,"max":26.480749},
+						"backendFrames": {"webgl2":96},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 96,
-							"mean": 3.670572891831398,
-							"min": 1.125,
-							"p50": 2.444999933242798,
-							"p90": 2.9600002765655518,
-							"p95": 5.920000076293945,
-							"p99": 86.75999999046326,
-							"max": 86.75999999046326
-						},
-						"interval": {
-							"count": 96,
-							"mean": 21.00609375,
-							"min": 16.659999999999854,
-							"p50": 16.66500000000042,
-							"p90": 33.32999999999993,
-							"p95": 33.335000000000036,
-							"p99": 83.33000000000015,
-							"max": 83.33000000000015
-						},
+						"jsTime": {"count":96,"mean":3.670572891831398,"min":1.125,"p50":2.444999933242798,"p90":2.9600002765655518,"p95":5.920000076293945,"p99":86.75999999046326,"max":86.75999999046326},
+						"interval": {"count":96,"mean":21.00609375,"min":16.659999999999854,"p50":16.66500000000042,"p90":33.32999999999993,"p95":33.335000000000036,"p99":83.33000000000015,"max":83.33000000000015},
 						"frames": 96,
 						"warmupFrames": 30,
 						"level": 0,
@@ -286,10 +130,7 @@
 						"visibleBars": 1000
 					},
 					"durationMs": 4263.766959,
-					"host": {
-						"cpuIdle": 0.18783068783068782,
-						"loadAverage": 11.13330078125
-					}
+					"host": {"cpuIdle":0.18783068783068782,"loadAverage":11.13330078125}
 				},
 				{
 					"status": "ok",
@@ -298,40 +139,11 @@
 						"rendererPath": "webgl2",
 						"rendererBytes": 26420224,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 88,
-							"mean": 20.293869784090905,
-							"min": 11.656208,
-							"p50": 20.311583,
-							"p90": 26.110791,
-							"p95": 27.038541,
-							"p99": 27.703083,
-							"max": 27.703083
-						},
-						"backendFrames": {
-							"webgl2": 87
-						},
+						"gpuPass": {"count":88,"mean":20.293869784090905,"min":11.656208,"p50":20.311583,"p90":26.110791,"p95":27.038541,"p99":27.703083,"max":27.703083},
+						"backendFrames": {"webgl2":87},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 87,
-							"mean": 3.6686206795703407,
-							"min": 1.5550000667572021,
-							"p50": 2.680000066757202,
-							"p90": 3.169999837875366,
-							"p95": 3.2849998474121094,
-							"p99": 78.13500022888184,
-							"max": 78.13500022888184
-						},
-						"interval": {
-							"count": 87,
-							"mean": 22.987586206896548,
-							"min": 16.659999999999854,
-							"p50": 16.669999999999618,
-							"p90": 33.335000000000036,
-							"p95": 33.335000000000036,
-							"p99": 83.32999999999993,
-							"max": 83.32999999999993
-						},
+						"jsTime": {"count":87,"mean":3.6686206795703407,"min":1.5550000667572021,"p50":2.680000066757202,"p90":3.169999837875366,"p95":3.2849998474121094,"p99":78.13500022888184,"max":78.13500022888184},
+						"interval": {"count":87,"mean":22.987586206896548,"min":16.659999999999854,"p50":16.669999999999618,"p90":33.335000000000036,"p95":33.335000000000036,"p99":83.32999999999993,"max":83.32999999999993},
 						"frames": 87,
 						"warmupFrames": 30,
 						"level": 0,
@@ -342,274 +154,18 @@
 						"visibleBars": 1000
 					},
 					"durationMs": 4194.639625000001,
-					"host": {
-						"cpuIdle": 0.2189650014956626,
-						"loadAverage": 10.0673828125
-					}
+					"host": {"cpuIdle":0.2189650014956626,"loadAverage":10.0673828125}
 				}
-			],
-			"summary": {
-				"rendererBytes": {
-					"median": 26420224,
-					"min": 26420224,
-					"max": 26420224,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.count": {
-					"median": 92.5,
-					"min": 88,
-					"max": 97,
-					"relativeRange": 0.0972972972972973,
-					"runs": 2
-				},
-				"gpuPass.mean": {
-					"median": 19.084262170395967,
-					"min": 17.87465455670103,
-					"max": 20.293869784090905,
-					"relativeRange": 0.12676493362906252,
-					"runs": 2
-				},
-				"gpuPass.min": {
-					"median": 10.727791,
-					"min": 9.799374,
-					"max": 11.656208,
-					"relativeRange": 0.17308633249846117,
-					"runs": 2
-				},
-				"gpuPass.p50": {
-					"median": 19.2473535,
-					"min": 18.183124,
-					"max": 20.311583,
-					"relativeRange": 0.1105845019160686,
-					"runs": 2
-				},
-				"gpuPass.p90": {
-					"median": 25.0139785,
-					"min": 23.917166,
-					"max": 26.110791,
-					"relativeRange": 0.08769596567775083,
-					"runs": 2
-				},
-				"gpuPass.p95": {
-					"median": 25.841541,
-					"min": 24.644541,
-					"max": 27.038541,
-					"relativeRange": 0.09264153403235505,
-					"runs": 2
-				},
-				"gpuPass.p99": {
-					"median": 27.091915999999998,
-					"min": 26.480749,
-					"max": 27.703083,
-					"relativeRange": 0.045118034471980505,
-					"runs": 2
-				},
-				"gpuPass.max": {
-					"median": 27.091915999999998,
-					"min": 26.480749,
-					"max": 27.703083,
-					"relativeRange": 0.045118034471980505,
-					"runs": 2
-				},
-				"backendFrames.webgl2": {
-					"median": 91.5,
-					"min": 87,
-					"max": 96,
-					"relativeRange": 0.09836065573770492,
-					"runs": 2
-				},
-				"backendTransitions": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.count": {
-					"median": 91.5,
-					"min": 87,
-					"max": 96,
-					"relativeRange": 0.09836065573770492,
-					"runs": 2
-				},
-				"jsTime.mean": {
-					"median": 3.669596785700869,
-					"min": 3.6686206795703407,
-					"max": 3.670572891831398,
-					"relativeRange": 0.0005319963949893452,
-					"runs": 2
-				},
-				"jsTime.min": {
-					"median": 1.340000033378601,
-					"min": 1.125,
-					"max": 1.5550000667572021,
-					"relativeRange": 0.3208955642135501,
-					"runs": 2
-				},
-				"jsTime.p50": {
-					"median": 2.5625,
-					"min": 2.444999933242798,
-					"max": 2.680000066757202,
-					"relativeRange": 0.0917073691763529,
-					"runs": 2
-				},
-				"jsTime.p90": {
-					"median": 3.065000057220459,
-					"min": 2.9600002765655518,
-					"max": 3.169999837875366,
-					"relativeRange": 0.06851535314497047,
-					"runs": 2
-				},
-				"jsTime.p95": {
-					"median": 4.602499961853027,
-					"min": 3.2849998474121094,
-					"max": 5.920000076293945,
-					"relativeRange": 0.5725149920090277,
-					"runs": 2
-				},
-				"jsTime.p99": {
-					"median": 82.44750010967255,
-					"min": 78.13500022888184,
-					"max": 86.75999999046326,
-					"relativeRange": 0.10461202280370362,
-					"runs": 2
-				},
-				"jsTime.max": {
-					"median": 82.44750010967255,
-					"min": 78.13500022888184,
-					"max": 86.75999999046326,
-					"relativeRange": 0.10461202280370362,
-					"runs": 2
-				},
-				"interval.count": {
-					"median": 91.5,
-					"min": 87,
-					"max": 96,
-					"relativeRange": 0.09836065573770492,
-					"runs": 2
-				},
-				"interval.mean": {
-					"median": 21.996839978448275,
-					"min": 21.00609375,
-					"max": 22.987586206896548,
-					"relativeRange": 0.09008077791346134,
-					"runs": 2
-				},
-				"interval.min": {
-					"median": 16.659999999999854,
-					"min": 16.659999999999854,
-					"max": 16.659999999999854,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p50": {
-					"median": 16.667500000000018,
-					"min": 16.66500000000042,
-					"max": 16.669999999999618,
-					"relativeRange": 0.00029998500070194323,
-					"runs": 2
-				},
-				"interval.p90": {
-					"median": 33.33249999999998,
-					"min": 33.32999999999993,
-					"max": 33.335000000000036,
-					"relativeRange": 0.00015000375009702668,
-					"runs": 2
-				},
-				"interval.p95": {
-					"median": 33.335000000000036,
-					"min": 33.335000000000036,
-					"max": 33.335000000000036,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p99": {
-					"median": 83.33000000000004,
-					"min": 83.32999999999993,
-					"max": 83.33000000000015,
-					"relativeRange": 2.7285932490487452e-15,
-					"runs": 2
-				},
-				"interval.max": {
-					"median": 83.33000000000004,
-					"min": 83.32999999999993,
-					"max": 83.33000000000015,
-					"relativeRange": 2.7285932490487452e-15,
-					"runs": 2
-				},
-				"frames": {
-					"median": 91.5,
-					"min": 87,
-					"max": 96,
-					"relativeRange": 0.09836065573770492,
-					"runs": 2
-				},
-				"warmupFrames": {
-					"median": 30,
-					"min": 30,
-					"max": 30,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"level": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marks": {
-					"median": 1001315,
-					"min": 1001315,
-					"max": 1001315,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"levelEnd": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marksEnd": {
-					"median": 974129.5,
-					"min": 923527,
-					"max": 1024732,
-					"relativeRange": 0.10389275758510547,
-					"runs": 2
-				},
-				"total": {
-					"median": 2000000,
-					"min": 2000000,
-					"max": 2000000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"visibleBars": {
-					"median": 1000,
-					"min": 1000,
-					"max": 1000,
-					"relativeRange": 0,
-					"runs": 2
-				}
-			}
+			]
 		},
 		{
 			"caseId": "scatter/candles-2k/cloud-1m/tick",
 			"adapter": "lumen-worker",
 			"job": {
 				"scenario": "scatter",
-				"dataset": {
-					"kind": "candles",
-					"size": 2000
-				},
+				"dataset": {"kind":"candles","size":2000},
 				"seed": 1,
-				"chart": {
-					"width": 1200,
-					"height": 600
-				},
+				"chart": {"width":1200,"height":600},
 				"points": 1000000,
 				"shape": "cloud",
 				"variant": "tick",
@@ -622,15 +178,7 @@
 				"warmupFrames": 30,
 				"adapter": "lumen-worker"
 			},
-			"library": {
-				"library": {
-					"name": "@lumen-charts/core",
-					"version": "workspace"
-				},
-				"options": {
-					"worker": true
-				}
-			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
 			"status": "ok",
 			"runs": [
 				{
@@ -640,40 +188,11 @@
 						"rendererPath": "webgl2",
 						"rendererBytes": 28443648,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 121,
-							"mean": 0.12030799999999998,
-							"min": 0.09425,
-							"p50": 0.121375,
-							"p90": 0.132458,
-							"p95": 0.144416,
-							"p99": 0.198249,
-							"max": 0.220666
-						},
-						"backendFrames": {
-							"webgl2": 120
-						},
+						"gpuPass": {"count":121,"mean":0.12030799999999998,"min":0.09425,"p50":0.121375,"p90":0.132458,"p95":0.144416,"p99":0.198249,"max":0.220666},
+						"backendFrames": {"webgl2":120},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 120,
-							"mean": 1.1742083231608074,
-							"min": 0.9699997901916504,
-							"p50": 1.1449999809265137,
-							"p90": 1.3949999809265137,
-							"p95": 1.5,
-							"p99": 1.5699999332427979,
-							"max": 1.6100001335144043
-						},
-						"interval": {
-							"count": 120,
-							"mean": 16.666,
-							"min": 16.659999999999854,
-							"p50": 16.664999999999964,
-							"p90": 16.670000000000073,
-							"p95": 16.670000000000073,
-							"p99": 16.670000000000073,
-							"max": 16.670000000000073
-						},
+						"jsTime": {"count":120,"mean":1.1742083231608074,"min":0.9699997901916504,"p50":1.1449999809265137,"p90":1.3949999809265137,"p95":1.5,"p99":1.5699999332427979,"max":1.6100001335144043},
+						"interval": {"count":120,"mean":16.666,"min":16.659999999999854,"p50":16.664999999999964,"p90":16.670000000000073,"p95":16.670000000000073,"p99":16.670000000000073,"max":16.670000000000073},
 						"frames": 120,
 						"warmupFrames": 30,
 						"level": 0,
@@ -684,10 +203,7 @@
 						"visibleBars": 1000
 					},
 					"durationMs": 3991.027209,
-					"host": {
-						"cpuIdle": 0.22693032015065914,
-						"loadAverage": 11.13330078125
-					}
+					"host": {"cpuIdle":0.22693032015065914,"loadAverage":11.13330078125}
 				},
 				{
 					"status": "ok",
@@ -696,40 +212,11 @@
 						"rendererPath": "webgl2",
 						"rendererBytes": 28443648,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 122,
-							"mean": 0.25524093442622947,
-							"min": 0.080875,
-							"p50": 0.142791,
-							"p90": 0.428708,
-							"p95": 0.700999,
-							"p99": 3.126916,
-							"max": 3.65675
-						},
-						"backendFrames": {
-							"webgl2": 121
-						},
+						"gpuPass": {"count":122,"mean":0.25524093442622947,"min":0.080875,"p50":0.142791,"p90":0.428708,"p95":0.700999,"p99":3.126916,"max":3.65675},
+						"backendFrames": {"webgl2":121},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 121,
-							"mean": 1.4956198329767905,
-							"min": 0.9399998188018799,
-							"p50": 1.505000114440918,
-							"p90": 1.8199999332427979,
-							"p95": 1.8949997425079346,
-							"p99": 2.1550002098083496,
-							"max": 2.244999885559082
-						},
-						"interval": {
-							"count": 121,
-							"mean": 16.66599173553719,
-							"min": 16.659999999999854,
-							"p50": 16.664999999999964,
-							"p90": 16.670000000000073,
-							"p95": 16.670000000000073,
-							"p99": 16.670000000000073,
-							"max": 16.670000000000073
-						},
+						"jsTime": {"count":121,"mean":1.4956198329767905,"min":0.9399998188018799,"p50":1.505000114440918,"p90":1.8199999332427979,"p95":1.8949997425079346,"p99":2.1550002098083496,"max":2.244999885559082},
+						"interval": {"count":121,"mean":16.66599173553719,"min":16.659999999999854,"p50":16.664999999999964,"p90":16.670000000000073,"p95":16.670000000000073,"p99":16.670000000000073,"max":16.670000000000073},
 						"frames": 121,
 						"warmupFrames": 30,
 						"level": 0,
@@ -740,274 +227,18 @@
 						"visibleBars": 1000
 					},
 					"durationMs": 4156.312667,
-					"host": {
-						"cpuIdle": 0.3424864212432106,
-						"loadAverage": 9.9013671875
-					}
+					"host": {"cpuIdle":0.3424864212432106,"loadAverage":9.9013671875}
 				}
-			],
-			"summary": {
-				"rendererBytes": {
-					"median": 28443648,
-					"min": 28443648,
-					"max": 28443648,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.count": {
-					"median": 121.5,
-					"min": 121,
-					"max": 122,
-					"relativeRange": 0.00823045267489712,
-					"runs": 2
-				},
-				"gpuPass.mean": {
-					"median": 0.18777446721311472,
-					"min": 0.12030799999999998,
-					"max": 0.25524093442622947,
-					"relativeRange": 0.7185904262110743,
-					"runs": 2
-				},
-				"gpuPass.min": {
-					"median": 0.0875625,
-					"min": 0.080875,
-					"max": 0.09425,
-					"relativeRange": 0.15274803711634544,
-					"runs": 2
-				},
-				"gpuPass.p50": {
-					"median": 0.132083,
-					"min": 0.121375,
-					"max": 0.142791,
-					"relativeRange": 0.1621404722787944,
-					"runs": 2
-				},
-				"gpuPass.p90": {
-					"median": 0.28058299999999997,
-					"min": 0.132458,
-					"max": 0.428708,
-					"relativeRange": 1.0558373101720349,
-					"runs": 2
-				},
-				"gpuPass.p95": {
-					"median": 0.4227075,
-					"min": 0.144416,
-					"max": 0.700999,
-					"relativeRange": 1.316709545016353,
-					"runs": 2
-				},
-				"gpuPass.p99": {
-					"median": 1.6625825,
-					"min": 0.198249,
-					"max": 3.126916,
-					"relativeRange": 1.7615167969108299,
-					"runs": 2
-				},
-				"gpuPass.max": {
-					"median": 1.938708,
-					"min": 0.220666,
-					"max": 3.65675,
-					"relativeRange": 1.7723576732545592,
-					"runs": 2
-				},
-				"backendFrames.webgl2": {
-					"median": 120.5,
-					"min": 120,
-					"max": 121,
-					"relativeRange": 0.008298755186721992,
-					"runs": 2
-				},
-				"backendTransitions": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.count": {
-					"median": 120.5,
-					"min": 120,
-					"max": 121,
-					"relativeRange": 0.008298755186721992,
-					"runs": 2
-				},
-				"jsTime.mean": {
-					"median": 1.334914078068799,
-					"min": 1.1742083231608074,
-					"max": 1.4956198329767905,
-					"relativeRange": 0.24077318165747755,
-					"runs": 2
-				},
-				"jsTime.min": {
-					"median": 0.9549998044967651,
-					"min": 0.9399998188018799,
-					"max": 0.9699997901916504,
-					"relativeRange": 0.031413589037935896,
-					"runs": 2
-				},
-				"jsTime.p50": {
-					"median": 1.3250000476837158,
-					"min": 1.1449999809265137,
-					"max": 1.505000114440918,
-					"relativeRange": 0.27169820419533913,
-					"runs": 2
-				},
-				"jsTime.p90": {
-					"median": 1.6074999570846558,
-					"min": 1.3949999809265137,
-					"max": 1.8199999332427979,
-					"relativeRange": 0.264385669463444,
-					"runs": 2
-				},
-				"jsTime.p95": {
-					"median": 1.6974998712539673,
-					"min": 1.5,
-					"max": 1.8949997425079346,
-					"relativeRange": 0.23269500587127742,
-					"runs": 2
-				},
-				"jsTime.p99": {
-					"median": 1.8625000715255737,
-					"min": 1.5699999332427979,
-					"max": 2.1550002098083496,
-					"relativeRange": 0.3140940961609618,
-					"runs": 2
-				},
-				"jsTime.max": {
-					"median": 1.9275000095367432,
-					"min": 1.6100001335144043,
-					"max": 2.244999885559082,
-					"relativeRange": 0.3294421524787925,
-					"runs": 2
-				},
-				"interval.count": {
-					"median": 120.5,
-					"min": 120,
-					"max": 121,
-					"relativeRange": 0.008298755186721992,
-					"runs": 2
-				},
-				"interval.mean": {
-					"median": 16.665995867768594,
-					"min": 16.66599173553719,
-					"max": 16.666,
-					"relativeRange": 4.958877270626703e-7,
-					"runs": 2
-				},
-				"interval.min": {
-					"median": 16.659999999999854,
-					"min": 16.659999999999854,
-					"max": 16.659999999999854,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p50": {
-					"median": 16.664999999999964,
-					"min": 16.664999999999964,
-					"max": 16.664999999999964,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p90": {
-					"median": 16.670000000000073,
-					"min": 16.670000000000073,
-					"max": 16.670000000000073,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p95": {
-					"median": 16.670000000000073,
-					"min": 16.670000000000073,
-					"max": 16.670000000000073,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p99": {
-					"median": 16.670000000000073,
-					"min": 16.670000000000073,
-					"max": 16.670000000000073,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.max": {
-					"median": 16.670000000000073,
-					"min": 16.670000000000073,
-					"max": 16.670000000000073,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"frames": {
-					"median": 120.5,
-					"min": 120,
-					"max": 121,
-					"relativeRange": 0.008298755186721992,
-					"runs": 2
-				},
-				"warmupFrames": {
-					"median": 30,
-					"min": 30,
-					"max": 30,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"level": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marks": {
-					"median": 1001315,
-					"min": 1001315,
-					"max": 1001315,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"levelEnd": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marksEnd": {
-					"median": 1001465.5,
-					"min": 1001465,
-					"max": 1001466,
-					"relativeRange": 9.985366445474158e-7,
-					"runs": 2
-				},
-				"total": {
-					"median": 2000000,
-					"min": 2000000,
-					"max": 2000000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"visibleBars": {
-					"median": 1000,
-					"min": 1000,
-					"max": 1000,
-					"relativeRange": 0,
-					"runs": 2
-				}
-			}
+			]
 		},
 		{
 			"caseId": "scatter/candles-2k/cloud-1m/tick-redraw",
 			"adapter": "lumen-worker",
 			"job": {
 				"scenario": "scatter",
-				"dataset": {
-					"kind": "candles",
-					"size": 2000
-				},
+				"dataset": {"kind":"candles","size":2000},
 				"seed": 1,
-				"chart": {
-					"width": 1200,
-					"height": 600
-				},
+				"chart": {"width":1200,"height":600},
 				"points": 1000000,
 				"shape": "cloud",
 				"variant": "tick-redraw",
@@ -1020,15 +251,7 @@
 				"warmupFrames": 30,
 				"adapter": "lumen-worker"
 			},
-			"library": {
-				"library": {
-					"name": "@lumen-charts/core",
-					"version": "workspace"
-				},
-				"options": {
-					"worker": true
-				}
-			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
 			"status": "ok",
 			"runs": [
 				{
@@ -1038,40 +261,11 @@
 						"rendererPath": "webgl2",
 						"rendererBytes": 28443648,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 107,
-							"mean": 2.0727687757009345,
-							"min": 0,
-							"p50": 0.100124,
-							"p90": 13.05825,
-							"p95": 13.736,
-							"p99": 14.382291,
-							"max": 14.464249
-						},
-						"backendFrames": {
-							"webgl2": 121
-						},
+						"gpuPass": {"count":107,"mean":2.0727687757009345,"min":0,"p50":0.100124,"p90":13.05825,"p95":13.736,"p99":14.382291,"max":14.464249},
+						"backendFrames": {"webgl2":121},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 121,
-							"mean": 0.9453305863151865,
-							"min": 0.05499982833862305,
-							"p50": 0.9900000095367432,
-							"p90": 1.2599999904632568,
-							"p95": 1.2899997234344482,
-							"p99": 1.6450002193450928,
-							"max": 1.8100001811981201
-						},
-						"interval": {
-							"count": 121,
-							"mean": 16.66599173553719,
-							"min": 16.659999999999854,
-							"p50": 16.664999999999964,
-							"p90": 16.670000000000073,
-							"p95": 16.670000000000073,
-							"p99": 16.670000000000073,
-							"max": 16.670000000000073
-						},
+						"jsTime": {"count":121,"mean":0.9453305863151865,"min":0.05499982833862305,"p50":0.9900000095367432,"p90":1.2599999904632568,"p95":1.2899997234344482,"p99":1.6450002193450928,"max":1.8100001811981201},
+						"interval": {"count":121,"mean":16.66599173553719,"min":16.659999999999854,"p50":16.664999999999964,"p90":16.670000000000073,"p95":16.670000000000073,"p99":16.670000000000073,"max":16.670000000000073},
 						"frames": 121,
 						"warmupFrames": 30,
 						"level": 0,
@@ -1082,10 +276,7 @@
 						"visibleBars": 1000
 					},
 					"durationMs": 4195.919167,
-					"host": {
-						"cpuIdle": 0.21377459749552774,
-						"loadAverage": 10.88232421875
-					}
+					"host": {"cpuIdle":0.21377459749552774,"loadAverage":10.88232421875}
 				},
 				{
 					"status": "ok",
@@ -1094,40 +285,11 @@
 						"rendererPath": "webgl2",
 						"rendererBytes": 28443648,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 107,
-							"mean": 2.792182299065421,
-							"min": 0,
-							"p50": 0.097875,
-							"p90": 17.106499,
-							"p95": 19.280166,
-							"p99": 20.805291,
-							"max": 21.512416
-						},
-						"backendFrames": {
-							"webgl2": 121
-						},
+						"gpuPass": {"count":107,"mean":2.792182299065421,"min":0,"p50":0.097875,"p90":17.106499,"p95":19.280166,"p99":20.805291,"max":21.512416},
+						"backendFrames": {"webgl2":121},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 121,
-							"mean": 0.9230991848244154,
-							"min": 0.05499982833862305,
-							"p50": 0.9849998950958252,
-							"p90": 1.2250001430511475,
-							"p95": 1.315000057220459,
-							"p99": 1.4300000667572021,
-							"max": 1.7000000476837158
-						},
-						"interval": {
-							"count": 121,
-							"mean": 16.665991735537194,
-							"min": 16.659999999999854,
-							"p50": 16.664999999999964,
-							"p90": 16.670000000000073,
-							"p95": 16.670000000000073,
-							"p99": 16.670000000000073,
-							"max": 16.670000000000073
-						},
+						"jsTime": {"count":121,"mean":0.9230991848244154,"min":0.05499982833862305,"p50":0.9849998950958252,"p90":1.2250001430511475,"p95":1.315000057220459,"p99":1.4300000667572021,"max":1.7000000476837158},
+						"interval": {"count":121,"mean":16.665991735537194,"min":16.659999999999854,"p50":16.664999999999964,"p90":16.670000000000073,"p95":16.670000000000073,"p99":16.670000000000073,"max":16.670000000000073},
 						"frames": 121,
 						"warmupFrames": 30,
 						"level": 0,
@@ -1138,274 +300,18 @@
 						"visibleBars": 1000
 					},
 					"durationMs": 4083.533709000001,
-					"host": {
-						"cpuIdle": 0.20720170888007325,
-						"loadAverage": 9.5888671875
-					}
+					"host": {"cpuIdle":0.20720170888007325,"loadAverage":9.5888671875}
 				}
-			],
-			"summary": {
-				"rendererBytes": {
-					"median": 28443648,
-					"min": 28443648,
-					"max": 28443648,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.count": {
-					"median": 107,
-					"min": 107,
-					"max": 107,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.mean": {
-					"median": 2.4324755373831777,
-					"min": 2.0727687757009345,
-					"max": 2.792182299065421,
-					"relativeRange": 0.29575365191068725,
-					"runs": 2
-				},
-				"gpuPass.min": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p50": {
-					"median": 0.0989995,
-					"min": 0.097875,
-					"max": 0.100124,
-					"relativeRange": 0.02271728645094168,
-					"runs": 2
-				},
-				"gpuPass.p90": {
-					"median": 15.0823745,
-					"min": 13.05825,
-					"max": 17.106499,
-					"relativeRange": 0.26840926141967897,
-					"runs": 2
-				},
-				"gpuPass.p95": {
-					"median": 16.508083,
-					"min": 13.736,
-					"max": 19.280166,
-					"relativeRange": 0.3358455370014799,
-					"runs": 2
-				},
-				"gpuPass.p99": {
-					"median": 17.593791,
-					"min": 14.382291,
-					"max": 20.805291,
-					"relativeRange": 0.365071973402435,
-					"runs": 2
-				},
-				"gpuPass.max": {
-					"median": 17.988332500000002,
-					"min": 14.464249,
-					"max": 21.512416,
-					"relativeRange": 0.3918188081079778,
-					"runs": 2
-				},
-				"backendFrames.webgl2": {
-					"median": 121,
-					"min": 121,
-					"max": 121,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"backendTransitions": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.count": {
-					"median": 121,
-					"min": 121,
-					"max": 121,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.mean": {
-					"median": 0.9342148855698009,
-					"min": 0.9230991848244154,
-					"max": 0.9453305863151865,
-					"relativeRange": 0.023796882102998806,
-					"runs": 2
-				},
-				"jsTime.min": {
-					"median": 0.05499982833862305,
-					"min": 0.05499982833862305,
-					"max": 0.05499982833862305,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.p50": {
-					"median": 0.9874999523162842,
-					"min": 0.9849998950958252,
-					"max": 0.9900000095367432,
-					"relativeRange": 0.005063407273275992,
-					"runs": 2
-				},
-				"jsTime.p90": {
-					"median": 1.2425000667572021,
-					"min": 1.2250001430511475,
-					"max": 1.2599999904632568,
-					"relativeRange": 0.028168889763889825,
-					"runs": 2
-				},
-				"jsTime.p95": {
-					"median": 1.3024998903274536,
-					"min": 1.2899997234344482,
-					"max": 1.315000057220459,
-					"relativeRange": 0.019194115847277007,
-					"runs": 2
-				},
-				"jsTime.p99": {
-					"median": 1.5375001430511475,
-					"min": 1.4300000667572021,
-					"max": 1.6450002193450928,
-					"relativeRange": 0.13983748460746537,
-					"runs": 2
-				},
-				"jsTime.max": {
-					"median": 1.755000114440918,
-					"min": 1.7000000476837158,
-					"max": 1.8100001811981201,
-					"relativeRange": 0.06267813466749916,
-					"runs": 2
-				},
-				"interval.count": {
-					"median": 121,
-					"min": 121,
-					"max": 121,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.mean": {
-					"median": 16.66599173553719,
-					"min": 16.66599173553719,
-					"max": 16.665991735537194,
-					"relativeRange": 2.1317145329101457e-16,
-					"runs": 2
-				},
-				"interval.min": {
-					"median": 16.659999999999854,
-					"min": 16.659999999999854,
-					"max": 16.659999999999854,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p50": {
-					"median": 16.664999999999964,
-					"min": 16.664999999999964,
-					"max": 16.664999999999964,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p90": {
-					"median": 16.670000000000073,
-					"min": 16.670000000000073,
-					"max": 16.670000000000073,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p95": {
-					"median": 16.670000000000073,
-					"min": 16.670000000000073,
-					"max": 16.670000000000073,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p99": {
-					"median": 16.670000000000073,
-					"min": 16.670000000000073,
-					"max": 16.670000000000073,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.max": {
-					"median": 16.670000000000073,
-					"min": 16.670000000000073,
-					"max": 16.670000000000073,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"frames": {
-					"median": 121,
-					"min": 121,
-					"max": 121,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"warmupFrames": {
-					"median": 30,
-					"min": 30,
-					"max": 30,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"level": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marks": {
-					"median": 1001315,
-					"min": 1001315,
-					"max": 1001315,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"levelEnd": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marksEnd": {
-					"median": 1001621,
-					"min": 1001621,
-					"max": 1001621,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"total": {
-					"median": 2000000,
-					"min": 2000000,
-					"max": 2000000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"visibleBars": {
-					"median": 1000,
-					"min": 1000,
-					"max": 1000,
-					"relativeRange": 0,
-					"runs": 2
-				}
-			}
+			]
 		},
 		{
 			"caseId": "heatmap/candles-4800/2400x600/pan",
 			"adapter": "lumen-worker",
 			"job": {
 				"scenario": "heatmap",
-				"dataset": {
-					"kind": "candles",
-					"size": 4800
-				},
+				"dataset": {"kind":"candles","size":4800},
 				"seed": 1,
-				"chart": {
-					"width": 1200,
-					"height": 600
-				},
+				"chart": {"width":1200,"height":600},
 				"variant": "pan",
 				"rows": 600,
 				"visibleBars": 2400,
@@ -1416,15 +322,7 @@
 				"warmupFrames": 30,
 				"adapter": "lumen-worker"
 			},
-			"library": {
-				"library": {
-					"name": "@lumen-charts/core",
-					"version": "workspace"
-				},
-				"options": {
-					"worker": true
-				}
-			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
 			"status": "ok",
 			"runs": [
 				{
@@ -1434,41 +332,11 @@
 						"rendererPath": "webgl2-slots",
 						"rendererBytes": 13315072,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 122,
-							"mean": 0.858844762295082,
-							"min": 0.570333,
-							"p50": 0.869541,
-							"p90": 0.913916,
-							"p95": 0.918125,
-							"p99": 1.437125,
-							"max": 3.214249
-						},
-						"backendFrames": {
-							"webgl2": 3,
-							"webgl2-slots": 118
-						},
+						"gpuPass": {"count":122,"mean":0.858844762295082,"min":0.570333,"p50":0.869541,"p90":0.913916,"p95":0.918125,"p99":1.437125,"max":3.214249},
+						"backendFrames": {"webgl2":3,"webgl2-slots":118},
 						"backendTransitions": 1,
-						"jsTime": {
-							"count": 121,
-							"mean": 0.800289238779998,
-							"min": 0.5,
-							"p50": 0.7249999046325684,
-							"p90": 0.875,
-							"p95": 1.0399999618530273,
-							"p99": 4.329999923706055,
-							"max": 4.454999923706055
-						},
-						"interval": {
-							"count": 121,
-							"mean": 16.665991735537187,
-							"min": 16.659999999999854,
-							"p50": 16.664999999999964,
-							"p90": 16.670000000000073,
-							"p95": 16.670000000000073,
-							"p99": 16.670000000000073,
-							"max": 16.670000000000073
-						},
+						"jsTime": {"count":121,"mean":0.800289238779998,"min":0.5,"p50":0.7249999046325684,"p90":0.875,"p95":1.0399999618530273,"p99":4.329999923706055,"max":4.454999923706055},
+						"interval": {"count":121,"mean":16.665991735537187,"min":16.659999999999854,"p50":16.664999999999964,"p90":16.670000000000073,"p95":16.670000000000073,"p99":16.670000000000073,"max":16.670000000000073},
 						"frames": 121,
 						"warmupFrames": 30,
 						"level": 0,
@@ -1479,10 +347,7 @@
 						"visibleBars": 2400
 					},
 					"durationMs": 3229.0755419999987,
-					"host": {
-						"cpuIdle": 0.10925997675319643,
-						"loadAverage": 10.4111328125
-					}
+					"host": {"cpuIdle":0.10925997675319643,"loadAverage":10.4111328125}
 				},
 				{
 					"status": "ok",
@@ -1491,41 +356,11 @@
 						"rendererPath": "webgl2-slots",
 						"rendererBytes": 13315072,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 122,
-							"mean": 2.010271983606557,
-							"min": 0.534375,
-							"p50": 0.93675,
-							"p90": 3.958999,
-							"p95": 3.992041,
-							"p99": 5.829749,
-							"max": 6.641749
-						},
-						"backendFrames": {
-							"webgl2": 3,
-							"webgl2-slots": 118
-						},
+						"gpuPass": {"count":122,"mean":2.010271983606557,"min":0.534375,"p50":0.93675,"p90":3.958999,"p95":3.992041,"p99":5.829749,"max":6.641749},
+						"backendFrames": {"webgl2":3,"webgl2-slots":118},
 						"backendTransitions": 1,
-						"jsTime": {
-							"count": 121,
-							"mean": 0.7761570067445108,
-							"min": 0.5199999809265137,
-							"p50": 0.7300000190734863,
-							"p90": 0.9000000953674316,
-							"p95": 1.0600001811981201,
-							"p99": 1.309999942779541,
-							"max": 3.9549999237060547
-						},
-						"interval": {
-							"count": 121,
-							"mean": 16.66603305785124,
-							"min": 16.659999999999854,
-							"p50": 16.664999999999964,
-							"p90": 16.670000000000073,
-							"p95": 16.670000000000073,
-							"p99": 16.670000000000073,
-							"max": 16.670000000000073
-						},
+						"jsTime": {"count":121,"mean":0.7761570067445108,"min":0.5199999809265137,"p50":0.7300000190734863,"p90":0.9000000953674316,"p95":1.0600001811981201,"p99":1.309999942779541,"max":3.9549999237060547},
+						"interval": {"count":121,"mean":16.66603305785124,"min":16.659999999999854,"p50":16.664999999999964,"p90":16.670000000000073,"p95":16.670000000000073,"p99":16.670000000000073,"max":16.670000000000073},
 						"frames": 121,
 						"warmupFrames": 30,
 						"level": 0,
@@ -1536,281 +371,18 @@
 						"visibleBars": 2400
 					},
 					"durationMs": 3511.2918329999993,
-					"host": {
-						"cpuIdle": 0.07648924920690871,
-						"loadAverage": 9.5888671875
-					}
+					"host": {"cpuIdle":0.07648924920690871,"loadAverage":9.5888671875}
 				}
-			],
-			"summary": {
-				"rendererBytes": {
-					"median": 13315072,
-					"min": 13315072,
-					"max": 13315072,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.count": {
-					"median": 122,
-					"min": 122,
-					"max": 122,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.mean": {
-					"median": 1.4345583729508196,
-					"min": 0.858844762295082,
-					"max": 2.010271983606557,
-					"relativeRange": 0.8026353217980547,
-					"runs": 2
-				},
-				"gpuPass.min": {
-					"median": 0.552354,
-					"min": 0.534375,
-					"max": 0.570333,
-					"relativeRange": 0.06509955571970137,
-					"runs": 2
-				},
-				"gpuPass.p50": {
-					"median": 0.9031454999999999,
-					"min": 0.869541,
-					"max": 0.93675,
-					"relativeRange": 0.0744165807170605,
-					"runs": 2
-				},
-				"gpuPass.p90": {
-					"median": 2.4364575,
-					"min": 0.913916,
-					"max": 3.958999,
-					"relativeRange": 1.249799350081009,
-					"runs": 2
-				},
-				"gpuPass.p95": {
-					"median": 2.455083,
-					"min": 0.918125,
-					"max": 3.992041,
-					"relativeRange": 1.2520619465818468,
-					"runs": 2
-				},
-				"gpuPass.p99": {
-					"median": 3.633437,
-					"min": 1.437125,
-					"max": 5.829749,
-					"relativeRange": 1.208944588828704,
-					"runs": 2
-				},
-				"gpuPass.max": {
-					"median": 4.927999,
-					"min": 3.214249,
-					"max": 6.641749,
-					"relativeRange": 0.6955155632133854,
-					"runs": 2
-				},
-				"backendFrames.webgl2": {
-					"median": 3,
-					"min": 3,
-					"max": 3,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"backendFrames.webgl2-slots": {
-					"median": 118,
-					"min": 118,
-					"max": 118,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"backendTransitions": {
-					"median": 1,
-					"min": 1,
-					"max": 1,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.count": {
-					"median": 121,
-					"min": 121,
-					"max": 121,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.mean": {
-					"median": 0.7882231227622545,
-					"min": 0.7761570067445108,
-					"max": 0.800289238779998,
-					"relativeRange": 0.030615991003813795,
-					"runs": 2
-				},
-				"jsTime.min": {
-					"median": 0.5099999904632568,
-					"min": 0.5,
-					"max": 0.5199999809265137,
-					"relativeRange": 0.0392156496088299,
-					"runs": 2
-				},
-				"jsTime.p50": {
-					"median": 0.7274999618530273,
-					"min": 0.7249999046325684,
-					"max": 0.7300000190734863,
-					"relativeRange": 0.006873009901171807,
-					"runs": 2
-				},
-				"jsTime.p90": {
-					"median": 0.8875000476837158,
-					"min": 0.875,
-					"max": 0.9000000953674316,
-					"relativeRange": 0.028169120027293888,
-					"runs": 2
-				},
-				"jsTime.p95": {
-					"median": 1.0500000715255737,
-					"min": 1.0399999618530273,
-					"max": 1.0600001811981201,
-					"relativeRange": 0.019047826650177183,
-					"runs": 2
-				},
-				"jsTime.p99": {
-					"median": 2.819999933242798,
-					"min": 1.309999942779541,
-					"max": 4.329999923706055,
-					"relativeRange": 1.070922004403642,
-					"runs": 2
-				},
-				"jsTime.max": {
-					"median": 4.204999923706055,
-					"min": 3.9549999237060547,
-					"max": 4.454999923706055,
-					"relativeRange": 0.11890606636666182,
-					"runs": 2
-				},
-				"interval.count": {
-					"median": 121,
-					"min": 121,
-					"max": 121,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.mean": {
-					"median": 16.666012396694214,
-					"min": 16.665991735537187,
-					"max": 16.66603305785124,
-					"relativeRange": 0.000002479436176482583,
-					"runs": 2
-				},
-				"interval.min": {
-					"median": 16.659999999999854,
-					"min": 16.659999999999854,
-					"max": 16.659999999999854,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p50": {
-					"median": 16.664999999999964,
-					"min": 16.664999999999964,
-					"max": 16.664999999999964,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p90": {
-					"median": 16.670000000000073,
-					"min": 16.670000000000073,
-					"max": 16.670000000000073,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p95": {
-					"median": 16.670000000000073,
-					"min": 16.670000000000073,
-					"max": 16.670000000000073,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p99": {
-					"median": 16.670000000000073,
-					"min": 16.670000000000073,
-					"max": 16.670000000000073,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.max": {
-					"median": 16.670000000000073,
-					"min": 16.670000000000073,
-					"max": 16.670000000000073,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"frames": {
-					"median": 121,
-					"min": 121,
-					"max": 121,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"warmupFrames": {
-					"median": 30,
-					"min": 30,
-					"max": 30,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"level": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marks": {
-					"median": 1441200,
-					"min": 1441200,
-					"max": 1441200,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"levelEnd": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marksEnd": {
-					"median": 750000,
-					"min": 750000,
-					"max": 750000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"total": {
-					"median": 2880000,
-					"min": 2880000,
-					"max": 2880000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"visibleBars": {
-					"median": 2400,
-					"min": 2400,
-					"max": 2400,
-					"relativeRange": 0,
-					"runs": 2
-				}
-			}
+			]
 		},
 		{
 			"caseId": "heatmap/candles-4800/2400x600/zoom",
 			"adapter": "lumen-worker",
 			"job": {
 				"scenario": "heatmap",
-				"dataset": {
-					"kind": "candles",
-					"size": 4800
-				},
+				"dataset": {"kind":"candles","size":4800},
 				"seed": 1,
-				"chart": {
-					"width": 1200,
-					"height": 600
-				},
+				"chart": {"width":1200,"height":600},
 				"variant": "zoom",
 				"rows": 600,
 				"visibleBars": 2400,
@@ -1821,15 +393,7 @@
 				"warmupFrames": 30,
 				"adapter": "lumen-worker"
 			},
-			"library": {
-				"library": {
-					"name": "@lumen-charts/core",
-					"version": "workspace"
-				},
-				"options": {
-					"worker": true
-				}
-			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
 			"status": "ok",
 			"runs": [
 				{
@@ -1839,41 +403,11 @@
 						"rendererPath": "webgl2-slots",
 						"rendererBytes": 13315072,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 122,
-							"mean": 0.9678481967213117,
-							"min": 0.59475,
-							"p50": 1.006749,
-							"p90": 1.074749,
-							"p95": 1.223041,
-							"p99": 1.425374,
-							"max": 1.482958
-						},
-						"backendFrames": {
-							"webgl2": 6,
-							"webgl2-slots": 115
-						},
+						"gpuPass": {"count":122,"mean":0.9678481967213117,"min":0.59475,"p50":1.006749,"p90":1.074749,"p95":1.223041,"p99":1.425374,"max":1.482958},
+						"backendFrames": {"webgl2":6,"webgl2-slots":115},
 						"backendTransitions": 1,
-						"jsTime": {
-							"count": 121,
-							"mean": 0.7674380333955623,
-							"min": 0.5649998188018799,
-							"p50": 0.7249999046325684,
-							"p90": 0.8700001239776611,
-							"p95": 0.9049999713897705,
-							"p99": 1.3550000190734863,
-							"max": 3.135000228881836
-						},
-						"interval": {
-							"count": 121,
-							"mean": 16.66599173553719,
-							"min": 16.659999999999854,
-							"p50": 16.664999999999964,
-							"p90": 16.670000000000073,
-							"p95": 16.670000000000073,
-							"p99": 16.670000000000073,
-							"max": 16.670000000000073
-						},
+						"jsTime": {"count":121,"mean":0.7674380333955623,"min":0.5649998188018799,"p50":0.7249999046325684,"p90":0.8700001239776611,"p95":0.9049999713897705,"p99":1.3550000190734863,"max":3.135000228881836},
+						"interval": {"count":121,"mean":16.66599173553719,"min":16.659999999999854,"p50":16.664999999999964,"p90":16.670000000000073,"p95":16.670000000000073,"p99":16.670000000000073,"max":16.670000000000073},
 						"frames": 121,
 						"warmupFrames": 30,
 						"level": 0,
@@ -1884,10 +418,7 @@
 						"visibleBars": 2400
 					},
 					"durationMs": 3326.5502080000006,
-					"host": {
-						"cpuIdle": 0.26129518072289154,
-						"loadAverage": 9.9775390625
-					}
+					"host": {"cpuIdle":0.26129518072289154,"loadAverage":9.9775390625}
 				},
 				{
 					"status": "ok",
@@ -1896,41 +427,11 @@
 						"rendererPath": "webgl2-slots",
 						"rendererBytes": 13315072,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 122,
-							"mean": 0.9942235983606554,
-							"min": 0.536874,
-							"p50": 1.005791,
-							"p90": 1.294125,
-							"p95": 1.359374,
-							"p99": 1.592874,
-							"max": 1.594958
-						},
-						"backendFrames": {
-							"webgl2": 6,
-							"webgl2-slots": 115
-						},
+						"gpuPass": {"count":122,"mean":0.9942235983606554,"min":0.536874,"p50":1.005791,"p90":1.294125,"p95":1.359374,"p99":1.592874,"max":1.594958},
+						"backendFrames": {"webgl2":6,"webgl2-slots":115},
 						"backendTransitions": 1,
-						"jsTime": {
-							"count": 121,
-							"mean": 1.0718181882022826,
-							"min": 0.6050000190734863,
-							"p50": 0.8650000095367432,
-							"p90": 1.8250000476837158,
-							"p95": 2.0850000381469727,
-							"p99": 2.4149999618530273,
-							"max": 4.9049999713897705
-						},
-						"interval": {
-							"count": 121,
-							"mean": 16.66599173553719,
-							"min": 16.659999999999854,
-							"p50": 16.664999999999964,
-							"p90": 16.670000000000073,
-							"p95": 16.670000000000073,
-							"p99": 16.670000000000073,
-							"max": 16.670000000000073
-						},
+						"jsTime": {"count":121,"mean":1.0718181882022826,"min":0.6050000190734863,"p50":0.8650000095367432,"p90":1.8250000476837158,"p95":2.0850000381469727,"p99":2.4149999618530273,"max":4.9049999713897705},
+						"interval": {"count":121,"mean":16.66599173553719,"min":16.659999999999854,"p50":16.664999999999964,"p90":16.670000000000073,"p95":16.670000000000073,"p99":16.670000000000073,"max":16.670000000000073},
 						"frames": 121,
 						"warmupFrames": 30,
 						"level": 0,
@@ -1941,266 +442,9 @@
 						"visibleBars": 2400
 					},
 					"durationMs": 3401.4919580000023,
-					"host": {
-						"cpuIdle": 0.00989010989010989,
-						"loadAverage": 10.10205078125
-					}
+					"host": {"cpuIdle":0.00989010989010989,"loadAverage":10.10205078125}
 				}
-			],
-			"summary": {
-				"rendererBytes": {
-					"median": 13315072,
-					"min": 13315072,
-					"max": 13315072,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.count": {
-					"median": 122,
-					"min": 122,
-					"max": 122,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.mean": {
-					"median": 0.9810358975409836,
-					"min": 0.9678481967213117,
-					"max": 0.9942235983606554,
-					"relativeRange": 0.026885256396279682,
-					"runs": 2
-				},
-				"gpuPass.min": {
-					"median": 0.565812,
-					"min": 0.536874,
-					"max": 0.59475,
-					"relativeRange": 0.10228839261097333,
-					"runs": 2
-				},
-				"gpuPass.p50": {
-					"median": 1.00627,
-					"min": 1.005791,
-					"max": 1.006749,
-					"relativeRange": 0.0009520307670901372,
-					"runs": 2
-				},
-				"gpuPass.p90": {
-					"median": 1.184437,
-					"min": 1.074749,
-					"max": 1.294125,
-					"relativeRange": 0.18521542302376573,
-					"runs": 2
-				},
-				"gpuPass.p95": {
-					"median": 1.2912075,
-					"min": 1.223041,
-					"max": 1.359374,
-					"relativeRange": 0.10558566303247156,
-					"runs": 2
-				},
-				"gpuPass.p99": {
-					"median": 1.509124,
-					"min": 1.425374,
-					"max": 1.592874,
-					"relativeRange": 0.11099154211317294,
-					"runs": 2
-				},
-				"gpuPass.max": {
-					"median": 1.538958,
-					"min": 1.482958,
-					"max": 1.594958,
-					"relativeRange": 0.07277651501860356,
-					"runs": 2
-				},
-				"backendFrames.webgl2": {
-					"median": 6,
-					"min": 6,
-					"max": 6,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"backendFrames.webgl2-slots": {
-					"median": 115,
-					"min": 115,
-					"max": 115,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"backendTransitions": {
-					"median": 1,
-					"min": 1,
-					"max": 1,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.count": {
-					"median": 121,
-					"min": 121,
-					"max": 121,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.mean": {
-					"median": 0.9196281107989224,
-					"min": 0.7674380333955623,
-					"max": 1.0718181882022826,
-					"relativeRange": 0.33098178625954744,
-					"runs": 2
-				},
-				"jsTime.min": {
-					"median": 0.5849999189376831,
-					"min": 0.5649998188018799,
-					"max": 0.6050000190734863,
-					"relativeRange": 0.06837642019548289,
-					"runs": 2
-				},
-				"jsTime.p50": {
-					"median": 0.7949999570846558,
-					"min": 0.7249999046325684,
-					"max": 0.8650000095367432,
-					"relativeRange": 0.17610077039194966,
-					"runs": 2
-				},
-				"jsTime.p90": {
-					"median": 1.3475000858306885,
-					"min": 0.8700001239776611,
-					"max": 1.8250000476837158,
-					"relativeRange": 0.7087197498153252,
-					"runs": 2
-				},
-				"jsTime.p95": {
-					"median": 1.4950000047683716,
-					"min": 0.9049999713897705,
-					"max": 2.0850000381469727,
-					"relativeRange": 0.7892977009990216,
-					"runs": 2
-				},
-				"jsTime.p99": {
-					"median": 1.8849999904632568,
-					"min": 1.3550000190734863,
-					"max": 2.4149999618530273,
-					"relativeRange": 0.5623341899959564,
-					"runs": 2
-				},
-				"jsTime.max": {
-					"median": 4.020000100135803,
-					"min": 3.135000228881836,
-					"max": 4.9049999713897705,
-					"relativeRange": 0.44029843244236255,
-					"runs": 2
-				},
-				"interval.count": {
-					"median": 121,
-					"min": 121,
-					"max": 121,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.mean": {
-					"median": 16.66599173553719,
-					"min": 16.66599173553719,
-					"max": 16.66599173553719,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.min": {
-					"median": 16.659999999999854,
-					"min": 16.659999999999854,
-					"max": 16.659999999999854,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p50": {
-					"median": 16.664999999999964,
-					"min": 16.664999999999964,
-					"max": 16.664999999999964,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p90": {
-					"median": 16.670000000000073,
-					"min": 16.670000000000073,
-					"max": 16.670000000000073,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p95": {
-					"median": 16.670000000000073,
-					"min": 16.670000000000073,
-					"max": 16.670000000000073,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p99": {
-					"median": 16.670000000000073,
-					"min": 16.670000000000073,
-					"max": 16.670000000000073,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.max": {
-					"median": 16.670000000000073,
-					"min": 16.670000000000073,
-					"max": 16.670000000000073,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"frames": {
-					"median": 121,
-					"min": 121,
-					"max": 121,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"warmupFrames": {
-					"median": 30,
-					"min": 30,
-					"max": 30,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"level": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marks": {
-					"median": 1441200,
-					"min": 1441200,
-					"max": 1441200,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"levelEnd": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marksEnd": {
-					"median": 996000,
-					"min": 996000,
-					"max": 996000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"total": {
-					"median": 2880000,
-					"min": 2880000,
-					"max": 2880000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"visibleBars": {
-					"median": 2400,
-					"min": 2400,
-					"max": 2400,
-					"relativeRange": 0,
-					"runs": 2
-				}
-			}
+			]
 		}
 	]
 }
