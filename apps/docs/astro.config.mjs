@@ -42,7 +42,14 @@ export default defineConfig({
 					// The Korean pages translate the English entry pages; one language is enough for a model.
 					exclude: ['ko', 'ko/**'],
 					customSelectors: {
-						all: ['.chart-demo', '.demo-caption', '.ramp', '.theme-sample'],
+						all: [
+							'.chart-demo',
+							'.demo-caption',
+							'.ramp',
+							'.theme-sample',
+							'.install-cmd__header',
+							'.install-cmd__prompt',
+						],
 					},
 				}),
 			],

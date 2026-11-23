@@ -4,6 +4,7 @@ description: Vanilla TypeScript, React, Vue 3, Svelte 5, SolidJS에서 Lumen Cha
 ---
 
 import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+import InstallCommand from '../../../components/InstallCommand.astro';
 
 Lumen Charts의 프레임워크 바인딩은 의도적으로 얇게 유지됩니다. 마운트 시 차트를 생성하고, 옵션 변경을 `applyOptions`로 전달하며, 언마운트 시 `destroy()`를 호출합니다.
 
@@ -18,9 +19,7 @@ Lumen Charts의 프레임워크 바인딩은 의도적으로 얇게 유지됩니
 <Tabs syncKey="framework">
 <TabItem label="Vanilla">
 
-```sh
-pnpm add lumen-charts
-```
+<InstallCommand packages="lumen-charts" />
 
 ```ts
 import { createChart } from 'lumen-charts';
@@ -37,9 +36,7 @@ chart.destroy();
 </TabItem>
 <TabItem label="React">
 
-```sh
-pnpm add @lumen-charts/react react
-```
+<InstallCommand packages="@lumen-charts/react react" />
 
 `LumenChart`는 `<div>`를 렌더링하고 `ref`로 `ChartApi` 인스턴스(마운트 전에는 `null`)를 노출합니다. `useEffect` 안에서 차트를 초기화할 때는 `ref={setChart}`처럼 상태 setter를 콜백 ref로 전달하면 마운트 직후와 React `StrictMode` 재마운트에서도 effect가 안정적으로 실행됩니다.
 
@@ -67,9 +64,7 @@ export function PriceChart({ dark, bars }: { dark: boolean; bars: OhlcColumns })
 </TabItem>
 <TabItem label="Vue 3">
 
-```sh
-pnpm add @lumen-charts/vue vue
-```
+<InstallCommand packages="@lumen-charts/vue vue" />
 
 `LumenChart`는 템플릿 ref에 `chart` 속성으로 `ChartApi` 인스턴스를 노출하며, `:options`를 깊게 감시해 `applyOptions`로 자동 전달합니다.
 
@@ -100,9 +95,7 @@ onMounted(() => {
 </TabItem>
 <TabItem label="Svelte 5">
 
-```sh
-pnpm add @lumen-charts/svelte svelte
-```
+<InstallCommand packages="@lumen-charts/svelte svelte" />
 
 `@lumen-charts/svelte`는 `lumenChart` 액션을 제공합니다. `onReady` 콜백으로 `ChartApi`를 한 번 전달받으며, `options` 안의 반응형 값이 바뀌면 액션 `update`가 `applyOptions`를 호출합니다.
 
@@ -129,9 +122,7 @@ pnpm add @lumen-charts/svelte svelte
 </TabItem>
 <TabItem label="Solid">
 
-```sh
-pnpm add @lumen-charts/solid solid-js
-```
+<InstallCommand packages="@lumen-charts/solid solid-js" />
 
 `@lumen-charts/solid`는 클라이언트 전용 `<div>`를 렌더링하고 `onReady` 콜백으로 `ChartApi`를 전달합니다. 컨테이너 크기는 `class`로 지정합니다.
 

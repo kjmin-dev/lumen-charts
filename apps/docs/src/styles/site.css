@@ -91,6 +91,114 @@
 	font-variant-numeric: tabular-nums;
 }
 
+/*
+ * Always-visible, clearly labeled Copy button on every Expressive Code code block and terminal block.
+ * Expressive Code hides `.copy button` with `opacity: 0` on hover-capable pointers by default,
+ * making blocks look like they lack copy support until hovered.
+ */
+.expressive-code .frame {
+	border-radius: var(--lumen-radius-md);
+}
+
+.expressive-code .copy {
+	z-index: 2;
+	align-items: center;
+}
+
+.expressive-code .frame.is-terminal .copy {
+	inset-block-start: 0.25rem;
+	inset-inline-end: 0.45rem;
+}
+
+.expressive-code .frame:not(.is-terminal) .copy {
+	inset-block-start: 0.45rem;
+	inset-inline-end: 0.5rem;
+}
+
+.expressive-code .frame:not(.is-terminal) .ec-line:nth-child(-n + 2) .code {
+	padding-inline-end: 5.75rem;
+}
+
+.expressive-code .copy button {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	width: auto;
+	height: 1.8rem;
+	padding-inline: 0.55rem 0.6rem;
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: var(--lumen-radius-sm);
+	background: var(--sl-color-black);
+	color: var(--sl-color-gray-1);
+	font-family: var(--sl-font-system);
+	font-size: 0.75rem;
+	font-weight: 500;
+	line-height: 1;
+	opacity: 0.92;
+}
+
+:root[data-theme='light'] .expressive-code .copy button {
+	background: var(--sl-color-black);
+	color: var(--sl-color-gray-1);
+}
+
+.expressive-code .copy button::before {
+	display: none;
+}
+
+.expressive-code .copy button::after {
+	order: -1;
+	position: static;
+	display: inline-block;
+	width: 0.95rem;
+	height: 0.95rem;
+	margin: 0;
+	flex-shrink: 0;
+	background-color: currentColor;
+}
+
+.expressive-code .copy button div {
+	position: static;
+	inset: auto;
+	display: inline;
+	background: transparent;
+	opacity: 1;
+}
+
+.expressive-code .copy button div::after {
+	content: 'Copy';
+}
+
+:lang(ko) .expressive-code .copy button div::after {
+	content: '복사';
+}
+
+.expressive-code .frame:hover .copy button,
+.expressive-code .copy button:hover,
+.expressive-code .copy button:focus-visible {
+	opacity: 1;
+}
+
+.expressive-code .copy button:hover,
+.expressive-code .copy button:focus-visible {
+	color: var(--sl-color-white);
+	border-color: var(--sl-color-text-accent);
+	background: var(--sl-color-accent-low);
+}
+
+.expressive-code .copy button:hover div,
+.expressive-code .copy button:focus-visible div,
+.expressive-code .copy button:active div {
+	opacity: 1;
+}
+
+.expressive-code .copy .feedback {
+	border-radius: var(--lumen-radius-sm);
+	font-size: 0.75rem;
+	font-weight: 600;
+	padding: 0.25rem 0.55rem;
+}
+
 /* Live demo caption below embedded chart frames. */
 .demo-caption {
 	margin-top: 0.65rem;

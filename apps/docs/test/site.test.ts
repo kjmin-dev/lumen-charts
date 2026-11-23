@@ -124,7 +124,10 @@ describe('docs build output', () => {
 		await Promise.all(
 			mdTargets.map(async rel => {
 				const md = await readFile(join(dist, rel), 'utf8');
-				assert.ok(!/<\/?(?:Tabs|TabItem|Aside|CardGrid|Card)\b/.test(md), `${rel} contains unstripped MDX tags`);
+				assert.ok(
+					!/<\/?(?:Tabs|TabItem|Aside|CardGrid|Card|InstallCommand)\b/.test(md),
+					`${rel} contains unstripped MDX tags`,
+				);
 				assert.ok(!/^```[a-z]+\s+\S+.*```$/m.test(md), `${rel} contains a collapsed single-line fenced code block`);
 				for (const label of FRAMEWORK_LABELS) {
 					assert.ok(md.includes(`### ${label}\n`), `${rel} is missing "### ${label}" section`);
@@ -134,6 +137,61 @@ describe('docs build output', () => {
 
 		const apiMd = await readFile(join(dist, 'reference', 'api.md'), 'utf8');
 		assert.ok(apiMd.includes('## Framework bindings'), 'reference/api.md should document framework bindings');
+	});
+
+	test('install command boxes support pnpm/npm/yarn/bun and copy buttons across EN and KO pages', async () => {
+		const installPages = [
+			{ rel: 'getting-started/index.html', copyLabel: 'Copy' },
+			{ rel: 'frameworks/index.html', copyLabel: 'Copy' },
+			{ rel: 'ko/getting-started/index.html', copyLabel: '복사' },
+			{ rel: 'ko/frameworks/index.html', copyLabel: '복사' },
+		];
+
+		await Promise.all(
+			installPages.map(async ({ rel, copyLabel }) => {
+				const html = await readFile(join(dist, rel), 'utf8');
+				assert.ok(html.includes('<lumen-install'), `${rel} should render <lumen-install> command boxes`);
+				for (const pm of ['pnpm', 'npm', 'yarn', 'bun']) {
+					assert.ok(html.includes(`data-pm="${pm}"`), `${rel} is missing "${pm}" package manager tab`);
+				}
+				assert.ok(
+					html.includes(`data-cmd="npm install @lumen-charts/react react"`),
+					`${rel} is missing React npm install command`,
+				);
+				assert.ok(
+					html.includes(`data-copy-label="${copyLabel}"`),
+					`${rel} is missing localized copy label "${copyLabel}"`,
+				);
+			}),
+		);
+
+		await Promise.all(
+			['getting-started.md', 'frameworks.md'].map(async rel => {
+				const md = await readFile(join(dist, rel), 'utf8');
+				assert.ok(md.includes('pnpm add lumen-charts'), `${rel} should expand pnpm install command`);
+				assert.ok(md.includes('npm install @lumen-charts/react react'), `${rel} should expand npm install command`);
+				assert.ok(md.includes('yarn add @lumen-charts/vue vue'), `${rel} should expand yarn install command`);
+				assert.ok(md.includes('bun add @lumen-charts/solid solid-js'), `${rel} should expand bun install command`);
+			}),
+		);
+
+		const llmsFull = await readFile(join(dist, 'llms-full.txt'), 'utf8');
+		assert.ok(
+			llmsFull.includes('pnpm add @lumen-charts/react react'),
+			'llms-full.txt should include React install command',
+		);
+		assert.ok(
+			llmsFull.includes('npm install @lumen-charts/vue vue'),
+			'llms-full.txt should include Vue install command',
+		);
+		assert.ok(
+			llmsFull.includes('yarn add @lumen-charts/svelte svelte'),
+			'llms-full.txt should include Svelte install command',
+		);
+		assert.ok(
+			llmsFull.includes('bun add @lumen-charts/solid solid-js'),
+			'llms-full.txt should include Solid install command',
+		);
 	});
 
 	test('every demo page is built and every embedded frame is inlined as srcdoc with modulepreload', async () => {

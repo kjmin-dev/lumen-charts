@@ -1,0 +1,431 @@
+---
+// Interactive package-manager install command box (pnpm / npm / yarn / bun) with synced selection
+// across the site and an always-visible one-click Copy button.
+// Uses toggle buttons (`role="group"` + `aria-pressed`) rather than `role="tab"` / `role="tabpanel"`
+// so it nests cleanly inside Starlight `<Tabs>` and `starlight-llms-txt` without colliding with tab selectors.
+
+interface Props {
+	/** Space-separated npm package specifier(s), e.g. `"@lumen-charts/react react"`. */
+	packages: string;
+}
+
+const { packages } = Astro.props;
+const isKo = Astro.url.pathname.startsWith('/ko/');
+
+const MANAGERS = [
+	{ id: 'pnpm', label: 'pnpm', verb: 'add' },
+	{ id: 'npm', label: 'npm', verb: 'install' },
+	{ id: 'yarn', label: 'yarn', verb: 'add' },
+	{ id: 'bun', label: 'bun', verb: 'add' },
+] as const;
+
+const commands = MANAGERS.map(pm => ({
+	id: pm.id,
+	label: pm.label,
+	verb: pm.verb,
+	cmd: `${pm.id} ${pm.verb} ${packages}`,
+}));
+
+const copyLabel = isKo ? '복사' : 'Copy';
+const copiedLabel = isKo ? '복사됨!' : 'Copied!';
+const copyAria = isKo ? '설치 명령어 복사' : 'Copy install command';
+const groupLabel = isKo ? '패키지 매니저' : 'Package manager';
+
+const restoreSymbol = Symbol.for('lumen:did-render-install-restore');
+const locals = Astro.locals as Record<symbol, unknown>;
+const shouldRenderRestoreScript = locals[restoreSymbol] !== true;
+if (shouldRenderRestoreScript) {
+	locals[restoreSymbol] = true;
+}
+---
+
+{shouldRenderRestoreScript && <script is:inline>
+	(() => {
+		if (customElements.get('lumen-install-restore')) return;
+		class LumenInstallRestore extends HTMLElement {
+			connectedCallback() {
+				const host = this.closest('lumen-install');
+				if (!(host instanceof HTMLElement) || typeof localStorage === 'undefined') return;
+				const saved = localStorage.getItem('lumen-docs-pkg');
+				if (!saved) return;
+				const buttons = [...host.querySelectorAll('[data-pm]')];
+				const idx = buttons.findIndex(btn => btn.getAttribute('data-pm') === saved);
+				if (idx < 1) return;
+				const panels = [...host.querySelectorAll('[data-pm-panel]')];
+				buttons[0]?.setAttribute('aria-pressed', 'false');
+				panels[0]?.setAttribute('hidden', '');
+				buttons[idx]?.setAttribute('aria-pressed', 'true');
+				panels[idx]?.removeAttribute('hidden');
+			}
+		}
+		customElements.define('lumen-install-restore', LumenInstallRestore);
+	})();
+</script>}
+
+<lumen-install class="install-cmd not-content">
+	<div class="install-cmd__header">
+		<div class="install-cmd__tabs" role="group" aria-label={groupLabel}>
+			{commands.map((item, idx) => (
+				<button type="button" class="install-cmd__tab" aria-pressed={idx === 0 ? 'true' : 'false'} data-pm={item.id}>
+					{item.label}
+				</button>
+			))}
+		</div>
+		<button
+			type="button"
+			class="install-cmd__copy"
+			aria-label={copyAria}
+			data-copy-label={copyLabel}
+			data-copied-label={copiedLabel}
+		>
+			<svg
+				class="install-cmd__icon install-cmd__icon--copy"
+				viewBox="0 0 24 24"
+				width="15"
+				height="15"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+				<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+			</svg>
+			<svg
+				class="install-cmd__icon install-cmd__icon--check"
+				viewBox="0 0 24 24"
+				width="15"
+				height="15"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2.25"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
+				<polyline points="20 6 9 17 4 12"></polyline>
+			</svg>
+			<span class="install-cmd__copy-text">{copyLabel}</span>
+		</button>
+		<span class="sr-only" aria-live="polite" data-install-status></span>
+	</div>
+	{commands.map((item, idx) => (
+		<div class="install-cmd__panel" data-pm-panel={item.id} data-cmd={item.cmd} hidden={idx !== 0}>
+			<pre class="install-cmd__pre"><code class="install-cmd__code"><span class="install-cmd__prompt" aria-hidden="true">$</span><span class="install-cmd__pm">{item.id}</span> <span class="install-cmd__verb">{item.verb}</span> <span class="install-cmd__pkgs">{packages}</span></code></pre>
+		</div>
+	))}
+	<lumen-install-restore></lumen-install-restore>
+</lumen-install>
+
+<script>
+	const STORAGE_KEY = 'lumen-docs-pkg';
+
+	function fallbackCopy(text: string): boolean {
+		const el = document.createElement('textarea');
+		el.value = text;
+		el.setAttribute('readonly', '');
+		Object.assign(el.style, { position: 'fixed', opacity: '0', pointerEvents: 'none', left: '0', top: '0' });
+		document.body.appendChild(el);
+		el.select();
+		let ok = false;
+		try {
+			ok = document.execCommand('copy');
+		} finally {
+			el.remove();
+		}
+		return ok;
+	}
+
+	async function copyText(text: string): Promise<boolean> {
+		try {
+			await navigator.clipboard.writeText(text);
+			return true;
+		} catch {
+			return fallbackCopy(text);
+		}
+	}
+
+	class LumenInstall extends HTMLElement {
+		static #instances = new Set<LumenInstall>();
+
+		#buttons: HTMLButtonElement[] = [];
+		#panels: HTMLElement[] = [];
+		#copyBtn: HTMLButtonElement | null = null;
+		#copyTextEl: HTMLElement | null = null;
+		#statusEl: HTMLElement | null = null;
+		#resetTimer: number | undefined;
+
+		connectedCallback() {
+			if (this.#buttons.length > 0) return;
+			this.#buttons = [...this.querySelectorAll<HTMLButtonElement>('[data-pm]')];
+			this.#panels = [...this.querySelectorAll<HTMLElement>('[data-pm-panel]')];
+			this.#copyBtn = this.querySelector<HTMLButtonElement>('.install-cmd__copy');
+			this.#copyTextEl = this.querySelector<HTMLElement>('.install-cmd__copy-text');
+			this.#statusEl = this.querySelector<HTMLElement>('[data-install-status]');
+			LumenInstall.#instances.add(this);
+
+			for (const [index, button] of this.#buttons.entries()) {
+				button.addEventListener('click', () => this.selectIndex(index, true));
+				button.addEventListener('keydown', event => {
+					const next =
+						event.key === 'ArrowLeft'
+							? (index - 1 + this.#buttons.length) % this.#buttons.length
+							: event.key === 'ArrowRight'
+								? (index + 1) % this.#buttons.length
+								: event.key === 'Home'
+									? 0
+									: event.key === 'End'
+										? this.#buttons.length - 1
+										: null;
+					if (next === null) return;
+					event.preventDefault();
+					this.selectIndex(next, true);
+					this.#buttons[next]?.focus();
+				});
+			}
+
+			this.#copyBtn?.addEventListener('click', () => {
+				void this.#handleCopy();
+			});
+		}
+
+		disconnectedCallback() {
+			LumenInstall.#instances.delete(this);
+			if (this.#resetTimer !== undefined) {
+				window.clearTimeout(this.#resetTimer);
+			}
+		}
+
+		selectIndex(index: number, broadcast: boolean) {
+			const targetBtn = this.#buttons[index];
+			if (!targetBtn) return;
+			for (let i = 0; i < this.#buttons.length; i++) {
+				const active = i === index;
+				this.#buttons[i]?.setAttribute('aria-pressed', active ? 'true' : 'false');
+				if (active) {
+					this.#panels[i]?.removeAttribute('hidden');
+				} else {
+					this.#panels[i]?.setAttribute('hidden', '');
+				}
+			}
+
+			if (broadcast) {
+				const pm = targetBtn.dataset.pm;
+				if (pm !== undefined) {
+					try {
+						localStorage.setItem(STORAGE_KEY, pm);
+					} catch {
+						// Ignore storage errors in restricted browsing modes.
+					}
+					for (const other of LumenInstall.#instances) {
+						if (other === this) continue;
+						const match = other.#buttons.findIndex(b => b.dataset.pm === pm);
+						if (match !== -1) other.selectIndex(match, false);
+					}
+				}
+			}
+		}
+
+		async #handleCopy() {
+			const activePanel = this.#panels.find(panel => !panel.hidden);
+			const cmd = activePanel?.dataset.cmd;
+			if (!cmd || !this.#copyBtn) return;
+			const ok = await copyText(cmd);
+			if (!ok) return;
+
+			const copied = this.#copyBtn.dataset.copiedLabel ?? 'Copied!';
+			const idle = this.#copyBtn.dataset.copyLabel ?? 'Copy';
+			this.#copyBtn.dataset.copied = 'true';
+			if (this.#copyTextEl) this.#copyTextEl.textContent = copied;
+			if (this.#statusEl) this.#statusEl.textContent = copied;
+
+			if (this.#resetTimer !== undefined) window.clearTimeout(this.#resetTimer);
+			this.#resetTimer = window.setTimeout(() => {
+				if (this.#copyBtn) delete this.#copyBtn.dataset.copied;
+				if (this.#copyTextEl) this.#copyTextEl.textContent = idle;
+				if (this.#statusEl) this.#statusEl.textContent = '';
+				this.#resetTimer = undefined;
+			}, 1600);
+		}
+	}
+
+	if (!customElements.get('lumen-install')) {
+		customElements.define('lumen-install', LumenInstall);
+	}
+</script>
+
+<style>
+	.install-cmd {
+		display: block;
+		margin-block: 0.75rem 1.25rem;
+		border: 1px solid var(--sl-color-gray-5);
+		border-radius: var(--lumen-radius-md);
+		background: var(--sl-color-gray-6);
+		overflow: hidden;
+	}
+
+	:global(:root[data-theme='light']) .install-cmd {
+		background: var(--sl-color-gray-7);
+	}
+
+	.install-cmd__header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: 0.45rem 0.6rem 0.45rem 0.55rem;
+		background: var(--sl-color-black);
+		border-bottom: 1px solid var(--sl-color-gray-5);
+	}
+
+	:global(:root[data-theme='light']) .install-cmd__header {
+		background: var(--sl-color-gray-6);
+	}
+
+	.install-cmd__tabs {
+		display: flex;
+		align-items: center;
+		gap: 0.2rem;
+		overflow-x: auto;
+	}
+
+	.install-cmd__tab {
+		appearance: none;
+		border: 1px solid transparent;
+		border-radius: var(--lumen-radius-sm);
+		background: transparent;
+		color: var(--sl-color-gray-3);
+		font-family: var(--sl-font-mono);
+		font-size: 0.8125rem;
+		font-weight: 500;
+		line-height: 1.2;
+		padding: 0.3rem 0.65rem;
+		cursor: pointer;
+		transition:
+			color 0.15s ease,
+			background-color 0.15s ease,
+			border-color 0.15s ease;
+	}
+
+	.install-cmd__tab:hover {
+		color: var(--sl-color-white);
+		background: var(--sl-color-gray-6);
+	}
+
+	:global(:root[data-theme='light']) .install-cmd__tab:hover {
+		background: var(--sl-color-gray-7);
+	}
+
+	.install-cmd__tab[aria-pressed='true'] {
+		color: var(--sl-color-text-accent);
+		background: var(--sl-color-accent-low);
+		border-color: color-mix(in srgb, var(--lumen-accent), transparent 65%);
+		font-weight: 600;
+	}
+
+	.install-cmd__tab:focus-visible,
+	.install-cmd__copy:focus-visible {
+		outline: 2px solid var(--lumen-accent);
+		outline-offset: 1px;
+	}
+
+	.install-cmd__copy {
+		appearance: none;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		flex-shrink: 0;
+		padding: 0.3rem 0.65rem;
+		border: 1px solid var(--sl-color-gray-5);
+		border-radius: var(--lumen-radius-sm);
+		background: var(--sl-color-gray-6);
+		color: var(--sl-color-gray-1);
+		font-family: var(--sl-font-system);
+		font-size: 0.78rem;
+		font-weight: 500;
+		line-height: 1.2;
+		cursor: pointer;
+		transition:
+			color 0.15s ease,
+			background-color 0.15s ease,
+			border-color 0.15s ease;
+	}
+
+	:global(:root[data-theme='light']) .install-cmd__copy {
+		background: var(--sl-color-black);
+		color: var(--sl-color-gray-1);
+	}
+
+	.install-cmd__copy:hover {
+		color: var(--sl-color-white);
+		border-color: var(--sl-color-text-accent);
+		background: var(--sl-color-accent-low);
+	}
+
+	.install-cmd__copy[data-copied='true'] {
+		color: #ffffff;
+		background: #158744;
+		border-color: #158744;
+	}
+
+	.install-cmd__icon--check {
+		display: none;
+	}
+
+	.install-cmd__copy[data-copied='true'] .install-cmd__icon--copy {
+		display: none;
+	}
+
+	.install-cmd__copy[data-copied='true'] .install-cmd__icon--check {
+		display: block;
+	}
+
+	.install-cmd__panel[hidden] {
+		display: none;
+	}
+
+	.install-cmd__pre {
+		margin: 0;
+		padding: 0.9rem 1.1rem;
+		overflow-x: auto;
+		background: transparent;
+		border: 0;
+		font-family: var(--sl-font-mono);
+		font-size: 0.9rem;
+		line-height: 1.5;
+	}
+
+	.install-cmd__code {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 0.45ch;
+		background: transparent;
+		padding: 0;
+		font: inherit;
+		color: var(--sl-color-white);
+		white-space: pre;
+	}
+
+	.install-cmd__prompt {
+		color: var(--sl-color-gray-3);
+		margin-inline-end: 0.45ch;
+		user-select: none;
+		-webkit-user-select: none;
+	}
+
+	.install-cmd__pm {
+		color: var(--sl-color-text-accent);
+		font-weight: 600;
+	}
+
+	.install-cmd__verb {
+		color: var(--sl-color-gray-2);
+	}
+
+	.install-cmd__pkgs {
+		color: var(--sl-color-white);
+		font-weight: 500;
+	}
+</style>

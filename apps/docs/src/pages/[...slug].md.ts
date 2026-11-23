@@ -49,6 +49,16 @@ function plain(body: string): string {
 		.replace(/^\{\/\*.*\*\/\}$/gm, '')
 		.replace(/^<!--.*-->$/gm, '')
 		.replace(/^<ChartDemo .*\/>$/gm, '')
+		.replace(/<InstallCommand packages="([^"]+)"\s*\/>/g, (_, pkgs: string) => {
+			return [
+				'```sh',
+				`pnpm add ${pkgs}`,
+				`# npm:  npm install ${pkgs}`,
+				`# yarn: yarn add ${pkgs}`,
+				`# bun:  bun add ${pkgs}`,
+				'```',
+			].join('\n');
+		})
 		.replace(/^<p class="demo-caption">[\s\S]*?<\/p>$/gm, '')
 		.replace(/^<div class="(?:ramp|theme-sample)[^"]*">.*<\/div>$/gm, '')
 		.replace(/<span class="swatch"[^>]*><\/span>/g, '')
