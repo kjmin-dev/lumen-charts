@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { chromium, firefox, webkit } from 'playwright';
 import { build } from 'vite';
+import { formatJson } from '../src/json.ts';
 import { servePreview } from './serve.ts';
 const { values } = parseArgs({
 	options: {
@@ -44,10 +45,7 @@ try {
 			}
 		}
 	if (values.out)
-		await writeFile(
-			resolve(values.out),
-			JSON.stringify({ browser: values.browser, version: browser.version(), runs }, null, '\t') + '\n',
-		);
+		await writeFile(resolve(values.out), formatJson({ browser: values.browser, version: browser.version(), runs }));
 } finally {
 	await browser?.close();
 	await server.close();

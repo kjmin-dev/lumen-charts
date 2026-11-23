@@ -34,7 +34,14 @@ import {
 	parseSize,
 } from '../src/jobs.ts';
 import { type CdpHeapUsage, cdpHeapUsage, memorySample, sumWorkers } from '../src/memory.ts';
-import { type CompletedJob, RESULTS_SCHEMA_VERSION, type ResultsFile, aggregate } from '../src/results.ts';
+import { formatJson } from '../src/json.ts';
+import {
+	type CompletedJob,
+	RESULTS_SCHEMA_VERSION,
+	type ResultsFile,
+	aggregate,
+	storedResults,
+} from '../src/results.ts';
 import { SCENARIOS } from '../src/scenarios/index.ts';
 import {
 	type RunAllocations,
@@ -876,7 +883,7 @@ async function main(): Promise<void> {
 			cases: aggregate(completed),
 		};
 		mkdirSync(dirname(out), { recursive: true });
-		writeFileSync(out, `${JSON.stringify(file, null, '\t')}\n`);
+		writeFileSync(out, formatJson(storedResults(file)));
 
 		if (profileDir !== null) {
 			writeSummary(profileDir, profiles);

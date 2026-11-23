@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { RunOutcome } from '../src/jobs.ts';
-import { type CompletedJob, type ResultsFile, aggregate, mergeResults, numericLeaves } from '../src/results.ts';
+import {
+	type CompletedJob,
+	type ResultsFile,
+	aggregate,
+	isResultsFile,
+	loadResults,
+	mergeResults,
+	numericLeaves,
+	storedResults,
+} from '../src/results.ts';
 import type { FramesJob, FramesRun } from '../src/scenarios/frames.ts';
 import { summarize } from '../src/stats.ts';
 
@@ -103,5 +112,37 @@ describe('mergeResults', () => {
 		]);
 		expect(() => mergeResults([file('t1', [1], 1), { ...other, schema: 1 }])).toThrow(/schema/);
 		expect(() => mergeResults([])).toThrow(/Nothing/);
+	});
+});
+
+describe('stored results', () => {
+	it('leave the summaries out and make them again when read', () => {
+		const failed: RunOutcome = { status: 'failed', reason: 'timeout', message: 'slow', durationMs: 5 };
+		const written: ResultsFile = {
+			schema: 2,
+			createdAt: 'now',
+			environment: { runner: { arguments: ['--repeats', '3'] } },
+			cases: aggregate([completed(run([1, 2, 3]), 0), completed(run([3, 4, 5]), 1), completed(failed, 2)]),
+		};
+		const stored = JSON.parse(JSON.stringify(storedResults(written))) as unknown;
+		expect(isResultsFile(stored)).toBe(true);
+		expect(JSON.stringify(stored)).not.toContain('"summary"');
+		expect(loadResults(stored as never)).toEqual(written);
+		// The file itself is left as it was.
+		expect(written.cases[0]?.summary['jsTime.p50']?.median).toBe(3);
+	});
+
+	it('keep a summary a file still has', () => {
+		const [made] = aggregate([completed(run([1, 2, 3]), 0)]);
+		const older = { ...made!, summary: { 'jsTime.p50': { median: 9, min: 9, max: 9, relativeRange: 0, runs: 1 } } };
+		const read = loadResults({ schema: 2, createdAt: 'then', environment: {}, cases: [older] });
+		expect(read.cases[0]?.summary).toBe(older.summary);
+	});
+
+	it('are what the runner, the merge and the report read and write', () => {
+		expect(isResultsFile({ schema: 2, cases: [] })).toBe(true);
+		expect(isResultsFile({ cases: [] })).toBe(false);
+		expect(isResultsFile([])).toBe(false);
+		expect(isResultsFile(null)).toBe(false);
 	});
 });

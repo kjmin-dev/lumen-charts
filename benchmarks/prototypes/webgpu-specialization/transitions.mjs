@@ -7,6 +7,7 @@ import { chromium } from 'playwright';
 import { build } from 'vite';
 import { connectAndroid } from '../../runner/android.ts';
 import { servePreview } from '../../runner/serve.ts';
+import { formatJson } from '../../src/json.ts';
 
 const { values } = parseArgs({
 	options: {
@@ -75,7 +76,7 @@ try {
 		...(await page.evaluate(async widths => (await import('/study.js')).study(widths), sizes)),
 		...(android ? { deviceState: { before, after: android.state() } } : {}),
 	};
-	if (values.out) await writeFile(values.out, JSON.stringify(result, null, '\t') + '\n');
+	if (values.out) await writeFile(values.out, formatJson(result));
 	for (const [key, samples] of Object.entries(result.probes)) {
 		const sorted = samples.map(s => s.jsMs).toSorted((a, b) => a - b);
 		console.log(key, 'JS p95', sorted[Math.ceil(sorted.length * 0.95) - 1], 'upload bytes', samples.at(-1).bytes);

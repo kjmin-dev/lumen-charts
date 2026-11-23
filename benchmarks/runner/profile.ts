@@ -11,6 +11,7 @@ import { SourceMap } from 'node:module';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type AllocationSummary, type SamplingNode, summarizeAllocations } from '../src/allocations.ts';
+import { formatJson } from '../src/json.ts';
 import {
 	type CallFrame,
 	type SourceResolver,
@@ -76,7 +77,7 @@ export function writeProfile(directory: string, run: string, trace: Buffer, reso
 	mkdirSync(directory, { recursive: true });
 	writeFileSync(resolve(directory, `${fileName(run)}.trace.json`), trace);
 	const summary = summarize(trace, resolveSource);
-	writeFileSync(resolve(directory, `${fileName(run)}.json`), `${JSON.stringify(summary, null, '\t')}\n`);
+	writeFileSync(resolve(directory, `${fileName(run)}.json`), formatJson(summary));
 	return { run, summary };
 }
 
@@ -101,16 +102,16 @@ export function writeAllocations(
 	const parsed = JSON.parse(trace.toString('utf8')) as { traceEvents?: TraceEvent[] } | TraceEvent[];
 	const events = Array.isArray(parsed) ? parsed : (parsed.traceEvents ?? []);
 	const summary = summarizeAllocations(head, ticks, events, resolveSource);
-	writeFileSync(resolve(directory, `${fileName(run)}.json`), `${JSON.stringify(summary, null, '\t')}\n`);
+	writeFileSync(resolve(directory, `${fileName(run)}.json`), formatJson(summary));
 	return { run, summary };
 }
 
 export function writeAllocationsSummary(directory: string, runs: readonly RunAllocations[]): void {
-	writeFileSync(resolve(directory, 'summary.json'), `${JSON.stringify(runs, null, '\t')}\n`);
+	writeFileSync(resolve(directory, 'summary.json'), formatJson(runs));
 }
 
 export function writeSummary(directory: string, profiles: readonly RunProfile[]): void {
-	writeFileSync(resolve(directory, 'summary.json'), `${JSON.stringify(profiles, null, '\t')}\n`);
+	writeFileSync(resolve(directory, 'summary.json'), formatJson(profiles));
 }
 
 if (import.meta.main) {
@@ -126,7 +127,7 @@ if (import.meta.main) {
 		const run = file.slice(0, -'.trace.json'.length);
 		try {
 			const summary = summarize(readFileSync(resolve(directory, file)), resolveSource);
-			writeFileSync(resolve(directory, `${run}.json`), `${JSON.stringify(summary, null, '\t')}\n`);
+			writeFileSync(resolve(directory, `${run}.json`), formatJson(summary));
 			profiles.push({ run, summary });
 			process.stdout.write(`${run}\n`);
 		} catch (error) {
