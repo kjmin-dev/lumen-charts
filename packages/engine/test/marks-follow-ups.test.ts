@@ -547,23 +547,48 @@ describe('evicting intermediate mark LOD levels under memoryLimit', () => {
 		ref.read(1, after.marks![0]!.start, after.marks![0]!.start + after.marks![0]!.count, refSlice);
 		expect([...after.marks![0]!.values]).toEqual([...refSlice.values]);
 
-		// Deleting enough columns to drop level 2 materializes level 1 as the new fully-resident topmost level!
+		// Deleting enough columns that level 2 is no longer needed does not fetch level 1's columns
+		// only to let level 2 go: level 2 stays, rebuilt, as long as level 1 is not held in full.
 		engine.evict(Infinity, Infinity);
+		const kept = betweenHeat(data, data.time[1801]!, Infinity);
 		const delOut = outcome();
 		drain(engine.change(1, { op: 'delete', from: data.time[0]!, to: data.time[1800]! }, delOut));
 		let fetches = delOut.marksFetch ?? [];
+		let fetched = 0;
 		while (fetches.length > 0) {
 			const back = outcome();
 			for (const fetch of fetches) {
-				drain(engine.restore(fetch.id, betweenHeat(data, fetch.from, fetch.to), back));
+				fetched++;
+				drain(engine.restore(fetch.id, betweenHeat(kept, fetch.from, fetch.to), back));
+				expect(back.marksRestored!.outcome).toBe('restored');
 			}
 			fetches = back.marksFetch ?? [];
 		}
 		expect(engine.waiting).toBe(0);
+		expect(fetched).toBeLessThanOrEqual(2);
+		expect(store.levels).toBe(2);
+		const topMissing: number[] = [];
+		store.missing(2, store.first(2), store.first(2) + store.total(2), topMissing);
+		expect(topMissing).toEqual([]);
+		// Once level 1 can be made from what is held, the next change lets level 2 go.
+		let view = outcome();
+		engine.window(1, 4, request(-Infinity, Infinity, 1, { limit: Infinity }), view);
+		for (let round = 0; view.marksFetch !== undefined && round < 20; round++) {
+			for (const fetch of view.marksFetch) {
+				drain(engine.restore(fetch.id, betweenHeat(kept, fetch.from, fetch.to), outcome()));
+			}
+			view = outcome();
+			engine.window(1, 4, request(-Infinity, Infinity, 1, { limit: Infinity }), view);
+		}
+		const level0: number[] = [];
+		store.missing(0, store.first(0), store.first(0) + store.total(0), level0);
+		expect(level0).toEqual([]);
+		drain(engine.change(1, { op: 'append', data: heat(1, 1024, () => 1, 0, 3000) }, outcome()));
 		expect(store.levels).toBe(1);
 		const checkMissing: number[] = [];
 		store.missing(1, store.first(1), store.first(1) + store.total(1), checkMissing);
 		expect(checkMissing).toEqual([]);
+		expectExactHeatLevels(store);
 	}, 30_000);
 });
 

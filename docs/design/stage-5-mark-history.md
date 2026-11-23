@@ -46,9 +46,22 @@ file differ, this one says what the library does now. The measurements are in
   merge and marking the bucket non-evictable only when the level below has evicted chunks there).
 - **Correction and removal.** `correct` replaces existing points over `[from, to]` (or spanning
   `data`'s times when absent) in place, refusing all if no existing points fall in the range or if
-  all input points are invalid; `delete` removes points in `[from, to]`. Both materialize any evicted
-  coarse chunks they read or splice before mutating level 0, then rebuild the buckets spanning the
-  affected range bottom-up across every coarse level and refresh the last bucket's bin index.
+  all input points are invalid; `delete` removes points in `[from, to]`. Both make held every evicted
+  coarse chunk they read or splice before mutating level 0, then rebuild the buckets spanning the
+  affected range bottom-up across every coarse level and refresh the last bucket's bin index. The
+  coarse chunks at the edges of the changed buckets are made from the finest level held below them
+  without the cells of those buckets, which stand in until they are made again right after, so they
+  need neither the points inside the change nor their source there; a chunk that does not come out
+  as it was let go changes nothing (the change reports it, see 4.7). Every coarse level moves its
+  rows on the side the points move on (whose points are held for the move anyway), or, when the
+  points do not move, on the side with fewer chunks let go. A splice that would read a row let go,
+  or write a chunk let go in part, throws before anything changes: an invariant, which before turned
+  rows let go into zeros without a word.
+- **Bounds in chunks let go.** Where a bucket or a time falls in a chunk let go, a search only finds
+  the chunk (`lowerBucket` its start): the rows a bucket spans are taken to include that whole chunk,
+  and the side a removal moves is decided only where it is the same for every position the bounds
+  allow; otherwise the chunks at its edges are fetched first. Chunk numbers are signed once points
+  are prepended, and are halved as such.
 
 ### 4.5 Heatmap store (as built after stage 5)
 
@@ -63,8 +76,14 @@ file differ, this one says what the library does now. The measurements are in
   overwrites existing columns at their exact timestamps in place (refusing non-matching times or
   off-grid columns) and rebuilds only the touched buckets bottom-up. A removal at either end cuts; in
   the middle the columns of the shorter side move over and the buckets of the moved columns are made
-  again. A level is let go once the level below has 512 columns or fewer, materializing the new
-  topmost level first so a resident fallback always exists.
+  again. A bucket of a coarse chunk whose cells were let go is not made: the chunk is made again from
+  the levels below when it is read. The others are made from the finest level below that holds their
+  members (the largest cell of each row is the same from any level, as buckets nest), so a correction
+  of one column needs at most the columns of its topmost bucket where the levels between went, not
+  whole chunks of every level. A level is let go once the level below has 512 columns or fewer and
+  is held in full, or can be made so from what is held; until then it stays, and is rebuilt like the
+  others, so the topmost level is always held and a removal never fetches columns only to drop a
+  level.
 
 ### 4.6 Window of a mark series (as built after stage 5)
 
@@ -81,10 +100,13 @@ file differ, this one says what the library does now. The measurements are in
   `memoryLimit`, after every chunk of bars that could go: 65,536 points or coarse cells of a scatter
   (all of a chunk but its summary), or the cells of a heatmap chunk (about 256 KB), keeping column
   times, rows and lengths. The topmost coarse level always stays resident as a guaranteed stand-in,
-  and so do the first and last chunk of each scatter level and the chunks of the first and last eight
-  columns of each heatmap level (where appends and prepends rebuild buckets), the chunks overlapping
-  the last view and its margins, those being fetched or waited for, and those an indicator
-  recomputation has yet to read. Nothing goes before the series has a coarse level to draw from.
+  and so do the first and last chunk of each scatter level and the coarse chunks holding cells of its
+  first or last bucket (where prepends and appends merge into cells), the chunks of the first and
+  last eight columns of each heatmap level and, at level 0, the columns of the first and last bucket
+  of its topmost level (where appends and prepends rebuild buckets, from level 0 where the levels
+  between went), the chunks overlapping the last view and its margins, those being fetched or waited
+  for, and those an indicator recomputation has yet to read. Nothing goes before the series has a
+  coarse level to draw from.
 - **Summaries.** A scatter chunk (raw or coarse) keeps its row count, its first and last time, how
   many rows share those times, and a 64-bit checksum (raw level 0); a chunk whose rows share one time
   (or one time bucket for a coarse scatter level) is kept. A heatmap chunk keeps a checksum of its
@@ -94,18 +116,45 @@ file differ, this one says what the library does now. The measurements are in
   still resident, evicted coarse chunks rebuild immediately with zero fetch and no `partial` answer.
   When level-0 chunks underneath were also let go, the view is answered from the finest resident
   stand-in level (`partial`) and the engine fetches those level-0 chunks (`marksFetch`).
-  `getMarks({ from, to, signal })` returns the marks of those times; the engine checks the number and
-  checksum and refuses mismatches (history changes go through `correct` or `setData`). Once every
-  deferred level-0 chunk is back, any deferred coarse view is materialized immediately before sending
-  the `notice`, preventing thrashing under tight limits. A request the view left is cancelled
-  (`marksCancel`), and a failure or refusal pauses the series' next request, 1 s doubling to 30 s.
+  `getMarks({ from, to, signal })` returns the marks of those times as the source holds them; the
+  engine checks the number and checksum of a chunk nothing waits for and refuses mismatches (history
+  changes go through `correct`, `removeMarks` or `setData`). Once every deferred level-0 chunk is
+  back, any deferred coarse view is materialized immediately before sending the `notice`, preventing
+  thrashing under tight limits. A request the view left is cancelled (`marksCancel`), and a failure
+  or refusal pauses the series' next request, 1 s doubling to 30 s, once per round of requests
+  however many of them failed.
 - **Waiting.** A removal or in-place correction that would read, move or rebuild from marks let go
   (including evicted coarse chunks and their level-0 dependencies) is queued while those chunks are
-  fetched; later changes wait behind it, and `setData` drops them. The chunks it needs stay pinned
-  until the waiting changes have run; a failed fetch is asked for again with the next view request. A
-  scatter removal or correction cancels requests out for the series because row shifts invalidate
-  chunk numbers; what still needs marks asks again. A removal or correction stands for changes at the
-  source: the datafeed must return the updated history afterwards.
+  fetched; later changes wait behind it, and `setData` drops them. It asks for the chunks at its
+  edges, those whose rows move, and those the coarse chunks it rebuilds or moves are made from:
+  never those inside it. The chunks it needs stay pinned until the waiting changes have run; a failed
+  fetch is asked for again with the next view request. A scatter removal or correction cancels
+  requests out for the series because row shifts invalidate chunk numbers; what still needs marks
+  asks again.
+- **The datafeed returns the changed history.** An application changes its source, then the chart:
+  the marks a waiting change needs come back as they went or as the change leaves them, and maybe
+  the changes behind it. For a chunk the first waiting change needs, the engine takes either. As they
+  went: number and checksum, as for any chunk. As changed: inside the ranges of the changes the marks
+  must be the changes' own (none for a removal, a correction's points or columns, the later change's
+  where ranges meet), in order; outside them a scatter chunk takes the points returned (its share of
+  those at its first and last time as when it went), a heatmap chunk the cells of columns at the
+  times and on the rows of those it held. Marks a waiting append or prepend adds (after a removal
+  took the end or the start up to them) are not the chunk's and are taken out first. The points a
+  scatter chunk held inside the ranges are not known: as many stand-ins take their place inside the
+  range of the first change, which removes or replaces them; a reading that leaves out a change
+  behind them that reaches the chunk outside their ranges is not taken, since what the marks show
+  there could not be told apart. Scatter removals and corrections of other times commute: where the
+  first change that reaches a chunk is not the first waiting, it goes first, and the changes that
+  reach the chunk merge, with the marks returned between them (inside the chunk's times), into one
+  correction of their span. Marks taken as changed go into their chunk right before the change runs,
+  and out again where the exact bounds they give ask for more chunks first, so nothing reads a
+  stand-in; if the coarse chunks the change makes from them do not come out as they were let go,
+  they were not those marks, and are refused.
+- **Refused, three rounds running.** Marks a waiting change needs that fit neither reading are
+  refused (with a console warning), and the client asks again with its view after its pause. After
+  three rounds of requests with refusals (pauses of 1, 2 and 4 s) the change is dropped and reported
+  as a `refused` error of its series, 1 for a removal and its marks for a correction, and the changes
+  behind it run: a datafeed that answers with neither holds the series up for seconds, not for good.
 - **What asks for marks.** The view (cancelled when the view leaves them), a waiting removal, and an
   indicator recomputation (kept until it is answered, whatever the view does). A prepend keeps chunk
   numbers; where the client holds the first bucket of a coarse level, which takes prepended marks in,
@@ -224,3 +273,19 @@ renderer 8 MiB smaller. [measured: [mark history](../benchmarks/mark-history.md)
 - The switch of an automatic value range to palette slots waits 30 draws and makes 262,144 cells a
   draw. Both numbers come from the cost of quantizing on the M1; how often real books set new extremes,
   and what the GPU saves on mobile, would calibrate them.
+- A waiting removal or correction is dropped after three rounds of refused marks, 1, 2 and 4 s
+  apart. A datafeed that lags behind its source longer than that loses the change (it is reported).
+  How long real datafeeds lag after a change at their source would calibrate both.
+- Marks taken as changed are checked inside the ranges of the changes only: outside them, the points
+  of a scatter chunk holding stand-ins and the cells of heatmap columns are taken as returned, since
+  the checksum covers the chunk as it went. Checksums of blocks of a chunk would check them too.
+- Scatter changes that reach one chunk let go but do not merge (a change between them touches their
+  span) are refused when the datafeed returns them all applied, and the first is dropped after three
+  rounds.
+- A small scatter change in the middle fetches the side that moves, the chunks at its edges, and the
+  points under the coarse chunks let go at the edges of its buckets, which are made whole to be
+  spliced: for 30 points of a million let go, 4 chunks of 14 at a fifth of the history, 6 at four
+  fifths, 9 in the middle (the edges first, then the side). The side that moves is inherent to rows
+  numbered like bars; a coarse chunk at an edge could instead stay let go with its summary moved to
+  the cells written into it. A correction that keeps the number of points still moves the rows of a
+  coarse level whose cells it changes in number.

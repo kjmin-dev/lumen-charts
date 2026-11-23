@@ -435,7 +435,11 @@ export class EngineCore {
 			case 'marksRows': {
 				const times = this._marks.requestTimes(command.request);
 				yield* this._marks.restore(command.request, command.data, event);
-				// Changes that waited for the marks ran.
+				// Changes that waited for the marks ran: what they refused, and a change dropped after its
+				// marks were refused round after round, are reported for the series.
+				if (event.rejected > 0 && event.marksRestored !== undefined) {
+					event.rejectedSeries = [event.marksRestored.series, event.rejected];
+				}
 				yield* this._followMarks(event);
 				const outcome = event.marksRestored;
 				if (outcome !== undefined) {
