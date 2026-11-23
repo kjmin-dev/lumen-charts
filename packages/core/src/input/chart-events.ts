@@ -215,7 +215,8 @@ export class ChartEvents {
 				visible = true;
 				x = scale.indexToX(index);
 				const price = this._anchorPrice;
-				y = price === price ? (this._axes.get(this._anchorScale).priceToCoordinate(price) ?? NaN) : NaN;
+				// Without a scale of that id there is no price to place: looking makes none.
+				y = price === price ? (this._axes.find(this._anchorScale)?.priceToCoordinate(price) ?? NaN) : NaN;
 			}
 		}
 		if (visible !== crosshair.visible || (visible && (x !== crosshair.x || !same(y, crosshair.y)))) {

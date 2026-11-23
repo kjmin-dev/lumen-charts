@@ -1,6 +1,7 @@
 import type { PanePrimitives } from '../drawings/pane-primitives';
 import type { Crosshair } from '../model/crosshair';
 import type { FrameModel } from '../model/frame-model';
+import { type MagnetSnap, snapToBar } from '../model/magnet';
 import type { TimeDisplay } from '../model/time-display';
 import type { TimeScale } from '../model/time-scale';
 import type { CandlestickOptions, HistogramOptions, LineOptions } from '../options';
@@ -8,21 +9,23 @@ import { AXIS_PADDING, type PriceAxes, type PriceAxis } from '../price-axes';
 import type { Series } from '../series';
 import type { ChartSettings } from '../settings';
 import { clipPricePane, drawColumn, drawRow, drawTag, isFaint, textColorOn, deviceThickness } from './chrome';
+import { spreadLabels } from './label-layout';
 import type { ChartLayout } from './layout';
 
 interface ValueTag {
 	y: number;
-	top: number;
 	series: Series;
 	color: string;
 }
-const byHeight = (a: ValueTag, b: ValueTag) => a.y - b.y;
 /**
  * Draws the layer above everything else: price lines and value labels of the series, primitives
  * and drawings on top, and the crosshair with its labels and markers.
  */
 export class OverlayRenderer {
 	private readonly tags = new Map<PriceAxis, { items: ValueTag[]; count: number }>();
+	/** Tops of the value labels of one axis, wanted then placed, in device pixels. */
+	private _tops = new Float64Array(16);
+	private readonly _snap: MagnetSnap = { series: null, value: Number.NaN, y: Number.NaN };
 	private readonly _settings: ChartSettings;
 	private readonly _layout: ChartLayout;
 	private readonly _scale: TimeScale;
@@ -117,7 +120,7 @@ export class OverlayRenderer {
 			if (showLabel && labelAxis) {
 				let group = this.tags.get(labelAxis);
 				if (!group) this.tags.set(labelAxis, (group = { items: [], count: 0 }));
-				const tag = (group.items[group.count] ??= { y, top: 0, series, color });
+				const tag = (group.items[group.count] ??= { y, series, color });
 				tag.y = y;
 				tag.series = series;
 				tag.color = color;
@@ -125,23 +128,33 @@ export class OverlayRenderer {
 			}
 		}
 
+		// Value labels never cover each other: each axis spreads its own (see `spreadLabels`). They
+		// are collected in series order, so when an axis cannot fit them all, the series drawn last
+		// lose theirs first.
 		for (const [axis, group] of this.tags) {
 			const items = group.items;
 			items.length = group.count;
-			if (!items.length) continue;
-			items.sort(byHeight);
 			const top = Math.round(axis.scale.top * ratio);
 			const bottom = Math.round((axis.scale.top + axis.scale.height) * ratio);
-			const count = Math.min(items.length, tagHeight > 0 ? Math.floor((bottom - top) / tagHeight) : 0);
-			let next = top;
+			const count = Math.min(group.count, tagHeight > 0 ? Math.floor((bottom - top) / tagHeight) : 0);
+			if (count === 0) continue;
+			// The labels shown, top to bottom; stable, so labels of equal value keep the series order.
+			for (let i = 1; i < count; i++) {
+				const tag = items[i]!;
+				let j = i - 1;
+				for (; j >= 0 && items[j]!.y > tag.y; j--) items[j + 1] = items[j]!;
+				items[j + 1] = tag;
+			}
+			let tops = this._tops;
+			if (tops.length < count) tops = this._tops = new Float64Array(count * 2);
+			for (let i = 0; i < count; i++) tops[i] = items[i]!.y - (tagHeight >> 1);
+			spreadLabels(tops, count, tagHeight, top, bottom, tops);
 			for (let i = 0; i < count; i++) {
 				const tag = items[i]!;
-				tag.top = Math.min(bottom - (count - i) * tagHeight, Math.max(next, tag.y - (tagHeight >> 1)));
-				next = tag.top + tagHeight;
 				this._axisTag(
 					ctx,
 					axis,
-					tag.top,
+					tops[i]!,
 					tagHeight,
 					tag.color,
 					tag.series.valueLabel(tag.series.axis!.scale, tag.series.lastValue),
@@ -175,15 +188,15 @@ export class OverlayRenderer {
 		const row = drawn === null ? -1 : Math.floor(index / 2 ** drawn.shift) - drawn.start;
 		const inCache = drawn !== null && row >= 0 && row < drawn.count;
 		let cssY = this._crosshair.y;
+		const snap = this._snap;
 		let magnet: Series | null = null;
-		if ((crosshair.mode === 'magnet' || crosshair.mode === 'nearest') && inCache) {
-			magnet = this._magnetSeries(row, cssY, ratio, crosshair.mode === 'nearest');
-			const snapped = magnet === null ? Number.NaN : magnet.deviceY(magnet.close[row]!);
-			if (Number.isFinite(snapped)) {
-				cssY = snapped / ratio;
-			} else {
-				magnet = null;
-			}
+		if (
+			(crosshair.mode === 'magnet' || crosshair.mode === 'nearest') &&
+			inCache &&
+			snapToBar(this._series, row, cssY, ratio, crosshair.mode === 'magnet', snap)
+		) {
+			cssY = snap.y / ratio;
+			magnet = snap.series;
 		}
 		const y = Math.round(cssY * ratio);
 		const { vertLine, horzLine } = crosshair;
@@ -214,12 +227,7 @@ export class OverlayRenderer {
 				}
 				const text =
 					magnet !== null && magnet.axis === axis
-						? priceScale.format(
-								magnet.close[row]!,
-								magnet.base,
-								magnet.seriesOptions.minMove,
-								magnet.seriesOptions.precision,
-							)
+						? priceScale.format(snap.value, magnet.base, magnet.seriesOptions.minMove, magnet.seriesOptions.precision)
 						: priceScale.formatValue(priceScale.yToValue(cssY));
 				this._axisTag(
 					ctx,
@@ -284,24 +292,6 @@ export class OverlayRenderer {
 			onLeft ? 'right' : 'left',
 			this._layout.font,
 		);
-	}
-
-	private _magnetSeries(row: number, cssY: number, ratio: number, nearest: boolean): Series | null {
-		let best: Series | null = null,
-			distance = Infinity;
-		for (const series of this._series) {
-			const scale = series.axis?.scale;
-			if (!scale?.contains(cssY) || !series.seriesOptions.visible) continue;
-			const y = series.deviceY(series.close[row]!);
-			if (!Number.isFinite(y) || (this._layout.split && !scale.contains(y / ratio))) continue;
-			if (!nearest) return series;
-			const d = Math.abs(y - cssY * ratio);
-			if (d < distance) {
-				best = series;
-				distance = d;
-			}
-		}
-		return best;
 	}
 
 	/** Dots where the crosshair crosses line series, ringed in the background color. */

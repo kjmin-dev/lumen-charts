@@ -101,6 +101,28 @@ describe('pointer input and layout reads', () => {
 		expect(rectReads).toBe(1);
 	});
 
+	it('scales a price axis under the wheel in the frame, around the pointer in the chart', () => {
+		const axis = chart.element().querySelectorAll('canvas')[1]!;
+		const spacing = scale().barSpacing;
+		top = -40;
+		const before = chart.priceScale().getVisibleRange()!;
+		const price = chart.priceScale().coordinateToPrice(150)!;
+		for (let i = 0; i < 5; i++) {
+			const event = new WheelEvent('wheel', { deltaY: -20, bubbles: true, cancelable: true });
+			Object.defineProperty(event, 'clientY', { value: 110 });
+			axis.dispatchEvent(event);
+		}
+		expect(rectReads).toBe(0);
+		expect(chart.priceScale().getVisibleRange()).toEqual(before);
+		runFrames();
+		expect(rectReads).toBe(1);
+		const after = chart.priceScale().getVisibleRange()!;
+		expect(after.to - after.from).toBeCloseTo((before.to - before.from) * Math.exp(-100 * 0.002), 9);
+		// 110 in the viewport is 150 in the chart, which the page scrolled up by 40.
+		expect(chart.priceScale().priceToCoordinate(price)).toBeCloseTo(150, 6);
+		expect(scale().barSpacing).toBe(spacing);
+	});
+
 	it('uses the rectangle of the frame, so a page scrolled since the last frame is followed', () => {
 		pointer('pointermove', 300, 150);
 		runFrames();

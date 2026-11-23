@@ -482,6 +482,24 @@ describe('drawings on a chart', () => {
 			expect(drawings.list()[0]!.points()[0]!.price).toBe(data.high[940]);
 		});
 
+		it('snaps points to the nearest value of every series on their scale, and closes only in nearest mode', async () => {
+			t.chart.applyOptions({ crosshair: { mode: 'magnet' } });
+			const data = candles(1000);
+			// A line above the candles, on the same scale, added after them.
+			t.chart.addSeries('line').setData({ time: data.time, value: data.high.map(value => value + 5) });
+			await t.settle();
+			const drawings = t.chart.drawings();
+			drawings.startTool('horizontalLine');
+			let p = at(t, 940, data.high[940]! + 4.2);
+			t.click(p.x, p.y);
+			expect(drawings.list()[0]!.points()[0]!.price).toBe(data.high[940]! + 5);
+			t.chart.applyOptions({ crosshair: { mode: 'nearest' } });
+			drawings.startTool('horizontalLine');
+			p = at(t, 940, data.low[940]! - 0.3);
+			t.click(p.x, p.y);
+			expect(drawings.list()[1]!.points()[0]!.price).toBe(data.close[940]);
+		});
+
 		it('reaches drawings from further away with touch', async () => {
 			const drawings = t.chart.drawings();
 			const line = drawings.add(trend(920, 980, 100, 100));

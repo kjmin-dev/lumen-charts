@@ -169,6 +169,27 @@ export class PriceScale {
 		this._update();
 	}
 
+	/**
+	 * Scales the range around the value at `y` (CSS pixels), which stays at `y`: a factor above 1
+	 * shows more.
+	 */
+	public zoomAt(y: number, factor: number): void {
+		if (!this.hasRange || !(factor > 0) || factor === Infinity || !Number.isFinite(y)) {
+			return;
+		}
+		const value = this.yToValue(y);
+		const min = value - (value - this.min) * factor;
+		const max = value + (this.max - value) * factor;
+		const half = (max - min) / 2;
+		// As `zoom`: a range that still has distinct ends and finite pixels per value.
+		if (!(half > Math.max(1, Math.abs(min + half)) * 1e-12) || !(half < 1e300)) {
+			return;
+		}
+		this.min = min;
+		this.max = max;
+		this._update();
+	}
+
 	/** Moves the range so the values follow a drag of `dy` CSS pixels (down is positive). */
 	public scrollBy(dy: number): void {
 		if (!this.hasRange || dy === 0 || !Number.isFinite(dy)) {

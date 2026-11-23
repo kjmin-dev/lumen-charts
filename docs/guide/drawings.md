@@ -48,7 +48,8 @@ one handle per point; the third point of a parallel channel is the handle of its
 locked drawing can be selected but not moved;
 pressing it pans. Escape cancels a drawing being created or dragged, or clears the selection;
 Delete and Backspace remove the selected drawing (the chart takes keys once clicked). With the
-crosshair in `magnet` mode, points snap to the open, high, low or close of their bar. Touch reaches
+crosshair in `magnet` mode, points snap to the nearest open, high, low or close of their bar among
+the series on the drawing's scale (closes only in `nearest` mode). Touch reaches
 lines from further away than a mouse. Events: `created` (also for `add`), `changed` (API changes,
 and once at the end of a drag), `removed`, `selected` and `hovered`.
 

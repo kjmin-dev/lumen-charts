@@ -1,5 +1,6 @@
 import { type ChartApi, createChart, themes } from '@lumen-charts/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { spreadLabels } from '../src/render/label-layout';
 
 interface Call {
 	name: string;
@@ -66,6 +67,38 @@ function pointer(target: Element, type: string, x: number, y: number): void {
 	target.dispatchEvent(
 		new PointerEvent(type, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', bubbles: true }),
 	);
+}
+
+function wheelAt(target: Element, x: number, y: number, deltaY: number, init: WheelEventInit = {}): WheelEvent {
+	const event = new WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true, ...init });
+	// The DOM used for tests does not take pointer coordinates or modifiers from the event init.
+	Object.defineProperty(event, 'clientX', { value: x });
+	Object.defineProperty(event, 'clientY', { value: y });
+	Object.defineProperty(event, 'ctrlKey', { value: init.ctrlKey === true });
+	target.dispatchEvent(event);
+	return event;
+}
+
+function touch(target: Element, type: string, id: number, x: number, y: number): void {
+	target.dispatchEvent(
+		new PointerEvent(type, { clientX: x, clientY: y, pointerId: id, pointerType: 'touch', bubbles: true }),
+	);
+}
+
+/** Tops for wanted tops `wanted`, labels `size` high on an axis from `top` to `bottom`. */
+function spread(wanted: number[], size: number, top: number, bottom: number): number[] {
+	const out = Array.from({ length: wanted.length }, () => Number.NaN);
+	spreadLabels(wanted, wanted.length, size, top, bottom, out);
+	return out;
+}
+
+/** How far labels are from where they want to be: the sum of the squared distances. */
+function cost(tops: number[], wanted: number[]): number {
+	return tops.reduce((sum, top, i) => sum + (top - wanted[i]!) ** 2, 0);
+}
+
+interface ChartInternals {
+	_axes: { list: { id: string; scale: { height: number } }[] };
 }
 
 interface AxisInternals {
@@ -614,6 +647,7 @@ describe('price axes', () => {
 		expect(chart.priceScale().options().visible).toBe(true);
 		// An axis that is hidden again gives its room back.
 		chart.addSeries('line').setData(line(100, i => i));
+		chart.addSeries('line', { priceScaleId: 'extra' }).setData(line(100, i => i * 2));
 		await settle();
 		const withAxis = paneWidth();
 		const extraWidth = chart.priceScale('extra').width();
@@ -623,5 +657,463 @@ describe('price axes', () => {
 		expect(chart.priceScale('extra').width()).toBe(0);
 		expect(paneWidth()).toBe(withAxis + extraWidth);
 		expect(axisOf('extra').layer!.canvas.style.display).toBe('none');
+	});
+
+	/** The labels drawn on the overlay (value labels, crosshair labels), in drawing order. */
+	const texts = (): { text: string; y: number }[] =>
+		overlay()
+			.filter(call => call.name === 'fillText')
+			.map(call => ({ text: String(call.args[0]), y: Number(call.args[2]) }));
+	const axisTexts = (): string[] => texts().map(entry => entry.text);
+	/** Rows of the labels with this text. */
+	const yOf = (text: string): number[] =>
+		texts()
+			.filter(entry => entry.text === text)
+			.map(entry => entry.y);
+	/** Client x of bar `bar`. */
+	const at = (bar: number) =>
+		chart.timeScale().logicalToCoordinate(bar)! + Number.parseFloat(canvases()[0]!.style.left);
+	const scaleIds = () => (chart as unknown as ChartInternals)._axes.list.map(axis => axis.id);
+	const mainHeight = () => (chart as unknown as ChartInternals)._axes.list[0]!.scale.height;
+	const paneLeft = () => Number.parseFloat(canvases()[0]!.style.left);
+
+	describe('value labels', () => {
+		it('spreads labels that would overlap around their values, in value order, series order on ties', async () => {
+			const a = chart.addSeries('line', { precision: 1 });
+			const b = chart.addSeries('line', { precision: 2 });
+			const c = chart.addSeries('line', { precision: 3 });
+			const far = chart.addSeries('line', { precision: 4 });
+			for (const series of [a, b, c]) series.setData(line(100, () => 100));
+			far.setData(line(100, () => 160));
+			await settle();
+			chart.priceScale().setVisibleRange({ from: 0, to: 200 });
+			clearCalls();
+			await settle();
+			// Labels are 20 pixels high (12 px font): equal values stack top to bottom in series
+			// order, the stack centred on the value, and a label clear of the others stays on its value.
+			const row = Math.round(a.priceToCoordinate(100)!);
+			expect(yOf('100.0')).toEqual([row - 20]);
+			expect(yOf('100.00')).toEqual([row]);
+			expect(yOf('100.000')).toEqual([row + 20]);
+			expect(yOf('160.0000')).toEqual([Math.round(far.priceToCoordinate(160)!)]);
+
+			// Labels pushed against the top of the axis move down as little as they can.
+			chart.priceScale().setVisibleRange({ from: 0, to: 95 });
+			clearCalls();
+			await settle();
+			expect(yOf('100.0')).toEqual([10]);
+			expect(yOf('100.00')).toEqual([30]);
+			expect(yOf('100.000')).toEqual([50]);
+		});
+
+		it('drops the labels of the series drawn last when the axis cannot fit them all', async () => {
+			chart.resize(640, 100);
+			const all = [0, 1, 2, 3, 4].map(i => {
+				const series = chart.addSeries('line', { precision: 2 });
+				series.setData(line(100, () => 100 + i));
+				return series;
+			});
+			await settle();
+			// The pane is 72 pixels high: three labels of 20 fit.
+			const shown = axisTexts();
+			shown.sort();
+			expect(shown).toEqual(['100.00', '101.00', '102.00']);
+			const ys = ['102.00', '101.00', '100.00'].map(text => yOf(text)[0]!);
+			expect(ys[1]! - ys[0]!).toBeGreaterThanOrEqual(20);
+			expect(ys[2]! - ys[1]!).toBeGreaterThanOrEqual(20);
+			expect(ys[0]! - 10).toBeGreaterThanOrEqual(0);
+			expect(ys[2]! + 10).toBeLessThanOrEqual(72);
+			// Hiding a series gives its place to the next.
+			all[0]!.applyOptions({ visible: false });
+			clearCalls();
+			await settle();
+			const next = axisTexts();
+			next.sort();
+			expect(next).toEqual(['101.00', '102.00', '103.00']);
+		});
+
+		it('draws the crosshair label last, at its own place over the value labels', async () => {
+			const a = chart.addSeries('line', { precision: 1 });
+			a.setData(line(100, () => 100));
+			chart.addSeries('line', { precision: 3 }).setData(line(100, () => 100));
+			await settle();
+			chart.priceScale().setVisibleRange({ from: 0, to: 200 });
+			await settle();
+			const y = Math.round(a.priceToCoordinate(100)!);
+			clearCalls();
+			pointer(canvases()[0]!, 'pointermove', 300, y);
+			await settle();
+			// The value labels moved apart; the crosshair's, with the price under the pointer, is on it.
+			const labels = texts();
+			expect(yOf('100.0')).toEqual([y - 10, y]);
+			expect(yOf('100.000')).toEqual([y + 10]);
+			const crosshair = labels.map(entry => entry.text === '100.0' && entry.y === y).lastIndexOf(true);
+			expect(crosshair).toBeGreaterThan(labels.findIndex(entry => entry.text === '100.000'));
+		});
+	});
+
+	describe('magnet', () => {
+		it('snaps to the nearest value on screen of any scale, each placed by its own scale', async () => {
+			chart.applyOptions({
+				crosshair: { mode: 'magnet' },
+				priceScales: { left: { visible: true, position: 'left' } },
+			});
+			const main = chart.addSeries('line', { precision: 2 });
+			main.setData(line(100, i => 100 + i));
+			const other = chart.addSeries('line', { priceScaleId: 'left', precision: 3 });
+			other.setData(line(100, i => 5000 - i));
+			await settle();
+			// At bar 80 the first series is near the top and the other near the bottom.
+			const top = main.priceToCoordinate(180)!;
+			const bottom = other.priceToCoordinate(4920)!;
+			expect(bottom - top).toBeGreaterThan(100);
+			clearCalls();
+			pointer(canvases()[0]!, 'pointermove', at(80), bottom - 3);
+			await settle();
+			// The other series' scale shows its exact value; the default one its own value there.
+			expect(axisTexts()).toContain('4920.000');
+			expect(axisTexts()).not.toContain('180.00');
+			clearCalls();
+			pointer(canvases()[0]!, 'pointermove', at(80), top + 3);
+			await settle();
+			expect(axisTexts()).toContain('180.00');
+			expect(axisTexts()).not.toContain('4920.000');
+		});
+
+		it('takes the open, high, low or close of a candle, and closes only in nearest mode', async () => {
+			chart.applyOptions({ crosshair: { mode: 'magnet' } });
+			const data = candles(1000);
+			const series = chart.addSeries('candlestick', { precision: 2 });
+			series.setData(data);
+			await settle();
+			const bar = 950;
+			const low = data.low[bar]!;
+			const close = data.close[bar]!;
+			const y = series.priceToCoordinate(low)! + 2;
+			clearCalls();
+			pointer(canvases()[0]!, 'pointermove', at(bar), y);
+			await settle();
+			expect(axisTexts()).toContain(low.toFixed(2));
+			chart.applyOptions({ crosshair: { mode: 'nearest' } });
+			clearCalls();
+			pointer(canvases()[0]!, 'pointermove', at(bar), y);
+			await settle();
+			expect(axisTexts()).toContain(close.toFixed(2));
+			expect(axisTexts()).not.toContain(low.toFixed(2));
+		});
+
+		it('breaks ties by series order and leaves out values the pane does not show', async () => {
+			chart.applyOptions({ crosshair: { mode: 'magnet' } });
+			const first = chart.addSeries('line', { precision: 1 });
+			const second = chart.addSeries('line', { precision: 3 });
+			first.setData(line(100, () => 100));
+			second.setData(line(100, () => 100));
+			await settle();
+			chart.priceScale().setVisibleRange({ from: 0, to: 200 });
+			await settle();
+			clearCalls();
+			pointer(canvases()[0]!, 'pointermove', at(50), first.priceToCoordinate(100)! + 4);
+			await settle();
+			// The value label of each, and the crosshair's in the first series' format.
+			expect(axisTexts().filter(text => text === '100.0')).toHaveLength(2);
+			expect(axisTexts().filter(text => text === '100.000')).toHaveLength(1);
+
+			// Above the pane, a value is out of reach however near: the one in the pane is taken.
+			second.setData(line(100, () => 230));
+			first.setData(line(100, () => 185));
+			await settle();
+			expect(second.priceToCoordinate(230)!).toBeLessThan(0);
+			clearCalls();
+			pointer(canvases()[0]!, 'pointermove', at(50), 2);
+			await settle();
+			// The value label of the first series, and the crosshair's on its value.
+			expect(axisTexts().filter(text => text === '185.0')).toHaveLength(2);
+		});
+
+		it('snaps within the pane under the pointer only', async () => {
+			chart.applyOptions({
+				crosshair: { mode: 'magnet' },
+				priceScales: { lower: { visible: true, paneWeight: 0.5 } },
+			});
+			const main = chart.addSeries('line', { precision: 2 });
+			main.setData(line(100, () => 100));
+			const lower = chart.addSeries('line', { priceScaleId: 'lower', precision: 3 });
+			lower.setData(line(100, i => (i === 50 ? 1000 : 0)));
+			await settle();
+			const boundary = Number.parseFloat(canvas('lower').style.top);
+			// The lower series' value at bar 50 is at the top of its pane, just below the pointer.
+			expect(lower.priceToCoordinate(1000)! - boundary).toBeLessThan(40);
+			clearCalls();
+			pointer(canvases()[0]!, 'pointermove', at(50), boundary - 2);
+			await settle();
+			expect(axisTexts()).toContain('100.00');
+			expect(axisTexts()).not.toContain('1000.000');
+		});
+	});
+
+	describe('removing scales', () => {
+		it('removes a scale no option lists once nothing is on it, and keeps its handle valid', async () => {
+			chart.addSeries('candlestick').setData(candles(1000));
+			const levels = chart.addSeries('line', { priceScaleId: 'levels' });
+			levels.setData(line(1000, i => 1000 + (i % 100)));
+			await settle();
+			const handle = chart.priceScale('levels');
+			expect(levels.priceScale()).toBe(handle);
+			expect(scaleIds()).toEqual(['default', 'levels']);
+			// Hidden, a series still holds its scale.
+			levels.applyOptions({ visible: false });
+			await settle();
+			expect(scaleIds()).toEqual(['default', 'levels']);
+			chart.removeSeries(levels);
+			await settle();
+			expect(scaleIds()).toEqual(['default']);
+			expect(handle.getVisibleRange()).toBeNull();
+			expect(handle.width()).toBe(0);
+			expect(handle.priceToCoordinate(1000)).toBeNull();
+			expect(handle.coordinateToPrice(100)).toBeNull();
+			expect(handle.options()).toEqual(chart.priceScale('unused').options());
+			expect(handle.options().visible).toBe(false);
+
+			// Named again, it is made again, and the old handle reads the new scale.
+			const again = chart.addSeries('line', { priceScaleId: 'levels' });
+			again.setData(line(1000, i => 2000 + (i % 10)));
+			await settle();
+			expect(scaleIds()).toEqual(['default', 'levels']);
+			expect(handle.getVisibleRange()).toEqual({ from: 2000, to: 2009 });
+			expect(handle.priceToCoordinate(2009)).toBe(again.priceToCoordinate(2009));
+			// Moved to another scale, a series leaves its old one behind.
+			again.applyOptions({ priceScaleId: 'default' });
+			await settle();
+			expect(scaleIds()).toEqual(['default']);
+			// Writing through a handle makes the scale, listed in the options.
+			handle.setVisibleRange({ from: 1, to: 2 });
+			await settle();
+			expect(scaleIds()).toEqual(['default', 'levels']);
+			expect(chart.options().priceScales['levels']?.autoScale).toBe(false);
+			expect(handle.getVisibleRange()).toEqual({ from: 1, to: 2 });
+		});
+
+		it('keeps a scale primitives or drawings are on', async () => {
+			chart.addSeries('candlestick').setData(candles(1000));
+			const drawing = chart.drawings().add({
+				type: 'trendLine',
+				points: [
+					{ time: 920 * MINUTE, price: 1 },
+					{ time: 980 * MINUTE, price: 2 },
+				],
+				priceScaleId: 'zone',
+			});
+			await settle();
+			chart.timeScale().scrollToRealTime();
+			await settle();
+			expect(scaleIds()).toEqual(['default', 'zone']);
+			drawing.remove();
+			// Gone with the next frame that updates the chart.
+			chart.applyOptions({ layout: { textColor: '#333333' } });
+			await settle();
+			expect(scaleIds()).toEqual(['default']);
+		});
+
+		it('keeps a listed scale with its options and range, without axis or pane while nothing is on it', async () => {
+			chart.applyOptions({
+				priceScales: {
+					left: { visible: true, position: 'left' },
+					lower: { visible: true, paneWeight: 0.5 },
+				},
+			});
+			chart.addSeries('candlestick').setData(candles(1000));
+			await settle();
+			const fullWidth = paneWidth();
+			const fullHeight = mainHeight();
+			const time = chart.timeScale().getVisibleLogicalRange()!;
+			expect(scaleIds()).toEqual(['default', 'left', 'lower']);
+			expect(chart.priceScale('left').width()).toBe(0);
+			expect(chart.priceScale('left').options().visible).toBe(true);
+			expect(chart.priceScale('lower').options().paneWeight).toBe(0.5);
+			expect(paneLeft()).toBe(0);
+			expect(fullWidth).toBe(640 - chart.priceScale().width());
+
+			const left = chart.addSeries('line', { priceScaleId: 'left' });
+			left.setData(line(1000, i => 1000 + i));
+			const lower = chart.addSeries('histogram', { priceScaleId: 'lower' });
+			lower.setData(line(1000, i => i % 7));
+			await settle();
+			const leftWidth = chart.priceScale('left').width();
+			expect(leftWidth).toBeGreaterThan(0);
+			expect(paneLeft()).toBe(leftWidth);
+			expect(canvas('left').style.display).toBe('block');
+			expect(canvas('lower').style.display).toBe('block');
+			expect(mainHeight()).toBeLessThan(fullHeight * 0.75);
+			// The same bars stay in view as the pane narrows.
+			const narrowed = chart.timeScale().getVisibleLogicalRange()!;
+			expect(narrowed.from).toBeCloseTo(time.from, 6);
+			expect(narrowed.to).toBeCloseTo(time.to, 6);
+			chart.priceScale('left').setVisibleRange({ from: 1, to: 2 });
+
+			chart.removeSeries(left);
+			chart.removeSeries(lower);
+			await settle();
+			expect(scaleIds()).toEqual(['default', 'left', 'lower']);
+			expect(chart.priceScale('left').width()).toBe(0);
+			expect(canvas('left').style.display).toBe('none');
+			expect(canvas('lower').style.display).toBe('none');
+			expect(paneWidth()).toBe(fullWidth);
+			expect(mainHeight()).toBe(fullHeight);
+			expect(chart.priceScale('left').getVisibleRange()).toEqual({ from: 1, to: 2 });
+			expect(chart.saveState().view!.priceRanges['left']).toEqual({ from: 1, to: 2 });
+		});
+
+		it('removes a listed scale on request: its options and range go, what is on it stays as an overlay', async () => {
+			chart.applyOptions({ priceScales: { lower: { visible: true, paneWeight: 0.5 } } });
+			chart.addSeries('candlestick').setData(candles(1000));
+			const lower = chart.addSeries('line', { priceScaleId: 'lower' });
+			lower.setData(line(1000, i => 10 + (i % 5)));
+			await settle();
+			const split = mainHeight();
+			chart.priceScale('lower').setVisibleRange({ from: 0, to: 100 });
+			chart.removePriceScale('default');
+			chart.removePriceScale('unknown');
+			expect(chart.priceScale().options().visible).toBe(true);
+			chart.removePriceScale('lower');
+			await settle();
+			expect(chart.options().priceScales).toEqual({});
+			expect(chart.saveState().options?.priceScales ?? {}).toEqual({});
+			expect(chart.saveState().view!.priceRanges['lower']).toBeUndefined();
+			expect(scaleIds()).toEqual(['default', 'lower']);
+			expect(mainHeight()).toBeGreaterThan(split);
+			expect(chart.priceScale('lower').options()).toMatchObject({ visible: false, paneWeight: 0, autoScale: true });
+			expect(chart.priceScale('lower').getVisibleRange()).toEqual({ from: 10, to: 14 });
+			chart.removeSeries(lower);
+			await settle();
+			expect(scaleIds()).toEqual(['default']);
+		});
+	});
+
+	describe('wheel and pinch on an axis', () => {
+		it('scales the axis under the wheel or a trackpad pinch around the price there, and time over the pane', async () => {
+			chart.addSeries('candlestick').setData(candles(1000));
+			await settle();
+			const axis = canvas('default');
+			const time = chart.timeScale().getVisibleLogicalRange();
+			const before = range();
+			const y = 120;
+			const price = chart.priceScale().coordinateToPrice(y)!;
+			expect(wheelAt(axis, 610, y, -100).defaultPrevented).toBe(true);
+			await settle();
+			expect(chart.priceScale().options().autoScale).toBe(false);
+			const zoomed = range();
+			expect(zoomed.to - zoomed.from).toBeCloseTo((before.to - before.from) * Math.exp(-100 * 0.002), 9);
+			expect(chart.priceScale().priceToCoordinate(price)).toBeCloseTo(y, 6);
+			expect(chart.timeScale().getVisibleLogicalRange()).toEqual(time);
+
+			// A trackpad pinch (the wheel with the control key); fingers closing show more.
+			wheelAt(axis, 610, 300, 20, { ctrlKey: true });
+			await settle();
+			const pinched = range();
+			expect(pinched.to - pinched.from).toBeCloseTo((zoomed.to - zoomed.from) * Math.exp(20 * 0.01), 9);
+			expect(chart.timeScale().getVisibleLogicalRange()).toEqual(time);
+
+			// Over the pane, the wheel zooms time and leaves the price scale alone.
+			wheelAt(canvases()[0]!, 300, y, -100);
+			await settle();
+			expect(chart.timeScale().getVisibleLogicalRange()).not.toEqual(time);
+			expect(range()).toEqual(pinched);
+
+			axis.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+			await settle();
+			expect(chart.priceScale().options().autoScale).toBe(true);
+		});
+
+		it('scales the axis with two fingers that start on it, around the price between them', async () => {
+			chart.addSeries('candlestick').setData(candles(1000));
+			await settle();
+			const axis = canvas('default');
+			const time = chart.timeScale().getVisibleLogicalRange();
+			const before = range();
+			const price = chart.priceScale().coordinateToPrice(250)!;
+			touch(axis, 'pointerdown', 1, 610, 150);
+			touch(chart.element(), 'pointerdown', 2, 610, 250);
+			touch(chart.element(), 'pointermove', 2, 610, 350);
+			await settle();
+			// The fingers went from 100 to 200 pixels apart: half the range, around the price between them.
+			const pinched = range();
+			expect(pinched.to - pinched.from).toBeCloseTo((before.to - before.from) / 2, 9);
+			expect(chart.priceScale().priceToCoordinate(price)).toBeCloseTo(250, 6);
+			expect(chart.priceScale().options().autoScale).toBe(false);
+			expect(chart.timeScale().getVisibleLogicalRange()).toEqual(time);
+			// The finger left goes on scaling the axis, and nothing scrolls on release.
+			touch(chart.element(), 'pointerup', 2, 610, 350);
+			touch(chart.element(), 'pointermove', 1, 610, 190);
+			touch(chart.element(), 'pointerup', 1, 610, 190);
+			await settle();
+			expect(range().to - range().from).toBeGreaterThan(pinched.to - pinched.from);
+			expect(chart.timeScale().getVisibleLogicalRange()).toEqual(time);
+		});
+	});
+});
+
+describe('spreadLabels', () => {
+	it('leaves labels that overlap nothing where they want to be', () => {
+		expect(spread([], 20, 0, 100)).toEqual([]);
+		expect(spread([40], 20, 0, 100)).toEqual([40]);
+		expect(spread([0, 20, 55, 80], 20, 0, 100)).toEqual([0, 20, 55, 80]);
+	});
+
+	it('moves overlapping labels apart around the mean of their values, as little as it can', () => {
+		expect(spread([40, 40], 20, 0, 200)).toEqual([30, 50]);
+		expect(spread([40, 40, 40], 20, 0, 200)).toEqual([20, 40, 60]);
+		// Two clusters that join once spread: one block around the mean of all four.
+		expect(spread([40, 45, 70, 75], 20, 0, 200)).toEqual([28, 48, 68, 88]);
+		// Halves round the same way for every label of a block, so they stay apart.
+		expect(spread([10, 11], 20, 0, 200)).toEqual([1, 21]);
+	});
+
+	it('keeps labels inside the axis and fills it when they just fit', () => {
+		expect(spread([-5, 0], 20, 0, 100)).toEqual([0, 20]);
+		expect(spread([85, 90], 20, 0, 100)).toEqual([60, 80]);
+		expect(spread([50, 50, 50, 50, 50], 20, 0, 100)).toEqual([0, 20, 40, 60, 80]);
+		expect(spread([300, 310], 20, 100, 200)).toEqual([160, 180]);
+	});
+
+	it('works in place', () => {
+		const tops = [40, 40, 90];
+		spreadLabels(tops, 3, 20, 0, 200, tops);
+		expect(tops).toEqual([30, 50, 90]);
+	});
+
+	it('places random labels in order, apart, inside, and as near as the best placement on whole pixels', () => {
+		let seed = 7;
+		const random = () => {
+			seed = (seed * 1103515245 + 12345) % 2147483648;
+			return seed / 2147483648;
+		};
+		const size = 10;
+		const bottom = 40;
+		for (let round = 0; round < 60; round++) {
+			const count = 1 + Math.floor(random() * 3);
+			const wanted = Array.from({ length: count }, () => Math.floor(random() * 50) - 5);
+			wanted.sort((a, b) => a - b);
+			const tops = spread(wanted, size, 0, bottom);
+			expect(tops.every(Number.isInteger)).toBe(true);
+			expect(tops[0]!).toBeGreaterThanOrEqual(0);
+			expect(tops[count - 1]! + size).toBeLessThanOrEqual(bottom);
+			for (let i = 1; i < count; i++) {
+				expect(tops[i]! - tops[i - 1]!).toBeGreaterThanOrEqual(size);
+			}
+			// Every placement on whole pixels, for comparison.
+			let best = Infinity;
+			const place = (i: number, from: number, chosen: number[]): void => {
+				if (i === count) {
+					best = Math.min(best, cost(chosen, wanted));
+					return;
+				}
+				for (let top = from; top + (count - i) * size <= bottom; top++) {
+					place(i + 1, top + size, [...chosen, top]);
+				}
+			};
+			place(0, 0, []);
+			// Rounding moves each label by half a pixel at most from the best placement in reals.
+			expect(cost(tops, wanted)).toBeLessThanOrEqual(best + count * 0.25 + 1e-9);
+		}
 	});
 });

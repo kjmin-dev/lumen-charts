@@ -45,6 +45,11 @@ export interface InteractionHost {
 export interface AxisTarget {
 	/** Scales the axis for a drag of `dy` CSS pixels, down showing more. */
 	dragBy(dy: number): void;
+	/**
+	 * Scales the axis around the price at `y` (CSS pixels from the top of the chart element), which
+	 * stays at `y`; a factor above 1 shows more.
+	 */
+	zoomAt(y: number, factor: number): void;
 	/** Turns autoscale back on. */
 	resetScale(): void;
 }
@@ -72,6 +77,8 @@ const OP_PAN = 0;
 const OP_WHEEL_ZOOM = 1;
 const OP_PINCH_ZOOM = 2;
 const OP_PRICE_PAN = 3;
+/** Scales the price axis of the op (see `Interaction._opAxes`) around a client y. */
+const OP_AXIS_ZOOM = 4;
 const OP_STRIDE = 3;
 
 /** Kinds of gesture input waiting for the frame, see `Interaction._gestures`. */
@@ -84,8 +91,9 @@ const GESTURE_STRIDE = 4;
 /**
  * Pointer and wheel input: dragging pans, the wheel and two-finger pinch zoom around the pointer,
  * a touch release keeps scrolling with decaying speed, and a hovering mouse moves the crosshair.
- * Dragging a price axis scales it and a double click on one resets it; dragging the pane up or down
- * moves the price scales that do not autoscale. The axis under the pointer is the element the
+ * Over a price axis, dragging, the wheel and a pinch (a trackpad's, or two fingers that start on
+ * the axis) scale that axis instead, and a double click on it resets it; dragging the pane up or
+ * down moves the price scales that do not autoscale. The axis under the pointer is the element the
  * event targets, which needs no layout read.
  *
  * Events carry positions in the viewport, and turning one into a position in the chart needs the
@@ -111,12 +119,16 @@ export class Interaction {
 	 */
 	private _ops = new Float64Array(8 * OP_STRIDE);
 	private _opCount = 0;
+	/** The axis of each waiting `OP_AXIS_ZOOM`, by its place in `_ops`. */
+	private readonly _opAxes: (AxisTarget | null)[] = [];
 	/** Latest hover position in the viewport, when one waits to be applied. */
 	private _hoverPending = false;
 	private _hoverX = 0;
 	private _hoverY = 0;
 	/** The price axis being dragged, from the press of the first pointer. */
 	private _axis: AxisTarget | null = null;
+	/** The price axis a two-finger pinch scales: the one the first finger pressed, if any. */
+	private _pinchAxis: AxisTarget | null = null;
 	/**
 	 * Presses, moves and releases of the pointer pressed first, while a delegate is active: whether
 	 * the delegate takes a gesture depends on where the press is in the pane, a layout read that
@@ -176,8 +188,10 @@ export class Interaction {
 		element.removeEventListener('dblclick', this._onDoubleClick);
 		this._pointers.clear();
 		this._axis = null;
+		this._pinchAxis = null;
 		this._velocity = 0;
 		this._opCount = 0;
+		this._opAxes.length = 0;
 		this._hoverPending = false;
 		this._gestureCount = 0;
 		this._gesturePointer = -1;
@@ -205,11 +219,14 @@ export class Interaction {
 				host.scale.scrollBy(value);
 			} else if (kind === OP_PRICE_PAN) {
 				host.scrollPrices(value, ops[i + 1]! - rect.top);
+			} else if (kind === OP_AXIS_ZOOM) {
+				this._opAxes[i / OP_STRIDE]?.zoomAt(ops[i + 1]! - rect.top, value);
 			} else {
 				const x = ops[i + 1]! - rect.left;
 				host.scale.zoomAt(kind === OP_WHEEL_ZOOM ? Math.min(host.paneWidth(), Math.max(0, x)) : x, value);
 			}
 		}
+		this._opAxes.length = 0;
 		if (this._gestureCount > 0) {
 			this._resolveGestures(rect.left + host.paneLeft(), rect.top);
 		}
@@ -370,7 +387,16 @@ export class Interaction {
 			}
 		}
 		this._pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-		this._axis = this._pointers.size === 1 ? this._host.priceAxisAt(event.target) : null;
+		if (this._pointers.size === 1) {
+			this._axis = this._host.priceAxisAt(event.target);
+			this._pinchAxis = null;
+		} else {
+			// A pinch: on the axis the first finger pressed, it scales that axis.
+			if (this._pointers.size === 2) {
+				this._pinchAxis = this._axis;
+			}
+			this._axis = null;
+		}
 		if (this._pointers.size === 1 && this._axis === null) {
 			this._clickPointer = event.pointerId;
 			this._clickX = event.clientX;
@@ -417,12 +443,19 @@ export class Interaction {
 		if (this._pointers.size >= 2) {
 			const distance = this._distance();
 			if (this._pinchDistance > 0 && distance > 0) {
+				const axis = this._pinchAxis;
 				let middle = 0;
 				for (const other of this._pointers.values()) {
-					middle += other.x;
+					middle += axis === null ? other.x : other.y;
 				}
-				this._push(OP_PINCH_ZOOM, middle / this._pointers.size, distance / this._pinchDistance);
-				host.invalidate(INVALIDATE_LIGHT);
+				middle /= this._pointers.size;
+				if (axis !== null) {
+					// Fingers moving apart show less of the axis, around the price between them.
+					this._pushAxisZoom(axis, middle, this._pinchDistance / distance);
+				} else {
+					this._push(OP_PINCH_ZOOM, middle, distance / this._pinchDistance);
+					host.invalidate(INVALIDATE_LIGHT);
+				}
 			}
 			this._pinchDistance = distance;
 			return;
@@ -474,9 +507,14 @@ export class Interaction {
 			this._gestureStart = -1;
 			return;
 		}
+		if (this._pointers.size === 1 && this._pinchAxis !== null) {
+			// The finger left from a pinch of an axis goes on scaling it, as if it had pressed it.
+			this._axis = this._pinchAxis;
+		}
 		const scaledAxis = this._axis !== null;
 		if (this._pointers.size === 0) {
 			this._axis = null;
+			this._pinchAxis = null;
 		}
 		if (event.type !== 'pointerup' || event.pointerType !== 'touch' || this._pointers.size > 0 || scaledAxis) {
 			return;
@@ -513,6 +551,12 @@ export class Interaction {
 		} else if (deltaY !== 0) {
 			// Browsers report a trackpad pinch as a wheel event with the control key set and small deltas.
 			const rate = event.ctrlKey ? PINCH_ZOOM_RATE : WHEEL_ZOOM_RATE;
+			const axis = host.priceAxisAt(event.target);
+			if (axis !== null) {
+				// Over a price axis: that axis, around the price under the pointer. Up shows less.
+				this._pushAxisZoom(axis, event.clientY, Math.exp(deltaY * rate));
+				return;
+			}
 			this._push(OP_WHEEL_ZOOM, event.clientX, Math.exp(-deltaY * rate));
 		}
 		host.invalidate(INVALIDATE_LIGHT);
@@ -536,6 +580,13 @@ export class Interaction {
 		} else {
 			this._push(OP_PAN, 0, dx);
 		}
+	}
+
+	/** Scales `axis` around client y `anchor` in the next frame, which knows where the chart is. */
+	private _pushAxisZoom(axis: AxisTarget, anchor: number, factor: number): void {
+		this._opAxes[this._opCount] = axis;
+		this._push(OP_AXIS_ZOOM, anchor, factor);
+		this._host.invalidate(INVALIDATE_CURSOR);
 	}
 
 	private _push(kind: number, anchor: number, value: number): void {
