@@ -22,10 +22,12 @@ export type MarkSeriesCreateOptions<O, D> = Partial<O> & {
 	id?: string;
 	datafeed?: MarksDatafeed<D>;
 	/**
-	 * The marks make the bars of the time axis, for a chart without a series of bars: one bar per
+	 * The marks contribute bars to the time axis of a chart without a series of bars: one bar per
 	 * `interval` milliseconds that holds marks (a minute by default for a scatter), or for a heatmap
-	 * one per column (`true`, or an interval of 0). Like a datafeed, it is not saved with the state.
-	 * Where the chart also has a series of bars, the series that got data first gives the timeline.
+	 * one per column (`true`, or an interval of 0). Multiple mark series with `timeline` enabled
+	 * share one unified timeline containing the sorted union of all contributors' buckets. Like a
+	 * datafeed, it is not saved with the state. Where the chart also has a series of bars, the
+	 * series that got data first gives the timeline.
 	 */
 	timeline?: boolean | { interval?: number };
 };

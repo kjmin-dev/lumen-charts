@@ -431,10 +431,37 @@ async function check(
 		await compare('dense density, zoom to the points', s =>
 			s.chart.timeScale().setVisibleLogicalRange({ from: 40.3, to: 43.1 }),
 		);
+		// Super-pixel coarse scatter cells: cells wider than a device pixel draw their exact point bounds
+		// (square and rounded-disc, value and density) identically on Canvas 2D and WebGL2.
+		await compare('coarse scatter cell area, square value', s => {
+			s.scatter.applyOptions({ colorBy: 'value', shape: 'square', pointSize: 3, maxMarks: 400 });
+			s.chart.timeScale().setVisibleLogicalRange({ from: 15, to: 45 });
+		});
+		if (b.scatter.drawn().level < 1 || b.scatter.drawn().level !== a.scatter.drawn().level)
+			throw Error('Super-pixel coarse scatter cell area not exercised');
+		readouts();
+		await compare('coarse scatter cell area, circle value', s =>
+			s.scatter.applyOptions({ shape: 'circle', pointSize: 5 }),
+		);
+		readouts();
+		await compare('coarse scatter cell area, circle density', s =>
+			s.scatter.applyOptions({ colorBy: 'density', valueScale: 'linear' }),
+		);
+		readouts();
 		await compare('value colors again', s => {
 			s.chart.restoreState(state);
 			s.scatter.applyOptions({ shape: 'square', pointSize: 2 });
 			s.scatter.setData(s.points);
+		});
+		await compare('in-place mark corrections', s => {
+			s.heat.correct({ time: barTime(85), values: s.column });
+			s.scatter.correct(
+				[
+					{ time: barTime(84) + 10000, price: 88, value: 95 },
+					{ time: barTime(85) + 20000, price: 76, value: 12 },
+				],
+				{ from: barTime(84), to: barTime(86) },
+			);
 		});
 		if (b.scatter.options().colorBy !== 'value') throw Error('colorBy was not restored');
 		styled = { floatBlend, density: densityRenderer, coarse };
@@ -459,7 +486,7 @@ async function check(
 				s.chart.timeScale().setVisibleLogicalRange({ from: 77.3, to: 85.1 });
 			});
 			if (b.scatter.renderer().path !== (mode === 'hardware' ? 'scatter-columns' : 'webgl2'))
-				throw Error('Dense column kernel not exercised: ' + JSON.stringify(b.scatter.drawn()));
+				throw Error('Dense column kernel not exercised: ' + JSON.stringify([b.scatter.drawn(), b.scatter.renderer()]));
 			// Squares of 5, 7 and 9 device pixels at the three desktop ratios, in a pane taller than
 			// one 1024-row strip at 2, take the kernel that reads a marker's rows back. Above a ratio
 			// of 2 (2.625 on many phones) the squares stay at 9, the largest WebGPU draws.

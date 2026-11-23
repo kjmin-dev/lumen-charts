@@ -38,6 +38,8 @@ export class MarksWindow {
 	public counts: Float32Array = new Float32Array(0);
 	/** Scatter: size of each row's mark in CSS pixels (NaN: the series' size), empty when none has one. */
 	public sizes: Float32Array = new Float32Array(0);
+	/** Scatter coarse levels: exact `[tMin, tMax, pMin, pMax]` bounds per cell, four doubles per row; empty at level 0. */
+	public bounds: Float64Array = new Float64Array(0);
 	/**
 	 * Heatmap whose grid follows the price: the grid row of each column's first cell, its number of
 	 * cells, and where they start in `values` (`starts[count]` is the end of the last). Empty otherwise.
@@ -170,6 +172,7 @@ export class MarksWindow {
 			this.values = update.values;
 			this.counts = update.counts;
 			this.sizes = update.sizes;
+			this.bounds = update.bounds;
 			this.offsets = update.offsets;
 			this.lengths = update.lengths;
 			this.starts = this.offsets.length > 0 ? prefix(update.lengths, update.count) : EMPTY_STARTS;
@@ -210,6 +213,14 @@ export class MarksWindow {
 		if (update.sizes.length > 0) {
 			this.sizes = room(this.sizes, this.capacity, Number.NaN);
 			this.sizes.set(update.sizes.subarray(source, source + n), target);
+		}
+		if (update.bounds.length > 0) {
+			if (this.bounds.length < this.capacity * 4) {
+				const grown = new Float64Array(this.capacity * 4);
+				grown.set(this.bounds.subarray(0, Math.min(this.bounds.length, this.count * 4)));
+				this.bounds = grown;
+			}
+			this.bounds.set(update.bounds.subarray(source * 4, (source + n) * 4), target * 4);
 		}
 		if (this.offsets.length > 0) {
 			// Cells of the patched columns follow those of the columns before them.
@@ -288,6 +299,11 @@ export class MarksWindow {
 		}
 		if (this.sizes.length > 0) {
 			this.sizes = room(this.sizes, capacity, Number.NaN);
+		}
+		if (this.bounds.length > 0) {
+			const bounds = new Float64Array(capacity * 4);
+			bounds.set(this.bounds.subarray(0, Math.min(this.bounds.length, this.count * 4)));
+			this.bounds = bounds;
 		}
 		if (this.offsets.length > 0) {
 			this.offsets = grow(this.offsets, capacity);

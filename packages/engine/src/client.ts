@@ -324,9 +324,9 @@ export class EngineClient {
 	}
 
 	/**
-	 * Changes a marks series: `set`, `append` and `prepend` hand their typed arrays over to the engine
-	 * (do not use them afterwards), `delete` removes the rows of a range of times, `remove` lets the
-	 * series go. Returns the command's `seq`.
+	 * Changes a marks series: `set`, `append`, `prepend` and `correct` hand their typed arrays over to
+	 * the engine (do not use them afterwards), `delete` removes the rows of a range of times, `remove`
+	 * lets the series go. Returns the command's `seq`.
 	 */
 	public changeMarks(series: number, change: MarksChange): number {
 		const transfer: ArrayBuffer[] = [];
@@ -335,7 +335,7 @@ export class EngineClient {
 				transfer.push(array.buffer as ArrayBuffer);
 			}
 		};
-		if (change.op === 'set' || change.op === 'append' || change.op === 'prepend') {
+		if (change.op === 'set' || change.op === 'append' || change.op === 'prepend' || change.op === 'correct') {
 			const data = change.data;
 			add(data.time);
 			if (data.kind === 'heatmap') {

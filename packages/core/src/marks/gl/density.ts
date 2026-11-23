@@ -2,7 +2,7 @@ import { canvasFits, trackCanvas } from '../../shared/canvas-budget';
 import type { MarkFrame } from '../backend';
 import type { ScatterOptions } from '../options';
 import { PALETTE_SIZE, type ValueMapping, setValueMapping } from '../palette';
-import { MAX_POINT_PIXELS } from '../render';
+import { MAX_POINT_PIXELS, type CellRect, pointPixels, scatterCellRect } from '../render';
 import { DensityScale, exactDensities } from '../scatter-style';
 import { GlBudget, type GlContext, type GlProgram, GlUnsupported } from './context';
 import { WordTexture } from './texture';
@@ -69,6 +69,80 @@ export function packScatterRows(
 			packed[at + 2] = css === css ? (size >= 1 ? (size <= MAX_POINT_PIXELS ? size : MAX_POINT_PIXELS) : 1) : 0;
 		}
 	}
+}
+
+const GL_CELL_RECT: CellRect = { left: 0, top: 0, width: 0, height: 0 };
+
+/**
+ * Packs visible super-pixel coarse scatter cells `[from, to)` into 5 words per visible cell:
+ * `[originX, originY, rgbaOrCountBits, boxW, (boxH << 10) | stampSize]`. Returns how many visible
+ * cells were written. Uses `scatterCellRect` so every pixel matches Canvas 2D and hit testing.
+ */
+export function packScatterCellRows(
+	f: MarkFrame,
+	packed: Uint32Array,
+	floats: Float32Array,
+	from: number,
+	to: number,
+	fallback: number,
+	density: boolean,
+): number {
+	const { window: w, map, projection, palette, mapping, width, height, ratio } = f;
+	const options = f.options as ScatterOptions;
+	const shift = options.barAlign === 'start' ? -map.spacing / 2 : 0;
+	const base = pointPixels(options.pointSize, ratio);
+	const bounds = w.bounds;
+	const values = w.values;
+	const sizes = w.sizes;
+	const counts = w.counts;
+	const sized = sizes.length > 0;
+	const counted = counts.length > 0;
+	const valueMin = mapping.min;
+	const factor = mapping.factor;
+	const valueLog = mapping.log;
+	const topIdx = PALETTE_SIZE - 1;
+	const rect = GL_CELL_RECT;
+	let visible = 0;
+	for (let i = from; i < to; i++) {
+		const css = sized ? sizes[i]! : Number.NaN;
+		const size = css === css ? pointPixels(css, ratio) : base;
+		const b = i * 4;
+		if (
+			!scatterCellRect(
+				bounds[b]!,
+				bounds[b + 1]!,
+				bounds[b + 2]!,
+				bounds[b + 3]!,
+				map,
+				shift,
+				projection,
+				size,
+				width,
+				height,
+				rect,
+			)
+		) {
+			continue;
+		}
+		const at = visible * 5;
+		packed[at] = rect.left;
+		packed[at + 1] = rect.top;
+		if (density) {
+			floats[at + 2] = counted ? counts[i]! : 1;
+		} else {
+			const v = values[i]!;
+			if (v === v) {
+				const index = ((valueLog ? (v > 0 ? Math.log10(v) : -Infinity) : v) - valueMin) * factor + 0.5;
+				packed[at + 2] = palette[index >= topIdx ? topIdx : index > 0 ? index | 0 : 0]!;
+			} else {
+				packed[at + 2] = fallback;
+			}
+		}
+		packed[at + 3] = rect.width;
+		packed[at + 4] = ((rect.height & 0x3fffff) << 10) | (size & 0x3ff);
+		visible++;
+	}
+	return visible;
 }
 
 interface Target {

@@ -1,6 +1,14 @@
 import type { ScatterOptions } from './options';
 import { PALETTE_SIZE, type ValueMapping, paletteIndex } from './palette';
-import { type DensitySlots, type PointStamp, type PriceProjection, type StampCache, pointPixels } from './render';
+import {
+	type CellRect,
+	type DensitySlots,
+	type PointStamp,
+	type PriceProjection,
+	type StampCache,
+	pointPixels,
+	scatterCellRect,
+} from './render';
 import type { TimeMap } from './time-map';
 import type { MarksWindow } from './window';
 
@@ -284,6 +292,99 @@ export function hitScatter(
 		const row = y - top;
 		if (row < own.spans[column * 2]! || row >= own.spans[column * 2 + 1]!) {
 			continue;
+		}
+		out.row = i;
+		density = Math.fround(density + (counted ? counts[i]! : 1));
+	}
+	out.density = density;
+}
+
+const HIT_RECT: CellRect = { left: 0, top: 0, width: 0, height: 0 };
+
+/**
+ * Hit-tests super-pixel coarse scatter cells `[from, to)` at device pixel `(x, y)`, matching
+ * `drawScatterCells` and `accumulateScatterCells` pixel for pixel.
+ */
+export function hitScatterCells(
+	time: Float64Array,
+	bounds: Float64Array,
+	sizes: Float32Array,
+	counts: Float32Array,
+	timeStep: number,
+	from: number,
+	to: number,
+	map: TimeMap,
+	shift: number,
+	projection: PriceProjection,
+	stamp: PointStamp,
+	stamps: StampCache,
+	ratio: number,
+	largest: number,
+	paneWidth: number,
+	paneHeight: number,
+	x: number,
+	y: number,
+	out: ScatterHitRow,
+): void {
+	out.row = -1;
+	out.density = 0;
+	if (to <= from || map.count === 0) {
+		return;
+	}
+	const reach = largest + Math.ceil(timeStep * map.maxPace * 0.5) + 1;
+	const center = (i: number): number => Math.round(map.x(time[i]!) + shift);
+	let lo = from;
+	let hi = to;
+	while (lo < hi) {
+		const mid = (lo + hi) >>> 1;
+		if (center(mid) < x - reach) {
+			lo = mid + 1;
+		} else {
+			hi = mid;
+		}
+	}
+	const sized = sizes.length > 0;
+	const counted = counts.length > 0;
+	let density = 0;
+	const rect = HIT_RECT;
+	for (let i = lo; i < to; i++) {
+		if (center(i) > x + reach) {
+			break;
+		}
+		const css = sized ? sizes[i]! : Number.NaN;
+		const own = css === css ? stamps.get(pointPixels(css, ratio)) : stamp;
+		const size = own.size;
+		const b = i * 4;
+		if (
+			!scatterCellRect(
+				bounds[b]!,
+				bounds[b + 1]!,
+				bounds[b + 2]!,
+				bounds[b + 3]!,
+				map,
+				shift,
+				projection,
+				size,
+				paneWidth,
+				paneHeight,
+				rect,
+			)
+		) {
+			continue;
+		}
+		if (x < rect.left || x >= rect.left + rect.width || y < rect.top || y >= rect.top + rect.height) {
+			continue;
+		}
+		if (!own.square && size >= 3) {
+			const half = size >> 1;
+			const dx = rect.width - size;
+			const dy = rect.height - size;
+			const col = x - rect.left;
+			const cx = col < half ? col : col >= half + dx ? col - dx : half;
+			const row = y - rect.top;
+			if (row < own.spans[cx * 2]! || row >= own.spans[cx * 2 + 1]! + dy) {
+				continue;
+			}
 		}
 		out.row = i;
 		density = Math.fround(density + (counted ? counts[i]! : 1));

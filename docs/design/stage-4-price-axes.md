@@ -86,6 +86,4 @@ does; one bound to a scale id uses the scale's base. The public forms are
 takes what it took within one step of the 5 µs timer; a logarithmic scale costs a logarithm per price
 per frame (+25% of frame JavaScript with 1M candles and three averages in view).
 
-**Not built.** Value labels that collide are drawn over each other (Lightweight Charts moves them
-apart). Scales are never removed; an axis no longer needed is hidden. The magnet takes the first
-visible series whatever its scale. Pinch and wheel act on the time scale only.
+**Not built.** Scales are never removed; an axis no longer needed is hidden. Pinch and wheel act on the time scale only. (Colliding value-label separation on price axes and `nearest` crosshair magnet mode were built subsequently; see [price axes](../guide/price-axes.md) and [chart events](../guide/events.md).)

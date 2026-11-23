@@ -27,6 +27,8 @@ export class TimeMap {
 	/** Device pixels per millisecond before the first knot and after the last. */
 	private _headPace = 0;
 	private _tailPace = 0;
+	/** Fastest device pixels per millisecond across all segments of the map (0 without bars). */
+	public maxPace = 0;
 	/** The segment `segment` loaded last: a time `t` in it is at `x0 + (t - t0) * pace`, up to `t1`. */
 	public t0 = 0;
 	public t1 = 0;
@@ -63,6 +65,17 @@ export class TimeMap {
 			this._headPace = this._endPace(0, Math.min(count - 1, END_SEGMENTS));
 			this._tailPace = this._endPace(Math.max(0, count - 1 - END_SEGMENTS), count - 1);
 		}
+		let maxPace = count > 0 ? Math.max(this._headPace, this._tailPace) : 0;
+		for (let k = 0; k < count - 1; k++) {
+			const gap = this.times[k + 1]! - this.times[k]!;
+			if (gap > 0) {
+				const pace = (this.knotX(k + 1) - this.knotX(k)) / gap;
+				if (pace > maxPace) {
+					maxPace = pace;
+				}
+			}
+		}
+		this.maxPace = maxPace;
 		this._segment = -2;
 	}
 

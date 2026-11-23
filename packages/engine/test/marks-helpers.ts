@@ -99,6 +99,7 @@ export function blankUpdate(): MarksUpdate {
 		values: new Float32Array(0),
 		counts: new Float32Array(0),
 		sizes: new Float32Array(0),
+		bounds: new Float64Array(0),
 		offsets: new Int32Array(0),
 		lengths: new Int32Array(0),
 	};

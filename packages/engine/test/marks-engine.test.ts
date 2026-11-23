@@ -251,8 +251,8 @@ describe('marks in a worker and on the calling thread', () => {
 		const sent = worker!.events.flatMap((event, i) =>
 			event.marks === undefined ? [] : [worker!.eventTransfers[i]!.length],
 		);
-		// Time, price, values, counts, sizes, offsets and lengths: each update has buffers of its own.
-		expect(sent).toEqual([7, 7, 7, 7, 7]);
+		// Time, price, values, counts, sizes, bounds, offsets and lengths: each update has buffers of its own.
+		expect(sent).toEqual([8, 8, 8, 8, 8]);
 		remote.destroy();
 	});
 });

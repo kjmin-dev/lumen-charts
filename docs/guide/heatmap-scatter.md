@@ -27,9 +27,11 @@ trades.setData({ time, price, value: side, size: notional }); // CSS pixels; NaN
 trades.pointAt(x, y); // the point drawn at a position of the pane; at the crosshair, see docs/guide/events.md
 const flow = chart.addSeries('scatter', { colorBy: 'density', palette: 'inferno', valueScale: 'log' });
 
-// Older history, and marks removed at the source.
+// Older history, in-place corrections, and marks removed at the source.
 trades.prepend(olderTrades); // at or before the first point's time
 book.prepend(olderColumns); // before the first column, on the series' grid
+trades.correct(revisedTrades, { from: reviseFrom, to: reviseTo }); // replaces existing points in [from, to]
+book.correct({ time: snapshotTime, values: revisedSizes }); // replaces existing column(s) at matching times
 trades.removeMarks({ from: badFrom, to: badTo }); // times in [from, to], inclusive
 
 chart.markSeries(); // [trades, book]: these two kinds are listed apart from `chart.series()`
@@ -98,9 +100,12 @@ option says.
 **Many marks.** The engine sends a window around the view to the selected renderer. Each renderer uses the same levels of detail.
 
 - A scatter with more points than pixels across is drawn from a level of detail, in which the
-  points of one pixel column that share a price bin are one mark with the largest value of them. The
-  engine picks the level, and sends the points themselves once the view is narrow enough. A mark of a
-  cell is as wide as the widest of its points, and counts them all.
+  points of a time bucket that share a price bin are one cell with the largest value, largest size,
+  point count, and exact `[tMin, tMax, pMin, pMax]` bounds of its points. The engine picks the level,
+  and sends the points themselves once the view is narrow enough. When coarse cells are narrower than
+  a device pixel, each is drawn as a centered stamp; when coarse cells span a device pixel or more in
+  time or price, each is drawn over the exact area its points cover (expanded by its stamp size, with
+  square or rounded-disc corners) identically across Canvas 2D, WebGL2, and `pointAt`.
 - A heatmap with more columns than pixels is drawn from a level that merges four columns at a
   time, each cell the largest of its members; more rows than pixels are merged while drawing, again
   to the largest. A peak survives zooming out.
@@ -125,35 +130,37 @@ trades.setData(otherSymbol, { datafeed: otherFeed }); // another datafeed for ot
 ```
 
 With a datafeed, the engine may let go of chunks of a series' marks far from the view once it holds
-more than `memoryLimit` bytes, after the bars a datafeed serves: 65,536 points of a scatter, or the
-cells of the columns of 256 KB of a heatmap. The levels of detail stay, so a wide view keeps drawing,
-and a view that needs marks let go is drawn from the finest level meanwhile while they are fetched,
-usually by the next frames. A scatter keeps the first and last time of each chunk, how many of its
-points share those times, and a checksum; a heatmap keeps the time and rows of every column and a
-checksum of the cells. `getMarks` returns the marks of the times asked for, which may include points
-of the chunks beside at the first and last time: the engine takes those of the chunk and refuses,
-with a console warning, marks that differ in number or in any value. Marks are not corrected after
-the fact, so the levels made from them stay right; to change history, `setData` it. A request the
-view no longer needs is aborted through `signal`; a failed or refused one is tried again after a
-pause that grows from 1 s to 30 s. A removal that reads or moves marks let go waits for them, and
-changes after it wait behind it. `removeMarks` stands for marks removed at the source: once it is
-applied, the datafeed must not return those marks again, or the chunks around them are refused when
-they come back. `chart.whenIdle()` waits for these requests.
+more than `memoryLimit` bytes, after the bars a datafeed serves: level-0 chunks first (65,536 points
+of a scatter, or the cells of 256 KB of heatmap columns), and then intermediate coarse levels while
+always keeping the topmost coarse level resident so wide or stand-in views keep drawing. When an
+evicted coarse chunk is needed again, it is rebuilt immediately from resident finer levels when
+available; otherwise the view draws from the finest resident level meanwhile while the underlying
+level-0 chunks are fetched and materialized. A scatter keeps the first and last time of each chunk,
+how many of its rows share those times, and a checksum (level 0); a heatmap keeps the time and rows
+of every column and a checksum of the cells. `getMarks` returns the marks of the times asked for,
+which may include points of the chunks beside at the first and last time: the engine takes those of
+the chunk and refuses, with a console warning, marks that differ in number or in any value. To change
+existing history in place, call `correct(...)` (or `setData(...)` to replace everything); after a
+correction or `removeMarks`, the datafeed must return the updated history. A request the view no
+longer needs is aborted through `signal`; a failed or refused one is tried again after a pause that
+grows from 1 s to 30 s. A removal or correction that reads, moves or rebuilds from marks let go waits
+for them, and changes after it wait behind it. `chart.whenIdle()` waits for these requests.
 
 ## A chart without bars
 
 ```ts
 const book = chart.addSeries('heatmap', { timeline: true }); // a bar per column
-const trades = chart.addSeries('scatter', { timeline: { interval: 60_000 } }); // a bar per minute with trades
+const trades = chart.addSeries('scatter', { timeline: { interval: 60_000 } }); // shares the same timeline
 ```
 
-With `timeline`, the series' marks make the bars of the time axis: one bar per heatmap column (or per
-`interval` milliseconds that hold columns), one per `interval` that holds points of a scatter (a
-minute by default). The engine keeps a hidden line series in step with the marks: appends add bars,
-prepends add bars before, and a removal removes the bars of the buckets that lost every mark. It is
-listed nowhere, saved with no state, and goes with the series. Like a datafeed, `timeline` is not an
-option and is not saved; where the chart also has a series of bars, the series that got data first
-gives the timeline.
+With `timeline`, one or more mark series make the bars of the time axis: one bar per heatmap column
+(or per `interval` milliseconds that hold columns), one per `interval` that holds points of a scatter
+(a minute by default). Multiple mark series with `timeline` enabled share a single hidden line series
+whose bars are the sorted, deduplicated union of all contributors' buckets. Appends, prepends,
+corrections, removals, and removing a contributing series keep the shared timeline in step; the
+hidden line series is listed nowhere, saved with no state, and removed once the last contributing
+mark series is removed. Like a datafeed, `timeline` is not an option and is not saved; where the
+chart also has a series of bars, the series that got data first gives the timeline.
 
 ## Indicators over marks
 

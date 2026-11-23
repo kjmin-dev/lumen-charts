@@ -57,6 +57,9 @@ export class ChartMarks implements MarkSeriesHost {
 	private readonly _mapKey = new Float64Array(7).fill(Number.NaN);
 	private readonly _extent = { low: 0, high: 0 };
 	private _destroyed = false;
+	/** Shared hidden timeline line series owned by mark series with `timeline` enabled (-1 when none). */
+	private _timelineSeries = -1;
+	private _timelineCount = 0;
 	/** Marks fetched again from the datafeeds of series. */
 	private readonly _fetches: MarkFetches;
 
@@ -100,6 +103,7 @@ export class ChartMarks implements MarkSeriesHost {
 		timeline: boolean | { interval?: number } = false,
 	): MarkSeries {
 		let link: MarksTimeline | null = null;
+		let createdTimeline = false;
 		if (timeline !== false) {
 			const interval = timeline === true ? undefined : timeline.interval;
 			const step = interval ?? (type === 'heatmap' ? 0 : DEFAULT_INTERVAL);
@@ -108,12 +112,28 @@ export class ChartMarks implements MarkSeriesHost {
 					`lumen-charts: the timeline of a ${type} needs an interval in milliseconds above 0${type === 'heatmap' ? ', or 0 for a bar per column' : ''}`,
 				);
 			}
-			link = { series: this._host.addTimeline(), interval: step };
+			if (this._timelineSeries < 0) {
+				this._timelineSeries = this._host.addTimeline();
+				createdTimeline = true;
+			}
+			link = { series: this._timelineSeries, interval: step };
 		}
-		const series =
-			type === 'heatmap'
-				? new HeatmapSeries(this, id, options as Partial<HeatmapOptions>, datafeed, link)
-				: new ScatterSeries(this, id, options as Partial<ScatterOptions>, datafeed, link);
+		let series: MarkSeries;
+		try {
+			series =
+				type === 'heatmap'
+					? new HeatmapSeries(this, id, options as Partial<HeatmapOptions>, datafeed, link)
+					: new ScatterSeries(this, id, options as Partial<ScatterOptions>, datafeed, link);
+		} catch (error) {
+			if (createdTimeline) {
+				this._host.removeTimeline(this._timelineSeries);
+				this._timelineSeries = -1;
+			}
+			throw error;
+		}
+		if (link !== null) {
+			this._timelineCount++;
+		}
 		this.list.push(series);
 		this._byEngineId.set(series.engineId, series);
 		this._attach(series);
@@ -134,7 +154,12 @@ export class ChartMarks implements MarkSeriesHost {
 		removed.release();
 		this._engine?.changeMarks(removed.engineId, { op: 'remove' });
 		if (removed.timeline !== null) {
-			this._host.removeTimeline(removed.timeline.series);
+			this._timelineCount--;
+			if (this._timelineCount <= 0) {
+				this._host.removeTimeline(removed.timeline.series);
+				this._timelineSeries = -1;
+				this._timelineCount = 0;
+			}
 		}
 		this._host.invalidate();
 		return true;
@@ -162,6 +187,8 @@ export class ChartMarks implements MarkSeriesHost {
 		}
 		this.list.length = 0;
 		this._byEngineId.clear();
+		this._timelineSeries = -1;
+		this._timelineCount = 0;
 		this._engine = null;
 	}
 

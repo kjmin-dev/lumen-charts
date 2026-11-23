@@ -179,14 +179,14 @@ class HeatmapLevel {
 		return this._chunks[n - this._base]?.summary != null;
 	}
 
-	/** Lets go of the cells of chunk `n`, keeping their checksum; returns the bytes freed. */
-	public evict(n: number): number {
+	/** Lets go of the cells of chunk `n`, keeping their checksum when requested; returns the bytes freed. */
+	public evict(n: number, checksum = true): number {
 		const chunk = this._chunks[n - this._base];
 		if (chunk === undefined || chunk.summary !== null) {
 			return 0;
 		}
 		const bytes = chunk.cells.byteLength;
-		chunk.summary = chunk.checksum();
+		chunk.summary = checksum ? chunk.checksum() : { high: 0, low: 0 };
 		chunk.cells = new Float32Array(0);
 		this.evicted++;
 		return bytes - MARKS_SUMMARY_BYTES;
@@ -540,6 +540,63 @@ export class HeatmapStore implements MarksStore {
 	}
 
 	/**
+	 * Replaces existing columns at their exact timestamps in place, rebuilding only the buckets of
+	 * every level that hold them. Columns whose timestamp is not present, or off-grid, are refused.
+	 */
+	public *correct(data: MarksData): Generator<undefined, number, undefined> {
+		const raw = this._levels[0]!;
+		if (!this._onGrid(data) || raw.count === 0) {
+			return data.count;
+		}
+		const { time, values, count } = data;
+		const rows = this._rows;
+		const offsets = data.offsets ?? null;
+		let rejected = 0;
+		const touched: number[] = [];
+		let cells = 0;
+		for (let i = 0; i < count; i++) {
+			const t = time[i]!;
+			const offset = offsets === null ? 0 : offsets[i]!;
+			if (t - t !== 0 || (i + 1) * rows > values.length || !Number.isInteger(offset)) {
+				rejected++;
+				continue;
+			}
+			const col = raw.lowerBound(t);
+			if (col >= raw.end || raw.timeAt(col) !== t) {
+				rejected++;
+				continue;
+			}
+			this._writeRaw(col, t, offset, values, i * rows);
+			touched.push(col);
+			cells += rows;
+			if (cells >= SLICE) {
+				cells = 0;
+				yield;
+			}
+		}
+		if (touched.length > 0) {
+			touched.sort((a, b) => a - b);
+			raw.mark(touched[0]!);
+			let runStart = touched[0]!;
+			let runEnd = runStart + 1;
+			for (let k = 1; k < touched.length; k++) {
+				const col = touched[k]!;
+				if (col <= runEnd) {
+					if (col + 1 > runEnd) {
+						runEnd = col + 1;
+					}
+				} else {
+					yield* this._rebuild(runStart, runEnd);
+					runStart = col;
+					runEnd = col + 1;
+				}
+			}
+			yield* this._rebuild(runStart, runEnd);
+		}
+		return rejected;
+	}
+
+	/**
 	 * Removes the columns with times in `[from, to]`. At either end the other columns keep their
 	 * indexes; in the middle those on the shorter side move over. The buckets of every level that
 	 * held a removed or moved column are made again.
@@ -651,7 +708,13 @@ export class HeatmapStore implements MarksStore {
 		for (let l = 1; ; l++) {
 			const below = levels[l - 1]!;
 			if (below.count <= HEATMAP_LEVEL_COLUMNS || l > MAX_LEVELS) {
-				levels.length = l;
+				if (levels.length > l) {
+					levels.length = l;
+					// The new topmost level must stay fully resident as the guaranteed stand-in.
+					if (l - 1 > 0 && below.evicted > 0) {
+						this.materialize(l - 1, below.first, below.end);
+					}
+				}
 				return;
 			}
 			const first = Math.floor(below.first / 4);
@@ -682,6 +745,19 @@ export class HeatmapStore implements MarksStore {
 			}
 			if (b > a) {
 				const into = level;
+				if (into.evicted > 0) {
+					const c0 = Math.floor(a / this._chunkColumns);
+					const c1 = Math.floor((b - 1) / this._chunkColumns);
+					if (into.isEvicted(c0)) {
+						a = Math.min(a, into.chunkStart(c0));
+					}
+					if (into.isEvicted(c1)) {
+						b = Math.max(b, into.chunkEnd(c1));
+					}
+				}
+				if (l - 1 > 0 && below.evicted > 0) {
+					this.materialize(l - 1, Math.max(below.first, a * 4), Math.min(below.end, b * 4));
+				}
 				into.rewrite(a, b, (bucket, out) => this._merge(below, into, bucket, out));
 				into.mark(a);
 			}
@@ -729,22 +805,25 @@ export class HeatmapStore implements MarksStore {
 		out.length = length;
 	}
 
-	// Memory: under the engine's memory limit, the cells of chunks of columns far from the view are
-	// let go and fetched back from the series' datafeed. The times and rows of every column, and the
-	// levels, stay.
+	// Memory: under the engine's memory limit, the cells of chunks of columns at level 0 and
+	// intermediate coarse levels far from the view are let go. Level-0 chunks are fetched back from
+	// the series' datafeed; coarse chunks are rebuilt from the level below. The times and rows of
+	// every column, and the topmost coarse level, always stay.
 
 	/**
-	 * Chunks of columns that may be let go, with the times they span: none of the first and last
-	 * eight columns (appends and prepends rebuild the buckets there), none with columns in
-	 * `[keepFrom, keepTo]`, and none before the series has a level to draw from in their place.
+	 * Chunks of columns that may be let go, with the times they span: level 0 and intermediate coarse
+	 * levels `1 .. levels - 1` (never the topmost level, none of the first and last eight columns of
+	 * each level, none overlapping `[keepFrom, keepTo]`, and none before the series has a level to
+	 * draw from in their place).
 	 */
 	public evictable(keepFrom: number, keepTo: number, out: MarksChunk[]): void {
 		const raw = this._levels[0]!;
 		if (this.levels === 0 || raw.count === 0) {
 			return;
 		}
-		const first = Math.floor((raw.first + 8) / this._chunkColumns) + 1;
-		const last = Math.floor((raw.end - 9) / this._chunkColumns) - 1;
+		const chunkColumns = this._chunkColumns;
+		const first = Math.floor((raw.first + 8) / chunkColumns) + 1;
+		const last = Math.floor((raw.end - 9) / chunkColumns) - 1;
 		for (let n = Math.max(first, raw.firstChunk); n <= Math.min(last, raw.lastChunk); n++) {
 			if (raw.isEvicted(n)) {
 				continue;
@@ -755,7 +834,32 @@ export class HeatmapStore implements MarksStore {
 				continue;
 			}
 			const bytes = raw.chunkAt(n)!.cells.byteLength - MARKS_SUMMARY_BYTES;
-			out.push({ chunk: n, from, to, bytes });
+			out.push({ chunk: n, level: 0, from, to, bytes });
+		}
+		for (let l = 1; l < this.levels; l++) {
+			const level = this._levels[l]!;
+			const lFirst = Math.floor((level.first + 8) / chunkColumns) + 1;
+			const lLast = Math.floor((level.end - 9) / chunkColumns) - 1;
+			const stride = 4 ** l;
+			for (let n = Math.max(lFirst, level.firstChunk); n <= Math.min(lLast, level.lastChunk); n++) {
+				if (level.isEvicted(n)) {
+					continue;
+				}
+				const rawStart = Math.max(raw.first, level.chunkStart(n) * stride);
+				const rawEnd = Math.min(raw.end, level.chunkEnd(n) * stride);
+				if (rawEnd <= rawStart) {
+					continue;
+				}
+				const from = raw.timeAt(rawStart);
+				const to = raw.timeAt(rawEnd - 1);
+				if (to >= keepFrom && from <= keepTo) {
+					continue;
+				}
+				const bytes = level.chunkAt(n)!.cells.byteLength - MARKS_SUMMARY_BYTES;
+				if (bytes > 0) {
+					out.push({ chunk: n, level: l, from, to, bytes });
+				}
+			}
 		}
 	}
 
@@ -763,18 +867,70 @@ export class HeatmapStore implements MarksStore {
 		return Math.max(1, Math.floor(CHUNK_CELLS / this._rows));
 	}
 
-	public evict(chunk: number): number {
-		return this._levels[0]!.evict(chunk);
+	public evict(chunk: number, level = 0): number {
+		return this._levels[level]?.evict(chunk, level === 0) ?? 0;
 	}
 
 	public get evicted(): number {
-		return this._levels[0]!.evicted;
+		let total = 0;
+		for (const level of this._levels) {
+			total += level.evicted;
+		}
+		return total;
 	}
 
-	/** Chunks let go that hold columns of level `level` rows `[start, end)`; none above level 0. */
-	public missing(level: number, start: number, end: number, out: number[]): void {
+	/** Rebuilds evicted coarse chunks covering `[start, end)` of `level` when finer levels are resident. */
+	public materialize(level: number, start: number, end: number): boolean {
+		const cur = this._levels[level];
+		if (cur === undefined || cur.evicted === 0 || end <= start) {
+			return true;
+		}
+		const evicted: number[] = [];
+		cur.missing(start, end, evicted);
+		if (evicted.length === 0) {
+			return true;
+		}
 		if (level === 0) {
-			this._levels[0]!.missing(start, end, out);
+			return false;
+		}
+		const below = this._levels[level - 1]!;
+		for (const n of evicted) {
+			const cStart = cur.chunkStart(n);
+			const cEnd = cur.chunkEnd(n);
+			const childStart = Math.max(below.first, cStart * 4);
+			const childEnd = Math.min(below.end, cEnd * 4);
+			if (!this.materialize(level - 1, childStart, childEnd)) {
+				return false;
+			}
+			cur.rewrite(cStart, cEnd, (bucket, out) => this._merge(below, cur, bucket, out));
+		}
+		return true;
+	}
+
+	/** Level-0 chunks let go that must be fetched to serve `[start, end)` of `level`. */
+	public missing(level: number, start: number, end: number, out: number[]): void {
+		const cur = this._levels[level];
+		if (cur === undefined || cur.evicted === 0 || end <= start) {
+			return;
+		}
+		const evicted: number[] = [];
+		cur.missing(start, end, evicted);
+		if (evicted.length === 0) {
+			return;
+		}
+		if (level === 0) {
+			for (const n of evicted) {
+				if (!out.includes(n)) {
+					out.push(n);
+				}
+			}
+			return;
+		}
+		const below = this._levels[level - 1]!;
+		for (const n of evicted) {
+			const childStart = Math.max(below.first, cur.chunkStart(n) * 4);
+			const childEnd = Math.min(below.end, cur.chunkEnd(n) * 4);
+			this.missing(level - 1, childStart, childEnd, out);
 		}
 	}
 
@@ -840,13 +996,13 @@ export class HeatmapStore implements MarksStore {
 	}
 
 	/**
-	 * Chunks let go that removing the columns of `[from, to]` would read or move: those on the
-	 * shorter side of them, and those of the buckets around the gap. Removing so many that no level
-	 * is left needs every chunk: a level made again later is made from all columns.
+	 * Chunks let go that removing the columns of `[from, to]` would read, move or rebuild from:
+	 * those on the shorter side of them, those of the buckets around the gap, any evicted coarse
+	 * chunks those rebuilds touch, and the new topmost level if levels shrink.
 	 */
 	public needs(from: number, to: number, out: number[]): void {
 		const raw = this._levels[0]!;
-		if (raw.evicted === 0 || !(from <= to) || raw.count === 0) {
+		if (this.evicted === 0 || !(from <= to) || raw.count === 0) {
 			return;
 		}
 		const a = raw.lowerBound(from);
@@ -854,19 +1010,91 @@ export class HeatmapStore implements MarksStore {
 		if (b <= a) {
 			return;
 		}
-		if (raw.count - (b - a) <= HEATMAP_LEVEL_COLUMNS) {
-			raw.missing(raw.first, raw.end, out);
+		const remaining = raw.count - (b - a);
+		if (remaining <= HEATMAP_LEVEL_COLUMNS) {
+			this.missing(0, raw.first, raw.end, out);
 			return;
 		}
-		if (a > raw.first && b < raw.end) {
-			if (a - raw.first <= raw.end - b) {
-				raw.missing(raw.first, a, out);
-			} else {
-				raw.missing(b, raw.end, out);
-			}
+		let lo: number;
+		let hi: number;
+		if (a === raw.first) {
+			lo = b;
+			hi = b + 1;
+		} else if (b === raw.end) {
+			lo = a - 1;
+			hi = a;
+		} else if (a - raw.first <= raw.end - b) {
+			this.missing(0, raw.first, a, out);
+			lo = raw.first;
+			hi = b + 1;
+		} else {
+			this.missing(0, b, raw.end, out);
+			lo = a - 1;
+			hi = raw.end;
 		}
-		raw.missing(a - 8, a, out);
-		raw.missing(b, b + 8, out);
+		this.missing(0, a - 8, a, out);
+		this.missing(0, b, b + 8, out);
+		this._needsRebuild(Math.max(lo, raw.first), Math.min(hi, raw.end), out);
+		let newLevels = 0;
+		for (let c = remaining; c > HEATMAP_LEVEL_COLUMNS && newLevels < MAX_LEVELS; newLevels++) {
+			c = Math.ceil(c / 4);
+		}
+		if (newLevels < this.levels) {
+			const top = this._levels[newLevels]!;
+			this.missing(newLevels, top.first, top.end, out);
+		}
+	}
+
+	/** Level-0 chunks let go that correcting existing columns of `data` reads or rebuilds from. */
+	public needsCorrect(data: MarksData, _from: number | undefined, _to: number | undefined, out: number[]): void {
+		const raw = this._levels[0]!;
+		if (this.evicted === 0 || !this._onGrid(data) || raw.count === 0) {
+			return;
+		}
+		const { time, values, count } = data;
+		const rows = this._rows;
+		const offsets = data.offsets ?? null;
+		for (let i = 0; i < count; i++) {
+			const t = time[i]!;
+			const offset = offsets === null ? 0 : offsets[i]!;
+			if (t - t !== 0 || (i + 1) * rows > values.length || !Number.isInteger(offset)) {
+				continue;
+			}
+			const col = raw.lowerBound(t);
+			if (col >= raw.end || raw.timeAt(col) !== t) {
+				continue;
+			}
+			this.missing(0, col, col + 1, out);
+			this._needsRebuild(col, col + 1, out);
+		}
+	}
+
+	/** Level-0 chunks needed by `_rebuild(lo, hi)` across all coarse levels. */
+	private _needsRebuild(lo: number, hi: number, out: number[]): void {
+		let a = lo;
+		let b = hi;
+		for (let l = 1; l < this._levels.length; l++) {
+			const below = this._levels[l - 1]!;
+			const into = this._levels[l]!;
+			a = Math.max(into.first, Math.floor(a / 4));
+			b = Math.min(into.end, Math.ceil(b / 4));
+			if (b <= a) {
+				break;
+			}
+			if (into.evicted > 0) {
+				const c0 = Math.floor(a / this._chunkColumns);
+				const c1 = Math.floor((b - 1) / this._chunkColumns);
+				if (into.isEvicted(c0)) {
+					a = Math.min(a, into.chunkStart(c0));
+				}
+				if (into.isEvicted(c1)) {
+					b = Math.max(b, into.chunkEnd(c1));
+				}
+			}
+			const childStart = Math.max(below.first, a * 4);
+			const childEnd = Math.min(below.end, b * 4);
+			this.missing(l - 1, childStart, childEnd, out);
+		}
 	}
 
 	// A timeline made from the columns
@@ -1032,6 +1260,7 @@ export class HeatmapStore implements MarksStore {
 		update.price = new Float64Array(0);
 		update.counts = new Float32Array(0);
 		update.sizes = new Float32Array(0);
+		update.bounds = new Float64Array(0);
 		update.offsets = new Int32Array(varying ? count : 0);
 		update.lengths = new Int32Array(varying ? count : 0);
 		let cells = 0;

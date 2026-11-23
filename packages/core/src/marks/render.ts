@@ -475,6 +475,379 @@ export function priceExtent(price: Float64Array, from: number, to: number, out: 
 	out.high = high;
 }
 
+/** Lowest `pMin` and highest `pMax` across coarse scatter cell bounds `[from, to)`, into `out`. */
+export function boundsPriceExtent(
+	bounds: Float64Array,
+	from: number,
+	to: number,
+	out: { low: number; high: number },
+): void {
+	let low = Infinity;
+	let high = -Infinity;
+	for (let i = from; i < to; i++) {
+		const b = i * 4;
+		const pMin = bounds[b + 2]!;
+		const pMax = bounds[b + 3]!;
+		if (pMin < low) low = pMin;
+		if (pMax > high) high = pMax;
+	}
+	out.low = low;
+	out.high = high;
+}
+
+/** Device-pixel rectangle a coarse scatter cell covers (expanded by its stamp size). */
+export interface CellRect {
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+}
+
+/**
+ * Whether a coarse scatter window's cells span a device pixel or more in time or price: true when
+ * cells are drawn over their exact point bounds (`window.bounds`) instead of as centered stamps.
+ */
+export function scatterCellArea(
+	level: number,
+	timeStep: number,
+	priceStep: number,
+	boundsLength: number,
+	map: TimeMap,
+	projection: PriceProjection,
+	height: number,
+): boolean {
+	if (level <= 0 || boundsLength === 0 || map.count === 0) {
+		return false;
+	}
+	if (timeStep > 0 && timeStep * map.maxPace >= 1) {
+		return true;
+	}
+	if (priceStep > 0 && projection.scale !== 0) {
+		const absScale = Math.abs(projection.scale);
+		if (!projection.log) {
+			if (priceStep * absScale >= 1) {
+				return true;
+			}
+		} else {
+			const minLog = Math.min(projection.offset / projection.scale, (projection.offset - height) / projection.scale);
+			const minPrice = 10 ** minLog;
+			if (minPrice > 0 && Math.log10(1 + priceStep / minPrice) * absScale >= 1) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+/**
+ * Projects a coarse scatter cell's point bounds `[tMin, tMax, pMin, pMax]` to the device-pixel
+ * rectangle `[left, left + width) × [top, top + height)` expanded by stamp `size`, clamped safely
+ * outside the pane without changing any visible pixel or rounded corner. Returns false if invisible.
+ */
+export function scatterCellRect(
+	tMin: number,
+	tMax: number,
+	pMin: number,
+	pMax: number,
+	map: TimeMap,
+	shift: number,
+	projection: PriceProjection,
+	size: number,
+	paneWidth: number,
+	paneHeight: number,
+	out: CellRect,
+): boolean {
+	const fx0 = map.x(tMin) + shift;
+	const fx1 = map.x(tMax) + shift;
+	if (!(fx0 === fx0 && fx1 === fx1)) {
+		return false;
+	}
+	let xLo: number;
+	let xHi: number;
+	if (fx1 - fx0 >= 1) {
+		xLo = Math.round(fx0);
+		xHi = Math.round(fx1);
+	} else {
+		xLo = Math.round((fx0 + fx1) * 0.5);
+		xHi = xLo;
+	}
+	const { offset, scale, log } = projection;
+	let fy0: number;
+	let fy1: number;
+	if (log) {
+		if (!(pMax > 0)) {
+			return false;
+		}
+		fy0 = pMin > 0 ? offset - Math.log10(pMin) * scale : scale > 0 ? paneHeight + size : -size;
+		fy1 = offset - Math.log10(pMax) * scale;
+	} else {
+		fy0 = offset - pMin * scale;
+		fy1 = offset - pMax * scale;
+	}
+	const a = fy0 <= fy1 ? fy0 : fy1;
+	const b = fy0 <= fy1 ? fy1 : fy0;
+	if (!Number.isFinite(a) || !Number.isFinite(b)) {
+		return false;
+	}
+	let yLo: number;
+	let yHi: number;
+	if (b - a >= 1) {
+		yLo = Math.round(a);
+		yHi = Math.round(b);
+	} else {
+		yLo = Math.round((a + b) * 0.5);
+		yHi = yLo;
+	}
+	const half = size >> 1;
+	let left = xLo - half;
+	let right = xHi - half + size;
+	let top = yLo - half;
+	let bottom = yHi - half + size;
+	if (!(right > 0 && left < paneWidth && bottom > 0 && top < paneHeight)) {
+		return false;
+	}
+	const minX = -size;
+	const maxX = paneWidth + size;
+	const minY = -size;
+	const maxY = paneHeight + size;
+	if (left < minX) left = minX;
+	if (right > maxX) right = maxX;
+	if (top < minY) top = minY;
+	if (bottom > maxY) bottom = maxY;
+	out.left = left;
+	out.top = top;
+	out.width = right - left;
+	out.height = bottom - top;
+	return true;
+}
+
+const CELL_RECT: CellRect = { left: 0, top: 0, width: 0, height: 0 };
+
+/**
+ * Draws super-pixel coarse scatter cells `[from, to)` over the exact area their points cover,
+ * expanded by each cell's stamp (square or rounded-disc rectangle). Matches WebGL2 pixel for pixel.
+ */
+export function drawScatterCells(
+	pixels: Uint32Array,
+	width: number,
+	height: number,
+	bounds: Float64Array,
+	values: Float32Array,
+	from: number,
+	to: number,
+	map: TimeMap,
+	shift: number,
+	projection: PriceProjection,
+	palette: Uint32Array,
+	mapping: ValueMapping,
+	color: number,
+	stamp: PointStamp,
+	box: PixelBox,
+	sizes: Float32Array = NO_SIZES,
+	ratio = 1,
+	stamps: StampCache | null = null,
+): void {
+	if (to <= from || map.count === 0) {
+		return;
+	}
+	const sized = sizes.length > 0 && stamps !== null;
+	const valueMin = mapping.min;
+	const factor = mapping.factor;
+	const valueLog = mapping.log;
+	const topIdx = PALETTE_SIZE - 1;
+	let left = width;
+	let right = -0x40000000;
+	let minY = height;
+	let bottom = -0x40000000;
+	const rect = CELL_RECT;
+	for (let i = from; i < to; i++) {
+		let own = stamp;
+		if (sized) {
+			const css = sizes[i]!;
+			if (css === css) {
+				own = stamps.get(pointPixels(css, ratio));
+			}
+		}
+		const size = own.size;
+		const b = i * 4;
+		if (
+			!scatterCellRect(
+				bounds[b]!,
+				bounds[b + 1]!,
+				bounds[b + 2]!,
+				bounds[b + 3]!,
+				map,
+				shift,
+				projection,
+				size,
+				width,
+				height,
+				rect,
+			)
+		) {
+			continue;
+		}
+		const v = values[i]!;
+		let c = color;
+		if (v === v) {
+			const index = ((valueLog ? (v > 0 ? Math.log10(v) : -Infinity) : v) - valueMin) * factor + 0.5;
+			c = palette[index >= topIdx ? topIdx : index > 0 ? index | 0 : 0]!;
+		}
+		const px = rect.left;
+		const py = rect.top;
+		const boxW = rect.width;
+		const boxH = rect.height;
+		const cStart = Math.max(0, -px);
+		const cEnd = Math.min(boxW, width - px);
+		if (own.square || size < 3) {
+			const yStart = Math.max(0, py);
+			const yEnd = Math.min(height, py + boxH);
+			if (yEnd > yStart) {
+				for (let col = cStart; col < cEnd; col++) {
+					const base = (px + col) * height;
+					pixels.fill(c, base + yStart, base + yEnd);
+				}
+			}
+		} else {
+			const spans = own.spans;
+			const half = size >> 1;
+			const dx = boxW - size;
+			const dy = boxH - size;
+			for (let col = cStart; col < cEnd; col++) {
+				const cx = col < half ? col : col >= half + dx ? col - dx : half;
+				const yStart = Math.max(0, py + spans[cx * 2]!);
+				const yEnd = Math.min(height, py + spans[cx * 2 + 1]! + dy);
+				if (yEnd > yStart) {
+					const base = (px + col) * height;
+					pixels.fill(c, base + yStart, base + yEnd);
+				}
+			}
+		}
+		if (px < left) left = px;
+		if (px + boxW > right) right = px + boxW;
+		if (py < minY) minY = py;
+		if (py + boxH > bottom) bottom = py + boxH;
+	}
+	if (right > left) {
+		box.left = Math.min(box.left, Math.max(0, left));
+		box.right = Math.max(box.right, Math.min(width, right));
+		box.top = Math.min(box.top, Math.max(0, minY));
+		box.bottom = Math.max(box.bottom, Math.min(height, bottom));
+	}
+}
+
+/**
+ * Accumulates densities of super-pixel coarse scatter cells `[from, to)` over each cell's exact
+ * bounds rectangle (expanded by stamp size). Matches WebGL2 float blending pixel for pixel.
+ */
+export function accumulateScatterCells(
+	density: Float32Array,
+	width: number,
+	height: number,
+	bounds: Float64Array,
+	counts: Float32Array,
+	from: number,
+	to: number,
+	map: TimeMap,
+	shift: number,
+	projection: PriceProjection,
+	stamp: PointStamp,
+	box: PixelBox,
+	sizes: Float32Array = NO_SIZES,
+	ratio = 1,
+	stamps: StampCache | null = null,
+): number {
+	if (to <= from || map.count === 0) {
+		return 0;
+	}
+	const sized = sizes.length > 0 && stamps !== null;
+	const counted = counts.length > 0;
+	let peak = 0;
+	let left = width;
+	let right = -0x40000000;
+	let minY = height;
+	let bottom = -0x40000000;
+	const rect = CELL_RECT;
+	for (let i = from; i < to; i++) {
+		let own = stamp;
+		if (sized) {
+			const css = sizes[i]!;
+			if (css === css) {
+				own = stamps.get(pointPixels(css, ratio));
+			}
+		}
+		const size = own.size;
+		const b = i * 4;
+		if (
+			!scatterCellRect(
+				bounds[b]!,
+				bounds[b + 1]!,
+				bounds[b + 2]!,
+				bounds[b + 3]!,
+				map,
+				shift,
+				projection,
+				size,
+				width,
+				height,
+				rect,
+			)
+		) {
+			continue;
+		}
+		const c = counted ? counts[i]! : 1;
+		const px = rect.left;
+		const py = rect.top;
+		const boxW = rect.width;
+		const boxH = rect.height;
+		const cStart = Math.max(0, -px);
+		const cEnd = Math.min(boxW, width - px);
+		if (own.square || size < 3) {
+			const yStart = Math.max(0, py);
+			const yEnd = Math.min(height, py + boxH);
+			if (yEnd > yStart) {
+				for (let col = cStart; col < cEnd; col++) {
+					const base = (px + col) * height;
+					for (let at = base + yStart; at < base + yEnd; at++) {
+						const sum = Math.fround(density[at]! + c);
+						density[at] = sum;
+						if (sum > peak) peak = sum;
+					}
+				}
+			}
+		} else {
+			const spans = own.spans;
+			const half = size >> 1;
+			const dx = boxW - size;
+			const dy = boxH - size;
+			for (let col = cStart; col < cEnd; col++) {
+				const cx = col < half ? col : col >= half + dx ? col - dx : half;
+				const yStart = Math.max(0, py + spans[cx * 2]!);
+				const yEnd = Math.min(height, py + spans[cx * 2 + 1]! + dy);
+				if (yEnd > yStart) {
+					const base = (px + col) * height;
+					for (let at = base + yStart; at < base + yEnd; at++) {
+						const sum = Math.fround(density[at]! + c);
+						density[at] = sum;
+						if (sum > peak) peak = sum;
+					}
+				}
+			}
+		}
+		if (px < left) left = px;
+		if (px + boxW > right) right = px + boxW;
+		if (py < minY) minY = py;
+		if (py + boxH > bottom) bottom = py + boxH;
+	}
+	if (right > left) {
+		box.left = Math.min(box.left, Math.max(0, left));
+		box.right = Math.max(box.right, Math.min(width, right));
+		box.top = Math.min(box.top, Math.max(0, minY));
+		box.bottom = Math.max(box.bottom, Math.min(height, bottom));
+	}
+	return peak;
+}
+
 /**
  * Turns the values of heatmap cells `[from, to)` into slots of a color table: 0 for a cell without
  * a value, 1 to 255 from the lowest value to the highest. `slots` is laid out like `values`.
