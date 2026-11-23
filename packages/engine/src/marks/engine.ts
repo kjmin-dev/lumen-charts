@@ -37,17 +37,20 @@ interface Hosted {
 	 * level meanwhile (`MarksUpdate.partial`), and the client is told to ask again once they are back.
 	 */
 	deferred: number[] | null;
+	deferredLevel: number;
+	deferredStart: number;
+	deferredEnd: number;
 	/** Fetch requests out, by chunk. */
 	fetching: Map<number, number>;
 	/** Chunks asked for because the last view needs them, and because an indicator recomputation reads them. */
 	forView: Set<number>;
 	forRead: Set<number>;
 	/**
-	 * Chunks a waiting removal needs, asked for or back: kept in memory until the waiting changes
-	 * have run, so one that came back does not go again before the others are back.
+	 * Chunks a waiting removal or correction needs, asked for or back: kept in memory until the
+	 * waiting changes have run, so one that came back does not go again before the others are back.
 	 */
 	pinned: Set<number>;
-	/** Changes waiting for chunks let go (a removal that reads or moves them), and those after them. */
+	/** Changes waiting for chunks let go (a removal or correction that reads or moves them), and those after them. */
 	queue: MarksChange[];
 	/** The line series whose bars the marks make, if any. */
 	timeline: MarksTimeline | null;
@@ -62,6 +65,8 @@ export interface MarksOutcome {
 	 * indicators and timelines made from the marks; not sent to the client.
 	 */
 	appliedMarks?: { series: number; change: Exclude<MarksChange, { op: 'add' } | { op: 'remove' }> }[];
+	/** Timeline line series whose bars should be rebuilt after a contributing marks series was removed. */
+	removedTimeline?: number;
 	marks?: MarksUpdate[];
 	marksFetch?: MarksFetchRequest[];
 	marksCancel?: number[];
@@ -123,6 +128,9 @@ export class MarksEngine {
 				keepFrom: Number.NaN,
 				keepTo: Number.NaN,
 				deferred: null,
+				deferredLevel: 0,
+				deferredStart: 0,
+				deferredEnd: 0,
 				fetching: new Map(),
 				forView: new Set(),
 				forRead: new Set(),
@@ -134,10 +142,14 @@ export class MarksEngine {
 		}
 		const hosted = this._series.get(series);
 		if (change.op === 'remove') {
+			const timeline = hosted?.timeline ?? null;
 			if (hosted !== undefined) {
 				this._forget(hosted, outcome);
 			}
 			this._series.delete(series);
+			if (timeline !== null) {
+				outcome.removedTimeline = timeline.series;
+			}
 			return;
 		}
 		if (hosted === undefined) {
@@ -190,6 +202,31 @@ export class MarksEngine {
 				}
 				// The rows held keep their indexes, but the view may now reach rows in front of them.
 				this._notice(series, hosted, outcome);
+				return;
+			}
+			case 'correct': {
+				const needed: number[] = [];
+				store.needsCorrect(change.data, change.from, change.to, needed);
+				if (needed.length > 0) {
+					hosted.queue.unshift(change);
+					outcome.appliedMarks!.pop();
+					this._fetch(series, hosted, needed, outcome, hosted.pinned);
+					return;
+				}
+				outcome.rejected = yield* store.correct(change.data, change.from, change.to);
+				const modified = store.changedFrom(0) < Infinity;
+				store.clearChanges();
+				if (modified) {
+					hosted.generation++;
+					this._notice(series, hosted, outcome);
+					hosted.subscription = null;
+					if (store.kind === 'scatter') {
+						// Scatter rows may have moved: chunks asked for are other rows now.
+						this._forget(hosted, outcome);
+					}
+				} else {
+					outcome.appliedMarks!.pop();
+				}
 				return;
 			}
 			case 'delete': {
@@ -257,6 +294,8 @@ export class MarksEngine {
 		let selection = store.select(request);
 		hosted.keepFrom = request.from;
 		hosted.keepTo = request.to;
+		// Rebuild evicted coarse chunks immediately if finer levels underneath are resident.
+		store.materialize(selection.level, selection.start, selection.end);
 		const missing: number[] = [];
 		store.missing(selection.level, selection.start, selection.end, missing);
 		// Requests the view made for marks it left, and nothing else waits for, are dropped.
@@ -267,7 +306,7 @@ export class MarksEngine {
 		}
 		hosted.forView.clear();
 		hosted.deferred = null;
-		// A waiting removal whose marks failed to come back asks again, with the view.
+		// A waiting removal or correction whose marks failed to come back asks again, with the view.
 		const waiting = this._queueNeeds(hosted);
 		if (waiting.length > 0) {
 			this._fetch(series, hosted, waiting, outcome, hosted.pinned);
@@ -275,7 +314,21 @@ export class MarksEngine {
 		if (missing.length > 0) {
 			this._fetch(series, hosted, missing, outcome, hosted.forView);
 			hosted.deferred = missing;
-			selection = store.select(request, 1);
+			hosted.deferredLevel = selection.level;
+			hosted.deferredStart = selection.start;
+			hosted.deferredEnd = selection.end;
+			const check: number[] = [];
+			for (let min = selection.level + 1; ; min++) {
+				const candidate = store.select(request, min);
+				store.materialize(candidate.level, candidate.start, candidate.end);
+				check.length = 0;
+				store.missing(candidate.level, candidate.start, candidate.end, check);
+				if (check.length === 0 || candidate.level <= selection.level || candidate.level < min) {
+					selection = candidate;
+					break;
+				}
+				min = candidate.level;
+			}
 		}
 		const update = emptyUpdate(series, hosted.generation);
 		update.request = seq;
@@ -368,8 +421,12 @@ export class MarksEngine {
 	private _queueNeeds(hosted: Hosted): number[] {
 		const needed: number[] = [];
 		const first = hosted.queue[0];
-		if (first !== undefined && first.op === 'delete') {
-			hosted.store.needs(first.from, first.to, needed);
+		if (first !== undefined) {
+			if (first.op === 'delete') {
+				hosted.store.needs(first.from, first.to, needed);
+			} else if (first.op === 'correct') {
+				hosted.store.needsCorrect(first.data, first.from, first.to, needed);
+			}
 		}
 		return needed;
 	}
@@ -436,6 +493,10 @@ export class MarksEngine {
 				}
 			}
 			if (left.length === 0) {
+				// Materialize a deferred coarse view while the restored level-0 chunks are still resident.
+				if (hosted.deferredLevel > 0) {
+					store.materialize(hosted.deferredLevel, hosted.deferredStart, hosted.deferredEnd);
+				}
 				hosted.deferred = null;
 				this._notice(entry.series, hosted, outcome);
 			}
@@ -444,9 +505,9 @@ export class MarksEngine {
 	}
 
 	/**
-	 * Lets go of chunks of series with a datafeed, those farthest from what their views asked for
-	 * first, until `excess` bytes are freed or `max` chunks went. Returns the bytes freed, and whether
-	 * more could go.
+	 * Lets go of chunks of series with a datafeed, level-0 chunks first then intermediate coarse
+	 * levels, farthest from what their views asked for first, until `excess` bytes are freed or
+	 * `max` chunks went. Returns the bytes freed, and whether more could go.
 	 */
 	public evict(
 		excess: number,
@@ -466,22 +527,33 @@ export class MarksEngine {
 			hosted.store.evictable(keepFrom, keepTo, out);
 			// Marks a recomputation of an indicator has yet to read.
 			const keepAfter = read.has(series) ? readTime : Infinity;
+			const deferred = hosted.deferred;
 			for (const chunk of out) {
-				if (hosted.fetching.has(chunk.chunk) || hosted.pinned.has(chunk.chunk) || chunk.to >= keepAfter) {
+				const level = chunk.level ?? 0;
+				if (level === 0) {
+					if (
+						hosted.fetching.has(chunk.chunk) ||
+						hosted.pinned.has(chunk.chunk) ||
+						(deferred !== null && deferred.includes(chunk.chunk)) ||
+						chunk.to >= keepAfter
+					) {
+						continue;
+					}
+				} else if (hosted.pinned.size > 0 || chunk.to >= keepAfter) {
 					continue;
 				}
 				const distance =
 					keepFrom <= keepTo ? Math.max(keepFrom - chunk.to, chunk.from - keepTo) : -Math.abs(chunk.from);
-				candidates.push({ ...chunk, hosted, distance });
+				candidates.push({ ...chunk, level, hosted, distance });
 			}
 		}
-		candidates.sort((a, b) => b.distance - a.distance);
+		candidates.sort((a, b) => (a.level ?? 0) - (b.level ?? 0) || b.distance - a.distance);
 		let freed = 0;
 		const n = Math.min(candidates.length, max);
 		let i = 0;
 		for (; i < n && freed < excess; i++) {
 			const candidate = candidates[i]!;
-			freed += candidate.hosted.store.evict(candidate.chunk);
+			freed += candidate.hosted.store.evict(candidate.chunk, candidate.level ?? 0);
 		}
 		return { freed, more: freed < excess && i < candidates.length };
 	}
@@ -542,6 +614,62 @@ export class MarksEngine {
 		return this._series.get(series)?.store.bucketTimes(interval, from, to) ?? [];
 	}
 
+	/** Every marks series contributing bars to timeline line series `timelineSeries`. */
+	public timelineContributors(timelineSeries: number): { series: number; interval: number }[] {
+		const out: { series: number; interval: number }[] = [];
+		for (const [series, hosted] of this._series) {
+			if (hosted.timeline !== null && hosted.timeline.series === timelineSeries) {
+				out.push({ series, interval: hosted.timeline.interval });
+			}
+		}
+		return out;
+	}
+
+	/** Sorted, deduplicated union of bucket times across every marks series sharing `timelineSeries`. */
+	public unionBucketTimes(timelineSeries: number, from: number, to: number): number[] {
+		const contributors = this.timelineContributors(timelineSeries);
+		if (contributors.length === 0) {
+			return [];
+		}
+		if (contributors.length === 1) {
+			const only = contributors[0]!;
+			return this._series.get(only.series)!.store.bucketTimes(only.interval, from, to);
+		}
+		const lists: number[][] = [];
+		for (const { series, interval } of contributors) {
+			const times = this._series.get(series)!.store.bucketTimes(interval, from, to);
+			if (times.length > 0) {
+				lists.push(times);
+			}
+		}
+		if (lists.length === 0) {
+			return [];
+		}
+		if (lists.length === 1) {
+			return lists[0]!;
+		}
+		return mergeSortedUnique(lists);
+	}
+
+	/** Whether any contributor to `timelineSeries` owns a bucket starting at exact `time`. */
+	public hasBucket(timelineSeries: number, time: number): boolean {
+		for (const hosted of this._series.values()) {
+			const timeline = hosted.timeline;
+			if (timeline === null || timeline.series !== timelineSeries) {
+				continue;
+			}
+			const interval = timeline.interval;
+			const end = interval > 0 ? time + interval : time + 1;
+			const times = hosted.store.bucketTimes(interval, time, end);
+			for (const t of times) {
+				if (t === time) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	/** Chunks every series has let go. */
 	public get evicted(): number {
 		let evicted = 0;
@@ -553,6 +681,39 @@ export class MarksEngine {
 }
 
 const NO_SERIES: ReadonlySet<number> = new Set();
+
+/** Merges multiple sorted arrays of timestamps into one sorted, deduplicated array. */
+function mergeSortedUnique(lists: readonly (readonly number[])[]): number[] {
+	const k = lists.length;
+	const indices = new Int32Array(k);
+	const out: number[] = [];
+	let last = Number.NaN;
+	for (;;) {
+		let min = Infinity;
+		for (let i = 0; i < k; i++) {
+			const list = lists[i]!;
+			const at = indices[i]!;
+			if (at < list.length && list[at]! < min) {
+				min = list[at]!;
+			}
+		}
+		if (min === Infinity) {
+			return out;
+		}
+		if (min !== last) {
+			out.push(min);
+			last = min;
+		}
+		for (let i = 0; i < k; i++) {
+			const list = lists[i]!;
+			let at = indices[i]!;
+			while (at < list.length && list[at] === min) {
+				at++;
+			}
+			indices[i] = at;
+		}
+	}
+}
 
 function emptyUpdate(series: number, generation: number): MarksUpdate {
 	// Arrays of their own: the update's buffers are transferred to the client.
@@ -575,6 +736,7 @@ function emptyUpdate(series: number, generation: number): MarksUpdate {
 		values: new Float32Array(0),
 		counts: new Float32Array(0),
 		sizes: new Float32Array(0),
+		bounds: new Float64Array(0),
 		offsets: new Int32Array(0),
 		lengths: new Int32Array(0),
 	};

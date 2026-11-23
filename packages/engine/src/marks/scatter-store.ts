@@ -36,6 +36,11 @@ interface ScatterChunk {
 	count: Float32Array | null;
 	/** Size of each row's mark in CSS pixels, NaN for the series' size; null while no row has one. */
 	size: Float32Array | null;
+	/** Exact point bounds `[tMin, tMax, pMin, pMax]` per coarse cell; null in a store of points. */
+	tMin: Float64Array | null;
+	tMax: Float64Array | null;
+	pMin: Float64Array | null;
+	pMax: Float64Array | null;
 	/** Set while the chunk is let go under the memory limit: what checks the rows that come back. */
 	summary: ScatterSummary | null;
 }
@@ -96,14 +101,14 @@ export class ScatterColumns {
 	public get byteLength(): number {
 		const resident = this._chunks.length - this._evicted;
 		return (
-			resident * CHUNK_ROWS * (20 + (this._counted ? 4 : 0) + (this._sized ? 4 : 0)) +
+			resident * CHUNK_ROWS * (20 + (this._counted ? 36 : 0) + (this._sized ? 4 : 0)) +
 			this._evicted * MARKS_SUMMARY_BYTES
 		);
 	}
 
 	/** Bytes of one chunk held, which letting it go frees but for its summary. */
 	public get chunkBytes(): number {
-		return CHUNK_ROWS * (20 + (this._counted ? 4 : 0) + (this._sized ? 4 : 0)) - MARKS_SUMMARY_BYTES;
+		return CHUNK_ROWS * (20 + (this._counted ? 36 : 0) + (this._sized ? 4 : 0)) - MARKS_SUMMARY_BYTES;
 	}
 
 	public clear(): void {
@@ -215,6 +220,10 @@ export class ScatterColumns {
 		chunk.value = NO_VALUE;
 		chunk.count = null;
 		chunk.size = null;
+		chunk.tMin = null;
+		chunk.tMax = null;
+		chunk.pMin = null;
+		chunk.pMax = null;
 		this._evicted++;
 		return this.chunkBytes;
 	}
@@ -297,6 +306,10 @@ export class ScatterColumns {
 			value: new Float32Array(CHUNK_ROWS),
 			count: this._counted ? new Float32Array(CHUNK_ROWS) : null,
 			size: this._sized ? new Float32Array(CHUNK_ROWS).fill(Number.NaN) : null,
+			tMin: this._counted ? new Float64Array(CHUNK_ROWS) : null,
+			tMax: this._counted ? new Float64Array(CHUNK_ROWS) : null,
+			pMin: this._counted ? new Float64Array(CHUNK_ROWS) : null,
+			pMax: this._counted ? new Float64Array(CHUNK_ROWS) : null,
 			summary: null,
 		};
 	}
@@ -324,10 +337,21 @@ export class ScatterColumns {
 
 	/**
 	 * Writes row `row`, which must be `end` or `first - 1` or a row held. A row of a chunk let go is
-	 * written only where every row of the chunk is written anew (a removal moving rows over it), so
-	 * the chunk starts over, held.
+	 * written only where every row of the chunk is written anew (a removal moving rows over it, or a
+	 * coarse chunk materialized from below), so the chunk starts over, held.
 	 */
-	public write(row: number, time: number, price: number, value: number, count: number, size: number): void {
+	public write(
+		row: number,
+		time: number,
+		price: number,
+		value: number,
+		count: number,
+		size: number,
+		tMin = time,
+		tMax = time,
+		pMin = price,
+		pMax = price,
+	): void {
 		const chunk = this._chunkFor(row);
 		if (chunk.summary !== null) {
 			const fresh = this._newChunk();
@@ -336,6 +360,10 @@ export class ScatterColumns {
 			chunk.value = fresh.value;
 			chunk.count = fresh.count;
 			chunk.size = fresh.size;
+			chunk.tMin = fresh.tMin;
+			chunk.tMax = fresh.tMax;
+			chunk.pMin = fresh.pMin;
+			chunk.pMax = fresh.pMax;
 			chunk.summary = null;
 			this._evicted--;
 		}
@@ -349,21 +377,47 @@ export class ScatterColumns {
 		if (chunk.size !== null) {
 			chunk.size[at] = size;
 		}
+		if (chunk.tMin !== null) {
+			chunk.tMin[at] = tMin;
+			chunk.tMax![at] = tMax;
+			chunk.pMin![at] = pMin;
+			chunk.pMax![at] = pMax;
+		}
 	}
 
-	public push(time: number, price: number, value: number, count = 1, size = Number.NaN): void {
-		this.write(this.end, time, price, value, count, size);
+	public push(
+		time: number,
+		price: number,
+		value: number,
+		count = 1,
+		size = Number.NaN,
+		tMin = time,
+		tMax = time,
+		pMin = price,
+		pMax = price,
+	): void {
+		this.write(this.end, time, price, value, count, size, tMin, tMax, pMin, pMax);
 		this.end++;
 	}
 
-	public unshift(time: number, price: number, value: number, count = 1, size = Number.NaN): void {
+	public unshift(
+		time: number,
+		price: number,
+		value: number,
+		count = 1,
+		size = Number.NaN,
+		tMin = time,
+		tMax = time,
+		pMin = price,
+		pMax = price,
+	): void {
 		if (this.end === this.first) {
 			this.first = 0;
 			this.end = 0;
-			this.push(time, price, value, count, size);
+			this.push(time, price, value, count, size, tMin, tMax, pMin, pMax);
 			return;
 		}
-		this.write(this.first - 1, time, price, value, count, size);
+		this.write(this.first - 1, time, price, value, count, size, tMin, tMax, pMin, pMax);
 		this.first--;
 	}
 
@@ -389,6 +443,26 @@ export class ScatterColumns {
 		return sizes === null ? Number.NaN : sizes[row & CHUNK_MASK]!;
 	}
 
+	public tMinAt(row: number): number {
+		const chunk = this._chunk(row);
+		return chunk.tMin === null ? chunk.time[row & CHUNK_MASK]! : chunk.tMin[row & CHUNK_MASK]!;
+	}
+
+	public tMaxAt(row: number): number {
+		const chunk = this._chunk(row);
+		return chunk.tMax === null ? chunk.time[row & CHUNK_MASK]! : chunk.tMax[row & CHUNK_MASK]!;
+	}
+
+	public pMinAt(row: number): number {
+		const chunk = this._chunk(row);
+		return chunk.pMin === null ? chunk.price[row & CHUNK_MASK]! : chunk.pMin[row & CHUNK_MASK]!;
+	}
+
+	public pMaxAt(row: number): number {
+		const chunk = this._chunk(row);
+		return chunk.pMax === null ? chunk.price[row & CHUNK_MASK]! : chunk.pMax[row & CHUNK_MASK]!;
+	}
+
 	public setValue(row: number, value: number): void {
 		this._chunk(row).value[row & CHUNK_MASK] = value;
 	}
@@ -404,6 +478,17 @@ export class ScatterColumns {
 		const sizes = this._chunk(row).size;
 		if (sizes !== null) {
 			sizes[row & CHUNK_MASK] = size;
+		}
+	}
+
+	public setBounds(row: number, tMin: number, tMax: number, pMin: number, pMax: number): void {
+		const chunk = this._chunk(row);
+		if (chunk.tMin !== null) {
+			const at = row & CHUNK_MASK;
+			chunk.tMin[at] = tMin;
+			chunk.tMax![at] = tMax;
+			chunk.pMin![at] = pMin;
+			chunk.pMax![at] = pMax;
 		}
 	}
 
@@ -465,8 +550,8 @@ export class ScatterColumns {
 	}
 
 	/**
-	 * Copies rows `[from, to)` into the start of the arrays given. `count` and `size` may be null, or
-	 * filled with 1 and NaN where the store has no such column.
+	 * Copies rows `[from, to)` into the start of the arrays given. `count`, `size` and `bounds` may
+	 * be null, or filled with 1, NaN and `[t, t, p, p]` where the store has no such column.
 	 */
 	public copy(
 		from: number,
@@ -476,6 +561,7 @@ export class ScatterColumns {
 		value: Float32Array,
 		count: Float32Array | null,
 		size: Float32Array | null,
+		bounds: Float64Array | null = null,
 	): void {
 		let row = from;
 		let out = 0;
@@ -498,6 +584,31 @@ export class ScatterColumns {
 					size.fill(Number.NaN, out, out + n);
 				} else {
 					size.set(chunk.size.subarray(at, at + n), out);
+				}
+			}
+			if (bounds !== null) {
+				if (chunk.tMin === null) {
+					for (let k = 0; k < n; k++) {
+						const t = chunk.time[at + k]!;
+						const p = chunk.price[at + k]!;
+						const b = (out + k) * 4;
+						bounds[b] = t;
+						bounds[b + 1] = t;
+						bounds[b + 2] = p;
+						bounds[b + 3] = p;
+					}
+				} else {
+					const tMin = chunk.tMin;
+					const tMax = chunk.tMax!;
+					const pMin = chunk.pMin!;
+					const pMax = chunk.pMax!;
+					for (let k = 0; k < n; k++) {
+						const b = (out + k) * 4;
+						bounds[b] = tMin[at + k]!;
+						bounds[b + 1] = tMax[at + k]!;
+						bounds[b + 2] = pMin[at + k]!;
+						bounds[b + 3] = pMax[at + k]!;
+					}
 				}
 			}
 			row += n;
@@ -533,6 +644,10 @@ export class ScatterColumns {
 				source!.valueAt(row),
 				source!.countAt(row),
 				source!.sizeAt(row),
+				source!.tMinAt(row),
+				source!.tMaxAt(row),
+				source!.pMinAt(row),
+				source!.pMaxAt(row),
 			);
 		}
 		this._trim();
@@ -551,6 +666,10 @@ export class ScatterColumns {
 				this.valueAt(from + i),
 				this.countAt(from + i),
 				this.sizeAt(from + i),
+				this.tMinAt(from + i),
+				this.tMaxAt(from + i),
+				this.pMinAt(from + i),
+				this.pMaxAt(from + i),
 			);
 		};
 		if (to < from) {
@@ -669,6 +788,8 @@ interface ScatterLevel extends CellCursor {
 	readonly step: number;
 	/** First row changed since `clearChanges`. */
 	changed: number;
+	/** Buckets whose bin order diverged from source scan order (prepend while source had evicted chunks). */
+	readonly prependedBuckets: Set<number>;
 }
 
 /**
@@ -835,8 +956,8 @@ export class ScatterStore implements MarksStore {
 				yield;
 			}
 		}
-		for (const level of this._levels) {
-			this._prependLevel(level, data, accepted);
+		for (let l = 0; l < this._levels.length; l++) {
+			this._prependLevel(l, this._levels[l]!, data, accepted);
 			yield;
 		}
 		yield* this._grow();
@@ -844,35 +965,153 @@ export class ScatterStore implements MarksStore {
 	}
 
 	/**
-	 * Takes prepended points into the first buckets of a level. Their cells are made on their own,
-	 * in time order; the cells of the level's first bucket that they share a bin with take them in,
-	 * and the others go in front.
+	 * Takes prepended points into the first buckets of a level. When `head` is touched and resident in
+	 * `source`, bucket `head` is rebuilt from `source` so its bin order stays canonical for coarse
+	 * chunk eviction; otherwise it merges in place and marks `head` non-evictable.
 	 */
-	private _prependLevel(level: ScatterLevel, data: ScatterRowsLike, accepted: readonly number[]): void {
+	private _prependLevel(l: number, level: ScatterLevel, data: ScatterRowsLike, accepted: readonly number[]): void {
 		const columns = level.columns;
 		const step = level.step;
 		const binHeight = this._binHeight;
+		const head = Math.floor(columns.timeAt(columns.first) / step);
+		const { time, price, value } = data;
+		const size = data.size ?? null;
+		const lastTime = time[accepted[accepted.length - 1]!]!;
+		const touchesHead = Math.floor(lastTime / step) === head;
+		const source = l === 0 ? this._points : this._levels[l - 1]!.columns;
+		const missing: number[] = [];
+		if (touchesHead) {
+			source.missing(source.lowerBucket(step, head), source.lowerBucket(step, head + 1), missing);
+		}
 		const block = new ScatterColumns(true);
 		if (columns.sized) {
 			block.enableSize();
 		}
 		const cursor: CellCursor = { bucket: Number.NaN, cells: new Map() };
-		const { time, price, value } = data;
-		const size = data.size ?? null;
+		if (!touchesHead) {
+			for (const i of accepted) {
+				const t = time[i]!;
+				const p = price[i]!;
+				addCell(
+					block,
+					cursor,
+					step,
+					binHeight,
+					t,
+					p,
+					value === null ? Number.NaN : value[i]!,
+					1,
+					size === null ? Number.NaN : size[i]!,
+					t,
+					t,
+					p,
+					p,
+				);
+			}
+			for (let row = block.end - 1; row >= block.first; row--) {
+				columns.unshift(
+					block.timeAt(row),
+					block.priceAt(row),
+					block.valueAt(row),
+					block.countAt(row),
+					block.sizeAt(row),
+					block.tMinAt(row),
+					block.tMaxAt(row),
+					block.pMinAt(row),
+					block.pMaxAt(row),
+				);
+			}
+			if (columns.first < level.changed) {
+				level.changed = columns.first;
+			}
+			return;
+		}
+		if (missing.length === 0) {
+			for (const i of accepted) {
+				const t = time[i]!;
+				if (Math.floor(t / step) >= head) {
+					break;
+				}
+				const p = price[i]!;
+				addCell(
+					block,
+					cursor,
+					step,
+					binHeight,
+					t,
+					p,
+					value === null ? Number.NaN : value[i]!,
+					1,
+					size === null ? Number.NaN : size[i]!,
+					t,
+					t,
+					p,
+					p,
+				);
+			}
+			const sourceEnd = source.lowerBucket(step, head + 1);
+			for (let row = source.lowerBucket(step, head); row < sourceEnd; row++) {
+				addCell(
+					block,
+					cursor,
+					step,
+					binHeight,
+					source.timeAt(row),
+					source.priceAt(row),
+					source.valueAt(row),
+					source.countAt(row),
+					source.sizeAt(row),
+					source.tMinAt(row),
+					source.tMaxAt(row),
+					source.pMinAt(row),
+					source.pMaxAt(row),
+				);
+			}
+			const headEnd = columns.lowerBucket(step, head + 1);
+			// `from === columns.first`: rows from `headEnd` on keep their indexes.
+			columns.splice(columns.first, headEnd, block, block.first, block.count);
+			let sourceNonCanonical = false;
+			if (l > 0) {
+				const below = this._levels[l - 1]!;
+				for (const bucket of below.prependedBuckets) {
+					if (Math.floor((bucket * below.step) / step) === head) {
+						sourceNonCanonical = true;
+						break;
+					}
+				}
+			}
+			if (sourceNonCanonical) {
+				level.prependedBuckets.add(head);
+			} else {
+				level.prependedBuckets.delete(head);
+			}
+			if (level.bucket === head) {
+				this._rebuildTailCells(level);
+			}
+			if (columns.first < level.changed) {
+				level.changed = columns.first;
+			}
+			return;
+		}
 		for (const i of accepted) {
+			const t = time[i]!;
+			const p = price[i]!;
 			addCell(
 				block,
 				cursor,
 				step,
 				binHeight,
-				time[i]!,
-				price[i]!,
+				t,
+				p,
 				value === null ? Number.NaN : value[i]!,
 				1,
 				size === null ? Number.NaN : size[i]!,
+				t,
+				t,
+				p,
+				p,
 			);
 		}
-		const head = Math.floor(columns.timeAt(columns.first) / step);
 		const shared = new Map<number, number>();
 		for (let row = columns.first; row < columns.end && Math.floor(columns.timeAt(row) / step) === head; row++) {
 			shared.set(Math.floor(columns.priceAt(row) / binHeight), row);
@@ -881,7 +1120,17 @@ export class ScatterStore implements MarksStore {
 		for (let row = block.end - 1; row >= block.first && Math.floor(block.timeAt(row) / step) === head; row--) {
 			const into = shared.get(Math.floor(block.priceAt(row) / binHeight));
 			if (into !== undefined) {
-				mergeInto(columns, into, block.valueAt(row), block.countAt(row), block.sizeAt(row));
+				mergeInto(
+					columns,
+					into,
+					block.valueAt(row),
+					block.countAt(row),
+					block.sizeAt(row),
+					block.tMinAt(row),
+					block.tMaxAt(row),
+					block.pMinAt(row),
+					block.pMaxAt(row),
+				);
 				merged.add(row);
 				if (into < level.changed) {
 					level.changed = into;
@@ -892,15 +1141,94 @@ export class ScatterStore implements MarksStore {
 			if (merged.has(row)) {
 				continue;
 			}
-			columns.unshift(block.timeAt(row), block.priceAt(row), block.valueAt(row), block.countAt(row), block.sizeAt(row));
+			columns.unshift(
+				block.timeAt(row),
+				block.priceAt(row),
+				block.valueAt(row),
+				block.countAt(row),
+				block.sizeAt(row),
+				block.tMinAt(row),
+				block.tMaxAt(row),
+				block.pMinAt(row),
+				block.pMaxAt(row),
+			);
 			if (level.bucket === head && Math.floor(block.timeAt(row) / step) === head) {
-				// The level's last bucket is its first: appends find the new cells too.
 				level.cells.set(Math.floor(block.priceAt(row) / binHeight), columns.first);
 			}
 		}
+		level.prependedBuckets.add(head);
 		if (columns.first < level.changed) {
 			level.changed = columns.first;
 		}
+	}
+
+	/**
+	 * Replaces the points in `[from, to]` (or spanning `data`'s finite times when absent) with the
+	 * valid points of `data` inside that range. Refuses all when no existing points fall in the range.
+	 */
+	public *correct(data: MarksData, from?: number, to?: number): Generator<undefined, number, undefined> {
+		if (data.kind !== 'scatter') {
+			return data.count;
+		}
+		const points = this._points;
+		const range = scatterCorrectRange(data, from, to);
+		if (range === null || points.count === 0) {
+			return data.count;
+		}
+		const a = points.lowerBound(range.from);
+		const b = points.upperBound(range.to);
+		if (b <= a) {
+			return data.count;
+		}
+		const { time, price, value, count } = data;
+		const size = data.size ?? null;
+		const order = timeOrder(time, count);
+		const accepted: number[] = [];
+		let rejected = 0;
+		for (let k = 0; k < count; k++) {
+			const i = order === null ? k : order[k]!;
+			const t = time[i]!;
+			const p = price[i]!;
+			if (!(t >= range.from && t <= range.to) || t - t !== 0 || p - p !== 0) {
+				rejected++;
+				continue;
+			}
+			accepted.push(i);
+		}
+		if (count > 0 && accepted.length === 0) {
+			return rejected;
+		}
+		if (accepted.length === 0 && b - a === points.count) {
+			this._reset();
+			return rejected;
+		}
+		if (size !== null) {
+			this._enableSize();
+		}
+		const replacement = new ScatterColumns();
+		if (points.sized) {
+			replacement.enableSize();
+		}
+		for (let k = 0; k < accepted.length; k++) {
+			const i = accepted[k]!;
+			const t = time[i]!;
+			const p = price[i]!;
+			const v = value === null ? Number.NaN : value[i]!;
+			const s = size === null ? Number.NaN : size[i]!;
+			this._extremes(p, v);
+			replacement.push(t, p, v, 1, s);
+			if ((k & (SLICE - 1)) === SLICE - 1) {
+				yield;
+			}
+		}
+		this._materializeForRange(range.from, range.to);
+		points.splice(a, b, replacement, replacement.first, replacement.count);
+		this._lastTime = points.timeAt(points.end - 1);
+		this._changed = points.first;
+		yield;
+		yield* this._rebuildLevels(range.from, range.to);
+		yield* this._grow();
+		return rejected;
 	}
 
 	/**
@@ -922,14 +1250,51 @@ export class ScatterStore implements MarksStore {
 			this._reset();
 			return removed;
 		}
+		this._materializeForRange(from, to);
 		points.splice(a, b, null, 0, 0);
 		this._lastTime = points.timeAt(points.end - 1);
 		this._changed = points.first;
 		yield;
+		yield* this._rebuildLevels(from, to);
+		return removed;
+	}
+
+	/**
+	 * Materializes every evicted coarse chunk that rebuilding `[from, to]` will read or splice, while
+	 * every level is still consistent with its summaries (before level 0 mutates).
+	 */
+	private _materializeForRange(from: number, to: number): void {
 		const levels = this._levels;
 		for (let l = 0; l < levels.length; l++) {
 			const level = levels[l]!;
-			const source = l === 0 ? points : levels[l - 1]!.columns;
+			const step = level.step;
+			const lowBucket = Math.floor(from / step);
+			const highBucket = Math.floor(to / step) + 1;
+			if (l > 0) {
+				const source = levels[l - 1]!.columns;
+				this.materialize(l, source.lowerBucket(step, lowBucket), source.lowerBucket(step, highBucket));
+			}
+			const columns = level.columns;
+			if (columns.evictedCount === 0) {
+				continue;
+			}
+			const lo = columns.lowerBucket(step, lowBucket);
+			const hi = columns.lowerBucket(step, highBucket);
+			this.materialize(l + 1, lo - 1, hi + 1);
+			const exactLo = columns.lowerBucket(step, lowBucket);
+			const exactHi = columns.lowerBucket(step, highBucket);
+			const moved =
+				exactLo - columns.first <= columns.end - exactHi ? [columns.first, exactLo] : [exactHi, columns.end];
+			this.materialize(l + 1, moved[0]!, moved[1]!);
+		}
+	}
+
+	/** Rebuilds the buckets spanning `[from, to]` on every coarse level. */
+	private *_rebuildLevels(from: number, to: number): Generator<undefined, void, undefined> {
+		const levels = this._levels;
+		for (let l = 0; l < levels.length; l++) {
+			const level = levels[l]!;
+			const source = l === 0 ? this._points : levels[l - 1]!.columns;
 			const columns = level.columns;
 			const step = level.step;
 			const lowBucket = Math.floor(from / step);
@@ -951,29 +1316,41 @@ export class ScatterStore implements MarksStore {
 					source.valueAt(row),
 					source.countAt(row),
 					source.sizeAt(row),
+					source.tMinAt(row),
+					source.tMaxAt(row),
+					source.pMinAt(row),
+					source.pMaxAt(row),
 				);
 			}
-			columns.splice(
-				columns.lowerBucket(step, lowBucket),
-				columns.lowerBucket(step, highBucket),
-				block,
-				block.first,
-				block.count,
-			);
-			level.changed = columns.first;
-			// The last bucket's cells, which appends land in, by bin.
-			level.cells.clear();
-			level.bucket = Math.floor(columns.timeAt(columns.end - 1) / step);
-			for (
-				let row = columns.end - 1;
-				row >= columns.first && Math.floor(columns.timeAt(row) / step) === level.bucket;
-				row--
-			) {
-				level.cells.set(Math.floor(columns.priceAt(row) / this._binHeight), row);
+			const exactLo = columns.lowerBucket(step, lowBucket);
+			const exactHi = columns.lowerBucket(step, highBucket);
+			columns.splice(exactLo, exactHi, block, block.first, block.count);
+			for (const bucket of level.prependedBuckets) {
+				if (bucket >= lowBucket && bucket < highBucket) {
+					level.prependedBuckets.delete(bucket);
+				}
 			}
+			level.changed = columns.first;
+			this._rebuildTailCells(level);
 			yield;
 		}
-		return removed;
+	}
+
+	private _rebuildTailCells(level: ScatterLevel): void {
+		const columns = level.columns;
+		level.cells.clear();
+		if (columns.count === 0) {
+			level.bucket = Number.NaN;
+			return;
+		}
+		level.bucket = Math.floor(columns.timeAt(columns.end - 1) / level.step);
+		for (
+			let row = columns.end - 1;
+			row >= columns.first && Math.floor(columns.timeAt(row) / level.step) === level.bucket;
+			row--
+		) {
+			level.cells.set(Math.floor(columns.priceAt(row) / this._binHeight), row);
+		}
 	}
 
 	private _enableSize(): void {
@@ -1036,6 +1413,10 @@ export class ScatterStore implements MarksStore {
 						source.valueAt(row),
 						source.countAt(row),
 						source.sizeAt(row),
+						source.tMinAt(row),
+						source.tMaxAt(row),
+						source.pMinAt(row),
+						source.pMaxAt(row),
 					);
 					if (((row - source.first) & (SLICE - 1)) === SLICE - 1) {
 						yield;
@@ -1079,13 +1460,15 @@ export class ScatterStore implements MarksStore {
 		}
 	}
 
-	// Memory: under the engine's memory limit, chunks of points far from the view are let go and
-	// fetched back from the series' datafeed. The levels stay, so wide views draw meanwhile.
+	// Memory: under the engine's memory limit, chunks of points and of intermediate coarse levels far
+	// from the view are let go. Raw chunks are fetched back from the series' datafeed; coarse chunks
+	// are rebuilt from the finest resident level below them (or from raw chunks once fetched). The
+	// topmost level always stays so a wide or stand-in view can always draw.
 
 	/**
-	 * Chunks of points that may be let go, with the times they span: not the first or last chunk
-	 * (appends and prepends write there), none with points in `[keepFrom, keepTo]` (the view and its
-	 * margins), and none before the series has levels to draw from in their place.
+	 * Chunks that may be let go, with the times they span: level 0 first, then intermediate coarse
+	 * levels `1 .. levels - 1` (never the topmost level, never the first or last chunk of a level,
+	 * none overlapping `[keepFrom, keepTo]`, and none before the series has a coarse level).
 	 */
 	public evictable(keepFrom: number, keepTo: number, out: MarksChunk[]): void {
 		const points = this._points;
@@ -1101,22 +1484,200 @@ export class ScatterStore implements MarksStore {
 			if (to >= keepFrom && from <= keepTo) {
 				continue;
 			}
-			out.push({ chunk: n, from, to, bytes: points.chunkBytes });
+			out.push({ chunk: n, level: 0, from, to, bytes: points.chunkBytes });
+		}
+		for (let l = 0; l < this._levels.length - 1; l++) {
+			const level = this._levels[l]!;
+			const columns = level.columns;
+			const step = level.step;
+			for (let n = columns.firstChunk + 1; n < columns.lastChunk; n++) {
+				if (columns.isEvicted(n)) {
+					continue;
+				}
+				const b0 = Math.floor(columns.chunkFirstTime(n) / step);
+				const b1 = Math.floor(columns.chunkLastTime(n) / step);
+				if (!(b0 < b1)) {
+					continue;
+				}
+				let blocked = false;
+				for (const bucket of level.prependedBuckets) {
+					if (bucket >= b0 && bucket <= b1) {
+						blocked = true;
+						break;
+					}
+				}
+				if (blocked) {
+					continue;
+				}
+				const from = b0 * step;
+				const to = (b1 + 1) * step;
+				if (to >= keepFrom && from <= keepTo) {
+					continue;
+				}
+				out.push({ chunk: n, level: l + 1, from, to, bytes: columns.chunkBytes });
+			}
 		}
 	}
 
-	public evict(chunk: number): number {
-		return this._points.evict(chunk);
+	public evict(chunk: number, level = 0): number {
+		return this._columns(level)?.evict(chunk) ?? 0;
 	}
 
 	public get evicted(): number {
-		return this._points.evictedCount;
+		let total = this._points.evictedCount;
+		for (const level of this._levels) {
+			total += level.columns.evictedCount;
+		}
+		return total;
 	}
 
-	/** Chunks let go that hold points of level `level` rows `[start, end)`; none above level 0. */
+	/** Finest resident source below `levelIndex` covering buckets `[b0, b1]` of `step`, or null if level 0 misses chunks. */
+	private _residentSource(levelIndex: number, step: number, b0: number, b1: number): ScatterColumns | null {
+		const check: number[] = [];
+		for (let s = levelIndex - 1; s >= -1; s--) {
+			const source = s < 0 ? this._points : this._levels[s]!.columns;
+			check.length = 0;
+			source.missing(source.lowerBucket(step, b0), source.lowerBucket(step, b1 + 1), check);
+			if (check.length === 0) {
+				return source;
+			}
+		}
+		return null;
+	}
+
+	/** Level-0 chunks missing to rebuild coarse chunk `chunk` of `this._levels[levelIndex]`. */
+	private _missingCoarseChunk(levelIndex: number, chunk: number, out: number[]): void {
+		const level = this._levels[levelIndex]!;
+		const summary = level.columns.summaryOf(chunk);
+		if (summary === null) {
+			return;
+		}
+		const step = level.step;
+		const b0 = Math.floor(summary.firstTime / step);
+		const b1 = Math.floor(summary.lastTime / step);
+		if (this._residentSource(levelIndex, step, b0, b1) !== null) {
+			return;
+		}
+		const found: number[] = [];
+		this._points.missing(this._points.lowerBucket(step, b0), this._points.lowerBucket(step, b1 + 1), found);
+		for (const rawChunk of found) {
+			if (!out.includes(rawChunk)) {
+				out.push(rawChunk);
+			}
+		}
+	}
+
+	/** Rebuilds evicted chunk `chunk` of `this._levels[levelIndex]` from the finest resident level below it. */
+	private _materializeChunk(levelIndex: number, chunk: number): boolean {
+		const level = this._levels[levelIndex]!;
+		const columns = level.columns;
+		const summary = columns.summaryOf(chunk);
+		if (summary === null) {
+			return true;
+		}
+		const step = level.step;
+		const b0 = Math.floor(summary.firstTime / step);
+		const b1 = Math.floor(summary.lastTime / step);
+		const source = this._residentSource(levelIndex, step, b0, b1);
+		if (source === null) {
+			return false;
+		}
+		const block = new ScatterColumns(true);
+		if (columns.sized) {
+			block.enableSize();
+		}
+		const cursor: CellCursor = { bucket: Number.NaN, cells: new Map() };
+		const sourceEnd = source.lowerBucket(step, b1 + 1);
+		for (let row = source.lowerBucket(step, b0); row < sourceEnd; row++) {
+			addCell(
+				block,
+				cursor,
+				step,
+				this._binHeight,
+				source.timeAt(row),
+				source.priceAt(row),
+				source.valueAt(row),
+				source.countAt(row),
+				source.sizeAt(row),
+				source.tMinAt(row),
+				source.tMaxAt(row),
+				source.pMinAt(row),
+				source.pMaxAt(row),
+			);
+		}
+		let head = 0;
+		while (block.first + head < block.end && Math.floor(block.timeAt(block.first + head) / step) === b0) {
+			head++;
+		}
+		let tail = 0;
+		while (block.end - 1 - tail >= block.first && Math.floor(block.timeAt(block.end - 1 - tail) / step) === b1) {
+			tail++;
+		}
+		const from = head - summary.headTies;
+		const to = block.count - (tail - summary.tailTies);
+		if (from < 0 || to - from !== summary.count) {
+			return false;
+		}
+		const start = columns.chunkStart(chunk);
+		for (let i = 0; i < summary.count; i++) {
+			const row = block.first + from + i;
+			columns.write(
+				start + i,
+				block.timeAt(row),
+				block.priceAt(row),
+				block.valueAt(row),
+				block.countAt(row),
+				block.sizeAt(row),
+				block.tMinAt(row),
+				block.tMaxAt(row),
+				block.pMinAt(row),
+				block.pMaxAt(row),
+			);
+		}
+		return true;
+	}
+
+	public materialize(level: number, start: number, end: number): boolean {
+		const columns = this._columns(level);
+		if (columns === undefined || columns.evictedCount === 0 || end <= start) {
+			return true;
+		}
+		const evicted: number[] = [];
+		columns.missing(start, end, evicted);
+		if (evicted.length === 0) {
+			return true;
+		}
+		if (level === 0) {
+			return false;
+		}
+		for (const chunk of evicted) {
+			if (!this._materializeChunk(level - 1, chunk)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Level-0 chunks let go that must be fetched to serve rows `[start, end)` of `level`. */
 	public missing(level: number, start: number, end: number, out: number[]): void {
 		if (level === 0) {
-			this._points.missing(start, end, out);
+			const found: number[] = [];
+			this._points.missing(start, end, found);
+			for (const chunk of found) {
+				if (!out.includes(chunk)) {
+					out.push(chunk);
+				}
+			}
+			return;
+		}
+		const columns = this._levels[level - 1]?.columns;
+		if (columns === undefined || columns.evictedCount === 0) {
+			return;
+		}
+		const evicted: number[] = [];
+		columns.missing(start, end, evicted);
+		for (const chunk of evicted) {
+			this._missingCoarseChunk(level - 1, chunk, out);
 		}
 	}
 
@@ -1183,12 +1744,12 @@ export class ScatterStore implements MarksStore {
 
 	/**
 	 * Chunks let go that removing the points of `[from, to]` would read or move: the points on the
-	 * shorter side of them, and those of the level-1 buckets the removal touches, which that level is
-	 * made again from.
+	 * shorter side of them, those of the level-1 buckets the removal touches, and any evicted coarse
+	 * chunks that splicing or rebuilding those buckets touches or moves.
 	 */
 	public needs(from: number, to: number, out: number[]): void {
 		const points = this._points;
-		if (points.evictedCount === 0 || !(from <= to) || points.count === 0) {
+		if (this.evicted === 0 || !(from <= to) || points.count === 0) {
 			return;
 		}
 		const a = points.lowerBound(from);
@@ -1197,17 +1758,81 @@ export class ScatterStore implements MarksStore {
 			return;
 		}
 		const moved = a - points.first <= points.end - b ? [points.first, a] : [b, points.end];
-		points.missing(moved[0]!, moved[1]!, out);
+		this.missing(0, moved[0]!, moved[1]!, out);
 		// The removal's edges and the points beside them, which bounds in a chunk let go only find once
 		// it is back.
-		points.missing(a - 1, a + 1, out);
-		points.missing(b - 1, b + 1, out);
-		const level = this._levels[0];
-		if (level !== undefined) {
-			const low = points.lowerBucket(level.step, Math.floor(from / level.step));
-			const high = points.lowerBucket(level.step, Math.floor(to / level.step) + 1);
-			points.missing(low, a, out);
-			points.missing(b, high, out);
+		this.missing(0, a - 1, a + 1, out);
+		this.missing(0, b - 1, b + 1, out);
+		this._needsCoarseForRange(from, to, a, b, out);
+	}
+
+	/** Chunks let go that correcting points with `data` over `[from, to]` would read, move or rebuild from. */
+	public needsCorrect(data: MarksData, from: number | undefined, to: number | undefined, out: number[]): void {
+		const points = this._points;
+		if (this.evicted === 0 || points.count === 0) {
+			return;
+		}
+		const range = scatterCorrectRange(data, from, to);
+		if (range === null) {
+			return;
+		}
+		const a = points.lowerBound(range.from);
+		const b = points.upperBound(range.to);
+		if (b <= a) {
+			return;
+		}
+		const inRange: number[] = [];
+		points.missing(a, b, inRange);
+		// `[a, b)` itself and its boundary neighbors must be held.
+		this.missing(0, a - 1, b + 1, out);
+		// If row count might change (or `[a, b)` had evicted chunks so its exact count is not known yet),
+		// splicing moves the shorter side.
+		if (inRange.length > 0 || data.count !== b - a) {
+			const moved = a - points.first <= points.end - b ? [points.first, a] : [b, points.end];
+			this.missing(0, moved[0]!, moved[1]!, out);
+		}
+		this._needsCoarseForRange(range.from, range.to, a, b, out);
+	}
+
+	private _needsCoarseForRange(from: number, to: number, a: number, b: number, out: number[]): void {
+		const points = this._points;
+		const levels = this._levels;
+		const level1 = levels[0];
+		if (level1 !== undefined) {
+			const low = points.lowerBucket(level1.step, Math.floor(from / level1.step));
+			const high = points.lowerBucket(level1.step, Math.floor(to / level1.step) + 1);
+			this.missing(0, low, a, out);
+			this.missing(0, b, high, out);
+		}
+		for (let l = 0; l < levels.length; l++) {
+			const level = levels[l]!;
+			const step = level.step;
+			const lowBucket = Math.floor(from / step);
+			const highBucket = Math.floor(to / step) + 1;
+			if (l > 0) {
+				const source = levels[l - 1]!.columns;
+				this.missing(l, source.lowerBucket(step, lowBucket), source.lowerBucket(step, highBucket), out);
+			}
+			const columns = level.columns;
+			if (columns.evictedCount > 0) {
+				const lo = columns.lowerBucket(step, lowBucket);
+				const hi = columns.lowerBucket(step, highBucket);
+				this.missing(l + 1, lo - 1, hi + 1, out);
+				const maxLo =
+					lo < columns.end && columns.isEvicted(lo >> SCATTER_CHUNK_SHIFT)
+						? columns.chunkEnd(lo >> SCATTER_CHUNK_SHIFT)
+						: lo;
+				const maxHi =
+					hi < columns.end && columns.isEvicted(hi >> SCATTER_CHUNK_SHIFT)
+						? columns.chunkEnd(hi >> SCATTER_CHUNK_SHIFT)
+						: hi;
+				if (lo - columns.first <= columns.end - hi) {
+					this.missing(l + 1, columns.first, maxLo, out);
+				}
+				if (maxLo - columns.first > columns.end - maxHi) {
+					this.missing(l + 1, hi, columns.end, out);
+				}
+			}
 		}
 	}
 
@@ -1216,16 +1841,79 @@ export class ScatterStore implements MarksStore {
 	public bucketTimes(interval: number, from: number, to: number): number[] {
 		const points = this._points;
 		const times: number[] = [];
-		if (!(interval > 0)) {
+		if (!(interval > 0) || points.count === 0) {
 			return times;
 		}
+		const start = points.lowerBound(from);
 		const end = points.lowerBound(to);
 		let last = Number.NaN;
-		for (let row = points.lowerBound(from); row < end; row++) {
-			const start = Math.floor(points.timeAt(row) / interval) * interval;
-			if (start !== last) {
-				times.push(start);
-				last = start;
+		const push = (t: number): void => {
+			if (t >= from && t < to) {
+				const bucket = Math.floor(t / interval) * interval;
+				if (bucket !== last) {
+					times.push(bucket);
+					last = bucket;
+				}
+			}
+		};
+		if (points.evictedCount === 0) {
+			for (let row = start; row < end; row++) {
+				push(points.timeAt(row));
+			}
+			return times;
+		}
+		if (end <= start) {
+			return times;
+		}
+		const firstChunk = start >> SCATTER_CHUNK_SHIFT;
+		const lastChunk = (end - 1) >> SCATTER_CHUNK_SHIFT;
+		for (let n = firstChunk; n <= lastChunk; n++) {
+			const lo = Math.max(start, points.chunkStart(n));
+			const hi = Math.min(end, points.chunkEnd(n));
+			if (hi <= lo) {
+				continue;
+			}
+			if (!points.isEvicted(n)) {
+				for (let row = lo; row < hi; row++) {
+					push(points.timeAt(row));
+				}
+				continue;
+			}
+			// Chunk let go: read bucket starts from the finest resident coarse level covering its times.
+			const cFrom = Math.max(from, points.chunkFirstTime(n));
+			const cTo = Math.min(to, points.chunkLastTime(n) + 1);
+			for (let l = 0; l < this._levels.length; l++) {
+				const level = this._levels[l]!;
+				const cols = level.columns;
+				const half = level.step * 0.5;
+				const r0 = cols.lowerBound(cFrom - half);
+				const r1 = cols.upperBound(cTo + half);
+				const ev: number[] = [];
+				cols.missing(r0, r1, ev);
+				if (ev.length > 0) {
+					continue;
+				}
+				const found: number[] = [];
+				for (let r = r0; r < r1; r++) {
+					const t0 = cols.tMinAt(r);
+					const t1 = cols.tMaxAt(r);
+					if (t1 >= cFrom && t0 < cTo) {
+						if (t0 >= from && t0 < to) {
+							found.push(Math.floor(t0 / interval) * interval);
+						}
+						if (t1 >= from && t1 < to) {
+							found.push(Math.floor(t1 / interval) * interval);
+						}
+					}
+				}
+				found.sort((a, b) => a - b);
+				for (const bucket of found) {
+					if (bucket !== last && !(bucket < last)) {
+						times.push(bucket);
+						last = bucket;
+					}
+				}
+				break;
 			}
 		}
 		return times;
@@ -1318,6 +2006,7 @@ export class ScatterStore implements MarksStore {
 		update.values = new Float32Array(count);
 		update.counts = new Float32Array(level > 0 ? count : 0);
 		update.sizes = new Float32Array(columns?.sized === true ? count : 0);
+		update.bounds = new Float64Array(level > 0 ? count * 4 : 0);
 		update.offsets = new Int32Array(0);
 		update.lengths = new Int32Array(0);
 		if (count > 0) {
@@ -1329,12 +2018,37 @@ export class ScatterStore implements MarksStore {
 				update.values,
 				level > 0 ? update.counts : null,
 				columns!.sized ? update.sizes : null,
+				level > 0 ? update.bounds : null,
 			);
 		}
 	}
 }
 
 type ScatterRowsLike = Pick<Extract<MarksData, { kind: 'scatter' }>, 'time' | 'price' | 'value' | 'size' | 'count'>;
+
+/** Resolves the inclusive time range a scatter correction covers, or null when invalid. */
+function scatterCorrectRange(
+	data: MarksData,
+	from: number | undefined,
+	to: number | undefined,
+): { from: number; to: number } | null {
+	if (data.kind !== 'scatter') {
+		return null;
+	}
+	if (from !== undefined && to !== undefined) {
+		return from <= to ? { from, to } : null;
+	}
+	let low = Infinity;
+	let high = -Infinity;
+	for (let i = 0; i < data.count; i++) {
+		const t = data.time[i]!;
+		if (t - t === 0) {
+			if (t < low) low = t;
+			if (t > high) high = t;
+		}
+	}
+	return low <= high ? { from: low, to: high } : null;
+}
 
 /** A stable order of points by time, or null when they are in order. NaN times go last. */
 function timeOrder(time: Float64Array, count: number): Uint32Array | null {
@@ -1375,6 +2089,10 @@ function addCell(
 	value: number,
 	count: number,
 	size: number,
+	tMin = time,
+	tMax = time,
+	pMin = price,
+	pMax = price,
 ): number {
 	// A cell of the level below is at the center of its bucket and bin, which nest in these.
 	const bucket = Math.floor(time / step);
@@ -1387,15 +2105,25 @@ function addCell(
 	if (row === undefined) {
 		row = columns.end;
 		cursor.cells.set(bin, row);
-		columns.push((bucket + 0.5) * step, (bin + 0.5) * binHeight, value, count, size);
+		columns.push((bucket + 0.5) * step, (bin + 0.5) * binHeight, value, count, size, tMin, tMax, pMin, pMax);
 	} else {
-		mergeInto(columns, row, value, count, size);
+		mergeInto(columns, row, value, count, size, tMin, tMax, pMin, pMax);
 	}
 	return row;
 }
 
-/** Takes the value, count and size of points into the cell at `row`: the largest, the sum, the largest. */
-function mergeInto(columns: ScatterColumns, row: number, value: number, count: number, size: number): void {
+/** Takes the value, count, size and bounds of points into the cell at `row`. */
+function mergeInto(
+	columns: ScatterColumns,
+	row: number,
+	value: number,
+	count: number,
+	size: number,
+	tMin: number,
+	tMax: number,
+	pMin: number,
+	pMax: number,
+): void {
 	if (value === value && !(columns.valueAt(row) >= value)) {
 		columns.setValue(row, value);
 	}
@@ -1403,6 +2131,13 @@ function mergeInto(columns: ScatterColumns, row: number, value: number, count: n
 	if (size === size && !(columns.sizeAt(row) >= size)) {
 		columns.setSize(row, size);
 	}
+	columns.setBounds(
+		row,
+		Math.min(columns.tMinAt(row), tMin),
+		Math.max(columns.tMaxAt(row), tMax),
+		Math.min(columns.pMinAt(row), pMin),
+		Math.max(columns.pMaxAt(row), pMax),
+	);
 }
 
 function newLevel(step: number, sized: boolean): ScatterLevel {
@@ -1410,5 +2145,5 @@ function newLevel(step: number, sized: boolean): ScatterLevel {
 	if (sized) {
 		columns.enableSize();
 	}
-	return { columns, step, bucket: Number.NaN, cells: new Map(), changed: Infinity };
+	return { columns, step, bucket: Number.NaN, cells: new Map(), changed: Infinity, prependedBuckets: new Set() };
 }

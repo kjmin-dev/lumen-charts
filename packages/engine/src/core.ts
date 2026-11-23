@@ -1264,20 +1264,42 @@ export class EngineCore {
 	private *_followMarks(event: EngineEvent): Generator<undefined, void, undefined> {
 		const outcome = event as MarksOutcome;
 		const applied = outcome.appliedMarks;
-		if (applied === undefined) {
-			return;
-		}
+		const removedTimeline = outcome.removedTimeline;
 		delete outcome.appliedMarks;
-		for (const { series, change } of applied) {
-			yield* this._followTimeline(series, change, event);
-			this._marksChanged(series, change, event);
+		delete outcome.removedTimeline;
+		if (applied !== undefined) {
+			for (const { series, change } of applied) {
+				yield* this._followTimeline(series, change, event);
+				this._marksChanged(series, change, event);
+			}
+		}
+		if (removedTimeline !== undefined) {
+			const state = this._series.get(removedTimeline);
+			if (state !== undefined) {
+				const times = this._marks.unionBucketTimes(removedTimeline, -Infinity, Infinity);
+				yield* this._operation(
+					{
+						state,
+						seq: event.ack,
+						row: 0,
+						type: 'set',
+						data: bars(times),
+						count: times.length,
+						from: 0,
+						to: 0,
+						fetchable: undefined,
+						side: NaN,
+					},
+					event,
+				);
+			}
 		}
 	}
 
 	/**
-	 * Makes the bars of the line series a marks series makes its timeline of (see `MarksTimeline`)
-	 * follow a change of the marks: bars for the buckets that got marks, none for those that lost
-	 * every mark.
+	 * Makes the bars of the line series one or more marks series share as their timeline (see
+	 * `MarksTimeline`) follow a change of one contributor: bars for the union of all contributors'
+	 * buckets, removing bars only once no contributor holds marks there.
 	 */
 	private *_followTimeline(
 		series: number,
@@ -1289,8 +1311,11 @@ export class EngineCore {
 		if (link === null || state === undefined) {
 			return;
 		}
+		const timelineSeries = link.series;
 		const interval = link.interval;
 		const store = state.store;
+		const contributors = this._marks.timelineContributors(timelineSeries);
+		const shared = contributors.length > 1;
 		const operation = (
 			type: 'set' | 'prepend' | 'delete',
 			data: Float64Array,
@@ -1309,49 +1334,186 @@ export class EngineCore {
 			fetchable: undefined,
 			side: NaN,
 		});
-		switch (change.op) {
-			case 'set': {
-				const times = this._marks.bucketTimes(series, interval, -Infinity, Infinity);
-				yield* this._operation(operation('set', bars(times), times.length), event);
+		const rebuildUnion = (): Generator<undefined, void, undefined> => {
+			const times = this._marks.unionBucketTimes(timelineSeries, -Infinity, Infinity);
+			return this._operation(operation('set', bars(times), times.length), event);
+		};
+		const hasBar = (time: number): boolean => {
+			if (store.length === 0) {
+				return false;
+			}
+			const index = store.lowerBound(time);
+			return index < store.end && store.timeAt(index) === time;
+		};
+		const deleteOrphans = function* (
+			self: EngineCore,
+			from: number,
+			to: number,
+		): Generator<undefined, void, undefined> {
+			if (store.length === 0 || !(from <= to)) {
 				return;
 			}
+			const runs: number[] = [];
+			const end = store.upperBound(to);
+			let runFrom = NaN;
+			let runTo = NaN;
+			for (let i = store.lowerBound(from); i < end; i++) {
+				const t = store.timeAt(i);
+				if (!self._marks.hasBucket(timelineSeries, t)) {
+					if (runFrom !== runFrom) {
+						runFrom = t;
+					}
+					runTo = t;
+				} else if (runFrom === runFrom) {
+					runs.push(runFrom, runTo);
+					runFrom = NaN;
+				}
+			}
+			if (runFrom === runFrom) {
+				runs.push(runFrom, runTo);
+			}
+			for (let r = runs.length - 2; r >= 0; r -= 2) {
+				yield* self._operation(operation('delete', EMPTY, 0, runs[r]!, runs[r + 1]!), event);
+			}
+		};
+		switch (change.op) {
+			case 'set':
+				yield* rebuildUnion();
+				return;
 			case 'prepend': {
-				const first = store.length > 0 ? store.firstTime() : Infinity;
-				const times = this._marks.bucketTimes(series, interval, -Infinity, first);
-				const older = times.filter(time => time < first);
+				if (store.length === 0) {
+					yield* rebuildUnion();
+					return;
+				}
+				const first = store.firstTime();
+				if (!shared) {
+					const times = this._marks.bucketTimes(series, interval, -Infinity, first);
+					const older = times.filter(time => time < first);
+					if (older.length > 0) {
+						yield* this._operation(operation('prepend', bars(older), older.length), event);
+					}
+					return;
+				}
+				let maxTime = -Infinity;
+				for (let i = 0; i < change.data.count; i++) {
+					const t = change.data.time[i]!;
+					if (t > maxTime) {
+						maxTime = t;
+					}
+				}
+				if (!(maxTime > -Infinity)) {
+					return;
+				}
+				const scanEnd = interval > 0 ? (Math.floor(maxTime / interval) + 1) * interval : maxTime + 1;
+				const times = this._marks.bucketTimes(series, interval, -Infinity, scanEnd);
+				const older: number[] = [];
+				for (const time of times) {
+					if (time < first) {
+						older.push(time);
+					} else if (!hasBar(time)) {
+						yield* rebuildUnion();
+						return;
+					}
+				}
 				if (older.length > 0) {
 					yield* this._operation(operation('prepend', bars(older), older.length), event);
 				}
 				return;
 			}
 			case 'append': {
-				const last = store.length > 0 ? store.lastTime() : -Infinity;
-				const times = this._marks.bucketTimes(series, interval, last, Infinity).filter(time => time > last);
-				if (times.length > 0) {
-					const data = new Float64Array(times.length * TICK_STRIDE).fill(NaN);
-					times.forEach((time, i) => {
+				if (store.length === 0) {
+					yield* rebuildUnion();
+					return;
+				}
+				const last = store.lastTime();
+				let newer: number[];
+				if (!shared) {
+					newer = this._marks.bucketTimes(series, interval, last, Infinity).filter(time => time > last);
+				} else {
+					let minTime = Infinity;
+					for (let i = 0; i < change.data.count; i++) {
+						const t = change.data.time[i]!;
+						if (t < minTime) {
+							minTime = t;
+						}
+					}
+					if (!(minTime < Infinity)) {
+						return;
+					}
+					const scanStart = interval > 0 ? Math.floor(minTime / interval) * interval : minTime;
+					const times = this._marks.bucketTimes(series, interval, scanStart, Infinity);
+					newer = [];
+					for (const time of times) {
+						if (time > last) {
+							newer.push(time);
+						} else if (!hasBar(time)) {
+							yield* rebuildUnion();
+							return;
+						}
+					}
+				}
+				if (newer.length > 0) {
+					const data = new Float64Array(newer.length * TICK_STRIDE).fill(NaN);
+					newer.forEach((time, i) => {
 						data[i * TICK_STRIDE] = state.id;
 						data[i * TICK_STRIDE + 1] = time;
 					});
-					yield* this._ticks(event.ack, data, times.length, event);
+					yield* this._ticks(event.ack, data, newer.length, event);
 				}
 				return;
 			}
 			case 'delete': {
-				// The buckets inside the range lost every mark; those at its ends may keep some.
 				let from = interval > 0 ? Math.floor(change.from / interval) * interval : change.from;
 				let to = interval > 0 ? Math.floor(change.to / interval) * interval : change.to;
-				const kept = (start: number): boolean =>
-					this._marks.bucketTimes(series, interval, start, interval > 0 ? start + interval : start + 1).length > 0;
-				if (interval > 0 && kept(from)) {
-					from += interval;
+				if (!shared) {
+					// The buckets inside the range lost every mark; those at its ends may keep some.
+					const kept = (start: number): boolean =>
+						this._marks.bucketTimes(series, interval, start, interval > 0 ? start + interval : start + 1).length > 0;
+					if (interval > 0 && kept(from)) {
+						from += interval;
+					}
+					if (interval > 0 && to >= from && kept(to)) {
+						to -= interval;
+					}
+					if (to >= from) {
+						yield* this._operation(operation('delete', EMPTY, 0, from, to), event);
+					}
+					return;
 				}
-				if (interval > 0 && to >= from && kept(to)) {
-					to -= interval;
+				yield* deleteOrphans(this, from, to);
+				return;
+			}
+			case 'correct': {
+				if (change.data.kind === 'heatmap') {
+					// Heatmap corrections replace cells at existing column timestamps: timeline bars are unchanged.
+					return;
 				}
-				if (to >= from) {
-					yield* this._operation(operation('delete', EMPTY, 0, from, to), event);
+				let low = change.from;
+				let high = change.to;
+				if (low === undefined || high === undefined) {
+					low = Infinity;
+					high = -Infinity;
+					for (let i = 0; i < change.data.count; i++) {
+						const t = change.data.time[i]!;
+						if (t - t === 0) {
+							if (t < low) low = t;
+							if (t > high) high = t;
+						}
+					}
 				}
+				if (!(low <= high) || !(interval > 0)) {
+					return;
+				}
+				const from = Math.floor(low / interval) * interval;
+				const to = Math.floor(high / interval) * interval;
+				const present = this._marks.bucketTimes(series, interval, from, to + interval);
+				for (const time of present) {
+					if (!hasBar(time)) {
+						yield* rebuildUnion();
+						return;
+					}
+				}
+				yield* deleteOrphans(this, from, to);
 				return;
 			}
 		}

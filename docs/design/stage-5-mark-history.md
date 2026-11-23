@@ -29,20 +29,26 @@ file differ, this one says what the library does now. The measurements are in
 
 ### 4.4 Scatter store (as built after stage 5)
 
-- **Sizes and counts.** A point may carry a size in CSS pixels (`size`, NaN for the series'
-  `pointSize`). The store keeps sizes only once a point has one. A cell of a level keeps, besides the
-  largest value, the number of points it holds and the largest size among them, so a level is still a
-  scatter, now with counts and sizes, and `MarksUpdate` sends `counts` (empty at level 0) and `sizes`
-  (empty without sizes). A cell is therefore drawn as wide as its widest point, and a density counts
-  every point once at every level. Not built: a cell drawn over the area its points cover.
+- **Sizes, counts and cell bounds.** A point may carry a size in CSS pixels (`size`, NaN for the
+  series' `pointSize`). The store keeps sizes only once a point has one. A cell of a coarse level
+  keeps, besides the largest value, the number of points it holds, the largest size among them, and
+  the exact time and price bounds (`[tMin, tMax, pMin, pMax]`) of the points inside it. `MarksUpdate`
+  sends `counts` (empty at level 0), `sizes` (empty without sizes), and `bounds` (four doubles per
+  coarse cell, empty at level 0). When a coarse cell spans less than one device pixel in both time
+  and price, it is drawn as a centered stamp (as wide as its widest point, counting every point);
+  when coarse cells span a device pixel or more, each cell is drawn over the exact area its points
+  cover, expanded by its stamp size (square or rounded disc), identically across Canvas 2D, WebGL2,
+  and `pointAt` hit testing.
 - **Prepend.** Points at or before the first time are put in front, in their own order. Each level
-  takes them by building their cells on their own, merging those that share a price bin with a cell
-  of the level's first bucket into it, and putting the others in front. Within a bucket that a
-  prepend touched, cells are therefore not in the order of their first point; nothing depends on that
-  order but the overlap of cells of one bucket, which share a time.
-- **Removal.** Points with times in `[from, to]` are removed. Each level makes the buckets the
-  removal touched again: level 1 from the points left in them, each level above from the level below,
-  which gives the same cells. The cells of the last bucket, where appends land, are found again by bin.
+  takes them by building the cells of buckets strictly before the old first bucket; when the old
+  first bucket is touched and resident in the level below, that bucket is rebuilt in canonical scan
+  order so coarse chunks remain evictable and deterministically rebuildable (falling back to in-place
+  merge and marking the bucket non-evictable only when the level below has evicted chunks there).
+- **Correction and removal.** `correct` replaces existing points over `[from, to]` (or spanning
+  `data`'s times when absent) in place, refusing all if no existing points fall in the range or if
+  all input points are invalid; `delete` removes points in `[from, to]`. Both materialize any evicted
+  coarse chunks they read or splice before mutating level 0, then rebuild the buckets spanning the
+  affected range bottom-up across every coarse level and refresh the last bucket's bin index.
 
 ### 4.5 Heatmap store (as built after stage 5)
 
@@ -52,49 +58,54 @@ file differ, this one says what the library does now. The measurements are in
   largest of the members' cells on that row. Chunks hold whole columns, whose cells follow one
   another; a rewrite of the columns of a chunk moves its cells at most once. A series whose columns
   all start at row 0 sends no offsets, and every reader keeps its old fast path for it.
-- **Prepend and removal.** Columns are indexed like bars: level `k` merges columns
-  `[b · 4^k, (b + 1) · 4^k)`, so a prepend rebuilds only the first bucket of each level. A removal at
-  either end cuts; in the middle the columns of the shorter side move over and the buckets of the
-  moved columns are made again. A level is let go once the level below has 512 columns or fewer.
+- **Prepend, correction and removal.** Columns are indexed like bars: level `k` merges columns
+  `[b · 4^k, (b + 1) · 4^k)`, so a prepend rebuilds only the first bucket of each level. `correct`
+  overwrites existing columns at their exact timestamps in place (refusing non-matching times or
+  off-grid columns) and rebuilds only the touched buckets bottom-up. A removal at either end cuts; in
+  the middle the columns of the shorter side move over and the buckets of the moved columns are made
+  again. A level is let go once the level below has 512 columns or fewer, materializing the new
+  topmost level first so a resident fallback always exists.
 
 ### 4.6 Window of a mark series (as built after stage 5)
 
-- The window holds counts and sizes for a scatter, and for a heatmap whose grid follows the price
-  each column's first row, number of cells and where its cells start (`cellStart`, `cellOffset`,
-  `cellLength`); cells of patched columns, which always run to the end of the window, are written
-  after those of the columns before them.
+- The window holds counts, sizes and coarse cell `bounds` for a scatter, and for a heatmap whose grid
+  follows the price each column's first row, number of cells and where its cells start (`cellStart`,
+  `cellOffset`, `cellLength`); cells of patched columns, which always run to the end of the window,
+  are written after those of the columns before them.
 
 ### 4.7 Marks under the memory limit (new)
 
 - **What goes.** With a datafeed (`datafeed: { getMarks }` when the series is added, or with
-  `setData`), chunks of level 0 far from the view are let go once the engine holds more than
-  `memoryLimit`, after every chunk of bars that could go: 65,536 points of a scatter, all of a chunk
-  but a summary; the cells of a heatmap chunk (about 256 KB), keeping its columns' times, rows and
-  lengths. The levels stay, and so do the first and last chunk of a scatter and the chunks of the first
-  and last eight heatmap columns (where appends and prepends rebuild buckets), the chunks that hold
-  marks of the last view and its margins, those being fetched or waited for, and those an indicator
-  recomputation has yet to read. Nothing goes before the series has a level to draw from instead.
-- **Summaries.** A scatter chunk keeps its number of points, its first and last time, how many of its
-  points share each of those times, and a 64-bit checksum over every time, price, value and size; a
-  chunk whose points share one time is kept, since its points could not be told from those of its
-  neighbours. A heatmap chunk keeps a checksum of its cells.
-- **Fetching back.** A view that needs level 0 where marks were let go is answered from the finest
-  coarse level (`partial`), and the engine asks for the chunks (`marksFetch`: a time range and a
-  count). `getMarks({ from, to, signal })` returns the marks of those times; the engine takes the
-  chunk's from them (at the first and last time, the last and first points that belong to it) and
-  checks the number and the checksum. Marks that differ are refused: unlike bars, marks have no
-  corrections, so the levels made from them stay right only if marks come back as they went. Once
-  every chunk the view needed is back, a notice makes the client ask again. A request the view left
-  is cancelled (`marksCancel`), and a failure or a refusal pauses the series' next request, 1 s
-  doubling to 30 s.
-- **Waiting.** A removal that would read or move marks let go (the shorter side of a gap, the rows
-  beside it, the level-1 buckets it rebuilds, and for a heatmap every chunk when the removal leaves no
-  level) is queued while they are fetched; later changes of the series wait behind it, and `setData`
-  drops them. The chunks it needs stay in memory, once back, until the waiting changes have run; a
-  failed fetch is asked for again with the next view the client asks for. A removal that moves rows
-  cancels every request out for the series, since chunk numbers then name other rows; what still
-  needs marks asks again. A removal stands for marks removed at the source: the datafeed must not
-  return them afterwards.
+  `setData`), chunks of level 0 and then intermediate coarse levels (`1 .. top - 1`, finer levels
+  before coarser, farthest from the view first) are let go once the engine holds more than
+  `memoryLimit`, after every chunk of bars that could go: 65,536 points or coarse cells of a scatter
+  (all of a chunk but its summary), or the cells of a heatmap chunk (about 256 KB), keeping column
+  times, rows and lengths. The topmost coarse level always stays resident as a guaranteed stand-in,
+  and so do the first and last chunk of each scatter level and the chunks of the first and last eight
+  columns of each heatmap level (where appends and prepends rebuild buckets), the chunks overlapping
+  the last view and its margins, those being fetched or waited for, and those an indicator
+  recomputation has yet to read. Nothing goes before the series has a coarse level to draw from.
+- **Summaries.** A scatter chunk (raw or coarse) keeps its row count, its first and last time, how
+  many rows share those times, and a 64-bit checksum (raw level 0); a chunk whose rows share one time
+  (or one time bucket for a coarse scatter level) is kept. A heatmap chunk keeps a checksum of its
+  cells at level 0.
+- **Fetching back and materializing coarse levels.** Before reporting missing chunks for a coarse
+  window, the engine tries `store.materialize(level, start, end)`: when finer levels underneath are
+  still resident, evicted coarse chunks rebuild immediately with zero fetch and no `partial` answer.
+  When level-0 chunks underneath were also let go, the view is answered from the finest resident
+  stand-in level (`partial`) and the engine fetches those level-0 chunks (`marksFetch`).
+  `getMarks({ from, to, signal })` returns the marks of those times; the engine checks the number and
+  checksum and refuses mismatches (history changes go through `correct` or `setData`). Once every
+  deferred level-0 chunk is back, any deferred coarse view is materialized immediately before sending
+  the `notice`, preventing thrashing under tight limits. A request the view left is cancelled
+  (`marksCancel`), and a failure or refusal pauses the series' next request, 1 s doubling to 30 s.
+- **Waiting.** A removal or in-place correction that would read, move or rebuild from marks let go
+  (including evicted coarse chunks and their level-0 dependencies) is queued while those chunks are
+  fetched; later changes wait behind it, and `setData` drops them. The chunks it needs stay pinned
+  until the waiting changes have run; a failed fetch is asked for again with the next view request. A
+  scatter removal or correction cancels requests out for the series because row shifts invalidate
+  chunk numbers; what still needs marks asks again. A removal or correction stands for changes at the
+  source: the datafeed must return the updated history afterwards.
 - **What asks for marks.** The view (cancelled when the view leaves them), a waiting removal, and an
   indicator recomputation (kept until it is answered, whatever the view does). A prepend keeps chunk
   numbers; where the client holds the first bucket of a coarse level, which takes prepended marks in,
@@ -141,6 +152,15 @@ file differ, this one says what the library does now. The measurements are in
   draw the same pixels. An append adds its points to the sums and colors their pixels; one that raises
   the largest colors the frame again. Without float blending WebGL2 leaves densities to Canvas 2D, and
   WebGPU, whose kernels overwrite one square size, hands both sizes and densities to WebGL2.
+- **Coarse scatter cell area rendering.** When a coarse scatter level's time buckets or price bins
+  span at least one device pixel (`scatterCellArea`), each cell is drawn over the exact device-pixel
+  rectangle of its points' `[tMin, tMax] × [pMin, pMax]` bounds expanded by its stamp size (square or
+  rounded-disc corners via Minkowski sum with `makeStamp`). Sub-pixel coarse frames keep the
+  centered-stamp fast path (including WebGPU's `scatter-columns` kernel). Super-pixel coarse frames
+  use a 5-word record format on WebGL2 (`[originX, originY, rgbaOrCount, boxW, (boxH << 10) | size]`)
+  for both value and density modes and route from WebGPU to WebGL2 with `reason: 'unsupported-style'`.
+  Coarse scatter autoscale uses `pMin`/`pMax` from `bounds`, and `pointAt` hit-tests the exact same
+  cell area geometry.
 - **What a pixel buffer cannot do** is blend marks with each other: overlapping points of a value
   series do not mix (a density series counts them instead), and edges are not antialiased.
 
@@ -171,18 +191,19 @@ file differ, this one says what the library does now. The measurements are in
 
 ## 8. External contract and scope
 
-- `ScatterSeriesApi` and `HeatmapSeriesApi` gain `prepend(data)` and `removeMarks({ from, to })`;
-  `setData(data, { datafeed })` changes the datafeed. A heatmap's `priceStart` may be one per column,
-  and `update` takes one for its column.
-- `addSeries('heatmap' | 'scatter', { timeline })` lets the marks make the bars of a chart without
-  bars: a hidden line series whose bars the engine keeps in step with the marks (`MarksTimeline`),
-  one per heatmap column or per `interval` milliseconds that hold marks (a minute by default for a
-  scatter). Appends tick it, prepends prepend to it, and a removal removes the bars of the buckets
-  left without marks. Like the datafeed, it is not saved with the state.
-- The engine protocol gains `prepend` and `delete` marks changes, `fetchable` and `timeline` on `add`,
-  the `marksRows` command, and `marksFetch`, `marksCancel` and `marksRestored` on events.
-- Still not built: corrections of marks (a mark changed in place); levels of detail of the marks
-  themselves under the memory limit (they always stay); a timeline from more than one marks series.
+- `ScatterSeriesApi` and `HeatmapSeriesApi` gain `prepend(data)`, `correct(...)`, and
+  `removeMarks({ from, to })`; `setData(data, { datafeed })` changes the datafeed. A heatmap's
+  `priceStart` may be one per column, and `update` / `correct` take one for their column.
+- `addSeries('heatmap' | 'scatter', { timeline })` lets one or more mark series make the bars of a
+  chart without bars: they share a single hidden line series whose bars the engine keeps equal to the
+  sorted, deduplicated union of all contributors' buckets (`MarksTimeline`), one per heatmap column or
+  per `interval` milliseconds that hold marks (a minute by default for a scatter). Appends, prepends,
+  corrections, removals, and removing individual contributors keep the union exact; the hidden line
+  series is removed once the last contributing mark series is removed. Like the datafeed, `timeline`
+  is not saved with the state.
+- The engine protocol gains `prepend`, `correct`, and `delete` marks changes, `bounds` on
+  `MarksUpdate`, `level` on `MarksChunk`, `fetchable` and `timeline` on `add`, the `marksRows`
+  command, and `marksFetch`, `marksCancel` and `marksRestored` on events.
 
 ## 9. Stages and measurement gates
 

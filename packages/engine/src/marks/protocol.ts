@@ -48,13 +48,16 @@ export type MarksData = ScatterRows | HeatmapColumns;
  * A change of a marks series. `set` replaces everything it holds. `append` adds points at or after
  * the last time (scatter), or columns after the last one, where a column at the last column's time
  * replaces it (heatmap, on the grid the series has). `prepend` adds points at or before the first
- * time (scatter) or columns before the first one (heatmap). `delete` removes the points or columns
- * with times in `[from, to]` (UTC milliseconds, inclusive). The typed arrays are handed over.
+ * time (scatter) or columns before the first one (heatmap). `correct` replaces existing marks in
+ * place: existing columns matching each column's time (heatmap), or existing points in `[from, to]`
+ * (scatter; when absent, the span of `data`'s times). `delete` removes the points or columns with
+ * times in `[from, to]` (UTC milliseconds, inclusive). The typed arrays are handed over.
  */
 export type MarksChange =
 	| { op: 'add'; kind: MarksKind; fetchable?: boolean; timeline?: MarksTimeline }
 	| { op: 'remove' }
 	| { op: 'set' | 'append' | 'prepend'; data: MarksData; fetchable?: boolean }
+	| { op: 'correct'; data: MarksData; from?: number; to?: number }
 	| { op: 'delete'; from: number; to: number };
 
 /**
@@ -143,6 +146,11 @@ export interface MarksUpdate {
 	/** Scatter: size of each row's mark in CSS pixels (NaN: the series' size); empty when no point has one. */
 	sizes: Float32Array;
 	/**
+	 * Scatter coarse levels: exact time and price bounds `[tMin, tMax, pMin, pMax]` of the points
+	 * inside each cell, four doubles per row; empty at level 0 and for heatmaps.
+	 */
+	bounds: Float64Array;
+	/**
 	 * Heatmap: grid row of each column's first cell, and its number of cells; both empty when every
 	 * column has `rows` cells from row 0 (a grid that does not follow the price). Column `c`'s cells
 	 * then are `values[c * rows, (c + 1) * rows)`; otherwise they follow one another, `lengths[c]`
@@ -222,6 +230,11 @@ export interface MarksStore {
 	set(data: MarksData): Generator<undefined, number, undefined>;
 	append(data: MarksData): Generator<undefined, number, undefined>;
 	prepend(data: MarksData): Generator<undefined, number, undefined>;
+	/**
+	 * Corrects existing marks in place: existing heatmap columns at their times, or scatter points
+	 * in `[from, to]` (or spanning `data`'s times when absent). Returns the rows refused.
+	 */
+	correct(data: MarksData, from?: number, to?: number): Generator<undefined, number, undefined>;
 	/** Removes the rows with times in `[from, to]`; returns how many of the given rows were removed. */
 	delete(from: number, to: number): Generator<undefined, number, undefined>;
 	/** First row of `level`, and the number of rows it holds; 0 for a level the store does not have. */
@@ -235,21 +248,28 @@ export interface MarksStore {
 	/** Copies rows `[start, end)` of `level` into `update`, with what describes the level. */
 	read(level: number, start: number, end: number, update: MarksUpdate): void;
 
-	// Memory: chunks of level 0 let go under the memory limit and fetched back.
+	// Memory: chunks of level 0 and intermediate coarse levels let go under the memory limit.
 
-	/** Chunks let go so far. */
+	/** Chunks let go so far across all levels. */
 	readonly evicted: number;
 	/** Chunks that may be let go now, none with marks in `[keepFrom, keepTo]`. */
 	evictable(keepFrom: number, keepTo: number, out: MarksChunk[]): void;
-	/** Lets go of a chunk; returns the bytes freed. */
-	evict(chunk: number): number;
-	/** Chunks let go that hold rows `[start, end)` of `level`. */
+	/** Lets go of chunk `chunk` of `level` (0 for raw marks); returns the bytes freed. */
+	evict(chunk: number, level?: number): number;
+	/**
+	 * Rebuilds any evicted chunks of coarse `level` covering `[start, end)` when the finer data they
+	 * are built from is resident. Returns whether `[start, end)` of `level` is now fully resident.
+	 */
+	materialize(level: number, start: number, end: number): boolean;
+	/** Level-0 chunks let go that must be fetched before rows `[start, end)` of `level` can be read. */
 	missing(level: number, start: number, end: number, out: number[]): void;
-	/** Chunks let go that removing the marks of `[from, to]` reads or moves. */
+	/** Level-0 chunks let go that removing the marks of `[from, to]` reads, moves or rebuilds from. */
 	needs(from: number, to: number, out: number[]): void;
-	/** The times to fetch a chunk let go by, and its marks; null for a chunk held. */
+	/** Level-0 chunks let go that correcting marks with `data` over `[from, to]` reads, moves or rebuilds from. */
+	needsCorrect(data: MarksData, from: number | undefined, to: number | undefined, out: number[]): void;
+	/** The times to fetch a level-0 chunk let go by, and its marks; null for a chunk held. */
 	fetchRange(chunk: number): { from: number; to: number; count: number } | null;
-	/** Gives a chunk its marks back from what a datafeed returned; false when they are not those let go. */
+	/** Gives a level-0 chunk its marks back from what a datafeed returned; false when they are not those let go. */
 	restore(chunk: number, data: MarksData): boolean;
 
 	// Indicators over the marks
@@ -272,9 +292,11 @@ export interface MarksStore {
 	bucketTimes(interval: number, from: number, to: number): number[];
 }
 
-/** A chunk of level 0 that could be let go: its number, the times it spans and the bytes it would free. */
+/** A chunk of level 0 or an intermediate coarse level that could be let go: its number, level, time span and bytes. */
 export interface MarksChunk {
 	chunk: number;
+	/** Level of detail: 0 for raw marks, 1+ for a coarse level. Absent means 0. */
+	level?: number;
 	from: number;
 	to: number;
 	bytes: number;

@@ -30,6 +30,8 @@ import {
 	type PriceProjection,
 	StampCache,
 	accumulateScatter,
+	accumulateScatterCells,
+	boundsPriceExtent,
 	clearDensity,
 	colorDensity,
 	drawHeatmap,
@@ -37,14 +39,16 @@ import {
 	heatEndTime,
 	heatRowSpan,
 	drawScatter,
+	drawScatterCells,
 	emptyBox,
 	makeStamp,
 	pointPixels,
 	priceExtent,
 	quantize,
+	scatterCellArea,
 	slotColors,
 } from './render';
-import { DensityScale, SizeExtent, exactDensities, hitScatter } from './scatter-style';
+import { DensityScale, SizeExtent, exactDensities, hitScatter, hitScatterCells } from './scatter-style';
 import { CanvasMarkBackend } from './canvas-backend';
 import {
 	type HeatSlots,
@@ -120,6 +124,12 @@ export interface ScatterSeriesApi extends MarkSeriesApi<'scatter'> {
 	 * newest points does not wait for them.
 	 */
 	prepend(data: ScatterData): void;
+	/**
+	 * Replaces existing points over `range` (UTC milliseconds, inclusive; by default the span of
+	 * `data`'s times) with `data`, rebuilding coarse levels in place. Refused when no existing points
+	 * fall in the range.
+	 */
+	correct(data: ScatterPoint | ScatterData, range?: { from: number; to: number }): void;
 	/** Removes the points with times in `[from, to]` (UTC milliseconds, inclusive). */
 	removeMarks(range: { from: number; to: number }): void;
 	/**
@@ -175,6 +185,11 @@ export interface HeatmapSeriesApi extends MarkSeriesApi<'heatmap'> {
 	 * at or after the first column's time is refused.
 	 */
 	prepend(data: HeatmapData): void;
+	/**
+	 * Replaces existing columns at their exact timestamps in place, rebuilding coarse levels. Columns
+	 * must be on the grid of the last `setData`; timestamps not present in the series are refused.
+	 */
+	correct(data: HeatmapColumn | HeatmapData): void;
 	/** Removes the columns with times in `[from, to]` (UTC milliseconds, inclusive). */
 	removeMarks(range: { from: number; to: number }): void;
 	/**
@@ -500,14 +515,14 @@ export abstract class MarkSeries {
 		if (pref === 'webgpu') {
 			const options = frame.options as ScatterOptions;
 			// The WebGPU kernels draw one square size for all points, by overwriting: points with sizes
-			// of their own, and densities, which add up, are WebGL2's.
-			const supported =
+			// of their own, densities, which add up, and super-pixel coarse cell areas are WebGL2's.
+			const styleSupported =
 				frame.type !== 'scatter' ||
 				(options.shape === 'square' &&
 					Math.round(options.pointSize * frame.ratio) <= 9 &&
 					frame.window.sizes.length === 0 &&
 					options.colorBy !== 'density');
-			if (supported) {
+			if (styleSupported && !frame.cellArea) {
 				this._gpu.start(this._host.document(), this._webgpuChanged);
 				const backend = this._gpu.backend;
 				if (backend) {
@@ -531,7 +546,12 @@ export abstract class MarkSeries {
 					this._reason = this._gpu.reason;
 				}
 			} else {
-				this._gpu.release();
+				if (styleSupported) {
+					// Transient coarse cell-area zoom: free per-series GPU buffers without dropping the device lease.
+					this._gpu.backend?.release();
+				} else {
+					this._gpu.release();
+				}
 				this._reason = 'unsupported-style';
 			}
 		}
@@ -628,8 +648,24 @@ export abstract class MarkSeries {
 		this._reason = null;
 		if (pref !== 'canvas2d' && shown && width > 0 && height > 0) {
 			const scatter = this.type === 'scatter';
-			const from = scatter ? window.lowerBound(this.viewFrom) : Math.max(0, window.upperBound(this.viewFrom) - 1);
-			const to = scatter ? window.upperBound(this.viewTo) : Math.min(window.count, window.upperBound(this.viewTo) + 1);
+			const halfStep = scatter && window.level > 0 ? window.timeStep * 0.5 : 0;
+			const from = scatter
+				? window.lowerBound(this.viewFrom - halfStep)
+				: Math.max(0, window.upperBound(this.viewFrom) - 1);
+			const to = scatter
+				? Math.max(from, window.upperBound(this.viewTo + halfStep))
+				: Math.min(window.count, window.upperBound(this.viewTo) + 1);
+			const cellArea =
+				scatter &&
+				scatterCellArea(
+					window.level,
+					window.timeStep,
+					window.priceStep,
+					window.bounds.length,
+					host.map,
+					projection,
+					height,
+				);
 			path = this.paintAccelerated(
 				pref,
 				{
@@ -647,6 +683,7 @@ export abstract class MarkSeries {
 					to,
 					slots: this._fixedSlots(from, to),
 					stampMax: this._frameStamp(ratio),
+					cellArea,
 				},
 				target.context,
 				!same,
@@ -798,6 +835,7 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 	private _blockHigh = new Float64Array(0);
 	private _blocks = 0;
 	private _blocksVersion = -1;
+	private _blocksRevision = -1;
 	private readonly _scan = { low: 0, high: 0 };
 	private _colorOptions: ScatterOptions | null = null;
 	private _colorPixel = 0;
@@ -858,6 +896,24 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 		if (rows.count > 0) {
 			this._host.engine()?.changeMarks(this.engineId, { op: 'prepend', data: rows });
 		}
+	}
+
+	public correct(data: ScatterPoint | ScatterData, range?: { from: number; to: number }): void {
+		let from: number | undefined;
+		let to: number | undefined;
+		if (range !== undefined) {
+			from = range.from;
+			to = range.to;
+			if (typeof from !== 'number' || typeof to !== 'number' || Number.isNaN(from) || Number.isNaN(to) || from > to) {
+				throw new RangeError('lumen-charts: correct needs a range of times with `from` at or before `to`');
+			}
+		}
+		const isPoint = !Array.isArray(data) && !('count' in data) && typeof (data as ScatterPoint).time === 'number';
+		const rows = isPoint ? packScatterPoint(data as ScatterPoint) : packScatter(data as ScatterData);
+		if (rows.count === 0 && range === undefined) {
+			return;
+		}
+		this._host.engine()?.changeMarks(this.engineId, { op: 'correct', data: rows, from, to });
 	}
 
 	public removeMarks(range: { from: number; to: number }): void {
@@ -938,27 +994,64 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 			return null;
 		}
 		const shift = this._prepare();
-		const from = window.lowerBound(this.viewFrom);
-		const to = Math.max(from, window.upperBound(this.viewTo));
+		const halfStep = window.level > 0 ? window.timeStep * 0.5 : 0;
+		const from = window.lowerBound(this.viewFrom - halfStep);
+		const to = Math.max(from, window.upperBound(this.viewTo + halfStep));
 		const hit = this._hit;
-		hitScatter(
-			window.time,
-			window.price,
-			window.sizes,
-			window.counts,
-			from,
-			to,
-			map,
-			shift,
-			this._projection,
-			this._stamp,
-			this._stamps,
-			ratio,
-			this._largest(ratio),
-			px,
-			py,
-			hit,
-		);
+		const paneWidth = host.paneWidth();
+		const paneHeight = host.paneHeight();
+		if (
+			scatterCellArea(
+				window.level,
+				window.timeStep,
+				window.priceStep,
+				window.bounds.length,
+				map,
+				this._projection,
+				paneHeight,
+			)
+		) {
+			hitScatterCells(
+				window.time,
+				window.bounds,
+				window.sizes,
+				window.counts,
+				window.timeStep,
+				from,
+				to,
+				map,
+				shift,
+				this._projection,
+				this._stamp,
+				this._stamps,
+				ratio,
+				this._largest(ratio),
+				paneWidth,
+				paneHeight,
+				px,
+				py,
+				hit,
+			);
+		} else {
+			hitScatter(
+				window.time,
+				window.price,
+				window.sizes,
+				window.counts,
+				from,
+				to,
+				map,
+				shift,
+				this._projection,
+				this._stamp,
+				this._stamps,
+				ratio,
+				this._largest(ratio),
+				px,
+				py,
+				hit,
+			);
+		}
 		const row = hit.row;
 		if (row < 0) {
 			return null;
@@ -982,10 +1075,13 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 	 */
 	public extent(out: { low: number; high: number }): void {
 		const window = this.window;
-		const from = window.lowerBound(this.viewFrom);
-		const to = Math.max(from, window.upperBound(this.viewTo));
-		if (window.version !== this._blocksVersion) {
+		const halfStep = window.level > 0 ? window.timeStep * 0.5 : 0;
+		const from = window.lowerBound(this.viewFrom - halfStep);
+		const to = Math.max(from, window.upperBound(this.viewTo + halfStep));
+		const bounded = window.bounds.length > 0;
+		if (window.version !== this._blocksVersion || (bounded && window.revision !== this._blocksRevision)) {
 			this._blocksVersion = window.version;
+			this._blocksRevision = window.revision;
 			this._blocks = 0;
 		}
 		const complete = Math.floor(window.count / EXTENT_BLOCK);
@@ -998,8 +1094,15 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 			this._blockHigh = high;
 		}
 		const scan = this._scan;
+		const rangeExtent = (a: number, b: number, target: { low: number; high: number }): void => {
+			if (bounded) {
+				boundsPriceExtent(window.bounds, a, b, target);
+			} else {
+				priceExtent(window.price, a, b, target);
+			}
+		};
 		for (let block = this._blocks; block < complete; block++) {
-			priceExtent(window.price, block * EXTENT_BLOCK, (block + 1) * EXTENT_BLOCK, scan);
+			rangeExtent(block * EXTENT_BLOCK, (block + 1) * EXTENT_BLOCK, scan);
 			this._blockLow[block] = scan.low;
 			this._blockHigh[block] = scan.high;
 		}
@@ -1007,17 +1110,17 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 		const first = Math.ceil(from / EXTENT_BLOCK);
 		const last = Math.min(complete, Math.floor(to / EXTENT_BLOCK));
 		if (last <= first) {
-			priceExtent(window.price, from, to, out);
+			rangeExtent(from, to, out);
 			return;
 		}
-		priceExtent(window.price, from, first * EXTENT_BLOCK, out);
+		rangeExtent(from, first * EXTENT_BLOCK, out);
 		let low = out.low;
 		let high = out.high;
 		for (let block = first; block < last; block++) {
 			low = Math.min(low, this._blockLow[block]!);
 			high = Math.max(high, this._blockHigh[block]!);
 		}
-		priceExtent(window.price, last * EXTENT_BLOCK, to, scan);
+		rangeExtent(last * EXTENT_BLOCK, to, scan);
 		out.low = Math.min(low, scan.low);
 		out.high = Math.max(high, scan.high);
 	}
@@ -1046,8 +1149,9 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 
 	protected _drawAll(map: TimeMap): void {
 		const window = this.window;
-		const from = window.lowerBound(this.viewFrom);
-		const to = Math.max(from, window.upperBound(this.viewTo));
+		const halfStep = window.level > 0 ? window.timeStep * 0.5 : 0;
+		const from = window.lowerBound(this.viewFrom - halfStep);
+		const to = Math.max(from, window.upperBound(this.viewTo + halfStep));
 		this._marks = to - from;
 		if ((this.seriesOptions as ScatterOptions).colorBy === 'density') {
 			this._densityAll(map, from, to);
@@ -1066,27 +1170,60 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 		const window = this.window;
 		const surface = this.surface;
 		emptyBox(box);
-		drawScatter(
-			surface.pixels,
-			surface.width,
-			surface.height,
-			window.time,
-			window.price,
-			window.values,
-			from,
-			Math.min(to, window.count),
-			map,
-			shift,
-			this._projection,
-			this._palette,
-			this._mapping,
-			this._color(),
-			this._stamp,
-			box,
-			window.sizes,
-			this._host.pixelRatio(),
-			this._stamps,
-		);
+		if (
+			scatterCellArea(
+				window.level,
+				window.timeStep,
+				window.priceStep,
+				window.bounds.length,
+				map,
+				this._projection,
+				surface.height,
+			)
+		) {
+			drawScatterCells(
+				surface.pixels,
+				surface.width,
+				surface.height,
+				window.bounds,
+				window.values,
+				from,
+				Math.min(to, window.count),
+				map,
+				shift,
+				this._projection,
+				this._palette,
+				this._mapping,
+				this._color(),
+				this._stamp,
+				box,
+				window.sizes,
+				this._host.pixelRatio(),
+				this._stamps,
+			);
+		} else {
+			drawScatter(
+				surface.pixels,
+				surface.width,
+				surface.height,
+				window.time,
+				window.price,
+				window.values,
+				from,
+				Math.min(to, window.count),
+				map,
+				shift,
+				this._projection,
+				this._palette,
+				this._mapping,
+				this._color(),
+				this._stamp,
+				box,
+				window.sizes,
+				this._host.pixelRatio(),
+				this._stamps,
+			);
+		}
 		growBox(surface.box, box);
 	}
 
@@ -1098,6 +1235,35 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 		const shift = this._prepare();
 		const window = this.window;
 		const surface = this.surface;
+		if (
+			scatterCellArea(
+				window.level,
+				window.timeStep,
+				window.priceStep,
+				window.bounds.length,
+				map,
+				this._projection,
+				surface.height,
+			)
+		) {
+			return accumulateScatterCells(
+				this._density,
+				surface.width,
+				surface.height,
+				window.bounds,
+				window.counts,
+				from,
+				Math.min(to, window.count),
+				map,
+				shift,
+				this._projection,
+				this._stamp,
+				box,
+				window.sizes,
+				this._host.pixelRatio(),
+				this._stamps,
+			);
+		}
 		return accumulateScatter(
 			this._density,
 			surface.width,
@@ -1259,6 +1425,21 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		const columns = this._onGrid(data, 'prepend');
 		if (columns.count > 0) {
 			this._host.engine()?.changeMarks(this.engineId, { op: 'prepend', data: columns });
+		}
+	}
+
+	public correct(data: HeatmapColumn | HeatmapData): void {
+		let columns: HeatmapColumns;
+		if ('rows' in data) {
+			columns = this._onGrid(data, 'correct');
+		} else {
+			if (this._grid === null) {
+				throw new Error('lumen-charts: a heatmap gets its price grid from `setData`, which must come before `correct`');
+			}
+			columns = packHeatmapColumn(this._grid, data);
+		}
+		if (columns.count > 0) {
+			this._host.engine()?.changeMarks(this.engineId, { op: 'correct', data: columns });
 		}
 	}
 

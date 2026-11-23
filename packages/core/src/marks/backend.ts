@@ -62,6 +62,11 @@ export interface MarkFrame {
 	 * column of pixels a renderer looks for the points that cover it. The series' size without it.
 	 */
 	stampMax?: number;
+	/**
+	 * Scatter coarse level whose cells span a device pixel or more in time or price: each cell is
+	 * drawn over its exact point bounds (`window.bounds`), expanded by the stamp size.
+	 */
+	cellArea?: boolean;
 }
 
 export interface GpuBackend {

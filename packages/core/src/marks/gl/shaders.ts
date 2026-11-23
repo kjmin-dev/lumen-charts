@@ -38,40 +38,54 @@ uniform int base;
 uniform int recordWords;
 flat out uint rgba;
 flat out ivec2 origin;
+flat out ivec2 box;
 flat out int size;
 void main() {
 	int id = first + gl_InstanceID;
-	// ranges[i] is the first point whose center is at or beyond column i minus the padding.
-	int lo = 0, hi = pane.x + stamp - 1;
-	while (lo + 1 < hi) {
-		int mid = (lo + hi) >> 1;
-		if (rangeWord(mid) <= uint(id)) lo = mid; else hi = mid;
-	}
 	int at = recordWords * id;
-	size = base;
-	if (recordWords > 2) {
-		int own = int(recordWord(at + 2));
-		if (own > 0) size = own;
+	if (recordWords == 5) {
+		origin = ivec2(int(recordWord(at)), int(recordWord(at + 1)));
+		rgba = recordWord(at + 2);
+		uint dim = recordWord(at + 4);
+		size = int(dim & 1023u);
+		box = ivec2(int(recordWord(at + 3)), int(dim >> 10u));
+	} else {
+		// ranges[i] is the first point whose center is at or beyond column i minus the padding.
+		int lo = 0, hi = pane.x + stamp - 1;
+		while (lo + 1 < hi) {
+			int mid = (lo + hi) >> 1;
+			if (rangeWord(mid) <= uint(id)) lo = mid; else hi = mid;
+		}
+		size = base;
+		if (recordWords > 2) {
+			int own = int(recordWord(at + 2));
+			if (own > 0) size = own;
+		}
+		int center = lo - (stamp - 1 - stamp / 2);
+		origin = ivec2(center - size / 2, int(recordWord(at)) - size / 2);
+		rgba = recordWord(at + 1);
+		box = ivec2(size);
 	}
-	int center = lo - (stamp - 1 - stamp / 2);
-	origin = ivec2(center - size / 2, int(recordWord(at)) - size / 2);
-	rgba = recordWord(at + 1);
-	vec2 p = vec2(origin + size * ivec2(corner)) / vec2(pane);
+	vec2 p = vec2(origin + box * ivec2(corner)) / vec2(pane);
 	gl_Position = vec4(p * vec2(2,-2) + vec2(-1,1), 0, 1);
 }`;
 
-// The pixels of a disc whose centers are inside it, as `makeStamp` has them. Below 256 pixels
-// across the bounds cannot round otherwise in 32-bit floats: a bound is (s + 1) / 2 -
-// sqrt((2c + 1)(2s - 2c - 1)) / 2 for a column c of a disc s wide, which is never a whole number
-// (the product of two odd numbers that sum to 2s is a square only for an odd s, whose bound is
-// then a half), and stays at least 1 / (4s + 2) away from one, more than ten times the error of a 32-bit
-// square root there.
+// The pixels of a disc (or rounded rectangle when `box > size` for a super-pixel coarse cell) whose
+// centers are inside it, as `makeStamp` has them. Below 256 pixels across the bounds cannot round
+// otherwise in 32-bit floats: a bound is (s + 1) / 2 - sqrt((2c + 1)(2s - 2c - 1)) / 2 for a column
+// c of a disc s wide, which is never a whole number (the product of two odd numbers that sum to 2s
+// is a square only for an odd s, whose bound is then a half), and stays at least 1 / (4s + 2) away
+// from one, more than ten times the error of a 32-bit square root there.
 const disc = `
 	if (circle && size >= 3) {
 		ivec2 local = ivec2(int(gl_FragCoord.x), pane.y - 1 - int(gl_FragCoord.y)) - origin;
-		float r = float(size) / 2.0, d = float(local.x) + 0.5 - r;
+		int dx = box.x - size;
+		int dy = box.y - size;
+		int halfS = size >> 1;
+		int cx = local.x < halfS ? local.x : (local.x >= halfS + dx ? local.x - dx : halfS);
+		float r = float(size) / 2.0, d = float(cx) + 0.5 - r;
 		float halfSpan = sqrt(max(0.0, r*r - d*d));
-		if (local.y < int(floor(r-halfSpan+0.5)) || local.y >= int(floor(r+halfSpan+0.5))) discard;
+		if (local.y < int(floor(r-halfSpan+0.5)) || local.y >= int(floor(r+halfSpan+0.5)) + dy) discard;
 	}`;
 
 export const scatterFragment =
@@ -80,6 +94,7 @@ export const scatterFragment =
 uniform bool circle;
 flat in uint rgba;
 flat in ivec2 origin;
+flat in ivec2 box;
 flat in int size;
 out vec4 pixel;
 void main() {${disc}
@@ -94,6 +109,7 @@ export const densityFragment =
 uniform bool circle;
 flat in uint rgba;
 flat in ivec2 origin;
+flat in ivec2 box;
 flat in int size;
 out vec4 pixel;
 void main() {${disc}

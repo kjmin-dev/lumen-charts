@@ -6,7 +6,7 @@ import { HeatRanges } from '../heat-ranges';
 import type { ScatterOptions } from '../options';
 import { parseColor } from '../palette';
 import { GlBudget, GlContext, type GlProgram, GlUnsupported } from './context';
-import { GlDensity, packScatterRows } from './density';
+import { GlDensity, packScatterCellRows, packScatterRows } from './density';
 import { WordTexture } from './texture';
 
 const SPAN = { low: 0, high: 0 };
@@ -78,6 +78,42 @@ class GlLayer {
 		const { window: w, width, height, projection, ratio } = f;
 		const options = f.options as ScatterOptions;
 		const density = options.colorBy === 'density';
+		const base = pointPixels(options.pointSize, ratio);
+		if (f.cellArea) {
+			const count = Math.max(0, f.to - f.from);
+			if (this.packed.length < count * 5) {
+				this.packed = new Uint32Array(Math.max(count * 5, 64));
+				this.packedFloats = new Float32Array(this.packed.buffer);
+			}
+			const fallback = parseColor(options.color) ?? 0;
+			const visible = packScatterCellRows(f, this.packed, this.packedFloats, f.from, f.to, fallback, density);
+			if (visible > 0) {
+				this.records.bind(visible * 5);
+				this.records.write(this.packed, 0, visible * 5);
+			}
+			this.projection = 'cellArea';
+			this.fallback = options.color;
+			const gl = this.pool.gl;
+			this.records.layout(p.recordsStride);
+			gl.uniform1i(p.stamp, base);
+			gl.uniform1i(p.base, base);
+			gl.uniform1i(p.recordWords, 5);
+			gl.uniform1i(p.circle, Number(options.shape === 'circle'));
+			if (density) {
+				this.density ??= new GlDensity(this.pool);
+				const strip = this.density.draw(f, p, 0, visible, false, 0, width);
+				this.copy(strip.left, strip.right, height);
+				return;
+			}
+			this.density?.release();
+			this.density = null;
+			gl.uniform1i(p.first, 0);
+			gl.scissor(0, 0, width, height);
+			gl.clear(gl.COLOR_BUFFER_BIT);
+			if (visible > 0) gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, visible);
+			this.copy(0, width, height);
+			return;
+		}
 		// A size per row takes a third word; densities put the count where the color was.
 		const words = w.sizes.length > 0 ? 3 : 2;
 		const key = [projection.offset, projection.scale, projection.log, words, density, words > 2 ? ratio : 0].join(',');
@@ -99,7 +135,6 @@ class GlLayer {
 		this.fallback = options.color;
 
 		// The column ranges are padded by the widest point, so none that reaches a column is left out.
-		const base = pointPixels(options.pointSize, ratio);
 		const size = Math.max(base, f.stampMax ?? base);
 		const n = width + size;
 		this.ranges.bind(n);
