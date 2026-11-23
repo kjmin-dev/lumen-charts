@@ -347,6 +347,22 @@ async function check(
 			a.scatter.priceToCoordinate(readPrice) !== b.scatter.priceToCoordinate(readPrice)
 		)
 			throw Error('Mark data queries differ');
+		// Pans by whole bars at a bar spacing of a whole number of device pixels, on a price scale
+		// that stays: a heatmap's GPU paths translate the image they retain and draw the columns the
+		// pan exposes.
+		await compare('four device pixels a bar', s => {
+			s.chart.priceScale().applyOptions({ autoScale: false });
+			const scale = s.chart.timeScale();
+			const range = scale.getVisibleLogicalRange()!;
+			const spacing = (scale.logicalToCoordinate(1)! - scale.logicalToCoordinate(0)!) * window.devicePixelRatio;
+			scale.setVisibleLogicalRange({ from: 12, to: 12 + ((range.to - range.from) * spacing) / 4 });
+		});
+		for (const bars of [1, 3, -2, -5, 2])
+			await compare('pan by whole bars ' + bars, s => {
+				const range = s.chart.timeScale().getVisibleLogicalRange()!;
+				s.chart.timeScale().setVisibleLogicalRange({ from: range.from + bars, to: range.to + bars });
+			});
+		await compare('automatic price scale', s => s.chart.priceScale().applyOptions({ autoScale: true }));
 		// Points with sizes of their own, then densities. WebGPU draws neither and hands them to
 		// WebGL2, which sums densities with float blending, or leaves them to Canvas 2D without it.
 		let floatBlend = false;
@@ -444,6 +460,11 @@ async function check(
 			s.scatter.applyOptions({ shape: 'circle', pointSize: 5 }),
 		);
 		readouts();
+		// A translucent color (these points have no values): the WebGL2 records of cells hold it
+		// premultiplied, as those of points do.
+		await compare('coarse scatter cell area, translucent color', s =>
+			s.scatter.applyOptions({ color: 'rgba(40,150,90,0.55)' }),
+		);
 		await compare('coarse scatter cell area, circle density', s =>
 			s.scatter.applyOptions({ colorBy: 'density', valueScale: 'linear' }),
 		);

@@ -6,6 +6,7 @@ import type { acquire } from '../src/marks/gpu/device';
 import { packScatterCellRows } from '../src/marks/gl/density';
 import { densityFragment, scatterFragment } from '../src/marks/gl/shaders';
 import { buildPalette, parseColor, setValueMapping } from '../src/marks/palette';
+import { Premultiplier } from '../src/marks/premultiply';
 import {
 	accumulateScatterCells,
 	drawScatterCells,
@@ -45,6 +46,8 @@ class FollowUpChart extends TestChart {
 	public readonly probe = new Probe();
 	public gl: FakeWebGl | null = null;
 	public extensions: string[] = [];
+	/** The largest point sprite of the contexts made from now on (0: quads). */
+	public maxPointSize = 0;
 
 	public constructor(options: ConstructorParameters<typeof TestChart>[0] = {}) {
 		super({ markRenderer: 'canvas2d', ...options });
@@ -53,6 +56,7 @@ class FollowUpChart extends TestChart {
 		const canvas2d = getContext.getMockImplementation()!;
 		const created = (gl: FakeWebGl): FakeWebGl => {
 			for (const name of this.extensions) gl.extensions.add(name);
+			gl.maxPointSize = this.maxPointSize;
 			return (this.gl = gl);
 		};
 		getContext.mockImplementation(function (this: HTMLCanvasElement, kind: string, ...rest: unknown[]) {
@@ -478,6 +482,52 @@ describe('scatter coarse LOD cell area rendering', () => {
 				}
 			}
 			expect(litCount).toBeGreaterThan(200);
+		}
+	});
+
+	it('draws WebGL2 cells as quads after point sprites, with translucent colors premultiplied', async () => {
+		const t = new FollowUpChart({ markRenderer: 'webgl2' });
+		t.maxPointSize = 64;
+		try {
+			t.chart.addSeries('candlestick').setData(candles(200));
+			const n = 100_000;
+			const time = Float64Array.from({ length: n }, (_, i) => (i / n) * 199 * MINUTE);
+			const price = Float64Array.from({ length: n }, (_, i) => 95 + ((i * 7) % 20) * 0.5);
+			const value = Float32Array.from({ length: n }, (_, i) => i % 100);
+			const stops = ['rgba(12,96,120,0.4)', 'rgba(220,120,50,0.65)'];
+			const scatter = t.chart.addSeries('scatter', { pointSize: 2, shape: 'square', palette: stops });
+			scatter.setData({ time, price, value });
+			t.chart.timeScale().setVisibleLogicalRange({ from: 40, to: 80 });
+			await t.settle();
+			// Every point at level 0: one vertex each, as point sprites.
+			expect(scatter.drawn().level).toBe(0);
+			expect(t.gl!.draws.at(-1)!.uniforms['guard']![0]).toBeGreaterThan(0);
+
+			scatter.applyOptions({ maxMarks: 250 });
+			await t.settle();
+			expect(scatter.drawn().level).toBeGreaterThan(0);
+			const cells = t.gl!.draws.at(-1)!;
+			// Boxes that are not square: instanced quads, whatever the last frame's sprites set.
+			expect(cells.uniforms['recordWords']).toEqual([5]);
+			expect(cells.uniforms['guard']).toEqual([0]);
+			expect(cells.mode).toBe(t.gl!.TRIANGLE_STRIP);
+			expect(cells.instances).toBeGreaterThan(0);
+			// The color word of every cell record is a palette color premultiplied, as the drawing
+			// buffer takes them (this document cannot be measured: the nearest byte).
+			const premultiply = new Premultiplier({} as Document);
+			const straight = buildPalette(stops);
+			const premultiplied = new Set(Array.from(straight, color => premultiply.color(color)));
+			expect([...straight].some(color => !premultiplied.has(color))).toBe(true);
+			const records = t.gl!.textures.filter(texture => {
+				if (texture.deleted || texture.data.length < cells.instances * 5) return false;
+				for (let k = 0; k < cells.instances; k++) {
+					if (!premultiplied.has(texture.data[k * 5 + 2]!)) return false;
+				}
+				return true;
+			});
+			expect(records).toHaveLength(1);
+		} finally {
+			t.destroy();
 		}
 	});
 

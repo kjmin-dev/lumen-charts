@@ -1,0 +1,163 @@
+{
+	"schema": 2,
+	"createdAt": "2026-11-22T13:40:48.971Z",
+	"environment": {
+		"runner": {"arguments":["--case","drawings/candles-1m/1000/hover","--lib","lumen-main,lumen-worker","--repeats","1","--budget","1.5","--out","<scratch>"],"node":"v26.13.1","durationSeconds":7.305600125,"skipped":[]},
+		"machine": {
+			"platform": "darwin",
+			"release": "25.5.0",
+			"arch": "arm64",
+			"cpuModel": "Apple M1",
+			"cpuCores": 8,
+			"totalMemoryBytes": 17179869184,
+			"power": "Now drawing from 'AC Power'",
+			"loadAverageStart": [2.884765625,2.8037109375,2.8193359375],
+			"loadAverageEnd": [2.82177734375,2.79296875,2.8154296875]
+		},
+		"browser": {
+			"engine": "chromium",
+			"version": "156.0.8078.4",
+			"channel": "chromium",
+			"headless": true,
+			"commandLine": "~/Library/Caches/ms-playwright/chromium-1248/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-edgeupdater --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,BlockOriginHeaderModificationOnRedirect,AvoidCorsURLLoaderRestartOnRedirect,Translate,AutoDeElevate,OptimizationHints,NetworkTimeServiceQuerying,AimEnabled,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion --enable-features=CDPScreenshotNewSurface --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --disable-updater-scheduler --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=<temporary-profile> --remote-debugging-pipe --no-startup-window --noerrdialogs --flag-switches-begin --flag-switches-end --enable-unsafe-swiftshader",
+			"gpuStatus": ""
+		},
+		"cpuThrottlingRate": 1,
+		"viewport": {"width":1280,"height":720},
+		"deviceScaleFactor": 2,
+		"chart": {"width":1200,"height":600},
+		"page": {
+			"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+			"userAgentData": {
+				"architecture": "arm",
+				"brands": [{"brand":"Not:A-Brand","version":"8"},{"brand":"Chromium","version":"156"}],
+				"fullVersionList": [{"brand":"Not:A-Brand","version":"8.0.0.0"},{"brand":"Chromium","version":"156.0.8078.4"}],
+				"mobile": false,
+				"model": "",
+				"platform": "macOS",
+				"platformVersion": "26.5.2"
+			},
+			"devicePixelRatio": 2,
+			"viewport": {"width":1280,"height":720},
+			"screen": {"width":1280,"height":720},
+			"chart": {"width":1200,"height":600},
+			"hardwareConcurrency": 8,
+			"deviceMemoryGb": 16,
+			"crossOriginIsolated": true,
+			"timer": {"minStepMs":0.004999876022338867,"medianStepMs":0.005000114440917969,"steps":2000},
+			"idleFrameInterval": {"count":120,"mean":16.665999999999997,"min":16.659999999999854,"p50":16.664999999999964,"p90":16.670000000000073,"p95":16.670000000000073,"p99":16.670000000000073,"max":16.670000000000073},
+			"webgl": {"vendor":"Google Inc. (Apple)","renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"},
+			"buildMode": "production",
+			"probes": {"garbageCollection":"runner: CDP HeapProfiler.collectGarbage","memory":"runner: CDP Runtime.getHeapUsage of the page and of each dedicated worker"}
+		},
+		"git": {"commit":"9ee1ef4837cacb963ab4b7d155fe98a738ae79ef","dirty":true},
+		"sources": "workspace",
+		"packages": {"lightweight-charts":"5.3.0","playwright":"1.64.1","vite":"8.3.8"}
+	},
+	"cases": [
+		{
+			"caseId": "drawings/candles-1m/1000/hover",
+			"adapter": "lumen-main",
+			"job": {
+				"scenario": "drawings",
+				"dataset": {"kind":"candles","size":1000000},
+				"seed": 1,
+				"chart": {"width":1200,"height":600},
+				"variant": "hover",
+				"drawings": 1000,
+				"visibleBars": 300,
+				"frames": 600,
+				"minFrames": 120,
+				"budgetMs": 1500,
+				"warmupFrames": 60,
+				"warmupBudgetMs": 1500,
+				"adapter": "lumen-main"
+			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":false}},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"phases": {
+							"L_read": {"count":122,"mean":0.016926218251712987,"min":0.004999876022338867,"p50":0.015000104904174805,"p90":0.02499985694885254,"p95":0.02500009536743164,"p99":0.029999971389770508,"max":0.029999971389770508},
+							"L_sync": {"count":122,"mean":0.027499994293588105,"min":0.005000114440917969,"p50":0.02500009536743164,"p90":0.03500008583068848,"p95":0.039999961853027344,"p99":0.04500007629394531,"max":0.05500006675720215},
+							"L_hover": {"count":122,"mean":0.029016398992694793,"min":0,"p50":0.02500009536743164,"p90":0.05500006675720215,"p95":0.06999993324279785,"p99":0.08000016212463379,"max":0.09000015258789062},
+							"O_clear": {"count":122,"mean":0.006926229742706799,"min":0,"p50":0.005000114440917969,"p90":0.009999990463256836,"p95":0.014999866485595703,"p99":0.015000104904174805,"max":0.015000104904174805},
+							"O_prices": {"count":122,"mean":0.06295082021932133,"min":0.029999971389770508,"p50":0.06500005722045898,"p90":0.08500003814697266,"p95":0.08999991416931152,"p99":0.09500002861022949,"max":0.11999988555908203},
+							"O_drawings": {"count":122,"mean":0.017704934370322306,"min":0,"p50":0.019999980926513672,"p90":0.02500009536743164,"p95":0.03000020980834961,"p99":0.03500008583068848,"max":0.040000200271606445},
+							"O_lines": {"count":122,"mean":0.056721298421015504,"min":0.02499985694885254,"p50":0.059999942779541016,"p90":0.07500004768371582,"p95":0.08500003814697266,"p99":0.09999990463256836,"max":0.10500001907348633},
+							"O_labels": {"count":122,"mean":0.05168031669053875,"min":0.015000104904174805,"p50":0.05000019073486328,"p90":0.07000017166137695,"p95":0.07999992370605469,"p99":0.09500002861022949,"max":0.09999990463256836},
+							"L_overlay": {"count":122,"mean":0.1980327700005203,"min":0.08500003814697266,"p50":0.21000003814697266,"p90":0.25999999046325684,"p95":0.2799999713897705,"p99":0.2999999523162842,"max":0.30500006675720215}
+						},
+						"frameJs": {"count":120,"mean":0.32162499825159707,"min":0.13500022888183594,"p50":0.33500003814697266,"p90":0.4199998378753662,"p95":0.4350001811981201,"p99":0.505000114440918,"max":0.5150001049041748},
+						"hitTest": {"count":120,"mean":0.009624997774759928,"min":0,"p50":0.005000114440917969,"p90":0.019999980926513672,"p95":0.02500009536743164,"p99":0.04499983787536621,"max":0.16499996185302734},
+						"hitTestMean": 0.005022916694482168,
+						"redraw": {"count":120,"mean":0.3120000004768372,"min":0.13500022888183594,"p50":0.3250000476837158,"p90":0.4100003242492676,"p95":0.4350001811981201,"p99":0.4850001335144043,"max":0.49000024795532227},
+						"hits": 107,
+						"interval": {"count":120,"mean":16.666,"min":16.659999999999854,"p50":16.664999999999964,"p90":16.670000000000073,"p95":16.670000000000073,"p99":16.670000000000073,"max":16.670000000000073},
+						"frames": 120,
+						"warmupFrames": 60,
+						"drawings": 1000,
+						"drawingsInView": 500,
+						"visibleBars": 300
+					},
+					"durationMs": 3644.432,
+					"host": {"cpuIdle":0.6832703538302989,"loadAverage":2.8935546875}
+				}
+			]
+		},
+		{
+			"caseId": "drawings/candles-1m/1000/hover",
+			"adapter": "lumen-worker",
+			"job": {
+				"scenario": "drawings",
+				"dataset": {"kind":"candles","size":1000000},
+				"seed": 1,
+				"chart": {"width":1200,"height":600},
+				"variant": "hover",
+				"drawings": 1000,
+				"visibleBars": 300,
+				"frames": 600,
+				"minFrames": 120,
+				"budgetMs": 1500,
+				"warmupFrames": 60,
+				"warmupBudgetMs": 1500,
+				"adapter": "lumen-worker"
+			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"phases": {
+							"L_read": {"count":122,"mean":0.019999978972263025,"min":0.009999990463256836,"p50":0.019999980926513672,"p90":0.02500009536743164,"p95":0.029999971389770508,"p99":0.03500008583068848,"max":0.03500008583068848},
+							"L_sync": {"count":122,"mean":0.03286885042659572,"min":0.014999866485595703,"p50":0.034999847412109375,"p90":0.04500007629394531,"p95":0.04500007629394531,"p99":0.06499981880187988,"max":0.06500005722045898},
+							"L_hover": {"count":122,"mean":0.031516389768631733,"min":0,"p50":0.029999971389770508,"p90":0.05499982833862305,"p95":0.06499981880187988,"p99":0.09500002861022949,"max":0.10000014305114746},
+							"O_clear": {"count":122,"mean":0.008360655581364866,"min":0,"p50":0.009999990463256836,"p90":0.014999866485595703,"p95":0.015000104904174805,"p99":0.015000104904174805,"max":0.015000104904174805},
+							"O_prices": {"count":122,"mean":0.06409837769680336,"min":0.029999971389770508,"p50":0.06500005722045898,"p90":0.08500003814697266,"p95":0.08999991416931152,"p99":0.09500002861022949,"max":0.11500000953674316},
+							"O_drawings": {"count":122,"mean":0.018442605362563837,"min":0,"p50":0.019999980926513672,"p90":0.029999971389770508,"p95":0.029999971389770508,"p99":0.039999961853027344,"max":0.04999995231628418},
+							"O_lines": {"count":122,"mean":0.054508207274264975,"min":0.019999980926513672,"p50":0.05500006675720215,"p90":0.07500004768371582,"p95":0.07999992370605469,"p99":0.08999991416931152,"max":0.08999991416931152},
+							"O_labels": {"count":122,"mean":0.05225409836065574,"min":0.009999990463256836,"p50":0.05000019073486328,"p90":0.06999993324279785,"p95":0.07999992370605469,"p99":0.08500003814697266,"max":0.09000015258789062},
+							"L_overlay": {"count":122,"mean":0.1994672251529381,"min":0.10500001907348633,"p50":0.21000003814697266,"p90":0.2649998664855957,"p95":0.27500009536743164,"p99":0.3000001907348633,"max":0.30499982833862305}
+						},
+						"frameJs": {"count":120,"mean":0.33474999070167544,"min":0.19000005722045898,"p50":0.3450000286102295,"p90":0.4249997138977051,"p95":0.4500000476837158,"p99":0.5099997520446777,"max":0.5199999809265137},
+						"hitTest": {"count":120,"mean":0.0066666622956593835,"min":0,"p50":0.004999876022338867,"p90":0.014999866485595703,"p95":0.019999980926513672,"p99":0.029999971389770508,"max":0.13000011444091797},
+						"hitTestMean": 0.0036916667222976684,
+						"redraw": {"count":120,"mean":0.328083328406016,"min":0.17999982833862305,"p50":0.3400001525878906,"p90":0.4100000858306885,"p95":0.4350001811981201,"p99":0.4849996566772461,"max":0.5},
+						"hits": 107,
+						"interval": {"count":120,"mean":16.666,"min":16.659999999999854,"p50":16.664999999999964,"p90":16.670000000000073,"p95":16.670000000000073,"p99":16.670000000000073,"max":16.670000000000073},
+						"frames": 120,
+						"warmupFrames": 60,
+						"drawings": 1000,
+						"drawingsInView": 500,
+						"visibleBars": 300
+					},
+					"durationMs": 3644.5760420000006,
+					"host": {"cpuIdle":0.6908278941944349,"loadAverage":2.82177734375}
+				}
+			]
+		}
+	]
+}

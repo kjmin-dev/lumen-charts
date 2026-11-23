@@ -1,0 +1,161 @@
+{
+	"schema": 2,
+	"createdAt": "2026-11-22T17:26:34.434Z",
+	"environment": {
+		"runner": {
+			"arguments": ["--lib","lumen-worker","--mark-renderer","webgl2","--mark-gpu-timers","--case","scatter/candles-2k/cloud-1m/zoom,scatter/candles-2k/cloud-300k/zoom","--repeats","1","--budget","2","--out","$TMPDIR/runs/pts-1.json"],
+			"node": "v26.13.1",
+			"durationSeconds": 7.745463125,
+			"skipped": []
+		},
+		"machine": {
+			"platform": "darwin",
+			"release": "25.5.0",
+			"arch": "arm64",
+			"cpuModel": "Apple M1",
+			"cpuCores": 8,
+			"totalMemoryBytes": 17179869184,
+			"power": "Now drawing from 'AC Power'",
+			"loadAverageStart": [8.24267578125,10.435546875,11.73583984375],
+			"loadAverageEnd": [8.734375,10.431640625,11.7109375]
+		},
+		"browser": {
+			"engine": "chromium",
+			"version": "156.0.8078.4",
+			"channel": "chromium",
+			"headless": true,
+			"commandLine": "~/Library/Caches/ms-playwright/chromium-1248/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-edgeupdater --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,BlockOriginHeaderModificationOnRedirect,AvoidCorsURLLoaderRestartOnRedirect,Translate,AutoDeElevate,OptimizationHints,NetworkTimeServiceQuerying,AimEnabled,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion --enable-features=CDPScreenshotNewSurface --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --disable-updater-scheduler --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=<temporary-profile> --remote-debugging-pipe --no-startup-window --noerrdialogs --flag-switches-begin --flag-switches-end --enable-unsafe-swiftshader",
+			"gpuStatus": ""
+		},
+		"viewport": {"width":1280,"height":720},
+		"deviceScaleFactor": 2,
+		"chart": {"width":1200,"height":600},
+		"page": {
+			"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+			"userAgentData": {
+				"architecture": "arm",
+				"brands": [{"brand":"Not:A-Brand","version":"8"},{"brand":"Chromium","version":"156"}],
+				"fullVersionList": [{"brand":"Not:A-Brand","version":"8.0.0.0"},{"brand":"Chromium","version":"156.0.8078.4"}],
+				"mobile": false,
+				"model": "",
+				"platform": "macOS",
+				"platformVersion": "26.5.2"
+			},
+			"devicePixelRatio": 2,
+			"viewport": {"width":1280,"height":720},
+			"screen": {"width":1280,"height":720},
+			"chart": {"width":1200,"height":600},
+			"hardwareConcurrency": 8,
+			"deviceMemoryGb": 16,
+			"crossOriginIsolated": true,
+			"timer": {"minStepMs":0.004999876022338867,"medianStepMs":0.005000114440917969,"steps":2000},
+			"idleFrameInterval": {"count":120,"mean":16.665999999999997,"min":16.659999999999854,"p50":16.664999999999992,"p90":16.670000000000073,"p95":16.670000000000073,"p99":16.670000000000073,"max":16.670000000000073},
+			"webgl": {"vendor":"Google Inc. (Apple)","renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"},
+			"buildMode": "production",
+			"probes": {"garbageCollection":"runner: CDP HeapProfiler.collectGarbage","memory":"runner: CDP Runtime.getHeapUsage of the page and of each dedicated worker"}
+		},
+		"git": {"commit":"be6e1b5a4244aeee3eb65b66cd64ec0d3791b845","dirty":true},
+		"sources": "workspace",
+		"packages": {"lightweight-charts":"5.3.0","playwright":"1.64.1","vite":"8.3.8"}
+	},
+	"cases": [
+		{
+			"caseId": "scatter/candles-2k/cloud-300k/zoom",
+			"adapter": "lumen-worker",
+			"job": {
+				"scenario": "scatter",
+				"dataset": {"kind":"candles","size":2000},
+				"seed": 1,
+				"chart": {"width":1200,"height":600},
+				"points": 300000,
+				"shape": "cloud",
+				"variant": "zoom",
+				"pointSize": 1.5,
+				"visibleBars": 1000,
+				"budgetMs": 2000,
+				"warmupBudgetMs": 2000,
+				"frames": 240,
+				"minFrames": 30,
+				"warmupFrames": 30,
+				"adapter": "lumen-worker"
+			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"backend": "webgl2",
+						"rendererPath": "webgl2",
+						"rendererBytes": 15213568,
+						"rendererReason": null,
+						"gpuPass": {"count":121,"mean":8.954603834710735,"min":4.956249,"p50":8.954124,"p90":11.909249,"p95":12.431124,"p99":14.548041,"max":14.728416},
+						"backendFrames": {"webgl2":120},
+						"backendTransitions": 0,
+						"jsTime": {"count":120,"mean":1.0616250117619832,"min":0.5000002384185791,"p50":0.8849999904632568,"p90":1.684999942779541,"p95":1.8900001049041748,"p99":6.4700000286102295,"max":8.270000219345093},
+						"interval": {"count":120,"mean":16.666,"min":16.659999999999854,"p50":16.664999999999964,"p90":16.670000000000073,"p95":16.670000000000073,"p99":16.670000000000073,"max":16.670000000000073},
+						"frames": 120,
+						"warmupFrames": 30,
+						"level": 0,
+						"marks": 300402,
+						"levelEnd": 0,
+						"marksEnd": 209947,
+						"total": 600000,
+						"visibleBars": 1000
+					},
+					"durationMs": 3349.9696670000003,
+					"host": {"cpuIdle":0.27626168224299064,"loadAverage":8.62451171875}
+				}
+			]
+		},
+		{
+			"caseId": "scatter/candles-2k/cloud-1m/zoom",
+			"adapter": "lumen-worker",
+			"job": {
+				"scenario": "scatter",
+				"dataset": {"kind":"candles","size":2000},
+				"seed": 1,
+				"chart": {"width":1200,"height":600},
+				"points": 1000000,
+				"shape": "cloud",
+				"variant": "zoom",
+				"pointSize": 1.5,
+				"visibleBars": 1000,
+				"budgetMs": 2000,
+				"warmupBudgetMs": 2000,
+				"frames": 240,
+				"minFrames": 30,
+				"warmupFrames": 30,
+				"adapter": "lumen-worker"
+			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"backend": "webgl2",
+						"rendererPath": "webgl2",
+						"rendererBytes": 26420224,
+						"rendererReason": null,
+						"gpuPass": {"count":48,"mean":41.41129889583333,"min":33.144499,"p50":41.286791,"p90":47.707374,"p95":48.288999,"p99":49.7545,"max":49.7545},
+						"backendFrames": {"webgl2":47},
+						"backendTransitions": 0,
+						"jsTime": {"count":47,"mean":4.634148942663314,"min":1.1800000667572021,"p50":2.000000238418579,"p90":2.3000001907348633,"p95":2.379999876022339,"p99":129,"max":129},
+						"interval": {"count":47,"mean":42.906063829787236,"min":16.659999999999854,"p50":49.99499999999989,"p90":50,"p95":50,"p99":116.66499999999996,"max":116.66499999999996},
+						"frames": 47,
+						"warmupFrames": 30,
+						"level": 0,
+						"marks": 1001315,
+						"levelEnd": 0,
+						"marksEnd": 1626633,
+						"total": 2000000,
+						"visibleBars": 1000
+					},
+					"durationMs": 4381.779875000001,
+					"host": {"cpuIdle":0.45306239267315396,"loadAverage":8.734375}
+				}
+			]
+		}
+	]
+}

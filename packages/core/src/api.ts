@@ -110,8 +110,10 @@ export interface TimeScaleApi {
  *   whoever waits for it (`whenIdle`, `whenApplied`) is no longer kept waiting. `cause` is the event
  *   the worker fired. Every chart on the worker gets one.
  * - `refused`: the engine did not apply `count` bars or points of the series `seriesId`: a time out
- *   of order, or between two bars that exist. This can be routine for a live feed, so it is never
- *   reported unless someone subscribed.
+ *   of order, or between two bars that exist; or, for a heatmap or scatter, a removal (counted as 1)
+ *   or correction (counted as its marks) that waited for marks let go under the memory limit which
+ *   its datafeed returned neither as they were nor as after the change, three rounds running. This
+ *   can be routine for a live feed, so it is never reported unless someone subscribed.
  */
 export interface ChartError {
 	kind: 'engine' | 'worker' | 'refused';
@@ -232,9 +234,19 @@ export interface ChartApi {
 	/**
 	 * The price scale with this id: by default the default scale (`default`), which
 	 * `ChartOptions.priceScale` configures. An id no option or series has named yet gets an overlay
-	 * scale.
+	 * scale, which goes again with the next frame if nothing is put on it (see `removePriceScale`);
+	 * the handle stays valid either way.
 	 */
 	priceScale(id?: string): PriceScaleApi;
+	/**
+	 * Removes the scale `id` from `ChartOptions.priceScales`: its options go, and with them its range
+	 * if it did not autoscale. Series, indicator outputs, heatmaps, scatters, primitives and drawings
+	 * still on it stay there, on an overlay with default options; the scale itself goes with the
+	 * first frame nothing is on it, as any scale the options do not list does. Handles of it stay
+	 * valid (see `PriceScaleApi`). The default scale cannot be removed, and an id the options do not
+	 * list is ignored.
+	 */
+	removePriceScale(id: string): void;
 	/**
 	 * Resolves once all data handed over so far has been applied and painted. A chart outside the
 	 * viewport is not painted until it comes back into view, and does not wait for that.

@@ -1,0 +1,128 @@
+{
+	"schema": 2,
+	"createdAt": "2026-11-22T17:27:39.246Z",
+	"environment": {
+		"runner": {"arguments":["--browser","firefox","--case","drawings/candles-1m/1000/hover","--lib","lumen-worker,lumen-main","--repeats","1","--budget","1.5","--out","<scratch>"],"node":"v26.13.1","durationSeconds":11.566836708999999,"skipped":[]},
+		"machine": {
+			"platform": "darwin",
+			"release": "25.5.0",
+			"arch": "arm64",
+			"cpuModel": "Apple M1",
+			"cpuCores": 8,
+			"totalMemoryBytes": 17179869184,
+			"power": "Now drawing from 'AC Power'",
+			"loadAverageStart": [7.91259765625,9.87158203125,11.4248046875],
+			"loadAverageEnd": [10.90771484375,10.49853515625,11.6240234375]
+		},
+		"browser": {"engine":"firefox","version":"157.0","channel":"playwright-bundled","headless":true,"commandLine":null,"gpuStatus":null,"firefoxPrefs":{}},
+		"cpuThrottlingRate": 1,
+		"viewport": {"width":1280,"height":720},
+		"deviceScaleFactor": 2,
+		"chart": {"width":1200,"height":600},
+		"page": {
+			"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:157.0) Gecko/20100101 Firefox/157.0",
+			"userAgentData": null,
+			"devicePixelRatio": 2,
+			"viewport": {"width":1280,"height":720},
+			"screen": {"width":683,"height":384},
+			"chart": {"width":1200,"height":600},
+			"hardwareConcurrency": 8,
+			"deviceMemoryGb": null,
+			"crossOriginIsolated": true,
+			"timer": {"minStepMs":0.01999999999998181,"medianStepMs":0.01999999999998181,"steps":2000},
+			"idleFrameInterval": {"count":120,"mean":16.666166666666662,"min":14.860000000000127,"p50":16.660000000000082,"p90":16.720000000000027,"p95":17.54000000000002,"p99":18.37999999999988,"max":18.480000000000018},
+			"webgl": {"vendor":"Apple","renderer":"Apple M1, or similar"},
+			"buildMode": "production",
+			"probes": {"garbageCollection":"unavailable","memory":"unavailable"}
+		},
+		"git": {"commit":"80081f1b064db67ab5873d0c75d797f0b4abe0b1","dirty":true},
+		"sources": "workspace",
+		"packages": {"lightweight-charts":"5.3.0","playwright":"1.64.1","vite":"8.3.8"}
+	},
+	"cases": [
+		{
+			"caseId": "drawings/candles-1m/1000/hover",
+			"adapter": "lumen-worker",
+			"job": {
+				"scenario": "drawings",
+				"dataset": {"kind":"candles","size":1000000},
+				"seed": 1,
+				"chart": {"width":1200,"height":600},
+				"variant": "hover",
+				"drawings": 1000,
+				"visibleBars": 300,
+				"frames": 600,
+				"minFrames": 120,
+				"budgetMs": 1500,
+				"warmupFrames": 60,
+				"warmupBudgetMs": 1500,
+				"adapter": "lumen-worker"
+			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"frameJs": {"count":120,"mean":1.625166666666676,"min":1.099999999999909,"p50":1.4800000000000182,"p90":2.099999999999909,"p95":2.560000000000173,"p99":3.2599999999997635,"max":3.6599999999998545},
+						"hitTest": {"count":120,"mean":0.0063333333333313625,"min":0,"p50":0,"p90":0.01999999999998181,"p95":0.01999999999998181,"p99":0.07999999999992724,"max":0.13999999999987267},
+						"hitTestMean": 0.002566666666666606,
+						"redraw": {"count":120,"mean":1.6188333333333447,"min":1.099999999999909,"p50":1.4800000000000182,"p90":2.099999999999909,"p95":2.560000000000173,"p99":3.2599999999997635,"max":3.6599999999998545},
+						"hits": 107,
+						"drawCalls": {"fillRect":3.6333333333333333,"strokeRect":0,"fill":1.3833333333333333,"stroke":1.3833333333333333,"lineTo":0,"fillText":2.05,"drawImage":1.95,"clearRect":9.683333333333334},
+						"interval": {"count":120,"mean":16.668333333333333,"min":14.6400000000001,"p50":16.660000000000082,"p90":17.460000000000036,"p95":18.2199999999998,"p99":18.66000000000031,"max":18.679999999999836},
+						"frames": 120,
+						"warmupFrames": 60,
+						"drawings": 1000,
+						"drawingsInView": 500,
+						"visibleBars": 300
+					},
+					"durationMs": 5584.539249999999,
+					"host": {"cpuIdle":0.38483899821109124,"loadAverage":11.59619140625}
+				}
+			]
+		},
+		{
+			"caseId": "drawings/candles-1m/1000/hover",
+			"adapter": "lumen-main",
+			"job": {
+				"scenario": "drawings",
+				"dataset": {"kind":"candles","size":1000000},
+				"seed": 1,
+				"chart": {"width":1200,"height":600},
+				"variant": "hover",
+				"drawings": 1000,
+				"visibleBars": 300,
+				"frames": 600,
+				"minFrames": 120,
+				"budgetMs": 1500,
+				"warmupFrames": 60,
+				"warmupBudgetMs": 1500,
+				"adapter": "lumen-main"
+			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":false}},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"frameJs": {"count":120,"mean":1.6881666666666661,"min":1,"p50":1.5,"p90":2.3599999999996726,"p95":2.600000000000364,"p99":4.079999999999927,"max":4.3599999999999},
+						"hitTest": {"count":120,"mean":0.01316666666666985,"min":0,"p50":0,"p90":0.01999999999998181,"p95":0.01999999999998181,"p99":0.1000000000003638,"max":1.0600000000004002},
+						"hitTestMean": 0.00392500000000003,
+						"redraw": {"count":120,"mean":1.6749999999999963,"min":0.2199999999997999,"p50":1.5,"p90":2.3599999999996726,"p95":2.600000000000364,"p99":4.079999999999927,"max":4.3599999999999},
+						"hits": 107,
+						"drawCalls": {"fillRect":3.6333333333333333,"strokeRect":0,"fill":1.3833333333333333,"stroke":1.3833333333333333,"lineTo":0,"fillText":2.05,"drawImage":1.95,"clearRect":9.683333333333334},
+						"interval": {"count":120,"mean":16.666333333333334,"min":14.659999999999854,"p50":16.66000000000031,"p90":17.940000000000055,"p95":18.460000000000036,"p99":18.659999999999854,"max":18.66000000000031},
+						"frames": 120,
+						"warmupFrames": 60,
+						"drawings": 1000,
+						"drawingsInView": 500,
+						"visibleBars": 300
+					},
+					"durationMs": 5945.517291,
+					"host": {"cpuIdle":0.2534232146618917,"loadAverage":10.90771484375}
+				}
+			]
+		}
+	]
+}

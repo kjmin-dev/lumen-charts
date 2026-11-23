@@ -391,7 +391,7 @@ describe('marks fetched again from a datafeed under the memory limit', () => {
 			return Promise.resolve(marks);
 		});
 		expect(wrong.level).toBeGreaterThan(0);
-		expect(wrong.warnings).toEqual([expect.stringContaining('do not match')]);
+		expect(wrong.warnings).toEqual([expect.stringContaining('neither those let go')]);
 	});
 });
 

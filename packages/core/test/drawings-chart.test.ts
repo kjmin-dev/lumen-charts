@@ -482,6 +482,24 @@ describe('drawings on a chart', () => {
 			expect(drawings.list()[0]!.points()[0]!.price).toBe(data.high[940]);
 		});
 
+		it('snaps points to the nearest value of every series on their scale, and closes only in nearest mode', async () => {
+			t.chart.applyOptions({ crosshair: { mode: 'magnet' } });
+			const data = candles(1000);
+			// A line above the candles, on the same scale, added after them.
+			t.chart.addSeries('line').setData({ time: data.time, value: data.high.map(value => value + 5) });
+			await t.settle();
+			const drawings = t.chart.drawings();
+			drawings.startTool('horizontalLine');
+			let p = at(t, 940, data.high[940]! + 4.2);
+			t.click(p.x, p.y);
+			expect(drawings.list()[0]!.points()[0]!.price).toBe(data.high[940]! + 5);
+			t.chart.applyOptions({ crosshair: { mode: 'nearest' } });
+			drawings.startTool('horizontalLine');
+			p = at(t, 940, data.low[940]! - 0.3);
+			t.click(p.x, p.y);
+			expect(drawings.list()[1]!.points()[0]!.price).toBe(data.close[940]);
+		});
+
 		it('reaches drawings from further away with touch', async () => {
 			const drawings = t.chart.drawings();
 			const line = drawings.add(trend(920, 980, 100, 100));
@@ -635,5 +653,38 @@ describe('drawings on a chart', () => {
 			line.remove();
 			expect(drawings.get(line.id)).toBeNull();
 		});
+	});
+});
+
+describe('drawing points in magnet mode', () => {
+	let t: TestChart | null = null;
+	afterEach(() => {
+		t?.destroy();
+		t = null;
+	});
+
+	it('snap where the crosshair snaps, never to a value above or below the pane', async () => {
+		t = new TestChart();
+		const data = candles(1000);
+		t.chart.addSeries('candlestick').setData(data);
+		t.chart.timeScale().setVisibleLogicalRange({ from: 900, to: 999 });
+		t.chart.applyOptions({ crosshair: { mode: 'magnet' } });
+		await t.settle();
+		// A manual range that leaves the high of bar 940 above the pane, nearer the pointer than its close.
+		const base = data.open[940]!;
+		t.chart.priceScale().setVisibleRange({ from: base - 2.5, to: base + 1.2 });
+		await t.settle();
+		const x = (t.chart as unknown as { scale: { indexToX(i: number): number } }).scale.indexToX(940);
+		expect(t.chart.priceScale().priceToCoordinate(data.high[940]!)!).toBeLessThan(0);
+		t.clearCalls();
+		t.pointer('pointermove', x, 2);
+		t.runFrames();
+		const labels = t.overlay.filter(call => call.name === 'fillText').map(call => String(call.args[0]));
+		expect(labels).toContain(data.close[940]!.toFixed(2));
+		const drawings = t.chart.drawings();
+		drawings.startTool('horizontalLine');
+		t.click(x, 2);
+		await t.settle();
+		expect(drawings.list()[0]!.points()[0]!.price).toBe(data.close[940]);
 	});
 });

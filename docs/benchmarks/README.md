@@ -28,9 +28,11 @@ pnpm bench --case ind-apply,tick --allocations benchmarks/results/allocations   
 pnpm bench:report <results.json>        # Markdown tables from a results file
 pnpm bench:merge <out.json> <a.json> <b.json>   # join runs of the same cases into one file
 pnpm bench:tidy [file.json ...]         # write JSON files again in the stored form (all of docs/benchmarks by default)
-pnpm bench:pixels                       # partial redraws against full redraws, pixel for pixel (--dpr, --raster, --redraw, --case)
+pnpm bench:pixels                       # partial redraws of the series layer and the overlay against full redraws, pixel for pixel (--dpr, --raster, --redraw, --case)
 pnpm bench:serve                        # production build of the harness page, to run by hand
+pnpm bench --case drawings/candles-1m/1000/hover --cpu-throttle 4   # the page's CPU four times slower, as a stand-in for a slower device (Chromium only)
 pnpm bench --browser firefox --case frames/candles-1m --lib lumen-worker   # headless Firefox: no DevTools protocol, so no memory, traces or forced GC
+pnpm bench --browser firefox --firefox-pref gfx.canvas.accelerated=true,gfx.canvas.accelerated.force-enabled=true   # Firefox preferences for the run
 pnpm bench --android <serial> --case frames/candles-1m --lib lumen-worker # Chrome on a USB-connected Android device, at its own viewport and ratio
 node benchmarks/runner/mark-charts.mjs --android <serial> --tolerance 2   # image comparisons on the device
 ```
@@ -85,6 +87,7 @@ ones, in that form and checks that each still holds what it held; GitHub shows t
 - [shared-resources.md](shared-resources.md): the `multi` scenario puts several auto-sized charts on one page, some of them below the fold, and measures workers, memory, the time until all are shown and the cost of a round of ticks.
 - [stage-3.md](stage-3.md): the stage 3 scenarios (`ind-load`, `ind-apply`, `ind-frames`, `ind-prepend`) put 20 indicators on the candles.
 - [stage-4-price-axes.md](stage-4-price-axes.md): the `axes-frames` scenario pans and zooms candles with three moving averages on one axis, on a logarithmic or a percentage scale, and on four axes; it and the frame cases of earlier stages against `main`.
+- [price-axis-follow-ups.md](price-axis-follow-ups.md): value labels that keep apart, scales marked in use every frame, the magnet and the wheel on axes; `frames`, `axes-frames` and drawing hover against `main` in alternating rounds on a loaded machine.
 - [stage-4-drawings.md](stage-4-drawings.md): the `drawings` scenario hovers, drags and pans over 1,000 drawings on 1M candles (the stage 4 hover gate).
 - [stage-4-time-zones.md](stage-4-time-zones.md): the scenarios `tz-frames` (pan and zoom in New York time with the sessions of an equity exchange) and `tz-change` (switching time zones at run time).
 - [stage-4-follow-ups.md](stage-4-follow-ups.md): the `draw-autoscale` scenario pans with 100 and 1,000 drawings that take part in autoscale; hover over 1,000 drawings and a restore of 1,000, matched by id, against `main`.
@@ -117,3 +120,5 @@ ones, in that form and checks that each still holds what it held; GitHub shows t
 - [Firefox on the M1](firefox-frames.md) runs the gate and mark cases in headless Firefox against Chromium.
 - [Automatic renderer selection](mark-renderer-auto.md) compares the three backends on the M1 and the phone and keeps `auto` on WebGL2.
 - [Review experiments](review-remeasure.md) measures the chunked store's scan cost again.
+- [Slow-device gates](slow-device-gates.md): the hover and indicator gates the phone misses, traced on the M1 with `--cpu-throttle`; the overlay draws only what changed; why headless Firefox misses its frame budgets (Canvas 2D in software, WebGL read back), with `--firefox-pref`.
+- [GPU mark renderer gaps](mark-gpu-device-gaps.md) takes the phone's open questions to the M1: the WebGL2 scatter append, 1M zoom and GPU draw (now point sprites), the cause of the one-step pixel differences (the browser's premultiplication of a straight-alpha drawing buffer), Chrome's extra WebGPU canvas copy, and the cost of the WebGPU compute pass.

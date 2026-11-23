@@ -39,7 +39,11 @@ kinds:
   event.
 - **`refused`**: the engine did not apply `count` bars or points of the series `seriesId`: an update
   whose time falls between two bars or before the first, or a history whose times stop increasing.
-  The refused bars are left out and the rest is applied.
+  The refused bars are left out and the rest is applied. For a heatmap or scatter, it is also a
+  removal (`count` 1) or correction (`count` its marks) that waited for marks let go under the
+  memory limit which the datafeed returned neither as they were nor as after the change, three
+  rounds of requests running (see [heatmap and scatter](heatmap-scatter.md#marks-let-go-under-the-memory-limit)):
+  the change is dropped, and the changes after it run.
 
 Without a handler, `engine` and `worker` errors are reported as uncaught errors of the page (with
 `reportError`), so they show in the console and in error tracking. `refused` ones are not reported

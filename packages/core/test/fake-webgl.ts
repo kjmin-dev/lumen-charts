@@ -24,6 +24,10 @@ export class FakeWebGl {
 	public readonly TEXTURE0 = 0x84c0;
 	public readonly ACTIVE_TEXTURE = 0x84e0;
 	public readonly MAX_TEXTURE_SIZE = 0x0d33;
+	public readonly ALIASED_POINT_SIZE_RANGE = 0x846d;
+	public readonly MAX_VIEWPORT_DIMS = 0x0d3a;
+	public readonly POINTS = 0x0000;
+	public readonly TRIANGLE_STRIP = 0x0005;
 	public readonly VERTEX_SHADER = 0x8b31;
 	public readonly FRAGMENT_SHADER = 0x8b30;
 	public readonly R32UI = 0x8236;
@@ -34,6 +38,11 @@ export class FakeWebGl {
 		uniforms: Record<string, unknown[]>;
 		/** Instances of an instanced draw; 1 for another. */
 		instances: number;
+		mode: number;
+		/** Vertices per instance, or of the draw. */
+		vertices: number;
+		/** The viewport at the draw: x, y, width, height. */
+		viewport: number[];
 		/** Whether the draw went to a framebuffer of the series rather than the canvas. */
 		offscreen: boolean;
 		blend: boolean;
@@ -45,11 +54,14 @@ export class FakeWebGl {
 	public reads = 0;
 	public readonly textures: FakeTexture[] = [];
 	public maxTextureSize = 4096;
+	/** The largest point sprite: 0, as `getParameter` answers for what it does not know, draws quads. */
+	public maxPointSize = 0;
 	private _unit = 0;
 	private readonly _bound: (FakeTexture | null)[] = [];
 	private _program: { fragment: string; uniforms: Record<string, unknown[]> } | null = null;
 	private _framebuffer: object | null = null;
 	private _blend = false;
+	private _viewport = [0, 0, 0, 0];
 
 	public constructor(public readonly canvas: HTMLCanvasElement) {
 		// Every other constant a caller reads is a number of its own.
@@ -79,8 +91,10 @@ export class FakeWebGl {
 	public getError(): number {
 		return this.NO_ERROR;
 	}
-	public getParameter(name: number): number {
+	public getParameter(name: number): number | Float32Array | Int32Array {
 		if (name === this.MAX_TEXTURE_SIZE) return this.maxTextureSize;
+		if (name === this.ALIASED_POINT_SIZE_RANGE) return Float32Array.of(1, this.maxPointSize);
+		if (name === this.MAX_VIEWPORT_DIMS) return Int32Array.of(16384, 16384);
 		if (name === this.ACTIVE_TEXTURE) return this.TEXTURE0 + this._unit;
 		return 0;
 	}
@@ -154,12 +168,15 @@ export class FakeWebGl {
 		if (texture) texture.deleted = true;
 	}
 
-	public drawArrays(_mode?: number, _first?: number, _count?: number, instances = 1): void {
+	public drawArrays(mode = 0, _first = 0, vertices = 0, instances = 1): void {
 		const program = this._program!;
 		this.draws.push({
 			fragment: program.fragment,
 			uniforms: { ...program.uniforms },
 			instances,
+			mode,
+			vertices,
+			viewport: [...this._viewport],
 			offscreen: this._framebuffer !== null,
 			blend: this._blend,
 		});
@@ -207,7 +224,10 @@ export class FakeWebGl {
 	public deleteBuffer(): void {}
 	public vertexAttribPointer(): void {}
 	public enableVertexAttribArray(): void {}
-	public viewport(): void {}
+	public viewport(x: number, y: number, width: number, height: number): void {
+		this._viewport = [x, y, width, height];
+	}
+	public vertexAttribDivisor(): void {}
 	public scissor(): void {}
 	public clear(): void {}
 

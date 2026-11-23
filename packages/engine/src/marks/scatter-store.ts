@@ -1,7 +1,9 @@
 import {
 	MARK_COLUMNS,
+	type MarksChange,
 	type MarksChunk,
 	type MarksData,
+	type MarksProvisional,
 	type MarksRequest,
 	type MarksSelection,
 	type MarksStore,
@@ -64,6 +66,17 @@ interface ScatterSummary {
 
 const NO_TIME = new Float64Array(0);
 const NO_VALUE = new Float32Array(0);
+/**
+ * Faults of the store, which would otherwise read rows let go as zeros or NaN, or write a chunk let
+ * go in part and leave the rest of it zero, without a word.
+ */
+function evictedRead(): never {
+	throw new Error('lumen-charts: a row of marks let go under the memory limit was read');
+}
+
+function evictedWrite(): never {
+	throw new Error('lumen-charts: a chunk of marks let go under the memory limit was written in part');
+}
 
 /**
  * Time, price and value of points or cells in time order, in chunks so growing at either end never
@@ -239,8 +252,9 @@ export class ScatterColumns {
 
 	/**
 	 * Gives chunk `n` its rows back from points `[from, from + count)` of the arrays, if they are the
-	 * points it was let go with: the same number, times, prices, values and sizes. Returns whether
-	 * they were taken.
+	 * points it was let go with: the same number, times, prices, values and sizes (unless `verify` is
+	 * false: points that stand in for those let go until a waiting change replaces them). Returns
+	 * whether they were taken.
 	 */
 	public restore(
 		n: number,
@@ -250,27 +264,30 @@ export class ScatterColumns {
 		size: Float32Array | null,
 		from: number,
 		count: number,
+		verify = true,
 	): boolean {
 		const chunk = this._chunks[n - this._base];
 		const summary = chunk?.summary ?? null;
 		if (chunk === undefined || summary === null || count !== summary.count) {
 			return false;
 		}
-		const checksum = new Checksum();
-		for (let i = from; i < from + count; i++) {
-			feedPoint(
-				checksum,
-				time[i]!,
-				price[i]!,
-				value === null ? Number.NaN : value[i]!,
-				size === null ? Number.NaN : size[i]!,
-				summary.sized,
-			);
+		if (verify) {
+			const checksum = new Checksum();
+			for (let i = from; i < from + count; i++) {
+				feedPoint(
+					checksum,
+					time[i]!,
+					price[i]!,
+					value === null ? Number.NaN : value[i]!,
+					size === null ? Number.NaN : size[i]!,
+					summary.sized,
+				);
+			}
+			if (checksum.high !== summary.high || checksum.low !== summary.low) {
+				return false;
+			}
 		}
-		if (checksum.high !== summary.high || checksum.low !== summary.low) {
-			return false;
-		}
-		// The first write gives the chunk its arrays back.
+		this.revive(n);
 		const start = this.chunkStart(n);
 		for (let i = 0; i < count; i++) {
 			this.write(
@@ -283,6 +300,51 @@ export class ScatterColumns {
 			);
 		}
 		return true;
+	}
+
+	/**
+	 * Gives chunk `n`, let go, arrays of its own again, to be written in full: every one of its rows
+	 * is written next (marks back from a datafeed, a coarse chunk made again, or rows a splice writes
+	 * over all of it). Returns the summary it had, which `unrevive` puts back.
+	 */
+	public revive(n: number): ScatterSummary {
+		const chunk = this._chunks[n - this._base]!;
+		const summary = chunk.summary;
+		if (summary === null) {
+			throw new Error('lumen-charts: a chunk of marks held was given its rows again');
+		}
+		const fresh = this._newChunk();
+		chunk.time = fresh.time;
+		chunk.price = fresh.price;
+		chunk.value = fresh.value;
+		chunk.count = fresh.count;
+		chunk.size = fresh.size;
+		chunk.tMin = fresh.tMin;
+		chunk.tMax = fresh.tMax;
+		chunk.pMin = fresh.pMin;
+		chunk.pMax = fresh.pMax;
+		chunk.summary = null;
+		this._evicted--;
+		return summary;
+	}
+
+	/** Lets go of chunk `n` again with the summary it had before `revive`, whatever it holds now. */
+	public unrevive(n: number, summary: ScatterSummary): void {
+		const chunk = this._chunks[n - this._base];
+		if (chunk === undefined || chunk.summary !== null) {
+			return;
+		}
+		chunk.summary = summary;
+		chunk.time = NO_TIME;
+		chunk.price = NO_TIME;
+		chunk.value = NO_VALUE;
+		chunk.count = null;
+		chunk.size = null;
+		chunk.tMin = null;
+		chunk.tMax = null;
+		chunk.pMin = null;
+		chunk.pMax = null;
+		this._evicted++;
 	}
 
 	/** Gives every row a size, NaN (the series' size) for the rows there are. */
@@ -331,14 +393,15 @@ export class ScatterColumns {
 		return chunks[n - this._base]!;
 	}
 
+	/** The chunk of a row (held: see `timeAt`). */
 	private _chunk(row: number): ScatterChunk {
 		return this._chunks[(row >> SCATTER_CHUNK_SHIFT) - this._base]!;
 	}
 
 	/**
-	 * Writes row `row`, which must be `end` or `first - 1` or a row held. A row of a chunk let go is
-	 * written only where every row of the chunk is written anew (a removal moving rows over it, or a
-	 * coarse chunk materialized from below), so the chunk starts over, held.
+	 * Writes row `row`, which must be `end` or `first - 1` or a row held. A chunk let go is written
+	 * only once `revive` gave it arrays again, where every row of it is written anew: writing into one
+	 * otherwise is a fault of the caller, and throws.
 	 */
 	public write(
 		row: number,
@@ -354,18 +417,7 @@ export class ScatterColumns {
 	): void {
 		const chunk = this._chunkFor(row);
 		if (chunk.summary !== null) {
-			const fresh = this._newChunk();
-			chunk.time = fresh.time;
-			chunk.price = fresh.price;
-			chunk.value = fresh.value;
-			chunk.count = fresh.count;
-			chunk.size = fresh.size;
-			chunk.tMin = fresh.tMin;
-			chunk.tMax = fresh.tMax;
-			chunk.pMin = fresh.pMin;
-			chunk.pMax = fresh.pMax;
-			chunk.summary = null;
-			this._evicted--;
+			evictedWrite();
 		}
 		const at = row & CHUNK_MASK;
 		chunk.time[at] = time;
@@ -421,8 +473,16 @@ export class ScatterColumns {
 		this.first--;
 	}
 
+	/**
+	 * The time of a row held. Every pass over rows reads their time first; a chunk let go has no rows,
+	 * so reading one is a fault of the caller, and throws rather than reading as NaN or zero.
+	 */
 	public timeAt(row: number): number {
-		return this._chunk(row).time[row & CHUNK_MASK]!;
+		const time = this._chunk(row).time[row & CHUNK_MASK];
+		if (time === undefined) {
+			evictedRead();
+		}
+		return time;
 	}
 
 	public priceAt(row: number): number {
@@ -522,7 +582,8 @@ export class ScatterColumns {
 			let a = this.firstChunk;
 			let b = this.lastChunk + 1;
 			while (a < b) {
-				const mid = (a + b) >>> 1;
+				// Chunk numbers are signed once points are prepended: `>>> 1` would not halve a negative sum.
+				const mid = a + ((b - a) >> 1);
 				if (before(this.chunkLastTime(mid))) {
 					a = mid + 1;
 				} else {
@@ -567,6 +628,9 @@ export class ScatterColumns {
 		let out = 0;
 		while (row < to) {
 			const chunk = this._chunk(row);
+			if (chunk.summary !== null) {
+				evictedRead();
+			}
 			const at = row & CHUNK_MASK;
 			const n = Math.min(CHUNK_ROWS - at, to - row);
 			time.set(chunk.time.subarray(at, at + n), out);
@@ -617,15 +681,46 @@ export class ScatterColumns {
 	}
 
 	/**
-	 * Replaces rows `[from, to)` with rows `[sourceFrom, sourceFrom + n)` of `source` (none when it is
-	 * null). The rows on the shorter side of the change move over; the others keep their indexes.
+	 * Which rows move when rows `[from, to)` are replaced by `n` others: those before them (`left`),
+	 * those after them (`right`), or none. Without `side`, the shorter side moves.
 	 */
-	public splice(from: number, to: number, source: ScatterColumns | null, sourceFrom: number, n: number): void {
+	public spliceSide(from: number, to: number, n: number, side: SpliceSide | null = null): SpliceSide | null {
+		if (n === to - from) {
+			return null;
+		}
+		return side ?? (from - this.first <= this.end - to ? 'left' : 'right');
+	}
+
+	/**
+	 * Replaces rows `[from, to)` with rows `[sourceFrom, sourceFrom + n)` of `source` (none when it is
+	 * null). The rows on `side` of the change move over (the shorter side without one); the others
+	 * keep their indexes. Throws, before anything changes, when it would read a row let go, or write
+	 * a chunk let go in part: those are faults of the caller, which makes them held first.
+	 */
+	public splice(
+		from: number,
+		to: number,
+		source: ScatterColumns | null,
+		sourceFrom: number,
+		n: number,
+		side: SpliceSide | null = null,
+	): void {
 		const removed = to - from;
 		const delta = n - removed;
+		const moves = this.spliceSide(from, to, n, side);
+		if (this._evicted > 0) {
+			// What moves is read; what the rows land on, and the new rows, are written.
+			if (moves === null) {
+				this._checkSplice(0, 0, from, to, this.first, this.end);
+			} else if (moves === 'left') {
+				this._checkSplice(this.first, from, this.first - delta, to, this.first - delta, this.end);
+			} else {
+				this._checkSplice(to, this.end, from, this.end + delta, this.first, this.end + delta);
+			}
+		}
 		let at = from;
 		if (delta !== 0) {
-			if (from - this.first <= this.end - to) {
+			if (moves === 'left') {
 				// The rows before the change move: by `delta` to the left to make room, or to the right.
 				this._move(this.first, this.first - delta, from - this.first);
 				this.first -= delta;
@@ -651,6 +746,41 @@ export class ScatterColumns {
 			);
 		}
 		this._trim();
+	}
+
+	/**
+	 * Checks a splice that reads rows `[readFrom, readTo)` and writes rows `[writeFrom, writeTo)`, of
+	 * which those in `[first, end)` stay: no row read may be let go, and a chunk let go that is written
+	 * must be written in full, when it is given arrays again.
+	 */
+	private _checkSplice(
+		readFrom: number,
+		readTo: number,
+		writeFrom: number,
+		writeTo: number,
+		first: number,
+		end: number,
+	): void {
+		const read: number[] = [];
+		this.missing(readFrom, readTo, read);
+		if (read.length > 0) {
+			evictedRead();
+		}
+		const lo = Math.max(writeFrom, first, this.first);
+		const hi = Math.min(writeTo, end, this.end);
+		const written: number[] = [];
+		this.missing(lo, hi, written);
+		for (const n of written) {
+			// The rows the chunk keeps: those of the new extent.
+			const start = Math.max(first, n << SCATTER_CHUNK_SHIFT);
+			const stop = Math.min(end, (n + 1) << SCATTER_CHUNK_SHIFT);
+			if (start < writeFrom || stop > writeTo) {
+				evictedWrite();
+			}
+		}
+		for (const n of written) {
+			this.revive(n);
+		}
 	}
 
 	/** Copies `n` rows from `from` to `to`, in the order that leaves the source of each copy untouched. */
@@ -820,6 +950,8 @@ export class ScatterStore implements MarksStore {
 	private _priceMax = -Infinity;
 	private _valueMin = Infinity;
 	private _valueMax = -Infinity;
+	/** While `_prepare` runs: the chunks it made, to be let go again if the change cannot run. */
+	private _log: Revival[] | null = null;
 
 	public get byteLength(): number {
 		let bytes = this._points.byteLength;
@@ -981,7 +1113,9 @@ export class ScatterStore implements MarksStore {
 		const source = l === 0 ? this._points : this._levels[l - 1]!.columns;
 		const missing: number[] = [];
 		if (touchesHead) {
-			source.missing(source.lowerBucket(step, head), source.lowerBucket(step, head + 1), missing);
+			// Where the bucket ends in a chunk let go, `lowerBucket` finds only the chunk: it is missing.
+			const [start, end] = bucketRows(source, step, head, head + 1);
+			source.missing(start, end, missing);
 		}
 		const block = new ScatterColumns(true);
 		if (columns.sized) {
@@ -1165,6 +1299,9 @@ export class ScatterStore implements MarksStore {
 	/**
 	 * Replaces the points in `[from, to]` (or spanning `data`'s finite times when absent) with the
 	 * valid points of `data` inside that range. Refuses all when no existing points fall in the range.
+	 * Returns the points refused, or -1 when the coarse chunks the change rebuilds from could not be
+	 * made from what is held (marks taken from a datafeed that are not those let go): then nothing
+	 * changed.
 	 */
 	public *correct(data: MarksData, from?: number, to?: number): Generator<undefined, number, undefined> {
 		if (data.kind !== 'scatter') {
@@ -1182,25 +1319,19 @@ export class ScatterStore implements MarksStore {
 		}
 		const { time, price, value, count } = data;
 		const size = data.size ?? null;
-		const order = timeOrder(time, count);
-		const accepted: number[] = [];
-		let rejected = 0;
-		for (let k = 0; k < count; k++) {
-			const i = order === null ? k : order[k]!;
-			const t = time[i]!;
-			const p = price[i]!;
-			if (!(t >= range.from && t <= range.to) || t - t !== 0 || p - p !== 0) {
-				rejected++;
-				continue;
-			}
-			accepted.push(i);
-		}
+		const accepted = scatterAccepted(data, range);
+		const rejected = count - accepted.length;
 		if (count > 0 && accepted.length === 0) {
 			return rejected;
 		}
 		if (accepted.length === 0 && b - a === points.count) {
 			this._reset();
 			return rejected;
+		}
+		const side = points.spliceSide(a, b, accepted.length);
+		const sides = this._prepare(range.from, range.to, side);
+		if (sides === null) {
+			return -1;
 		}
 		if (size !== null) {
 			this._enableSize();
@@ -1221,19 +1352,19 @@ export class ScatterStore implements MarksStore {
 				yield;
 			}
 		}
-		this._materializeForRange(range.from, range.to);
-		points.splice(a, b, replacement, replacement.first, replacement.count);
+		points.splice(a, b, replacement, replacement.first, replacement.count, side);
 		this._lastTime = points.timeAt(points.end - 1);
 		this._changed = points.first;
 		yield;
-		yield* this._rebuildLevels(range.from, range.to);
+		yield* this._rebuildLevels(range.from, range.to, sides);
 		yield* this._grow();
 		return rejected;
 	}
 
 	/**
 	 * Removes the points with times in `[from, to]`. Points on the shorter side of them move over;
-	 * the buckets of every level that held a removed point are made again from what is left.
+	 * the buckets of every level that held a removed point are made again from what is left. Returns
+	 * the points removed, or -1 when nothing could change (see `correct`).
 	 */
 	public *delete(from: number, to: number): Generator<undefined, number, undefined> {
 		const points = this._points;
@@ -1250,47 +1381,113 @@ export class ScatterStore implements MarksStore {
 			this._reset();
 			return removed;
 		}
-		this._materializeForRange(from, to);
-		points.splice(a, b, null, 0, 0);
+		const side = points.spliceSide(a, b, 0);
+		const sides = this._prepare(from, to, side);
+		if (sides === null) {
+			return -1;
+		}
+		points.splice(a, b, null, 0, 0, side);
 		this._lastTime = points.timeAt(points.end - 1);
 		this._changed = points.first;
 		yield;
-		yield* this._rebuildLevels(from, to);
+		yield* this._rebuildLevels(from, to, sides);
 		return removed;
 	}
 
 	/**
-	 * Materializes every evicted coarse chunk that rebuilding `[from, to]` will read or splice, while
-	 * every level is still consistent with its summaries (before level 0 mutates).
+	 * Before a change of the points of `[from, to]`, whose rows on `side` move (none for null), makes
+	 * every coarse chunk let go that rebuilding the levels reads or splices: at every level, the cells
+	 * of the level below over its buckets of `[from, to]`, the chunks at the edges of those buckets,
+	 * and the rows that move. The rows of a level with chunks let go move on the side the points move
+	 * on, where the points are held; with none moving, on the side with fewer chunks let go. A level
+	 * held in full moves its shorter side. The cells of the buckets
+	 * of `[from, to]` themselves are made again afterwards, so they are not read: they may stand in
+	 * (`_materializeChunk`). Returns the side each level moves on, or null, having let go again what
+	 * it made, when a chunk does not come out as it was let go.
 	 */
-	private _materializeForRange(from: number, to: number): void {
+	private _prepare(from: number, to: number, side: SpliceSide | null): (SpliceSide | null)[] | null {
 		const levels = this._levels;
-		for (let l = 0; l < levels.length; l++) {
-			const level = levels[l]!;
-			const step = level.step;
-			const lowBucket = Math.floor(from / step);
-			const highBucket = Math.floor(to / step) + 1;
-			if (l > 0) {
-				const source = levels[l - 1]!.columns;
-				this.materialize(l, source.lowerBucket(step, lowBucket), source.lowerBucket(step, highBucket));
+		const hole: TimeRange = { from, to };
+		const sides: (SpliceSide | null)[] = [];
+		const log: Revival[] = [];
+		this._log = log;
+		let ok = true;
+		try {
+			for (let l = 0; l < levels.length && ok; l++) {
+				const level = levels[l]!;
+				const step = level.step;
+				const h0 = Math.floor(from / step);
+				const h1 = Math.floor(to / step) + 1;
+				const columns = level.columns;
+				// A level held in full moves its shorter side; one with chunks let go, the side whose
+				// cells can be made from what is held.
+				const moves = columns.evictedCount === 0 ? null : (side ?? this._coarseSide(columns, step, h0, h1));
+				sides.push(moves);
+				if (l > 0) {
+					const source = levels[l - 1]!.columns;
+					const [start, end] = bucketRows(source, step, h0, h1);
+					ok = this.materialize(l, start, end, hole);
+				}
+				if (!ok || columns.evictedCount === 0) {
+					continue;
+				}
+				const lo = columns.lowerBucket(step, h0);
+				const hi = columns.lowerBucket(step, h1);
+				const [before, after] = endRows(columns, lo, hi);
+				ok =
+					this.materialize(l + 1, lo, lo + 1, hole) &&
+					this.materialize(l + 1, hi, hi + 1, hole) &&
+					this.materialize(l + 1, before, lo, hole) &&
+					this.materialize(l + 1, after, after + 1, hole);
+				if (ok) {
+					ok =
+						moves === 'right'
+							? this.materialize(l + 1, columns.lowerBucket(step, h1), columns.end)
+							: this.materialize(l + 1, columns.first, columns.lowerBucket(step, h0));
+				}
 			}
-			const columns = level.columns;
-			if (columns.evictedCount === 0) {
-				continue;
-			}
-			const lo = columns.lowerBucket(step, lowBucket);
-			const hi = columns.lowerBucket(step, highBucket);
-			this.materialize(l + 1, lo - 1, hi + 1);
-			const exactLo = columns.lowerBucket(step, lowBucket);
-			const exactHi = columns.lowerBucket(step, highBucket);
-			const moved =
-				exactLo - columns.first <= columns.end - exactHi ? [columns.first, exactLo] : [exactHi, columns.end];
-			this.materialize(l + 1, moved[0]!, moved[1]!);
+		} finally {
+			this._log = null;
 		}
+		if (!ok) {
+			for (let i = log.length - 1; i >= 0; i--) {
+				const revival = log[i]!;
+				revival.columns.unrevive(revival.chunk, revival.summary);
+			}
+			return null;
+		}
+		return sides;
 	}
 
-	/** Rebuilds the buckets spanning `[from, to]` on every coarse level. */
-	private *_rebuildLevels(from: number, to: number): Generator<undefined, void, undefined> {
+	/**
+	 * The side the rows of a coarse level move on when the points do not move: the one with fewer
+	 * chunks let go beyond the edges of buckets `[h0, h1)`, the shorter one when they tie. It is
+	 * decided from what is held before anything is made, so `needs` and `_prepare` agree.
+	 */
+	private _coarseSide(columns: ScatterColumns, step: number, h0: number, h1: number): SpliceSide {
+		const lo = columns.lowerBucket(step, h0);
+		const hi = columns.lowerBucket(step, h1);
+		if (columns.evictedCount > 0) {
+			const left: number[] = [];
+			const right: number[] = [];
+			columns.missing(columns.first, lo - 1, left);
+			columns.missing(hi + 1, columns.end, right);
+			if (left.length !== right.length) {
+				return left.length < right.length ? 'left' : 'right';
+			}
+		}
+		return lo - columns.first <= columns.end - hi ? 'left' : 'right';
+	}
+
+	/**
+	 * Rebuilds the buckets spanning `[from, to]` on every coarse level, from the level below, whose
+	 * rows over them `_prepare` made held; the rows of each level move on the side it gave.
+	 */
+	private *_rebuildLevels(
+		from: number,
+		to: number,
+		sides: readonly (SpliceSide | null)[],
+	): Generator<undefined, void, undefined> {
 		const levels = this._levels;
 		for (let l = 0; l < levels.length; l++) {
 			const level = levels[l]!;
@@ -1324,10 +1521,20 @@ export class ScatterStore implements MarksStore {
 			}
 			const exactLo = columns.lowerBucket(step, lowBucket);
 			const exactHi = columns.lowerBucket(step, highBucket);
-			columns.splice(exactLo, exactHi, block, block.first, block.count);
+			columns.splice(exactLo, exactHi, block, block.first, block.count, sides[l] ?? null);
 			for (const bucket of level.prependedBuckets) {
 				if (bucket >= lowBucket && bucket < highBucket) {
 					level.prependedBuckets.delete(bucket);
+				}
+			}
+			if (l > 0) {
+				// Made from cells of a bucket a prepend merged in place: in their order, not the points'.
+				const below = levels[l - 1]!;
+				for (const bucket of below.prependedBuckets) {
+					const into = Math.floor((bucket * below.step) / step);
+					if (into >= lowBucket && into < highBucket) {
+						level.prependedBuckets.add(into);
+					}
 				}
 			}
 			level.changed = columns.first;
@@ -1468,7 +1675,8 @@ export class ScatterStore implements MarksStore {
 	/**
 	 * Chunks that may be let go, with the times they span: level 0 first, then intermediate coarse
 	 * levels `1 .. levels - 1` (never the topmost level, never the first or last chunk of a level,
-	 * none overlapping `[keepFrom, keepTo]`, and none before the series has a coarse level).
+	 * nor a coarse chunk holding cells of the first or last bucket, where prepends and appends merge
+	 * into cells; none overlapping `[keepFrom, keepTo]`, and none before the series has a coarse level).
 	 */
 	public evictable(keepFrom: number, keepTo: number, out: MarksChunk[]): void {
 		const points = this._points;
@@ -1490,13 +1698,19 @@ export class ScatterStore implements MarksStore {
 			const level = this._levels[l]!;
 			const columns = level.columns;
 			const step = level.step;
+			if (columns.count === 0) {
+				continue;
+			}
+			// The first and last chunks are held: so are the cells of the first and last bucket.
+			const head = Math.floor(columns.timeAt(columns.first) / step);
+			const tail = Math.floor(columns.timeAt(columns.end - 1) / step);
 			for (let n = columns.firstChunk + 1; n < columns.lastChunk; n++) {
 				if (columns.isEvicted(n)) {
 					continue;
 				}
 				const b0 = Math.floor(columns.chunkFirstTime(n) / step);
 				const b1 = Math.floor(columns.chunkLastTime(n) / step);
-				if (!(b0 < b1)) {
+				if (!(b0 < b1) || b0 === head || b1 === tail) {
 					continue;
 				}
 				let blocked = false;
@@ -1531,13 +1745,30 @@ export class ScatterStore implements MarksStore {
 		return total;
 	}
 
-	/** Finest resident source below `levelIndex` covering buckets `[b0, b1]` of `step`, or null if level 0 misses chunks. */
-	private _residentSource(levelIndex: number, step: number, b0: number, b1: number): ScatterColumns | null {
+	/**
+	 * Finest level below `levelIndex` that holds every row of buckets `[b0, b1]` of `step` but those of
+	 * buckets `[h0, h1)` (none when `h0 === h1`), or null when level 0 misses some.
+	 */
+	private _residentSource(
+		levelIndex: number,
+		step: number,
+		b0: number,
+		b1: number,
+		h0: number,
+		h1: number,
+	): ScatterColumns | null {
 		const check: number[] = [];
 		for (let s = levelIndex - 1; s >= -1; s--) {
 			const source = s < 0 ? this._points : this._levels[s]!.columns;
 			check.length = 0;
-			source.missing(source.lowerBucket(step, b0), source.lowerBucket(step, b1 + 1), check);
+			if (b0 < h0) {
+				const [start, end] = bucketRows(source, step, b0, h0);
+				source.missing(start, end, check);
+			}
+			if (h1 <= b1) {
+				const [start, end] = bucketRows(source, step, h1, b1 + 1);
+				source.missing(start, end, check);
+			}
 			if (check.length === 0) {
 				return source;
 			}
@@ -1545,21 +1776,57 @@ export class ScatterStore implements MarksStore {
 		return null;
 	}
 
-	/** Level-0 chunks missing to rebuild coarse chunk `chunk` of `this._levels[levelIndex]`. */
-	private _missingCoarseChunk(levelIndex: number, chunk: number, out: number[]): void {
+	/**
+	 * The buckets of chunk `chunk` (let go) of `this._levels[levelIndex]`, and those of them a change
+	 * over `hole` makes again (`[h0, h1)`, empty as `[b1 + 1, b1 + 1)` without one).
+	 */
+	private _chunkBuckets(
+		levelIndex: number,
+		chunk: number,
+		hole: TimeRange | null,
+	): { b0: number; b1: number; h0: number; h1: number } | null {
 		const level = this._levels[levelIndex]!;
 		const summary = level.columns.summaryOf(chunk);
 		if (summary === null) {
-			return;
+			return null;
 		}
 		const step = level.step;
 		const b0 = Math.floor(summary.firstTime / step);
 		const b1 = Math.floor(summary.lastTime / step);
-		if (this._residentSource(levelIndex, step, b0, b1) !== null) {
+		let h0 = b1 + 1;
+		let h1 = b1 + 1;
+		if (hole !== null) {
+			const lo = Math.floor(hole.from / step);
+			const hi = Math.floor(hole.to / step) + 1;
+			if (lo <= b1 && hi > b0) {
+				h0 = Math.max(lo, b0);
+				h1 = Math.min(hi, b1 + 1);
+			}
+		}
+		return { b0, b1, h0, h1 };
+	}
+
+	/** Level-0 chunks missing to rebuild coarse chunk `chunk` of `this._levels[levelIndex]` (see `_materializeChunk`). */
+	private _missingCoarseChunk(levelIndex: number, chunk: number, out: number[], hole: TimeRange | null): void {
+		const buckets = this._chunkBuckets(levelIndex, chunk, hole);
+		if (buckets === null) {
 			return;
 		}
+		const { b0, b1, h0, h1 } = buckets;
+		const step = this._levels[levelIndex]!.step;
+		if (this._residentSource(levelIndex, step, b0, b1, h0, h1) !== null) {
+			return;
+		}
+		const points = this._points;
 		const found: number[] = [];
-		this._points.missing(this._points.lowerBucket(step, b0), this._points.lowerBucket(step, b1 + 1), found);
+		if (b0 < h0) {
+			const [start, end] = bucketRows(points, step, b0, h0);
+			points.missing(start, end, found);
+		}
+		if (h1 <= b1) {
+			const [start, end] = bucketRows(points, step, h1, b1 + 1);
+			points.missing(start, end, found);
+		}
 		for (const rawChunk of found) {
 			if (!out.includes(rawChunk)) {
 				out.push(rawChunk);
@@ -1567,28 +1834,18 @@ export class ScatterStore implements MarksStore {
 		}
 	}
 
-	/** Rebuilds evicted chunk `chunk` of `this._levels[levelIndex]` from the finest resident level below it. */
-	private _materializeChunk(levelIndex: number, chunk: number): boolean {
-		const level = this._levels[levelIndex]!;
-		const columns = level.columns;
-		const summary = columns.summaryOf(chunk);
-		if (summary === null) {
-			return true;
-		}
-		const step = level.step;
-		const b0 = Math.floor(summary.firstTime / step);
-		const b1 = Math.floor(summary.lastTime / step);
-		const source = this._residentSource(levelIndex, step, b0, b1);
-		if (source === null) {
-			return false;
-		}
+	/** The cells of buckets `[from, to)` of `step`, made from `source`, which holds their rows. */
+	private _cells(source: ScatterColumns, step: number, from: number, to: number, sized: boolean): ScatterColumns {
 		const block = new ScatterColumns(true);
-		if (columns.sized) {
+		if (sized) {
 			block.enableSize();
 		}
+		if (to <= from) {
+			return block;
+		}
 		const cursor: CellCursor = { bucket: Number.NaN, cells: new Map() };
-		const sourceEnd = source.lowerBucket(step, b1 + 1);
-		for (let row = source.lowerBucket(step, b0); row < sourceEnd; row++) {
+		const end = source.lowerBucket(step, to);
+		for (let row = source.lowerBucket(step, from); row < end; row++) {
 			addCell(
 				block,
 				cursor,
@@ -1605,39 +1862,101 @@ export class ScatterStore implements MarksStore {
 				source.pMaxAt(row),
 			);
 		}
-		let head = 0;
-		while (block.first + head < block.end && Math.floor(block.timeAt(block.first + head) / step) === b0) {
-			head++;
+		return block;
+	}
+
+	/**
+	 * Rebuilds evicted chunk `chunk` of `this._levels[levelIndex]` from the finest resident level below
+	 * it. With `hole`, the cells of the buckets of those times are not made: a change over them makes
+	 * them again right after, so the chunk holds stand-ins there, as many as the cells it holds of
+	 * those buckets, and the level below need not hold them (they may be stand-ins themselves, or
+	 * marks a change replaces). Returns false when the chunk does not come out as it was let go.
+	 */
+	private _materializeChunk(levelIndex: number, chunk: number, hole: TimeRange | null): boolean {
+		const level = this._levels[levelIndex]!;
+		const columns = level.columns;
+		const summary = columns.summaryOf(chunk);
+		const buckets = this._chunkBuckets(levelIndex, chunk, hole);
+		if (summary === null || buckets === null) {
+			return true;
 		}
-		let tail = 0;
-		while (block.end - 1 - tail >= block.first && Math.floor(block.timeAt(block.end - 1 - tail) / step) === b1) {
-			tail++;
-		}
-		const from = head - summary.headTies;
-		const to = block.count - (tail - summary.tailTies);
-		if (from < 0 || to - from !== summary.count) {
+		const { b0, b1, h0, h1 } = buckets;
+		const step = level.step;
+		const source = this._residentSource(levelIndex, step, b0, b1, h0, h1);
+		if (source === null) {
 			return false;
 		}
-		const start = columns.chunkStart(chunk);
-		for (let i = 0; i < summary.count; i++) {
-			const row = block.first + from + i;
-			columns.write(
-				start + i,
-				block.timeAt(row),
-				block.priceAt(row),
-				block.valueAt(row),
-				block.countAt(row),
-				block.sizeAt(row),
-				block.tMinAt(row),
-				block.tMaxAt(row),
-				block.pMinAt(row),
-				block.pMaxAt(row),
-			);
+		// The cells before the buckets made again, and after them; all of them without any.
+		const before = this._cells(source, step, b0, h0, columns.sized);
+		const after = this._cells(source, step, h1, b1 + 1, columns.sized);
+		const headBlock = b0 < h0 ? before : null;
+		const tailBlock = h1 <= b1 ? after : b1 < h0 ? before : null;
+		// The chunk holds the last `headTies` cells of its first bucket and the first `tailTies` of its
+		// last, where those are made here.
+		let headDrop = 0;
+		if (headBlock !== null) {
+			let head = 0;
+			while (
+				headBlock.first + head < headBlock.end &&
+				Math.floor(headBlock.timeAt(headBlock.first + head) / step) === b0
+			) {
+				head++;
+			}
+			headDrop = head - summary.headTies;
 		}
+		let tailDrop = 0;
+		if (tailBlock !== null) {
+			let tail = 0;
+			while (
+				tailBlock.end - 1 - tail >= tailBlock.first &&
+				Math.floor(tailBlock.timeAt(tailBlock.end - 1 - tail) / step) === b1
+			) {
+				tail++;
+			}
+			tailDrop = tail - summary.tailTies;
+		}
+		const beforeFrom = before.first + (headBlock === before ? headDrop : 0);
+		const beforeTo = before.end - (tailBlock === before ? tailDrop : 0);
+		const afterTo = after.end - (tailBlock === after ? tailDrop : 0);
+		const kept = beforeTo - beforeFrom + (afterTo - after.first);
+		const standIns = summary.count - kept;
+		if (headDrop < 0 || tailDrop < 0 || beforeTo < beforeFrom || afterTo < after.first || standIns < 0) {
+			return false;
+		}
+		if (standIns > 0 && h0 === h1) {
+			return false;
+		}
+		const revived = columns.revive(chunk);
+		this._log?.push({ columns, chunk, summary: revived });
+		let at = columns.chunkStart(chunk);
+		const copy = (block: ScatterColumns, from: number, to: number): void => {
+			for (let row = from; row < to; row++) {
+				columns.write(
+					at++,
+					block.timeAt(row),
+					block.priceAt(row),
+					block.valueAt(row),
+					block.countAt(row),
+					block.sizeAt(row),
+					block.tMinAt(row),
+					block.tMaxAt(row),
+					block.pMinAt(row),
+					block.pMaxAt(row),
+				);
+			}
+		};
+		copy(before, beforeFrom, beforeTo);
+		// Stand-ins: no points, in the first bucket made again, which the change replaces.
+		const time = (h0 + 0.5) * step;
+		const price = 0.5 * this._binHeight;
+		for (let i = 0; i < standIns; i++) {
+			columns.write(at++, time, price, Number.NaN, 0, Number.NaN);
+		}
+		copy(after, after.first, afterTo);
 		return true;
 	}
 
-	public materialize(level: number, start: number, end: number): boolean {
+	public materialize(level: number, start: number, end: number, hole: TimeRange | null = null): boolean {
 		const columns = this._columns(level);
 		if (columns === undefined || columns.evictedCount === 0 || end <= start) {
 			return true;
@@ -1651,15 +1970,18 @@ export class ScatterStore implements MarksStore {
 			return false;
 		}
 		for (const chunk of evicted) {
-			if (!this._materializeChunk(level - 1, chunk)) {
+			if (!this._materializeChunk(level - 1, chunk, hole)) {
 				return false;
 			}
 		}
 		return true;
 	}
 
-	/** Level-0 chunks let go that must be fetched to serve rows `[start, end)` of `level`. */
-	public missing(level: number, start: number, end: number, out: number[]): void {
+	/**
+	 * Level-0 chunks let go that must be fetched to serve rows `[start, end)` of `level`; with `hole`,
+	 * to make them before a change over those times (see `_materializeChunk`).
+	 */
+	public missing(level: number, start: number, end: number, out: number[], hole: TimeRange | null = null): void {
 		if (level === 0) {
 			const found: number[] = [];
 			this._points.missing(start, end, found);
@@ -1677,7 +1999,7 @@ export class ScatterStore implements MarksStore {
 		const evicted: number[] = [];
 		columns.missing(start, end, evicted);
 		for (const chunk of evicted) {
-			this._missingCoarseChunk(level - 1, chunk, out);
+			this._missingCoarseChunk(level - 1, chunk, out, hole);
 		}
 	}
 
@@ -1719,33 +2041,247 @@ export class ScatterStore implements MarksStore {
 		}
 		const from = head - summary.headTies;
 		const to = picked.length - (tail - summary.tailTies);
-		if (from < 0 || to - from !== summary.count) {
+		if (from < 0 || to > picked.length || to - from !== summary.count) {
 			return false;
 		}
-		const count = summary.count;
-		const time = new Float64Array(count);
-		const price = new Float64Array(count);
-		const value = data.value === null ? null : new Float32Array(count);
-		const sizes = data.size ?? null;
-		const size = sizes === null ? null : new Float32Array(count);
-		for (let k = 0; k < count; k++) {
-			const i = picked[from + k]!;
-			time[k] = data.time[i]!;
-			price[k] = data.price[i]!;
-			if (value !== null) {
-				value[k] = data.value![i]!;
-			}
-			if (size !== null) {
-				size[k] = sizes![i]!;
-			}
-		}
-		return this._points.restore(chunk, time, price, value, size, 0, count);
+		const picks = picked.slice(from, to);
+		return this._points.restore(chunk, ...gather(data, picks), 0, summary.count);
 	}
 
 	/**
-	 * Chunks let go that removing the points of `[from, to]` would read or move: the points on the
-	 * shorter side of them, those of the level-1 buckets the removal touches, and any evicted coarse
-	 * chunks that splicing or rebuilding those buckets touches or moves.
+	 * Takes the points a datafeed returned for chunk `chunk` as they are after the first of the waiting
+	 * changes `changes`, or after it and some of those behind it: those inside the ranges of the
+	 * changes must be the changes' own (none for a removal), in order, and those outside them are taken
+	 * as returned, the chunk's share of the points at its first and last time as when it went. The
+	 * points it held inside the ranges are not known: as many stand-ins take their place, inside the
+	 * range of the first change, which removes or replaces them. That works where the first change
+	 * covers the chunk wherever the others do; otherwise only for a chunk none of whose points lay in
+	 * the ranges (then it is checked against its checksum).
+	 *
+	 * Where it does not, the waiting changes are rewritten so that it does (`ScatterProvisional.queue`):
+	 * removals and corrections of other times commute, so the first change that reaches the chunk may
+	 * run before those that do not, and the changes that reach it, with what lies between them (inside
+	 * the chunk's times, so in what the datafeed returned), become one correction of their whole span.
+	 * Returns what `commit` puts in, or null.
+	 */
+	public prepare(chunk: number, data: MarksData, changes: readonly MarksChange[]): MarksProvisional | null {
+		const summary = this._points.summaryOf(chunk);
+		if (summary === null || data.kind !== 'scatter') {
+			return null;
+		}
+		const { firstTime, lastTime } = summary;
+		const order = timeOrder(data.time, data.count);
+		let picked: number[] = [];
+		for (let k = 0; k < data.count; k++) {
+			const i = order === null ? k : order[k]!;
+			const t = data.time[i]!;
+			const p = data.price[i]!;
+			if (t >= firstTime && t <= lastTime) {
+				if (p - p !== 0) {
+					// A point without a price is not one the store could have held.
+					return null;
+				}
+				picked.push(i);
+			}
+		}
+		// Points an append or prepend waiting adds (after a removal took the end or the start up to
+		// them) are not the chunk's: they come with it.
+		picked = withoutAdded(data, picked, changes, firstTime, lastTime);
+		const taken = this._prepareFor(chunk, summary, data, picked, changes);
+		if (taken !== null) {
+			return taken;
+		}
+		const rewritten = rewriteFor(summary, data, picked, changes);
+		if (rewritten === null) {
+			return null;
+		}
+		const again = this._prepareFor(chunk, summary, data, picked, rewritten.changes);
+		if (again !== null) {
+			again.queue = rewritten.changes;
+			again.reordered = rewritten.reordered;
+		}
+		return again;
+	}
+
+	/** `prepare` for the waiting changes as they are, the first one first. */
+	private _prepareFor(
+		chunk: number,
+		summary: ScatterSummary,
+		data: ScatterRowsLike,
+		picked: readonly number[],
+		changes: readonly MarksChange[],
+	): ScatterProvisional | null {
+		const ranges = scatterRanges(changes);
+		const first = ranges[0];
+		if (first === undefined || first.change !== changes[0]) {
+			// The first waiting change is not a removal or correction of points.
+			return null;
+		}
+		const { firstTime, lastTime } = summary;
+		/** Whether `range` reaches the chunk's times outside the ranges of the first `j` changes. */
+		const outside = (range: TimeRange, j: number): boolean => {
+			const start = Math.max(range.from, firstTime);
+			const end = Math.min(range.to, lastTime);
+			if (start > end) {
+				return false;
+			}
+			// Sweep the ranges (closed) from `start`: covered up to `reach`, which a range must take up.
+			const covering = ranges.slice(0, j);
+			covering.sort((a, b) => a.from - b.from);
+			let reach = start;
+			let started = false;
+			for (const other of covering) {
+				if (other.to < reach || (started && other.to === reach)) {
+					continue;
+				}
+				if (other.from > reach) {
+					return true;
+				}
+				reach = other.to;
+				started = true;
+				if (reach >= end) {
+					return false;
+				}
+			}
+			return true;
+		};
+		for (let j = 1; j <= ranges.length; j++) {
+			// What the marks show of a change behind these, outside their ranges, cannot be told from the
+			// history as it went: only a reading that takes in every change that reaches there holds.
+			let undecided = false;
+			for (let i = j; i < ranges.length; i++) {
+				if (outside(ranges[i]!, j)) {
+					undecided = true;
+				}
+			}
+			if (undecided) {
+				continue;
+			}
+			const taken = takeChanged(summary, data, picked, ranges, j);
+			if (taken === null) {
+				continue;
+			}
+			const { kept, standIns } = taken;
+			if (standIns > 0) {
+				// The stand-ins go inside the first change's range, which must cover the others' in the chunk.
+				if (!(first.from <= lastTime && first.to >= firstTime)) {
+					continue;
+				}
+				let inside = true;
+				for (let i = 1; i < j; i++) {
+					const range = ranges[i]!;
+					if (
+						range.from <= lastTime &&
+						range.to >= firstTime &&
+						!(Math.max(range.from, firstTime) >= first.from && Math.min(range.to, lastTime) <= first.to)
+					) {
+						inside = false;
+					}
+				}
+				if (!inside) {
+					continue;
+				}
+			}
+			const count = summary.count;
+			const sized = summary.sized || data.size != null;
+			const time = new Float64Array(count);
+			const price = new Float64Array(count);
+			const value = new Float32Array(count);
+			const size = sized ? new Float32Array(count) : null;
+			const at = Math.max(first.from, firstTime);
+			let row = 0;
+			let standIn = standIns;
+			const put = (t: number, p: number, v: number, s: number): void => {
+				time[row] = t;
+				price[row] = p;
+				value[row] = v;
+				if (size !== null) {
+					size[row] = s;
+				}
+				row++;
+			};
+			for (const i of kept) {
+				const t = data.time[i]!;
+				if (standIn > 0 && t > at) {
+					for (; standIn > 0; standIn--) {
+						put(at, data.price[i]!, Number.NaN, Number.NaN);
+					}
+				}
+				put(
+					t,
+					data.price[i]!,
+					data.value === null ? Number.NaN : data.value[i]!,
+					data.size == null ? Number.NaN : data.size[i]!,
+				);
+			}
+			for (; standIn > 0; standIn--) {
+				put(at, row > 0 ? price[row - 1]! : 0, Number.NaN, Number.NaN);
+			}
+			if (row !== count) {
+				continue;
+			}
+			if (standIns === 0) {
+				// The chunk held no point inside the ranges: what is left must be what it held.
+				const check = new Checksum();
+				for (let k = 0; k < count; k++) {
+					feedPoint(check, time[k]!, price[k]!, value[k]!, size === null ? Number.NaN : size[k]!, summary.sized);
+				}
+				if (check.high !== summary.high || check.low !== summary.low) {
+					continue;
+				}
+			}
+			const provisional: ScatterProvisional = { chunk, summary, time, price, value, size };
+			return provisional;
+		}
+		return null;
+	}
+
+	/** Puts the points `prepare` made into their chunk, unchecked: the waiting change runs next. */
+	public commit(provisional: MarksProvisional): void {
+		const { chunk, time, price, value, size } = provisional as ScatterProvisional;
+		this._points.restore(chunk, time, price, value, size, 0, time.length, false);
+	}
+
+	/** Lets go again of a chunk `commit` put in, with the summary it had. */
+	public revert(provisional: MarksProvisional): void {
+		const { chunk, summary } = provisional as ScatterProvisional;
+		this._points.unrevive(chunk, summary);
+	}
+
+	/**
+	 * Where rows `[a, b)` replaced by `n` others leave the rows that move, when `a` and `b` may be
+	 * bounds in chunks let go (`ScatterColumns.lowerBound`, `upperBound`): `left`, `right`, null when
+	 * none move, undefined when that is not known before the chunks at the edges are back.
+	 */
+	private _side(a: number, b: number, n: number | null): SpliceSide | null | undefined {
+		const points = this._points;
+		const approxA = a < points.end && points.isEvicted(a >> SCATTER_CHUNK_SHIFT);
+		const approxB = b > points.first && points.isEvicted((b - 1) >> SCATTER_CHUNK_SHIFT);
+		if (!approxA && !approxB) {
+			return points.spliceSide(a, b, n ?? 0);
+		}
+		if (n !== null) {
+			// How many rows a correction replaces is known once its edges are back.
+			return undefined;
+		}
+		// A removal moves the rows before it when `a - first <= end - b`, whatever its bounds are.
+		const aLo = approxA ? points.chunkStart(a >> SCATTER_CHUNK_SHIFT) : a;
+		const aHi = approxA ? points.chunkEnd(a >> SCATTER_CHUNK_SHIFT) : a;
+		const bLo = approxB ? points.chunkStart((b - 1) >> SCATTER_CHUNK_SHIFT) : b;
+		const bHi = approxB ? points.chunkEnd((b - 1) >> SCATTER_CHUNK_SHIFT) : b;
+		if (aHi + bHi <= points.first + points.end) {
+			return 'left';
+		}
+		if (aLo + bLo > points.first + points.end) {
+			return 'right';
+		}
+		return undefined;
+	}
+
+	/**
+	 * Chunks let go that removing the points of `[from, to]` would read or move: those at its edges,
+	 * the points on the side that moves (once the edges tell which), those of the level-1 buckets the
+	 * removal touches, and those that making the coarse chunks it rebuilds or moves reads.
 	 */
 	public needs(from: number, to: number, out: number[]): void {
 		const points = this._points;
@@ -1754,16 +2290,10 @@ export class ScatterStore implements MarksStore {
 		}
 		const a = points.lowerBound(from);
 		const b = points.upperBound(to);
-		if (b <= a) {
+		if (b <= a || b - a === points.count) {
 			return;
 		}
-		const moved = a - points.first <= points.end - b ? [points.first, a] : [b, points.end];
-		this.missing(0, moved[0]!, moved[1]!, out);
-		// The removal's edges and the points beside them, which bounds in a chunk let go only find once
-		// it is back.
-		this.missing(0, a - 1, a + 1, out);
-		this.missing(0, b - 1, b + 1, out);
-		this._needsCoarseForRange(from, to, a, b, out);
+		this._needsChange(from, to, a, b, null, out);
 	}
 
 	/** Chunks let go that correcting points with `data` over `[from, to]` would read, move or rebuild from. */
@@ -1773,7 +2303,7 @@ export class ScatterStore implements MarksStore {
 			return;
 		}
 		const range = scatterCorrectRange(data, from, to);
-		if (range === null) {
+		if (range === null || data.kind !== 'scatter') {
 			return;
 		}
 		const a = points.lowerBound(range.from);
@@ -1781,57 +2311,64 @@ export class ScatterStore implements MarksStore {
 		if (b <= a) {
 			return;
 		}
-		const inRange: number[] = [];
-		points.missing(a, b, inRange);
-		// `[a, b)` itself and its boundary neighbors must be held.
-		this.missing(0, a - 1, b + 1, out);
-		// If row count might change (or `[a, b)` had evicted chunks so its exact count is not known yet),
-		// splicing moves the shorter side.
-		if (inRange.length > 0 || data.count !== b - a) {
-			const moved = a - points.first <= points.end - b ? [points.first, a] : [b, points.end];
-			this.missing(0, moved[0]!, moved[1]!, out);
+		const n = scatterAccepted(data, range).length;
+		if ((data.count > 0 && n === 0) || (n === 0 && b - a === points.count)) {
+			return;
 		}
-		this._needsCoarseForRange(range.from, range.to, a, b, out);
+		this._needsChange(range.from, range.to, a, b, n, out);
 	}
 
-	private _needsCoarseForRange(from: number, to: number, a: number, b: number, out: number[]): void {
+	/**
+	 * Chunks a change of the points of `[from, to]`, rows `[a, b)` (bounds that may lie in chunks let
+	 * go), needs: `n` new points for a correction, null for a removal. What `_prepare` and the splices
+	 * read, from the same state.
+	 */
+	private _needsChange(from: number, to: number, a: number, b: number, n: number | null, out: number[]): void {
 		const points = this._points;
-		const levels = this._levels;
-		const level1 = levels[0];
-		if (level1 !== undefined) {
-			const low = points.lowerBucket(level1.step, Math.floor(from / level1.step));
-			const high = points.lowerBucket(level1.step, Math.floor(to / level1.step) + 1);
-			this.missing(0, low, a, out);
-			this.missing(0, b, high, out);
+		// The points at the edges, which give the exact bounds once they are back.
+		this.missing(0, a, a + 1, out);
+		this.missing(0, b - 1, b + 1, out);
+		const side = this._side(a, b, n);
+		if (side === undefined) {
+			return;
 		}
+		if (side === 'left') {
+			this.missing(0, points.first, a, out);
+		} else if (side === 'right') {
+			this.missing(0, b, points.end, out);
+		}
+		const levels = this._levels;
+		const hole: TimeRange = { from, to };
 		for (let l = 0; l < levels.length; l++) {
 			const level = levels[l]!;
 			const step = level.step;
-			const lowBucket = Math.floor(from / step);
-			const highBucket = Math.floor(to / step) + 1;
-			if (l > 0) {
-				const source = levels[l - 1]!.columns;
-				this.missing(l, source.lowerBucket(step, lowBucket), source.lowerBucket(step, highBucket), out);
+			const h0 = Math.floor(from / step);
+			const h1 = Math.floor(to / step) + 1;
+			if (l === 0) {
+				// The points of the level-1 buckets of the change that stay.
+				const [start, end] = bucketRows(points, step, h0, h1);
+				this.missing(0, start, a, out);
+				this.missing(0, b, end, out);
+			} else {
+				const [start, end] = bucketRows(levels[l - 1]!.columns, step, h0, h1);
+				this.missing(l, start, end, out, hole);
 			}
 			const columns = level.columns;
-			if (columns.evictedCount > 0) {
-				const lo = columns.lowerBucket(step, lowBucket);
-				const hi = columns.lowerBucket(step, highBucket);
-				this.missing(l + 1, lo - 1, hi + 1, out);
-				const maxLo =
-					lo < columns.end && columns.isEvicted(lo >> SCATTER_CHUNK_SHIFT)
-						? columns.chunkEnd(lo >> SCATTER_CHUNK_SHIFT)
-						: lo;
-				const maxHi =
-					hi < columns.end && columns.isEvicted(hi >> SCATTER_CHUNK_SHIFT)
-						? columns.chunkEnd(hi >> SCATTER_CHUNK_SHIFT)
-						: hi;
-				if (lo - columns.first <= columns.end - hi) {
-					this.missing(l + 1, columns.first, maxLo, out);
-				}
-				if (maxLo - columns.first > columns.end - maxHi) {
-					this.missing(l + 1, hi, columns.end, out);
-				}
+			if (columns.evictedCount === 0) {
+				continue;
+			}
+			const moves = side ?? this._coarseSide(columns, step, h0, h1);
+			const lo = columns.lowerBucket(step, h0);
+			const hi = columns.lowerBucket(step, h1);
+			const [before, after] = endRows(columns, lo, hi);
+			this.missing(l + 1, lo, lo + 1, out, hole);
+			this.missing(l + 1, hi, hi + 1, out, hole);
+			this.missing(l + 1, before, lo, out, hole);
+			this.missing(l + 1, after, after + 1, out, hole);
+			if (moves === 'right') {
+				this.missing(l + 1, hi, columns.end, out);
+			} else {
+				this.missing(l + 1, columns.first, lo, out);
 			}
 		}
 	}
@@ -2025,6 +2562,418 @@ export class ScatterStore implements MarksStore {
 }
 
 type ScatterRowsLike = Pick<Extract<MarksData, { kind: 'scatter' }>, 'time' | 'price' | 'value' | 'size' | 'count'>;
+
+/** The rows that move in a splice: those before the rows replaced, or those after them. */
+type SpliceSide = 'left' | 'right';
+
+interface TimeRange {
+	from: number;
+	to: number;
+}
+
+/** A chunk let go that `_prepare` made, and the summary it had: let go again if the change cannot run. */
+interface Revival {
+	columns: ScatterColumns;
+	chunk: number;
+	summary: ScatterSummary;
+}
+
+/** Points `ScatterStore.prepare` made for a chunk let go: those it takes in, stand-ins included. */
+interface ScatterProvisional extends MarksProvisional {
+	summary: ScatterSummary;
+	time: Float64Array;
+	price: Float64Array;
+	value: Float32Array;
+	size: Float32Array | null;
+	queue?: MarksChange[];
+	reordered?: boolean;
+}
+
+/** The range of times a removal or correction of points changes; null for other changes. */
+function changeRange(change: MarksChange): TimeRange | null {
+	if (change.op === 'delete') {
+		return change.from <= change.to ? { from: change.from, to: change.to } : null;
+	}
+	if (change.op === 'correct') {
+		return scatterCorrectRange(change.data, change.from, change.to);
+	}
+	return null;
+}
+
+/** Whether `change` gives the same history before or after changes confined to `span`: it touches other times. */
+function commutes(change: MarksChange, span: TimeRange): boolean {
+	if (change.op === 'delete' || change.op === 'correct') {
+		const range = changeRange(change);
+		return range === null || range.to < span.from || range.from > span.to;
+	}
+	if (change.op === 'append' || change.op === 'prepend') {
+		const { time, count } = change.data;
+		for (let i = 0; i < count; i++) {
+			if (time[i]! >= span.from && time[i]! <= span.to) {
+				return false;
+			}
+		}
+		return true;
+	}
+	return false;
+}
+
+/**
+ * The waiting changes rewritten so that the history a datafeed returned for a chunk (points `picked`
+ * of `data`) is the history after the first of them (see `ScatterStore.prepare`): the first change
+ * that reaches the chunk's times goes first, where those before it commute with it, and merges with
+ * those behind it that reach them too, where those between commute with their span, into one
+ * correction of that span. Null when nothing is rewritten.
+ */
+function rewriteFor(
+	summary: ScatterSummary,
+	data: ScatterRowsLike,
+	picked: readonly number[],
+	changes: readonly MarksChange[],
+): { changes: MarksChange[]; reordered: boolean } | null {
+	const { firstTime, lastTime } = summary;
+	const reaches = (change: MarksChange): boolean => {
+		const range = changeRange(change);
+		return range !== null && range.from <= lastTime && range.to >= firstTime;
+	};
+	const k = changes.findIndex(reaches);
+	if (k < 0) {
+		return null;
+	}
+	for (let i = 0; i < k; i++) {
+		if (!commutes(changes[i]!, changeRange(changes[k]!)!)) {
+			return null;
+		}
+	}
+	const queue = k === 0 ? changes.slice() : [changes[k]!, ...changes.slice(0, k), ...changes.slice(k + 1)];
+	const group = [queue[0]!];
+	const skipped: MarksChange[] = [];
+	let span = changeRange(queue[0]!)!;
+	for (let i = 1; i < queue.length; i++) {
+		const change = queue[i]!;
+		if (!reaches(change)) {
+			if (!commutes(change, span)) {
+				break;
+			}
+			skipped.push(change);
+			continue;
+		}
+		const range = changeRange(change)!;
+		const wider = { from: Math.min(span.from, range.from), to: Math.max(span.to, range.to) };
+		if (!skipped.every(other => commutes(other, wider))) {
+			break;
+		}
+		group.push(change);
+		span = wider;
+	}
+	if (group.length === 1) {
+		return k === 0 ? null : { changes: queue, reordered: true };
+	}
+	// One correction of the span: what the changes leave in their ranges, the returned points between.
+	const ranges = scatterRanges(group);
+	const covering = (t: number): number => {
+		for (let i = ranges.length - 1; i >= 0; i--) {
+			if (t >= ranges[i]!.from && t <= ranges[i]!.to) {
+				return i;
+			}
+		}
+		return -1;
+	};
+	const points: { time: number; price: number; value: number; size: number }[] = [];
+	const sized = data.size != null || ranges.some(range => range.data?.size != null);
+	ranges.forEach((range, i) => {
+		const source = range.data;
+		if (source === null) {
+			return;
+		}
+		for (const at of range.points) {
+			const t = source.time[at]!;
+			if (covering(t) === i) {
+				points.push({
+					time: t,
+					price: source.price[at]!,
+					value: source.value === null ? Number.NaN : source.value[at]!,
+					size: source.size == null ? Number.NaN : source.size[at]!,
+				});
+			}
+		}
+	});
+	for (const i of picked) {
+		const t = data.time[i]!;
+		if (t >= span.from && t <= span.to && covering(t) < 0) {
+			points.push({
+				time: t,
+				price: data.price[i]!,
+				value: data.value === null ? Number.NaN : data.value[i]!,
+				size: data.size == null ? Number.NaN : data.size[i]!,
+			});
+		}
+	}
+	// Stable: points of one change, or of the datafeed, at one time keep their order.
+	points.sort((a, b) => a.time - b.time);
+	const merged: MarksChange = {
+		op: 'correct',
+		data: {
+			kind: 'scatter',
+			count: points.length,
+			time: Float64Array.from(points, point => point.time),
+			price: Float64Array.from(points, point => point.price),
+			value: Float32Array.from(points, point => point.value),
+			size: sized ? Float32Array.from(points, point => point.size) : null,
+		},
+		from: span.from,
+		to: span.to,
+	};
+	const rest = queue.slice(1).filter(change => !group.includes(change));
+	return { changes: [merged, ...rest], reordered: k > 0 };
+}
+
+/** The range of times a waiting removal or correction of points changes, and a correction's points in it. */
+interface ScatterRange extends TimeRange {
+	change: MarksChange;
+	data: ScatterRowsLike | null;
+	/** Indexes of the correction's points inside the range, in time order. */
+	points: number[];
+}
+
+/** The ranges of the removals and corrections of `changes`, in order. */
+function scatterRanges(changes: readonly MarksChange[]): ScatterRange[] {
+	const out: ScatterRange[] = [];
+	for (const change of changes) {
+		if (change.op === 'delete') {
+			if (change.from <= change.to) {
+				out.push({ change, from: change.from, to: change.to, data: null, points: [] });
+			}
+		} else if (change.op === 'correct' && change.data.kind === 'scatter') {
+			const range = scatterCorrectRange(change.data, change.from, change.to);
+			if (range !== null) {
+				out.push({ change, ...range, data: change.data, points: scatterAccepted(change.data, range) });
+			}
+		}
+		// Appends and prepends add points after the last and before the first, never in a chunk let go.
+	}
+	return out;
+}
+
+/**
+ * Points `picked` of `data` (in time order), but one for each point with a time in `[from, to]` that
+ * an append or prepend of `changes` adds, where they are the same.
+ */
+function withoutAdded(
+	data: ScatterRowsLike,
+	picked: readonly number[],
+	changes: readonly MarksChange[],
+	from: number,
+	to: number,
+): number[] {
+	const left = picked.slice();
+	for (const change of changes) {
+		if ((change.op !== 'append' && change.op !== 'prepend') || change.data.kind !== 'scatter') {
+			continue;
+		}
+		const added = change.data;
+		for (let k = 0; k < added.count; k++) {
+			const t = added.time[k]!;
+			if (!(t >= from && t <= to)) {
+				continue;
+			}
+			// The first point at that time, then those after it at the same time.
+			let lo = 0;
+			let hi = left.length;
+			while (lo < hi) {
+				const mid = (lo + hi) >> 1;
+				if (data.time[left[mid]!]! < t) {
+					lo = mid + 1;
+				} else {
+					hi = mid;
+				}
+			}
+			for (let at = lo; at < left.length && data.time[left[at]!] === t; at++) {
+				const i = left[at]!;
+				if (
+					data.price[i] === added.price[k] &&
+					same(
+						data.value === null ? Number.NaN : data.value[i]!,
+						added.value === null ? Number.NaN : added.value[k]!,
+					) &&
+					same(data.size == null ? Number.NaN : data.size[i]!, added.size == null ? Number.NaN : added.size[k]!)
+				) {
+					left.splice(at, 1);
+					break;
+				}
+			}
+		}
+	}
+	return left;
+}
+
+/** Whether two values of a single-precision column are the same, NaN the same as NaN. */
+function same(a: number, b: number): boolean {
+	return a === b || (a !== a && b !== b);
+}
+
+/**
+ * The points `picked` (indexes of `data` in time order, inside the times of a chunk let go) taken as
+ * the history after the first `j` changes of `ranges`: those inside the ranges must be what the
+ * changes leave there (a correction's own points, none for a removal; a later change's where ranges
+ * meet), in order; of those outside them the chunk keeps its share at its first and last time. Returns
+ * them, and how many of its points lay inside the ranges, or null when they do not fit.
+ */
+function takeChanged(
+	summary: ScatterSummary,
+	data: ScatterRowsLike,
+	picked: readonly number[],
+	ranges: readonly ScatterRange[],
+	j: number,
+): { kept: number[]; standIns: number } | null {
+	const { firstTime, lastTime } = summary;
+	const covering = (t: number): number => {
+		for (let i = j - 1; i >= 0; i--) {
+			const range = ranges[i]!;
+			if (t >= range.from && t <= range.to) {
+				return i;
+			}
+		}
+		return -1;
+	};
+	const expected: { range: ScatterRange; at: number; time: number }[] = [];
+	for (let i = 0; i < j; i++) {
+		const range = ranges[i]!;
+		const source = range.data;
+		if (source === null) {
+			continue;
+		}
+		for (const at of range.points) {
+			const t = source.time[at]!;
+			if (t >= firstTime && t <= lastTime && covering(t) === i) {
+				expected.push({ range, at, time: t });
+			}
+		}
+	}
+	// Stable: points of one change at one time keep their order.
+	expected.sort((x, y) => x.time - y.time);
+	const kept: number[] = [];
+	let next = 0;
+	for (const i of picked) {
+		const t = data.time[i]!;
+		if (covering(t) < 0) {
+			kept.push(i);
+			continue;
+		}
+		const want = expected[next++];
+		if (want === undefined) {
+			return null;
+		}
+		const source = want.range.data!;
+		const at = want.at;
+		if (
+			t !== want.time ||
+			data.price[i] !== source.price[at] ||
+			!same(
+				data.value === null ? Number.NaN : data.value[i]!,
+				source.value === null ? Number.NaN : source.value[at]!,
+			) ||
+			!same(data.size == null ? Number.NaN : data.size[i]!, source.size == null ? Number.NaN : source.size[at]!)
+		) {
+			return null;
+		}
+	}
+	if (next !== expected.length) {
+		return null;
+	}
+	// The chunk's share of the points at its first and last time, where no change touched them.
+	let from = 0;
+	let to = kept.length;
+	if (covering(firstTime) < 0) {
+		let head = 0;
+		while (head < kept.length && data.time[kept[head]!] === firstTime) {
+			head++;
+		}
+		from = head - summary.headTies;
+	}
+	if (covering(lastTime) < 0) {
+		let tail = 0;
+		while (tail < kept.length && data.time[kept[kept.length - 1 - tail]!] === lastTime) {
+			tail++;
+		}
+		to = kept.length - (tail - summary.tailTies);
+	}
+	// The chunk's share at either end must be among the points returned.
+	if (from < 0 || to > kept.length || to < from || to - from > summary.count) {
+		return null;
+	}
+	return { kept: kept.slice(from, to), standIns: summary.count - (to - from) };
+}
+
+/** Indexes of the valid points of a correction inside `range`, in time order. */
+function scatterAccepted(data: ScatterRowsLike, range: TimeRange): number[] {
+	const { time, price, count } = data;
+	const order = timeOrder(time, count);
+	const accepted: number[] = [];
+	for (let k = 0; k < count; k++) {
+		const i = order === null ? k : order[k]!;
+		const t = time[i]!;
+		const p = price[i]!;
+		if (t >= range.from && t <= range.to && t - t === 0 && p - p === 0) {
+			accepted.push(i);
+		}
+	}
+	return accepted;
+}
+
+/** Points `picks` of `data`, as the arrays `ScatterColumns.restore` takes. */
+function gather(
+	data: ScatterRowsLike,
+	picks: readonly number[],
+): [Float64Array, Float64Array, Float32Array | null, Float32Array | null] {
+	const n = picks.length;
+	const time = new Float64Array(n);
+	const price = new Float64Array(n);
+	const value = data.value === null ? null : new Float32Array(n);
+	const sizes = data.size ?? null;
+	const size = sizes === null ? null : new Float32Array(n);
+	for (let k = 0; k < n; k++) {
+		const i = picks[k]!;
+		time[k] = data.time[i]!;
+		price[k] = data.price[i]!;
+		if (value !== null) {
+			value[k] = data.value![i]!;
+		}
+		if (size !== null) {
+			size[k] = sizes![i]!;
+		}
+	}
+	return [time, price, value, size];
+}
+
+/**
+ * Where a change of the buckets at rows `[lo, hi)` of a coarse level reaches its end, the row before
+ * them, whose bucket may become the last one, reaching back into the chunk before; where it reaches
+ * its start, the first row of the chunk after `hi`'s, which the new first bucket may reach into.
+ * Appends and prepends merge into the cells of those buckets, so they must be held. Empty ranges
+ * (`[lo, lo)`, `[end, end + 1)`) where the change reaches neither.
+ */
+function endRows(columns: ScatterColumns, lo: number, hi: number): [number, number] {
+	const before = hi >= columns.end ? lo - 1 : lo;
+	const after = lo <= columns.first ? ((hi >> SCATTER_CHUNK_SHIFT) + 1) << SCATTER_CHUNK_SHIFT : columns.end;
+	return [before, after];
+}
+
+/**
+ * Rows of buckets `[h0, h1)` of `step` in `columns`, taking in the whole chunk let go where an edge
+ * lies in one (`ScatterColumns.lowerBucket` only finds the chunk there).
+ */
+function bucketRows(columns: ScatterColumns, step: number, h0: number, h1: number): [number, number] {
+	const start = columns.lowerBucket(step, h0);
+	let end = columns.lowerBucket(step, h1);
+	if (end < columns.end) {
+		const n = end >> SCATTER_CHUNK_SHIFT;
+		if (columns.isEvicted(n) && end === columns.chunkStart(n)) {
+			end = columns.chunkEnd(n);
+		}
+	}
+	return [start, Math.max(start, end)];
+}
 
 /** Resolves the inclusive time range a scatter correction covers, or null when invalid. */
 function scatterCorrectRange(

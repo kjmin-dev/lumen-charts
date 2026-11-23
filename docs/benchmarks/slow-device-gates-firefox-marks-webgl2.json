@@ -1,0 +1,189 @@
+{
+	"schema": 2,
+	"createdAt": "2026-11-22T17:41:16.223Z",
+	"environment": {
+		"runner": {
+			"arguments": ["--browser","firefox","--lib","lumen-worker","--mark-renderer","webgl2","--case","heatmap/candles-4800/2400x600/pan,heatmap/candles-4800/2400x600/tick,scatter/candles-2k/cloud-1m/tick","--repeats","1","--budget","1.5","--out","<scratch>"],
+			"node": "v26.13.1",
+			"durationSeconds": 10.770894291000001,
+			"skipped": []
+		},
+		"machine": {
+			"platform": "darwin",
+			"release": "25.5.0",
+			"arch": "arm64",
+			"cpuModel": "Apple M1",
+			"cpuCores": 8,
+			"totalMemoryBytes": 17179869184,
+			"power": "Now drawing from 'AC Power'",
+			"loadAverageStart": [16.69970703125,16.62646484375,14.42138671875],
+			"loadAverageEnd": [15.435546875,16.3583984375,14.3515625]
+		},
+		"browser": {"engine":"firefox","version":"157.0","channel":"playwright-bundled","headless":true,"commandLine":null,"gpuStatus":null,"firefoxPrefs":{}},
+		"cpuThrottlingRate": 1,
+		"viewport": {"width":1280,"height":720},
+		"deviceScaleFactor": 2,
+		"chart": {"width":1200,"height":600},
+		"page": {
+			"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:157.0) Gecko/20100101 Firefox/157.0",
+			"userAgentData": null,
+			"devicePixelRatio": 2,
+			"viewport": {"width":1280,"height":720},
+			"screen": {"width":683,"height":384},
+			"chart": {"width":1200,"height":600},
+			"hardwareConcurrency": 8,
+			"deviceMemoryGb": null,
+			"crossOriginIsolated": true,
+			"timer": {"minStepMs":0.01999999999998181,"medianStepMs":0.01999999999998181,"steps":2000},
+			"idleFrameInterval": {"count":120,"mean":16.64966666666667,"min":14.639999999999873,"p50":16.660000000000082,"p90":18.12000000000012,"p95":18.659999999999854,"p99":18.680000000000064,"max":18.680000000000064},
+			"webgl": {"vendor":"Apple","renderer":"Apple M1, or similar"},
+			"buildMode": "production",
+			"probes": {"garbageCollection":"unavailable","memory":"unavailable"}
+		},
+		"git": {"commit":"80081f1b064db67ab5873d0c75d797f0b4abe0b1","dirty":true},
+		"sources": "workspace",
+		"packages": {"lightweight-charts":"5.3.0","playwright":"1.64.1","vite":"8.3.8"}
+	},
+	"cases": [
+		{
+			"caseId": "scatter/candles-2k/cloud-1m/tick",
+			"adapter": "lumen-worker",
+			"job": {
+				"scenario": "scatter",
+				"dataset": {"kind":"candles","size":2000},
+				"seed": 1,
+				"chart": {"width":1200,"height":600},
+				"points": 1000000,
+				"shape": "cloud",
+				"variant": "tick",
+				"pointSize": 1.5,
+				"visibleBars": 1000,
+				"budgetMs": 1500,
+				"warmupBudgetMs": 1500,
+				"frames": 240,
+				"minFrames": 30,
+				"warmupFrames": 30,
+				"adapter": "lumen-worker"
+			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"backend": "webgl2",
+						"rendererPath": "webgl2",
+						"rendererBytes": 28443648,
+						"rendererReason": null,
+						"backendFrames": {"webgl2":57},
+						"backendTransitions": 0,
+						"jsTime": {"count":57,"mean":25.73649122807016,"min":0.09999999999990905,"p50":25.199999999999818,"p90":37.659999999999854,"p95":42.90000000000009,"p99":49.61999999999989,"max":49.61999999999989},
+						"interval": {"count":57,"mean":26.607719298245613,"min":14.680000000000291,"p50":31.340000000000146,"p90":34.98000000000002,"p95":50,"p99":52,"max":52},
+						"frames": 57,
+						"warmupFrames": 30,
+						"level": 0,
+						"marks": 1001315,
+						"levelEnd": 0,
+						"marksEnd": 1001402,
+						"total": 2000000,
+						"visibleBars": 1000
+					},
+					"durationMs": 4473.672833,
+					"host": {"cpuIdle":0.14521544487968663,"loadAverage":16.0830078125}
+				}
+			]
+		},
+		{
+			"caseId": "heatmap/candles-4800/2400x600/pan",
+			"adapter": "lumen-worker",
+			"job": {
+				"scenario": "heatmap",
+				"dataset": {"kind":"candles","size":4800},
+				"seed": 1,
+				"chart": {"width":1200,"height":600},
+				"variant": "pan",
+				"rows": 600,
+				"visibleBars": 2400,
+				"budgetMs": 1500,
+				"warmupBudgetMs": 1500,
+				"frames": 240,
+				"minFrames": 30,
+				"warmupFrames": 30,
+				"adapter": "lumen-worker"
+			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"backend": "webgl2",
+						"rendererPath": "webgl2-slots",
+						"rendererBytes": 13315072,
+						"rendererReason": null,
+						"backendFrames": {"webgl2":3,"webgl2-slots":42},
+						"backendTransitions": 1,
+						"jsTime": {"count":45,"mean":33.004888888888885,"min":25.279999999999745,"p50":29.460000000000036,"p90":48.379999999999654,"p95":56.440000000000055,"p99":75.82000000000016,"max":75.82000000000016},
+						"interval": {"count":45,"mean":33.658666666666676,"min":16.579999999999927,"p50":33.33999999999969,"p90":50,"p95":64.65999999999985,"p99":67.1400000000001,"max":67.1400000000001},
+						"frames": 45,
+						"warmupFrames": 30,
+						"level": 0,
+						"marks": 1441200,
+						"levelEnd": 0,
+						"marksEnd": 1443000,
+						"total": 2880000,
+						"visibleBars": 2400
+					},
+					"durationMs": 3512.3273329999993,
+					"host": {"cpuIdle":0.15735137059451762,"loadAverage":15.435546875}
+				}
+			]
+		},
+		{
+			"caseId": "heatmap/candles-4800/2400x600/tick",
+			"adapter": "lumen-worker",
+			"job": {
+				"scenario": "heatmap",
+				"dataset": {"kind":"candles","size":4800},
+				"seed": 1,
+				"chart": {"width":1200,"height":600},
+				"variant": "tick",
+				"rows": 600,
+				"visibleBars": 2400,
+				"budgetMs": 1500,
+				"warmupBudgetMs": 1500,
+				"frames": 240,
+				"minFrames": 30,
+				"warmupFrames": 30,
+				"adapter": "lumen-worker"
+			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"backend": "webgl2",
+						"rendererPath": "webgl2-slots",
+						"rendererBytes": 13315072,
+						"rendererReason": null,
+						"backendFrames": {"webgl2":4,"webgl2-slots":85},
+						"backendTransitions": 1,
+						"jsTime": {"count":89,"mean":11.725842696629181,"min":0.09999999999990905,"p50":10.839999999999918,"p90":17.199999999999818,"p95":18.45999999999958,"p99":33,"max":33},
+						"interval": {"count":89,"mean":17.021348314606744,"min":14.639999999999873,"p50":16.660000000000082,"p90":18.659999999999854,"p95":18.660000000000082,"p99":35.200000000000045,"max":35.200000000000045},
+						"frames": 89,
+						"warmupFrames": 30,
+						"level": 0,
+						"marks": 1441200,
+						"levelEnd": 0,
+						"marksEnd": 1441200,
+						"total": 2880000,
+						"visibleBars": 2400
+					},
+					"durationMs": 2752.5075419999994,
+					"host": {"cpuIdle":0.1968181818181818,"loadAverage":15.435546875}
+				}
+			]
+		}
+	]
+}

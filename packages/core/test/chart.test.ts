@@ -486,8 +486,17 @@ describe('chart with series', () => {
 		clearCalls();
 		pointer('pointerleave', 700, 150);
 		await settle();
-		expect(overlay().calls.filter(call => call.name === 'clearRect').length).toBe(1);
-		expect(overlay().calls.filter(call => call.name === 'fillText').length).toBe(1);
+		// Only where the crosshair was: its lines and labels, not the whole layer.
+		const overlayCanvas = chart.element().querySelectorAll('canvas')[3]!;
+		const clears = overlay().calls.filter(call => call.name === 'clearRect');
+		expect(clears.length).toBeGreaterThan(0);
+		for (const clear of clears) {
+			const [, , width, height] = clear.args as number[];
+			expect(width! * height!).toBeLessThan(overlayCanvas.width * overlayCanvas.height);
+		}
+		// No crosshair label is drawn again.
+		expect(crosshairLabels().some(label => /^1970-01-0\d \d\d:\d\d$/.test(label))).toBe(false);
+		expect(pane().calls.length).toBe(0);
 	});
 
 	const cacheOf = () =>
@@ -988,10 +997,12 @@ describe('chart with series', () => {
 		clearCalls();
 		pointer('pointermove', axisWidth + 100, 150);
 		await settle();
-		// The vertical crosshair line is drawn as 1-pixel-wide dashes near the pointer.
-		const column = overlay().calls.filter(call => call.name === 'fillRect' && call.args[2] === 1 && call.args[1] === 0);
+		// The vertical crosshair line is 1-pixel-wide dashes near the pointer, copied from a strip of them.
+		const column = overlay().calls.filter(
+			call => call.name === 'drawImage' && call.args[7] === 1 && call.args[6] === 0,
+		);
 		expect(column.length).toBe(1);
-		expect(Math.abs((column[0]!.args[0] as number) - (axisWidth + 100))).toBeLessThanOrEqual(3);
+		expect(Math.abs((column[0]!.args[5] as number) - (axisWidth + 100))).toBeLessThanOrEqual(3);
 		// The price label sits on the axis at the left edge.
 		const tags = overlay().calls.filter(
 			call => call.name === 'fillRect' && call.args[0] === 0 && call.args[2] === axisWidth,
@@ -1034,9 +1045,10 @@ describe('chart with series', () => {
 		expect(calls.filter(call => call.fillStyle === themes.light.grid.vertLines.color)).toHaveLength(0);
 	});
 
-	it('snaps the crosshair to the close in magnet mode, and hides it', async () => {
+	it('snaps the crosshair to the nearest open, high, low or close in magnet mode, and hides it', async () => {
 		const data = candles(5000);
-		chart.addSeries('candlestick').setData(data);
+		const series = chart.addSeries('candlestick');
+		series.setData(data);
 		chart.applyOptions({ crosshair: { mode: 'magnet' } });
 		await settle();
 		clearCalls();
@@ -1045,10 +1057,13 @@ describe('chart with series', () => {
 		const range = chart.timeScale().getVisibleLogicalRange()!;
 		const paneWidth = Number.parseFloat(chart.element().querySelectorAll('canvas')[0]!.style.width);
 		const index = Math.round(range.from + (200 / paneWidth) * (range.to - range.from));
+		const values = [data.open[index]!, data.high[index]!, data.low[index]!, data.close[index]!];
+		const distance = (value: number) => Math.abs(series.priceToCoordinate(value)! - 37);
+		const nearest = values.reduce((best, value) => (distance(value) < distance(best) ? value : best));
 		const labels = overlay()
 			.calls.filter(call => call.name === 'fillText')
 			.map(call => call.args[0]);
-		expect(labels).toContain(data.close[index]!.toFixed(2));
+		expect(labels).toContain(nearest.toFixed(2));
 
 		chart.applyOptions({ crosshair: { mode: 'hidden' } });
 		expect(chart.element().style.cursor).toBe('default');
@@ -1070,12 +1085,15 @@ describe('chart with series', () => {
 		await settle();
 		const colored = (): Call[] =>
 			overlay().calls.filter(call => call.name === 'fillRect' && (call.fillStyle === UP || call.fillStyle === DOWN));
-		// The dashed price line is many rectangles; the label is one.
-		expect(colored().length).toBeGreaterThan(10);
+		// The label is one rectangle; the dashed price line is copied from a strip of its dashes.
+		const copies = (): Call[] => overlay().calls.filter(call => call.name === 'drawImage');
+		expect(colored()).toHaveLength(1);
+		expect(copies()).toHaveLength(1);
 		series.applyOptions({ priceLineVisible: false });
 		clearCalls();
 		await settle();
 		expect(colored()).toHaveLength(1);
+		expect(copies()).toHaveLength(0);
 
 		series.applyOptions({ visible: false });
 		clearCalls();

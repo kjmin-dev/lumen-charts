@@ -7,7 +7,7 @@ import type { PriceAxes, PriceAxis } from '../price-axes';
 import type { AutoscaleRange, PanePrimitive, PrimitiveBounds, PrimitiveZOrder } from '../primitives';
 import { Layer } from '../render/layer';
 import type { ChartLayout } from '../render/layout';
-import { PaneViewState, PrimitiveLayers, ScaleMapping } from '../render/primitive-host';
+import { type PrimitiveEntry, PaneViewState, PrimitiveLayers, ScaleMapping } from '../render/primitive-host';
 import type { Series } from '../series';
 import type { ChartSettings } from '../settings';
 import { canvasFits } from '../shared/canvas-budget';
@@ -38,6 +38,8 @@ export class PanePrimitives {
 	private _rangesTimeline = -1;
 	/** The views primitives are drawn with, one per price scale they use. */
 	private readonly _views = new Map<string, PaneViewState>();
+	/** Changes whenever a view changes (see `PrimitiveLayer.update`). */
+	private _viewEpoch = 0;
 	private readonly _target = {
 		context: null as unknown as CanvasRenderingContext2D,
 		pixelRatio: 1,
@@ -304,9 +306,11 @@ export class PanePrimitives {
 
 	/**
 	 * Price of a point placed at bar `index` and row `y` on the scale of `view`: in magnet mode, the
-	 * open, high, low or close nearest to `y` of the first visible series on that scale, where the bar
-	 * is held; otherwise the price at `y`. On a percentage or indexed scale a series is drawn with its
-	 * own base, so the price is the one the scale shows where that value is drawn.
+	 * value nearest to `y` of the visible series on that scale where the bar is held, the open, high,
+	 * low or close of bars and candles (`nearest` mode: closes only), the first series and value in
+	 * that order at equal distances, as the crosshair snaps; otherwise the price at `y`. On a
+	 * percentage or indexed scale a series is drawn with its own base, so the price is the one the
+	 * scale shows where that value is drawn.
 	 */
 	private _snapPrice(index: number, y: number, view: PaneViewState): number {
 		const free = view.yToPrice(y);
@@ -328,9 +332,13 @@ export class PanePrimitives {
 			if (!series.seriesOptions.visible || axis === null || axis.id !== view.scaleId || row >= series.close.length) {
 				continue;
 			}
-			for (let c = 0; c < 4; c++) {
+			for (let c = mode === 'magnet' && series.kind === 'ohlcv' ? 0 : 3; c < 4; c++) {
 				const price = (c === 0 ? series.open : c === 1 ? series.high : c === 2 ? series.low : series.close)[row]!;
 				const at = series.deviceY(price) / ratio;
+				// As the crosshair: a value its scale does not show is out of reach (NaN fails too).
+				if (!axis.scale.contains(at)) {
+					continue;
+				}
 				const d = Math.abs(at - y);
 				if (d < distance) {
 					distance = d;
@@ -338,7 +346,6 @@ export class PanePrimitives {
 					bestY = at;
 				}
 			}
-			if (mode === 'magnet' && best === best) break;
 		}
 		if (best === best) return Math.abs(view.priceToY(best) - bestY) < 1e-6 ? best : view.yToPrice(bestY);
 		return free;
@@ -394,6 +401,27 @@ export class PanePrimitives {
 		return stale;
 	}
 
+	/**
+	 * Marks the price scales of the attached primitives and drawings as in use (see
+	 * `PriceAxes.beginSweep`): a scale stays while something is drawn with its view.
+	 */
+	public markScales(axes: PriceAxes): void {
+		const layers = this.layers;
+		markScalesOf(layers.bottom.entries, axes);
+		markScalesOf(layers.normal.entries, axes);
+		markScalesOf(layers.top.entries, axes);
+	}
+
+	/**
+	 * Forgets the view of a price scale the chart removed, which nothing was drawn with: binding to
+	 * that id again makes a view of the scale made then.
+	 */
+	public forgetView(id: string): void {
+		if (id !== DEFAULT_PRICE_SCALE_ID) {
+			this._views.delete(id);
+		}
+	}
+
 	/** The view of primitives and drawings on price scale `id`, made with the scale if need be. */
 	public viewFor(id: string): PaneViewState {
 		let view = this._views.get(id);
@@ -410,6 +438,7 @@ export class PanePrimitives {
 		const geometry = this._model.geometry;
 		const scale = this._scale;
 		for (const view of this._views.values()) {
+			const version = view.version;
 			view.sync(
 				geometry.origin,
 				geometry.spacing,
@@ -419,6 +448,9 @@ export class PanePrimitives {
 				scale.first,
 				scale.end - 1,
 			);
+			if (view.version !== version) {
+				this._viewEpoch++;
+			}
 		}
 	}
 
@@ -427,8 +459,8 @@ export class PanePrimitives {
 		this.syncPaneView();
 		const layers = this.layers;
 		const bounds = this.bounds;
-		let updated = layers.normal.update(bounds);
-		if (layers.top.update(bounds)) {
+		let updated = layers.normal.update(bounds, this._viewEpoch);
+		if (layers.top.update(bounds, this._viewEpoch)) {
 			updated = true;
 		}
 		return updated;
@@ -453,5 +485,17 @@ export class PanePrimitives {
 		}
 		ctx.clearRect(0, 0, layer.width, layer.height);
 		this.layers.normal.draw(this.targetOf(ctx));
+	}
+}
+
+/** Marks the scales of the views of `entries` as in use; entries on one scale mostly follow each other. */
+function markScalesOf(entries: readonly PrimitiveEntry[], axes: PriceAxes): void {
+	let view: PaneViewState | null = null;
+	for (let i = 0; i < entries.length; i++) {
+		const next = entries[i]!.view;
+		if (next !== view) {
+			view = next;
+			axes.markUsedId(next.scaleId);
+		}
 	}
 }

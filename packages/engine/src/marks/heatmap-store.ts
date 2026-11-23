@@ -1,8 +1,10 @@
 import {
 	type HeatmapColumns,
 	MARK_COLUMNS,
+	type MarksChange,
 	type MarksChunk,
 	type MarksData,
+	type MarksProvisional,
 	type MarksRequest,
 	type MarksSelection,
 	type MarksStore,
@@ -17,6 +19,12 @@ export const HEATMAP_LEVEL_COLUMNS = 512;
 const MAX_LEVELS = 12;
 /** Cells between two yields of a bulk operation. */
 const SLICE = 1 << 20;
+/**
+ * Faults of the store, which would otherwise read cells let go as NaN, or write a chunk let go in
+ * part and leave its other columns without cells, without a word.
+ */
+const EVICTED_READ = 'lumen-charts: cells of marks let go under the memory limit were read';
+const EVICTED_WRITE = 'lumen-charts: a chunk of marks let go under the memory limit was written in part';
 
 /**
  * Up to `size` columns, each a time, the grid row of its first cell, its number of cells and the
@@ -101,6 +109,27 @@ class HeatChunk {
 		}
 		this.cells.set(source.subarray(at, at + n), a);
 	}
+}
+
+/** Whether column `i` of `a` and column `j` of `b` (both `rows` cells) are the same: time, first row and cells. */
+function sameColumn(a: HeatmapColumns, i: number, b: HeatmapColumns, j: number, rows: number): boolean {
+	if (a.time[i] !== b.time[j] || (a.offsets?.[i] ?? 0) !== (b.offsets?.[j] ?? 0)) {
+		return false;
+	}
+	for (let r = 0; r < rows; r++) {
+		const x = a.values[i * rows + r]!;
+		const y = b.values[j * rows + r]!;
+		if (!(x === y || (x !== x && y !== y))) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/** Cells `HeatmapStore.prepare` made for a chunk let go, and the checksum it had. */
+interface HeatProvisional extends MarksProvisional {
+	summary: { high: number; low: number };
+	cells: Float32Array;
 }
 
 /**
@@ -192,6 +221,33 @@ class HeatmapLevel {
 		return bytes - MARKS_SUMMARY_BYTES;
 	}
 
+	/**
+	 * Gives the chunks let go that columns `[from, to)` cover in full, of those the level keeps once it
+	 * holds `[first, end)`, arrays of their own again, to be written column by column; throws, before
+	 * anything changes, for one they cover in part.
+	 */
+	public reviveFor(from: number, to: number, first: number, end: number): void {
+		if (this.evicted === 0 || to <= from) {
+			return;
+		}
+		const evicted: number[] = [];
+		this.missing(from, to, evicted);
+		for (const n of evicted) {
+			if (Math.max(first, n * this._size) < from || Math.min(end, (n + 1) * this._size) > to) {
+				throw new Error(EVICTED_WRITE);
+			}
+		}
+		for (const n of evicted) {
+			const chunk = this._chunks[n - this._base]!;
+			chunk.summary = null;
+			chunk.cells = new Float32Array(this._size * this._rows);
+			chunk.start.fill(0);
+			chunk.length.fill(0);
+			chunk.top = 0;
+			this.evicted--;
+		}
+	}
+
 	/** Chunks let go that hold columns of `[from, to)`. */
 	public missing(from: number, to: number, out: number[]): void {
 		if (this.evicted === 0) {
@@ -231,9 +287,18 @@ class HeatmapLevel {
 		return chunks[n - this._base]!;
 	}
 
-	/** The chunk of a column held; its cells start at `cellsAt(column)` there. */
+	/** The chunk of a column, cells let go or not; its cells start at `cellsAt(column)` there. */
 	public chunk(column: number): HeatChunk {
 		return this._chunks[Math.floor(column / this._size) - this._base]!;
+	}
+
+	/** The cells of the chunk of a column held. Reading cells let go is a fault of the caller, and throws. */
+	public cells(column: number): Float32Array {
+		const chunk = this._chunks[Math.floor(column / this._size) - this._base]!;
+		if (chunk.summary !== null) {
+			throw new Error(EVICTED_READ);
+		}
+		return chunk.cells;
 	}
 
 	private _slot(column: number): number {
@@ -270,10 +335,23 @@ class HeatmapLevel {
 	/**
 	 * Writes columns `[from, to)` as `make` makes them, chunk by chunk, so the cells of a chunk move
 	 * at most once. The columns must lie in `[first, end)` or join on to it; the range held grows to
-	 * take them in.
+	 * take them in. A chunk whose cells were let go is written only in full (its other columns would
+	 * lose their cells): writing one in part is a fault of the caller, and throws before anything
+	 * changes.
 	 */
 	public rewrite(from: number, to: number, make: (column: number, out: ColumnOut) => void): void {
 		const out = this._out;
+		if (this.evicted > 0) {
+			const first = this.end === this.first ? from : Math.min(this.first, from);
+			const end = this.end === this.first ? to : Math.max(this.end, to);
+			for (let n = Math.floor(from / this._size); n <= Math.floor((to - 1) / this._size); n++) {
+				const start = Math.max(first, n * this._size);
+				const stop = Math.min(end, (n + 1) * this._size);
+				if (this.isEvicted(n) && (start < from || stop > to)) {
+					throw new Error(EVICTED_WRITE);
+				}
+			}
+		}
 		let column = from;
 		while (column < to) {
 			const chunk = this._chunkFor(column);
@@ -631,6 +709,7 @@ export class HeatmapStore implements MarksStore {
 		} else if (a - raw.first <= raw.end - b) {
 			// The columns before the gap move right, the last first.
 			const first = raw.first;
+			raw.reviveFor(first + removed, b, first + removed, raw.end);
 			for (let column = a - 1; column >= first; column--) {
 				this._moveRaw(column, column + removed, rows);
 			}
@@ -639,6 +718,7 @@ export class HeatmapStore implements MarksStore {
 			hi = b + 1;
 		} else {
 			const end = raw.end;
+			raw.reviveFor(a, end - removed, raw.first, end - removed);
 			for (let column = b; column < end; column++) {
 				this._moveRaw(column, column - removed, rows);
 			}
@@ -655,9 +735,8 @@ export class HeatmapStore implements MarksStore {
 	/** Copies a column of level 0 to another index. */
 	private _moveRaw(from: number, to: number, rows: number): void {
 		const raw = this._levels[0]!;
-		const source = raw.chunk(from);
 		const at = raw.cellsAt(from);
-		const cells = source.cells.slice(at, at + rows);
+		const cells = raw.cells(from).slice(at, at + rows);
 		this._writeRaw(to, raw.timeAt(from), raw.offsetAt(from), cells, 0);
 	}
 
@@ -698,7 +777,11 @@ export class HeatmapStore implements MarksStore {
 	/**
 	 * Rebuilds, at every level, the buckets that hold columns `[from, to)` of level 0, and sets each
 	 * level's range from the one below: buckets that no longer have a member go, those that now have
-	 * one are made. Levels a shorter history no longer needs are let go.
+	 * one are made. A bucket of a chunk whose cells were let go is not made: the chunk is made again
+	 * from the levels below when it is read. The others are made from the finest level below that holds
+	 * their members (`_mergeFinest`). Levels a shorter history no longer needs go once the level below
+	 * them is held in full, or can be made so from what is held; until then they stay and are rebuilt,
+	 * so that a removal never waits for marks only to let go of a level.
 	 */
 	private *_rebuild(from: number, to: number): Generator<undefined, void, undefined> {
 		const levels = this._levels;
@@ -708,14 +791,20 @@ export class HeatmapStore implements MarksStore {
 		for (let l = 1; ; l++) {
 			const below = levels[l - 1]!;
 			if (below.count <= HEATMAP_LEVEL_COLUMNS || l > MAX_LEVELS) {
-				if (levels.length > l) {
-					levels.length = l;
-					// The new topmost level must stay fully resident as the guaranteed stand-in.
-					if (l - 1 > 0 && below.evicted > 0) {
-						this.materialize(l - 1, below.first, below.end);
-					}
+				if (levels.length <= l) {
+					return;
 				}
-				return;
+				let held = below.evicted === 0;
+				if (!held && l - 1 > 0) {
+					// Made from what is held, or not at all: nothing is made only to be let go again.
+					const missing: number[] = [];
+					this.missing(l - 1, below.first, below.end, missing);
+					held = missing.length === 0 && this.materialize(l - 1, below.first, below.end);
+				}
+				if (held || l > MAX_LEVELS) {
+					levels.length = l;
+					return;
+				}
 			}
 			const first = Math.floor(below.first / 4);
 			const end = Math.ceil(below.end / 4);
@@ -745,20 +834,14 @@ export class HeatmapStore implements MarksStore {
 			}
 			if (b > a) {
 				const into = level;
-				if (into.evicted > 0) {
-					const c0 = Math.floor(a / this._chunkColumns);
-					const c1 = Math.floor((b - 1) / this._chunkColumns);
-					if (into.isEvicted(c0)) {
-						a = Math.min(a, into.chunkStart(c0));
+				const size = this._chunkColumns;
+				for (let bucket = a; bucket < b;) {
+					const stop = Math.min(b, (Math.floor(bucket / size) + 1) * size);
+					if (!into.isEvicted(Math.floor(bucket / size))) {
+						into.rewrite(bucket, stop, (k, out) => this._mergeFinest(l, k, out));
 					}
-					if (into.isEvicted(c1)) {
-						b = Math.max(b, into.chunkEnd(c1));
-					}
+					bucket = stop;
 				}
-				if (l - 1 > 0 && below.evicted > 0) {
-					this.materialize(l - 1, Math.max(below.first, a * 4), Math.min(below.end, b * 4));
-				}
-				into.rewrite(a, b, (bucket, out) => this._merge(below, into, bucket, out));
 				into.mark(a);
 			}
 			level.limit(first, end);
@@ -772,10 +855,44 @@ export class HeatmapStore implements MarksStore {
 		}
 	}
 
-	/** Makes bucket `bucket` of `level` from its members on the level below. */
-	private _merge(below: HeatmapLevel, level: HeatmapLevel, bucket: number, out: ColumnOut): void {
-		const firstChild = Math.max(bucket * 4, below.first);
-		const end = Math.min(bucket * 4 + 4, below.end);
+	/**
+	 * The finest level below `l` that holds every member of bucket `bucket` of level `l`: the level
+	 * just below, or a finer one where cells of the levels between were let go. -1 when level 0 does
+	 * not hold them all.
+	 */
+	private _finest(l: number, bucket: number): number {
+		const missing: number[] = [];
+		for (let m = l - 1; m >= 0; m--) {
+			const below = this._levels[m]!;
+			if (below.evicted === 0) {
+				return m;
+			}
+			const span = 4 ** (l - m);
+			missing.length = 0;
+			below.missing(bucket * span, bucket * span + span, missing);
+			if (missing.length === 0) {
+				return m;
+			}
+		}
+		return -1;
+	}
+
+	/**
+	 * Makes bucket `bucket` of level `l` from its members on the finest level below that holds them:
+	 * the largest cell on each row, which is the same from any level, as buckets nest.
+	 */
+	private _mergeFinest(l: number, bucket: number, out: ColumnOut): void {
+		const m = this._finest(l, bucket);
+		if (m < 0) {
+			throw new Error(EVICTED_READ);
+		}
+		this._merge(this._levels[m]!, this._levels[l]!, bucket, out, 4 ** (l - m));
+	}
+
+	/** Makes bucket `bucket` of `level` from its members on a level below, `span` of them per bucket. */
+	private _merge(below: HeatmapLevel, level: HeatmapLevel, bucket: number, out: ColumnOut, span = 4): void {
+		const firstChild = Math.max(bucket * span, below.first);
+		const end = Math.min(bucket * span + span, below.end);
 		let low = Infinity;
 		let high = -Infinity;
 		for (let child = firstChild; child < end; child++) {
@@ -788,7 +905,7 @@ export class HeatmapStore implements MarksStore {
 		const into = level.fill;
 		target.fill(Number.NaN, into, into + length);
 		for (let child = firstChild; child < end; child++) {
-			const source = below.chunk(child).cells;
+			const source = below.cells(child);
 			const at = below.cellsAt(child);
 			const shift = into + below.offsetAt(child) - low;
 			const n = below.lengthAt(child);
@@ -813,8 +930,10 @@ export class HeatmapStore implements MarksStore {
 	/**
 	 * Chunks of columns that may be let go, with the times they span: level 0 and intermediate coarse
 	 * levels `1 .. levels - 1` (never the topmost level, none of the first and last eight columns of
-	 * each level, none overlapping `[keepFrom, keepTo]`, and none before the series has a level to
-	 * draw from in their place).
+	 * each level, nor at level 0 the columns of the first and last bucket of the topmost level, which
+	 * an append or prepend makes those buckets from where the levels between were let go; none
+	 * overlapping `[keepFrom, keepTo]`, and none before the series has a level to draw from in their
+	 * place).
 	 */
 	public evictable(keepFrom: number, keepTo: number, out: MarksChunk[]): void {
 		const raw = this._levels[0]!;
@@ -822,8 +941,11 @@ export class HeatmapStore implements MarksStore {
 			return;
 		}
 		const chunkColumns = this._chunkColumns;
-		const first = Math.floor((raw.first + 8) / chunkColumns) + 1;
-		const last = Math.floor((raw.end - 9) / chunkColumns) - 1;
+		const span = 4 ** this.levels;
+		const head = Math.max(raw.first + 8, (Math.floor(raw.first / span) + 1) * span);
+		const tail = Math.min(raw.end - 9, Math.floor((raw.end - 1) / span) * span - 1);
+		const first = Math.floor(head / chunkColumns) + 1;
+		const last = Math.floor(tail / chunkColumns) - 1;
 		for (let n = Math.max(first, raw.firstChunk); n <= Math.min(last, raw.lastChunk); n++) {
 			if (raw.isEvicted(n)) {
 				continue;
@@ -996,9 +1118,192 @@ export class HeatmapStore implements MarksStore {
 	}
 
 	/**
-	 * Chunks let go that removing the columns of `[from, to]` would read, move or rebuild from:
-	 * those on the shorter side of them, those of the buckets around the gap, any evicted coarse
-	 * chunks those rebuilds touch, and the new topmost level if levels shrink.
+	 * Takes the columns a datafeed returned for chunk `chunk` as they are after the first of the
+	 * waiting changes `changes`, or after it and some of those behind it: none at a time a removal
+	 * took, a correction's own (cells and first row) at a time it corrected, and the others at the
+	 * times and on the rows of those let go, their cells taken as returned. The columns the changes
+	 * remove get cells without values, which they take with them; those corrected get the correction's
+	 * cells. Returns what `commit` puts in, or null when they fit neither.
+	 */
+	public prepare(chunk: number, data: MarksData, changes: readonly MarksChange[]): MarksProvisional | null {
+		const raw = this._levels[0]!;
+		const held = raw.chunkAt(chunk);
+		if (held === undefined || held.summary === null || !this._onGrid(data)) {
+			return null;
+		}
+		const rows = this._rows;
+		const start = raw.chunkStart(chunk);
+		const end = raw.chunkEnd(chunk);
+		const from = raw.timeAt(start);
+		const to = raw.timeAt(end - 1);
+		// The columns returned for the chunk's times, by time, in order; but those an append or prepend
+		// waiting adds (after a removal took the end or the start up to them): they come with it.
+		const added = new Map<number, { columns: HeatmapColumns; at: number }>();
+		for (const change of changes) {
+			if ((change.op === 'append' || change.op === 'prepend') && this._onGrid(change.data)) {
+				for (let i = 0; i < change.data.count; i++) {
+					const t = change.data.time[i]!;
+					if (t >= from && t <= to) {
+						added.set(t, { columns: change.data, at: i });
+					}
+				}
+			}
+		}
+		const given = new Map<number, number>();
+		let previous = -Infinity;
+		for (let i = 0; i < data.count; i++) {
+			const t = data.time[i]!;
+			if (!(t >= from && t <= to)) {
+				continue;
+			}
+			if (!(t > previous) || (i + 1) * rows > data.values.length) {
+				return null;
+			}
+			previous = t;
+			const add = added.get(t);
+			if (add !== undefined && sameColumn(data, i, add.columns, add.at, rows)) {
+				continue;
+			}
+			given.set(t, i);
+		}
+		const columns = end - start;
+		const at = new Map<number, number>();
+		for (let c = start; c < end; c++) {
+			at.set(raw.timeAt(c), c - start);
+		}
+		// What each column is after the changes: held (-1), removed (-2), or the column of a correction.
+		const state = new Int32Array(columns);
+		const by = Array.from<HeatmapColumns | null>({ length: columns }).fill(null);
+		state.fill(-1);
+		let reached = false;
+		for (let j = 0; j < changes.length; j++) {
+			const change = changes[j]!;
+			let touched = false;
+			if (change.op === 'delete') {
+				for (let k = 0; k < columns; k++) {
+					const t = raw.timeAt(start + k);
+					if (state[k] !== -2 && t >= change.from && t <= change.to) {
+						state[k] = -2;
+						touched = true;
+					}
+				}
+			} else if (change.op === 'correct' && this._onGrid(change.data)) {
+				const correction = change.data;
+				const offsets = correction.offsets ?? null;
+				for (let i = 0; i < correction.count; i++) {
+					const k = at.get(correction.time[i]!);
+					const offset = offsets === null ? 0 : offsets[i]!;
+					if (
+						k !== undefined &&
+						state[k] !== -2 &&
+						(i + 1) * rows <= correction.values.length &&
+						Number.isInteger(offset)
+					) {
+						state[k] = i;
+						by[k] = correction;
+						touched = true;
+					}
+				}
+			} else {
+				// Appends and prepends add columns after the last and before the first.
+				continue;
+			}
+			reached ||= touched;
+			if (!reached) {
+				// Up to here the changes leave the chunk as it went, which `restore` checks.
+				continue;
+			}
+			const cells = this._changedCells(raw, start, columns, state, by, given, data);
+			if (cells !== null) {
+				const provisional: HeatProvisional = { chunk, summary: held.summary, cells };
+				return provisional;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The cells of a chunk's columns after changes leave them as `state` and `by` say (see `prepare`),
+	 * when the columns `given` (by time) of `data` are those: null when they are not.
+	 */
+	private _changedCells(
+		raw: HeatmapLevel,
+		start: number,
+		columns: number,
+		state: Int32Array,
+		by: readonly (HeatmapColumns | null)[],
+		given: ReadonlyMap<number, number>,
+		data: HeatmapColumns,
+	): Float32Array | null {
+		const rows = this._rows;
+		const cells = new Float32Array(columns * rows);
+		let present = 0;
+		for (let k = 0; k < columns; k++) {
+			const t = raw.timeAt(start + k);
+			const i = given.get(t);
+			const s = state[k]!;
+			if (s === -2) {
+				if (i !== undefined) {
+					return null;
+				}
+				cells.fill(Number.NaN, k * rows, (k + 1) * rows);
+				continue;
+			}
+			if (i === undefined) {
+				return null;
+			}
+			present++;
+			const offset = data.offsets == null ? 0 : data.offsets[i]!;
+			if (s >= 0) {
+				const correction = by[k]!;
+				const want = correction.offsets == null ? 0 : correction.offsets[s]!;
+				if (offset !== want) {
+					return null;
+				}
+				for (let r = 0; r < rows; r++) {
+					const value = data.values[i * rows + r]!;
+					const expected = correction.values[s * rows + r]!;
+					if (!(value === expected || (value !== value && expected !== expected))) {
+						return null;
+					}
+				}
+			} else if (offset !== raw.offsetAt(start + k)) {
+				return null;
+			}
+			cells.set(data.values.subarray(i * rows, (i + 1) * rows), k * rows);
+		}
+		// No column at another time.
+		return present === given.size ? cells : null;
+	}
+
+	/** Puts the cells `prepare` made into their chunk, unchecked: the waiting change runs next. */
+	public commit(provisional: MarksProvisional): void {
+		const raw = this._levels[0]!;
+		const { chunk, cells } = provisional as HeatProvisional;
+		const held = raw.chunkAt(chunk)!;
+		if (held.summary !== null) {
+			held.summary = null;
+			held.cells = cells;
+			raw.evicted--;
+		}
+	}
+
+	/** Lets go again of a chunk `commit` put in, with the checksum it had. */
+	public revert(provisional: MarksProvisional): void {
+		const raw = this._levels[0]!;
+		const { chunk, summary } = provisional as HeatProvisional;
+		const held = raw.chunkAt(chunk);
+		if (held !== undefined && held.summary === null) {
+			held.summary = summary;
+			held.cells = new Float32Array(0);
+			raw.evicted++;
+		}
+	}
+
+	/**
+	 * Chunks let go that removing the columns of `[from, to]` would read, move or rebuild from: those
+	 * on the shorter side of them, those beside the gap, and those the buckets around the gap and over
+	 * the columns that move are made from where the levels between were let go (`_needsRebuild`).
 	 */
 	public needs(from: number, to: number, out: number[]): void {
 		const raw = this._levels[0]!;
@@ -1007,42 +1312,40 @@ export class HeatmapStore implements MarksStore {
 		}
 		const a = raw.lowerBound(from);
 		const b = raw.upperBound(to);
-		if (b <= a) {
+		const removed = b - a;
+		if (removed <= 0 || removed === raw.count) {
 			return;
 		}
-		const remaining = raw.count - (b - a);
-		if (remaining <= HEATMAP_LEVEL_COLUMNS) {
-			this.missing(0, raw.first, raw.end, out);
-			return;
-		}
+		// The rebuild after the removal, in the indexes columns have then, and the columns that move.
+		let first = raw.first;
+		let end = raw.end;
 		let lo: number;
 		let hi: number;
+		let moved: [number, number] | null = null;
 		if (a === raw.first) {
+			first = b;
 			lo = b;
 			hi = b + 1;
 		} else if (b === raw.end) {
+			end = a;
 			lo = a - 1;
 			hi = a;
 		} else if (a - raw.first <= raw.end - b) {
 			this.missing(0, raw.first, a, out);
-			lo = raw.first;
+			first = raw.first + removed;
+			lo = first;
 			hi = b + 1;
+			moved = [first, b];
 		} else {
 			this.missing(0, b, raw.end, out);
+			end = raw.end - removed;
 			lo = a - 1;
-			hi = raw.end;
+			hi = end;
+			moved = [a, end];
 		}
 		this.missing(0, a - 8, a, out);
 		this.missing(0, b, b + 8, out);
-		this._needsRebuild(Math.max(lo, raw.first), Math.min(hi, raw.end), out);
-		let newLevels = 0;
-		for (let c = remaining; c > HEATMAP_LEVEL_COLUMNS && newLevels < MAX_LEVELS; newLevels++) {
-			c = Math.ceil(c / 4);
-		}
-		if (newLevels < this.levels) {
-			const top = this._levels[newLevels]!;
-			this.missing(newLevels, top.first, top.end, out);
-		}
+		this._needsRebuild(Math.max(lo, first), Math.min(hi, end), first, end, moved, out);
 	}
 
 	/** Level-0 chunks let go that correcting existing columns of `data` reads or rebuilds from. */
@@ -1065,36 +1368,83 @@ export class HeatmapStore implements MarksStore {
 				continue;
 			}
 			this.missing(0, col, col + 1, out);
-			this._needsRebuild(col, col + 1, out);
+			this._needsRebuild(col, col + 1, raw.first, raw.end, null, out);
 		}
 	}
 
-	/** Level-0 chunks needed by `_rebuild(lo, hi)` across all coarse levels. */
-	private _needsRebuild(lo: number, hi: number, out: number[]): void {
+	/**
+	 * Level-0 chunks let go that `_rebuild(lo, hi)` reads after a change that leaves level 0 holding
+	 * columns `[first, end)`, of which those of `moved` were written by the change (held): the members
+	 * of the buckets it makes, in chunks held, where the levels between were let go (`_finest`). The
+	 * indexes of the columns that did not move are those they have now.
+	 */
+	private _needsRebuild(
+		lo: number,
+		hi: number,
+		first: number,
+		end: number,
+		moved: [number, number] | null,
+		out: number[],
+	): void {
+		const levels = this._levels;
+		const size = this._chunkColumns;
+		const missing: number[] = [];
 		let a = lo;
 		let b = hi;
-		for (let l = 1; l < this._levels.length; l++) {
-			const below = this._levels[l - 1]!;
-			const into = this._levels[l]!;
-			a = Math.max(into.first, Math.floor(a / 4));
-			b = Math.min(into.end, Math.ceil(b / 4));
+		let below = [first, end];
+		for (let l = 1; l < levels.length; l++) {
+			const level = levels[l]!;
+			const lFirst = Math.floor(below[0]! / 4);
+			const lEnd = Math.ceil(below[1]! / 4);
+			below = [lFirst, lEnd];
+			a = Math.max(lFirst, Math.floor(a / 4));
+			b = Math.min(lEnd, Math.ceil(b / 4));
 			if (b <= a) {
-				break;
+				return;
 			}
-			if (into.evicted > 0) {
-				const c0 = Math.floor(a / this._chunkColumns);
-				const c1 = Math.floor((b - 1) / this._chunkColumns);
-				if (into.isEvicted(c0)) {
-					a = Math.min(a, into.chunkStart(c0));
+			for (let bucket = a; bucket < b;) {
+				const stop = Math.min(b, (Math.floor(bucket / size) + 1) * size);
+				if (!level.isEvicted(Math.floor(bucket / size))) {
+					for (let k = bucket; k < stop; k++) {
+						this._needsBucket(l, k, first, end, moved, missing, out);
+					}
 				}
-				if (into.isEvicted(c1)) {
-					b = Math.max(b, into.chunkEnd(c1));
-				}
+				bucket = stop;
 			}
-			const childStart = Math.max(below.first, a * 4);
-			const childEnd = Math.min(below.end, b * 4);
-			this.missing(l - 1, childStart, childEnd, out);
 		}
+	}
+
+	/** Level-0 chunks let go that making bucket `k` of level `l` reads (see `_needsRebuild`). */
+	private _needsBucket(
+		l: number,
+		k: number,
+		first: number,
+		end: number,
+		moved: [number, number] | null,
+		missing: number[],
+		out: number[],
+	): void {
+		for (let m = l - 1; m >= 1; m--) {
+			const below = this._levels[m]!;
+			if (below.evicted === 0) {
+				return;
+			}
+			const span = 4 ** (l - m);
+			missing.length = 0;
+			below.missing(k * span, k * span + span, missing);
+			if (missing.length === 0) {
+				return;
+			}
+		}
+		const span = 4 ** l;
+		const x = Math.max(first, k * span);
+		const y = Math.min(end, k * span + span);
+		if (moved === null || y <= moved[0] || x >= moved[1]) {
+			this.missing(0, x, y, out);
+			return;
+		}
+		this.missing(0, x, moved[0], out);
+		this.missing(0, moved[1], y, out);
 	}
 
 	// A timeline made from the columns
@@ -1156,7 +1506,7 @@ export class HeatmapStore implements MarksStore {
 			let max = -Infinity;
 			let min = Infinity;
 			for (let c = from; c < to; c++) {
-				const cells = raw.chunk(c).cells;
+				const cells = raw.cells(c);
 				const at = raw.cellsAt(c);
 				const end = at + raw.lengthAt(c);
 				for (let i = at; i < end; i++) {
@@ -1173,7 +1523,7 @@ export class HeatmapStore implements MarksStore {
 			return column === MARK_COLUMNS.max ? max : min;
 		}
 		const last = to - 1;
-		const cells = raw.chunk(last).cells;
+		const cells = raw.cells(last);
 		const at = raw.cellsAt(last);
 		const length = raw.lengthAt(last);
 		const base = this._priceStart + (raw.offsetAt(last) + 0.5) * this._priceStep;
@@ -1278,7 +1628,7 @@ export class HeatmapStore implements MarksStore {
 				update.lengths[i] = n;
 			}
 			const from = source!.cellsAt(column);
-			update.values.set(source!.chunk(column).cells.subarray(from, from + n), at);
+			update.values.set(source!.cells(column).subarray(from, from + n), at);
 			at += n;
 		}
 	}

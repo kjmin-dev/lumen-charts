@@ -1,0 +1,121 @@
+{
+	"schema": 2,
+	"createdAt": "2026-11-22T17:35:48.602Z",
+	"environment": {
+		"runner": {
+			"arguments": ["--browser","firefox","--case","ind-apply/candles-1m/all/20","--lib","lumen-worker,lumen-main","--repeats","1","--budget","1.5","--timeout","1200","--packages","<checkout of main at 9ee1ef4>/packages","--out","<scratch>"],
+			"node": "v26.13.1",
+			"durationSeconds": 294.959117333,
+			"skipped": []
+		},
+		"machine": {
+			"platform": "darwin",
+			"release": "25.5.0",
+			"arch": "arm64",
+			"cpuModel": "Apple M1",
+			"cpuCores": 8,
+			"totalMemoryBytes": 17179869184,
+			"power": "Now drawing from 'AC Power'",
+			"loadAverageStart": [27.36279296875,15.6220703125,13.05712890625],
+			"loadAverageEnd": [18.8740234375,17.060546875,14.4951171875]
+		},
+		"browser": {"engine":"firefox","version":"157.0","channel":"playwright-bundled","headless":true,"commandLine":null,"gpuStatus":null,"firefoxPrefs":{}},
+		"cpuThrottlingRate": 1,
+		"viewport": {"width":1280,"height":720},
+		"deviceScaleFactor": 2,
+		"chart": {"width":1200,"height":600},
+		"page": {
+			"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:157.0) Gecko/20100101 Firefox/157.0",
+			"userAgentData": null,
+			"devicePixelRatio": 2,
+			"viewport": {"width":1280,"height":720},
+			"screen": {"width":683,"height":384},
+			"chart": {"width":1200,"height":600},
+			"hardwareConcurrency": 8,
+			"deviceMemoryGb": null,
+			"crossOriginIsolated": true,
+			"timer": {"minStepMs":0.01999999999998181,"medianStepMs":0.01999999999998181,"steps":2000},
+			"idleFrameInterval": {"count":120,"mean":16.66633333333333,"min":14.660000000000082,"p50":16.660000000000082,"p90":17.959999999999923,"p95":18.5,"p99":18.660000000000082,"max":18.660000000000082},
+			"webgl": {"vendor":"Apple","renderer":"Apple M1, or similar"},
+			"buildMode": "production",
+			"probes": {"garbageCollection":"unavailable","memory":"unavailable"}
+		},
+		"git": {"commit":"80081f1b064db67ab5873d0c75d797f0b4abe0b1","dirty":true},
+		"sources": "<checkout of main at 9ee1ef4>/packages",
+		"packages": {"lightweight-charts":"5.3.0","playwright":"1.64.1","vite":"8.3.8"}
+	},
+	"cases": [
+		{
+			"caseId": "ind-apply/candles-1m/all/20",
+			"adapter": "lumen-worker",
+			"job": {
+				"scenario": "ind-apply",
+				"dataset": {"kind":"candles","size":1000000},
+				"seed": 1,
+				"chart": {"width":1200,"height":600},
+				"indicators": 20,
+				"view": "all",
+				"ticks": 10000,
+				"minTicks": 1000,
+				"budgetMs": 1500,
+				"warmupTicks": 200,
+				"warmupBudgetMs": 1500,
+				"newBarEvery": 10,
+				"adapter": "lumen-worker"
+			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"applied": {"count":1000,"mean":5.95740000000013,"min":0.13999999999941792,"p50":0.5200000000040745,"p90":3.4400000000023283,"p95":5.8399999999965075,"p99":11.240000000005239,"max":2336.5200000000004},
+						"appliedUpdate": {"count":900,"mean":6.46568888888894,"min":0.13999999999941792,"p50":0.5199999999895226,"p90":3.4400000000023283,"p95":5.8399999999965075,"p99":11.900000000001455,"max":2336.5200000000004},
+						"appliedNewBar": {"count":100,"mean":1.3828000000008434,"min":0.1799999999998363,"p50":0.6000000000058208,"p90":3.3799999999991996,"p95":5.30000000000291,"p99":9.460000000006403,"max":9.680000000007567},
+						"sync": {"count":1000,"mean":0.019439999999986867,"min":0,"p50":0.01999999999998181,"p90":0.03999999999359716,"p95":0.04000000000814907,"p99":0.11999999999534339,"max":0.9199999999982538},
+						"visibleBars": 1000000,
+						"warmupTicks": 200
+					},
+					"durationMs": 128226.75562499999,
+					"host": {"cpuIdle":0.11562911967189102,"loadAverage":21.56396484375}
+				}
+			]
+		},
+		{
+			"caseId": "ind-apply/candles-1m/all/20",
+			"adapter": "lumen-main",
+			"job": {
+				"scenario": "ind-apply",
+				"dataset": {"kind":"candles","size":1000000},
+				"seed": 1,
+				"chart": {"width":1200,"height":600},
+				"indicators": 20,
+				"view": "all",
+				"ticks": 10000,
+				"minTicks": 1000,
+				"budgetMs": 1500,
+				"warmupTicks": 200,
+				"warmupBudgetMs": 1500,
+				"newBarEvery": 10,
+				"adapter": "lumen-main"
+			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":false}},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"applied": {"count":1000,"mean":0.5950599999995702,"min":0.11999999999534339,"p50":0.39999999999417923,"p90":0.9199999999982538,"p95":1.3799999999996544,"p99":5.220000000001164,"max":10.440000000002328},
+						"appliedUpdate": {"count":900,"mean":0.5801333333330103,"min":0.11999999999534339,"p50":0.39999999999417923,"p90":0.8800000000046566,"p95":1.2000000000116415,"p99":5.220000000001164,"max":10.440000000002328},
+						"appliedNewBar": {"count":100,"mean":0.729399999998609,"min":0.14000000001396984,"p50":0.39999999999417923,"p90":1.2599999999802094,"p95":2.919999999983702,"p99":4.900000000001455,"max":5.980000000010477},
+						"sync": {"count":1000,"mean":0.021719999999580977,"min":0,"p50":0.01999999998952262,"p90":0.04000000000814907,"p95":0.04000000000814907,"p99":0.12000000000261934,"max":1.5800000000017462},
+						"visibleBars": 1000000,
+						"warmupTicks": 200
+					},
+					"durationMs": 166651.927708,
+					"host": {"cpuIdle":0.10408966615583401,"loadAverage":18.8740234375}
+				}
+			]
+		}
+	]
+}

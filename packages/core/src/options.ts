@@ -40,8 +40,12 @@ export interface GridOptions {
 }
 
 /**
- * `normal` follows the pointer; `magnet` puts the horizontal line on the close of the bar under the
- * pointer; `nearest` selects the closest visible close in the active pane; `hidden` shows no crosshair.
+ * `normal` follows the pointer. `magnet` puts the horizontal line on the value of the bar under the
+ * pointer nearest to it on screen, among the visible series of the pane under the pointer: the
+ * open, high, low or close of bars and candles, the value of lines and histograms, each where its
+ * own price scale draws it. `nearest` does the same with closes only. At equal distances the series
+ * drawn first wins, and of one bar the open, high, low and close in that order; values outside the
+ * pane are left out. `hidden` shows no crosshair.
  */
 export type CrosshairMode = 'normal' | 'magnet' | 'nearest' | 'hidden';
 
@@ -80,13 +84,15 @@ export const DEFAULT_PRICE_SCALE_ID = 'default';
 
 export interface PriceScaleOptions {
 	/** A positive weight gives a named scale an independent pane below the main pane.
-	 * Heights are proportional, with the main pane having weight one by default. Zero shares the main pane. */
+	 * Heights are proportional, with the main pane having weight one by default. Zero shares the main pane.
+	 * The pane is there while something is on the scale. */
 	paneWeight: number;
 	/**
 	 * Show the axis. A scale without one is an overlay: its series are drawn over the pane, scaled on
 	 * their own, and their value labels go on the default scale's axis, or on the first visible axis
 	 * when that one is hidden. With no visible axis, the pane takes the full width and value labels
-	 * are not shown.
+	 * are not shown. A scale other than the default one shows its axis only while something is on it
+	 * (a series, an indicator output, a heatmap or scatter, a primitive or drawing).
 	 */
 	visible: boolean;
 	/**
@@ -105,9 +111,9 @@ export interface PriceScaleOptions {
 	/** How prices are placed (see `PriceScaleMode`). Changing it fits the scale to its series again. */
 	mode: PriceScaleMode;
 	/**
-	 * Fit the scale to the values of its series in view, in every frame. Dragging the axis turns it
-	 * off and a double click on the axis turns it back on; while it is off, dragging the pane up or
-	 * down moves the scale.
+	 * Fit the scale to the values of its series in view, in every frame. Dragging the axis, the wheel
+	 * or a pinch over it turn it off, and a double click on the axis turns it back on; while it is
+	 * off, dragging the pane up or down moves the scale.
 	 */
 	autoScale: boolean;
 	/** Higher values lower down: the lowest value of the range is at the top. */
@@ -216,7 +222,8 @@ export interface ChartOptions {
 	 * output goes on one with its `priceScaleId` option. These scales are overlays (`visible: false`)
 	 * until their axis is made visible, and a series may name an id listed nowhere, which gets an
 	 * overlay with these defaults. The id `default` is the scale `priceScale` configures and is
-	 * ignored here. Scales are never removed; hide the axis of one no longer needed.
+	 * ignored here. A scale listed here stays, with its options, until `ChartApi.removePriceScale`;
+	 * it takes no room while nothing is on it. One listed nowhere goes once nothing is on it.
 	 */
 	priceScales: Record<string, PriceScaleOptions>;
 	timeScale: TimeScaleOptions;

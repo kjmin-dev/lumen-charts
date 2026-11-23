@@ -49,7 +49,7 @@ import {
 	prepareChartKeymap,
 	resolveOptions,
 } from './options';
-import { type PriceAxis, PriceAxes, type PriceAxisHost, type PriceScaleApi } from './price-axes';
+import { type PriceAxis, PriceAxes, type PriceAxesHost, type PriceScaleApi } from './price-axes';
 import type { PanePrimitive, PaneView } from './primitives';
 import { AxisRenderer } from './render/axes';
 import { ChartLayout } from './render/layout';
@@ -88,7 +88,7 @@ import { observeVisibility, unobserveVisibility } from './shared/observers';
  * Parts get the parts and callbacks they need rather than the chart, and nothing here runs per
  * item: a frame makes a handful of calls into them.
  */
-class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
+class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxesHost {
 	public readonly scale: TimeScale;
 	/** Whether the chart waits for the shared animation frame (see `FrameClient`). */
 	public frameQueued = false;
@@ -640,6 +640,18 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 		return this._axes.get(id);
 	}
 
+	public removePriceScale(id: string): void {
+		const input = this._settings.input;
+		const scales = input.priceScales as Record<string, unknown> | undefined;
+		if (this._destroyed || scales === undefined || !Object.prototype.hasOwnProperty.call(scales, id)) {
+			return;
+		}
+		const kept = { ...scales };
+		delete kept[id];
+		this._settings.apply({ ...input, priceScales: kept as DeepPartial<ChartOptions>['priceScales'] });
+		this._update();
+	}
+
 	public drawings(): DrawingsApi {
 		return this._primitives.ensureDrawings();
 	}
@@ -870,7 +882,12 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 		this._axes.scrollBy(dy, y);
 	}
 
-	// PriceAxisHost and SeriesHost
+	// PriceAxesHost and SeriesHost
+
+	public priceScaleRemoved(axis: PriceAxis): void {
+		this._primitives.forgetView(axis.id);
+		this._overlayRenderer.forgetAxis(axis);
+	}
 
 	public applyPriceScaleOptions(id: string, options: DeepPartial<PriceScaleOptions>): void {
 		this.applyOptions(id === DEFAULT_PRICE_SCALE_ID ? { priceScale: options } : { priceScales: { [id]: options } });
@@ -985,7 +1002,7 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 		const name = series === undefined ? 'a series the chart no longer has' : `series "${series.id}"`;
 		const error: ChartError = {
 			kind: 'refused',
-			message: `The data engine refused ${count} ${count === 1 ? 'update' : 'updates'} of ${name}: a time out of order, or between two bars.`,
+			message: `The data engine refused ${count} ${count === 1 ? 'update' : 'updates'} of ${name}: a time out of order, or between two bars, or a removal or correction of marks whose history the datafeed did not return.`,
 			count,
 		};
 		if (series !== undefined) {
@@ -1135,6 +1152,7 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 	private _placeLayers(): void {
 		// A canvas that changes size is cleared, and the pixel ratio and fonts may differ.
 		this._paneRenderer.stale = true;
+		this._overlayRenderer.stale = true;
 		const layout = this._layout;
 		layout.placePanes();
 		if (this._primitives.placeLayer(layout.pixelRatio)) {
@@ -1142,6 +1160,36 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 		}
 		layout.placeOverlay();
 		this._axisRenderer.reset();
+	}
+
+	/**
+	 * Finds the price scales in use: those of the series and indicator outputs (shown or hidden), of
+	 * heatmaps and scatters, and of primitives and drawings. Those no option lists and nothing uses go;
+	 * those the options list take room only while in use. When an axis or a pane appeared or went,
+	 * the pane takes the room left, and the same bars stay in view.
+	 */
+	private _sweepScales(): void {
+		const axes = this._axes;
+		axes.beginSweep();
+		const series = this._series;
+		for (let i = 0; i < series.length; i++) {
+			axes.markUsed(axes.of(series[i]!));
+		}
+		const marks = this._marks.list;
+		for (let i = 0; i < marks.length; i++) {
+			axes.markUsed(axes.get(marks[i]!.scaleId));
+		}
+		this._primitives.markScales(axes);
+		if (axes.endSweep()) {
+			const scale = this.scale;
+			const from = scale.from;
+			const to = scale.to;
+			const width = this._layout.paneWidth;
+			this._layout.compute();
+			if (this._layout.paneWidth !== width) {
+				scale.setVisibleRange(from, to);
+			}
+		}
 	}
 
 	/** Write phase of a frame: sizes the canvases and draws whatever the invalidation level asks for. */
@@ -1163,10 +1211,17 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 			pane.stale = true;
 		}
 		const animating = this._interaction.step(now);
+		if (level >= INVALIDATE_LIGHT) {
+			// Price lines and value labels follow the series: the overlay compares them, or draws
+			// everything again after a change of options.
+			this._overlayRenderer.changed = true;
+			if (level === INVALIDATE_FULL) this._overlayRenderer.stale = true;
+		}
 		if (level === INVALIDATE_FULL || layout.font === '') {
 			this._placeLayers();
 		}
 		if (level >= INVALIDATE_LIGHT) {
+			this._sweepScales();
 			this._model.update();
 			if (this._axes.fitWidths(this.scale.isEmpty)) {
 				// The axis takes its width from the pane. The same bars stay visible, slightly narrower.

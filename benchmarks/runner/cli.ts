@@ -96,6 +96,11 @@ Browser
                        device pixel ratio, so --viewport, --dpr, --headed and --channel do not
                        apply; --chart still sets the chart's CSS size. The screen is kept on while
                        USB powers the device, and each run records the battery and thermal state
+  --firefox-pref <list>
+                       Firefox preferences for the run, name=value pairs separated by commas (true,
+                       false and numbers as such), recorded in the results file. Headless Firefox
+                       rasterizes Canvas 2D in software by default; gfx.canvas.accelerated=true,
+                       gfx.canvas.accelerated.force-enabled=true has it draw through the GPU
   --cdp-port <n>       local port for the device's DevTools socket (default: 9222)
   --headed             open a browser window (stage 0 and 1 were measured headed). By default
                        runs are headless, in Chromium's new headless mode, which keeps GPU
@@ -108,6 +113,12 @@ Browser
   --viewport <WxH>     page viewport in CSS pixels (default: 1280x720; not with --android)
   --dpr <n>            device pixel ratio (default: 2; not with --android)
   --chart <WxH>        chart size in CSS pixels (default: 1200x600)
+  --cpu-throttle <rate>
+                       slow the page's CPU down by this factor (Chromium on this computer only,
+                       through the DevTools protocol's Emulation.setCPUThrottlingRate; 1 is none),
+                       as a stand-in for a slower device. It slows the page's main thread and its
+                       workers (Chromium throttles the renderer process), not the GPU process or
+                       the rasterizer, and is recorded in the results file
 
 Profiling
   --profile <dir>      trace every run (CPU samples of every thread, frames, tasks, GC) and write
@@ -179,9 +190,11 @@ const { values: args } = parseArgs({
 		browser: { type: 'string', default: 'chromium' },
 		android: { type: 'string' },
 		'cdp-port': { type: 'string', default: '9222' },
+		'firefox-pref': { type: 'string' },
 		viewport: { type: 'string' },
 		dpr: { type: 'string' },
 		chart: { type: 'string', default: '1200x600' },
+		'cpu-throttle': { type: 'string' },
 		timeout: { type: 'string', default: '900' },
 		port: { type: 'string' },
 		out: { type: 'string' },
@@ -214,6 +227,40 @@ if (androidSerial !== null) {
 }
 /** Whether the browser speaks the DevTools protocol: Chromium on the desktop and Chrome on Android. */
 const speaksCdp = engine === 'chromium';
+/** Preferences of a Firefox run (`--firefox-pref`). */
+const firefoxPrefs: Record<string, string | number | boolean> = {};
+for (const pair of list(args['firefox-pref'])) {
+	const at = pair.indexOf('=');
+	if (at <= 0) {
+		throw new Error(`--firefox-pref expects name=value, got "${pair}"`);
+	}
+	const value = pair.slice(at + 1);
+	firefoxPrefs[pair.slice(0, at)] =
+		value === 'true'
+			? true
+			: value === 'false'
+				? false
+				: value !== '' && Number.isFinite(Number(value))
+					? Number(value)
+					: value;
+}
+if (Object.keys(firefoxPrefs).length > 0 && engine !== 'firefox') {
+	throw new Error('--firefox-pref applies to --browser firefox only');
+}
+/** Factor the page's CPU is slowed down by (`--cpu-throttle`), or null for none. */
+const cpuThrottle = args['cpu-throttle'] === undefined ? null : Number(args['cpu-throttle']);
+if (cpuThrottle !== null) {
+	if (!(cpuThrottle >= 1) || !Number.isFinite(cpuThrottle)) {
+		throw new Error(`--cpu-throttle expects a factor of at least 1, got "${args['cpu-throttle']}"`);
+	}
+	if (!speaksCdp) {
+		throw new Error(`--cpu-throttle throttles through Chromium's DevTools protocol: it does not apply to ${engine}`);
+	}
+	if (androidSerial !== null) {
+		// A phone is the slower device itself; throttling it further measures no device.
+		throw new Error('--cpu-throttle stands in for a slower device on this computer: it does not apply with --android');
+	}
+}
 const viewport = parseDimensions(args.viewport ?? '1280x720', '--viewport');
 const chart = parseDimensions(args.chart, '--chart');
 const dpr = Number(args.dpr ?? '2');
@@ -394,7 +441,10 @@ function launch(session?: Session): Promise<Browser> {
 	if (engine === 'firefox') {
 		// Playwright's ratio override does not survive the process switch into a cross-origin
 		// isolated page in Firefox 157, which then draws at 1; the preference sets it for every page.
-		return firefox.launch({ headless, firefoxUserPrefs: { 'layout.css.devPixelsPerPx': String(dpr) } });
+		return firefox.launch({
+			headless,
+			firefoxUserPrefs: { 'layout.css.devPixelsPerPx': String(dpr), ...firefoxPrefs },
+		});
 	}
 	return chromium.launch({ headless, ...(channel !== undefined ? { channel } : {}) });
 }
@@ -544,6 +594,12 @@ async function newPage(session: Session): Promise<BenchPage> {
 		await exposeProtocolProbes(session, page, record => {
 			sampled = record;
 		});
+	}
+	if (cpuThrottle !== null) {
+		// For the whole life of the page, set up and measurement alike, as on a slower device. The
+		// session stays attached until the page closes; the rate holds across its navigation.
+		const cdp = await page.context().newCDPSession(page);
+		await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpuThrottle });
 	}
 	const query = new URLSearchParams({ auto: '', width: String(chart.width), height: String(chart.height) });
 	if (args['mark-renderer'])
@@ -860,7 +916,10 @@ async function main(): Promise<void> {
 					headless,
 					commandLine,
 					gpuStatus,
+					...(engine === 'firefox' ? { firefoxPrefs } : {}),
 				},
+				// The factor the page's CPU was slowed down by (`--cpu-throttle`); 1 for none.
+				cpuThrottlingRate: cpuThrottle ?? 1,
 				// On a device, the page's own viewport and ratio, as it reported them.
 				viewport: session.android !== null ? page.viewport : viewport,
 				deviceScaleFactor: session.android !== null ? page.devicePixelRatio : dpr,
@@ -911,6 +970,7 @@ async function main(): Promise<void> {
 function reportEnvironment(page: PageEnvironment): void {
 	process.stdout.write(
 		`Page: DPR ${page.devicePixelRatio}, chart ${page.chart.width}x${page.chart.height}, ` +
+			(cpuThrottle === null ? '' : `CPU throttled ${cpuThrottle}x, `) +
 			`isolated ${page.crossOriginIsolated}, timer step ${(page.timer.minStepMs * 1000).toFixed(1)} µs, ` +
 			`idle frame interval p50 ${page.idleFrameInterval.p50.toFixed(2)} ms, ` +
 			`WebGL ${page.webgl?.renderer ?? 'none'}, build ${page.buildMode}\n` +

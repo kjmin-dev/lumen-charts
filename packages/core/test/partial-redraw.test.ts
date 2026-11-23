@@ -48,8 +48,11 @@ interface State {
 	columns: readonly [number, number] | null;
 }
 
-/** Stands in for a 2D context: keeps the shapes drawn, with the state and the clip they had. */
-function modelContext(): { shapes: Shape[]; ctx: CanvasRenderingContext2D } {
+/**
+ * Stands in for a 2D context: keeps the shapes drawn, with the state and the clip they had. Only the
+ * series layer's clips are checked: the overlay clips to boxes of its own (`overlay-partial.test.ts`).
+ */
+function modelContext(strict: boolean): { shapes: Shape[]; ctx: CanvasRenderingContext2D } {
 	const shapes: Shape[] = [];
 	let state: State = {
 		fillStyle: '',
@@ -92,6 +95,9 @@ function modelContext(): { shapes: Shape[]; ctx: CanvasRenderingContext2D } {
 		lineTo: (x: number, y: number) => lines.at(-1)!.push([x, y]),
 		rect: (x: number, y: number, width: number, height: number) => rects.push([x, y, width, height]),
 		clip: () => {
+			if (!strict) {
+				return;
+			}
 			// The chart clips to whole columns of the layer and nothing else.
 			assert.deepEqual(lines, []);
 			assert.lengthOf(rects, 1);
@@ -234,7 +240,8 @@ class Harness {
 		vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
 			let entry = contexts.get(this);
 			if (entry === undefined) {
-				entry = modelContext();
+				// The series layer is the chart's first canvas.
+				entry = modelContext(contexts.size === 0);
 				contexts.set(this, entry);
 			}
 			return entry.ctx;

@@ -31,6 +31,9 @@ export interface PixelResult {
 	readonly partial: number;
 	readonly full: number;
 	readonly kept: number;
+	/** Frames that cleared part of the overlay, and all of it. */
+	readonly overlayPartial: number;
+	readonly overlayFull: number;
 	/** Comparisons made, and those with a difference. */
 	readonly compared: number;
 	readonly different: number;
@@ -331,6 +334,93 @@ const SETUPS: readonly Setup[] = [
 			};
 		},
 	},
+	{
+		// The overlay: a crosshair that moves over drawings, hovering them and their handles, with a
+		// drawing selected half of the time, a line with crosshair markers on a scale of its own, and
+		// a tick every third step that moves the price lines and value labels. A frame of the
+		// crosshair alone clears and draws only where something moved (`OverlayRenderer`).
+		name: 'overlay',
+		options: { priceScales: { left: { visible: true, position: 'left' } } },
+		build(chart, data) {
+			const series = chart.addSeries('candlestick');
+			series.setData(data);
+			const line = chart.addSeries('line', { color: '#ff7f0e', lineWidth: 2, priceScaleId: 'left' });
+			line.setData({ time: data.time, value: data.close.map(value => value * 2) });
+			const candles = liveCandles(series, data);
+			const at = (bar: number) => data.time[COUNT - 1 - bar]!;
+			const price = (bar: number, shift: number) => data.close[COUNT - 1 - bar]! + shift;
+			const drawings = chart.drawings();
+			drawings.add({
+				type: 'trendLine',
+				points: [
+					{ time: at(150), price: price(150, -0.3) },
+					{ time: at(20), price: price(20, 0.3) },
+				],
+			});
+			drawings.add({
+				type: 'horizontalLine',
+				points: [{ time: at(90), price: price(90, 0.1) }],
+				options: { lineStyle: 'dashed' },
+			});
+			drawings.add({
+				type: 'rectangle',
+				points: [
+					{ time: at(120), price: price(120, 0.2) },
+					{ time: at(60), price: price(60, -0.2) },
+				],
+				options: { fillColor: 'rgba(0, 0, 255, 0.15)' },
+			});
+			drawings.add({ type: 'verticalLine', points: [{ time: at(40), price: price(40, 0) }] });
+			drawings.add({
+				type: 'fibRetracement',
+				points: [
+					{ time: at(180), price: price(180, -0.4) },
+					{ time: at(140), price: price(140, 0.4) },
+				],
+			});
+			const element = chart.element();
+			const pointer = (type: string, bar: number, shift: number): void => {
+				const pane = element.querySelectorAll('canvas')[0]!;
+				const rect = element.getBoundingClientRect();
+				const x = chart.timeScale().timeToCoordinate(at(bar));
+				const y = series.priceToCoordinate(price(bar, shift));
+				if (x === null || y === null) return;
+				element.dispatchEvent(
+					new PointerEvent(type, {
+						clientX: rect.left + Number.parseFloat(pane.style.left) + x,
+						clientY: rect.top + y,
+						pointerId: 1,
+						pointerType: 'mouse',
+						button: type === 'pointermove' ? -1 : 0,
+						buttons: type === 'pointerdown' ? 1 : 0,
+						bubbles: true,
+						cancelable: true,
+					}),
+				);
+			};
+			return {
+				step(i, next) {
+					if (i % 3 === 2) {
+						candles(i, next);
+					}
+					// Along the drawings and their handles, and off them.
+					const bar = [150, 85, 90, 120, 60, 40, 20, 180, 140, 100][i % 10]!;
+					const shift = i % 4 === 3 ? 0.5 : (next() - 0.5) * 0.05;
+					pointer('pointermove', bar, shift);
+					if (i % 20 === 4) {
+						// Selects the drawing under the pointer, or lets the selection go.
+						pointer('pointerdown', bar, shift);
+						pointer('pointerup', bar, shift);
+					}
+					if (i % 13 === 12) {
+						element.dispatchEvent(
+							new PointerEvent('pointerleave', { pointerId: 1, pointerType: 'mouse', bubbles: true }),
+						);
+					}
+				},
+			};
+		},
+	},
 ];
 
 const STEPS = 40;
@@ -397,6 +487,50 @@ class PaneWatch {
 			this.full++;
 		} else {
 			this.kept++;
+		}
+		this.skip();
+	}
+
+	public release(): void {
+		this._restore();
+	}
+}
+
+/** Counts what the frames of a chart do with its overlay: clear all of it, some, or nothing. */
+class OverlayWatch {
+	public partial = 0;
+	public full = 0;
+	private _whole = false;
+	private _some = false;
+	private readonly _restore: () => void;
+
+	public constructor(canvas: HTMLCanvasElement) {
+		const ctx = canvas.getContext('2d')!;
+		const clearRect = ctx.clearRect.bind(ctx);
+		ctx.clearRect = (x: number, y: number, w: number, h: number): void => {
+			if (x === 0 && y === 0 && w === canvas.width && h === canvas.height) {
+				this._whole = true;
+			} else {
+				this._some = true;
+			}
+			clearRect(x, y, w, h);
+		};
+		const own = ctx as unknown as Record<string, unknown>;
+		this._restore = () => {
+			delete own['clearRect'];
+		};
+	}
+
+	public skip(): void {
+		this._whole = false;
+		this._some = false;
+	}
+
+	public frame(): void {
+		if (this._whole) {
+			this.full++;
+		} else if (this._some) {
+			this.partial++;
 		}
 		this.skip();
 	}
@@ -507,6 +641,7 @@ export async function runCase(name: string, container: HTMLElement): Promise<Pix
 
 	const canvases = [...chart.element().querySelectorAll('canvas')];
 	const watch = new PaneWatch(canvases[0]!);
+	const overlay = new OverlayWatch(canvases[canvases.length - 1]!);
 	/** Draws everything again without changing anything: two changes of an option that cancel out. */
 	const redraw = async (): Promise<void> => {
 		const visible = chart.options().grid.vertLines.visible;
@@ -514,6 +649,7 @@ export async function runCase(name: string, container: HTMLElement): Promise<Pix
 		chart.applyOptions({ grid: { vertLines: { visible } } });
 		await chart.whenIdle();
 		watch.skip();
+		overlay.skip();
 	};
 	const next = random(11);
 	let compared = 0;
@@ -540,11 +676,13 @@ export async function runCase(name: string, container: HTMLElement): Promise<Pix
 		step(i, next);
 		await chart.whenIdle();
 		watch.frame();
+		overlay.frame();
 		if (pass === 'each' || i % 8 === 7 || i === STEPS - 1) {
 			await check(i);
 		}
 	}
 	watch.release();
+	overlay.release();
 	chart.destroy();
 	return {
 		name,
@@ -552,6 +690,8 @@ export async function runCase(name: string, container: HTMLElement): Promise<Pix
 		partial: watch.partial,
 		full: watch.full,
 		kept: watch.kept,
+		overlayPartial: overlay.partial,
+		overlayFull: overlay.full,
 		compared,
 		different,
 		differentPixels,

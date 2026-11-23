@@ -1,9 +1,11 @@
 /// <reference types="node" />
-// Compares frames that redraw only the columns a tick changed with full redraws, pixel for pixel, in
-// headless Chromium (see `benchmarks/src/pixels/main.ts`).
+// Compares frames that redraw only the columns a tick changed, and overlay frames that redraw only
+// what moved, with full redraws, pixel for pixel, in headless Chromium (see
+// `benchmarks/src/pixels/main.ts`).
 // Usage: pnpm bench:pixels [--dpr 1,2,1.5] [--raster gpu,cpu] [--redraw auto|full] [--case <part of a name>] [--out <file.json>]
 //
-// Exits with 1 when any comparison differs, or when a case took no partial frame at all.
+// Exits with 1 when any comparison differs, or when a case took no partial frame at all (the overlay
+// case: no partial frame of the overlay).
 //
 // `--redraw full` runs the charts with the option that turns partial frames off (`redraw: 'full'`).
 // Then every frame is a full redraw, no comparison may differ on either rasterizer, and a partial
@@ -66,7 +68,11 @@ async function main(): Promise<void> {
 					}
 					const result = await page.evaluate(name => window.pixels!.run(name), entry.name);
 					results.push({ ...result, dpr, raster });
-					const ok = result.different === 0 && (fullOnly ? result.partial === 0 : result.partial > 0);
+					// The overlay case must also take frames that clear part of the overlay only.
+					const ok =
+						result.different === 0 &&
+						(fullOnly ? result.partial === 0 : result.partial > 0) &&
+						(!result.name.startsWith('overlay/') || result.overlayPartial > 0);
 					// Software rasterization of partial frames is reported only (see above).
 					const noted = raster === 'cpu' && !fullOnly;
 					if (!ok && !noted) {
@@ -75,6 +81,7 @@ async function main(): Promise<void> {
 					process.stdout.write(
 						`${ok ? 'ok  ' : noted ? 'note' : 'FAIL'} ${raster} dpr ${dpr} ${result.name}: ${result.partial} partial ` +
 							`(${result.clipMin}-${result.clipMax} px), ${result.full} full, ${result.kept} kept; ` +
+							`overlay ${result.overlayPartial} partial, ${result.overlayFull} full; ` +
 							`${result.compared} compared, ${result.different} differ` +
 							(result.different > 0
 								? ` (${result.differentPixels} pixels, by up to ${result.largestDifference}; ${result.firstDifference})`
@@ -92,6 +99,7 @@ async function main(): Promise<void> {
 	const sum = (pick: (result: PixelResult) => number): number => results.reduce((total, r) => total + pick(r), 0);
 	process.stdout.write(
 		`${results.length} cases: ${sum(r => r.partial)} partial frames, ${sum(r => r.full)} full, ${sum(r => r.kept)} kept; ` +
+			`overlay ${sum(r => r.overlayPartial)} partial, ${sum(r => r.overlayFull)} full; ` +
 			`${sum(r => r.compared)} comparisons, ${sum(r => r.different)} differ\n`,
 	);
 	if (args.out !== undefined) {
