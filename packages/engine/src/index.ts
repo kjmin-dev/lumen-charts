@@ -19,7 +19,20 @@ export {
 export { EngineClient, type EngineOptions, createEngine } from './client';
 export { EngineCore } from './core';
 export { type EngineScope, type EngineTransport, LocalTransport, WorkerTransport, attachEngineHost } from './host';
-export { getMaxWorkers, setMaxWorkers } from './pool';
+export {
+	type WorkerConfig,
+	type WorkerConstructor,
+	type WorkerFactory,
+	type WorkerOption,
+	type WorkerPool,
+	type WorkerPoolOptions,
+	type WorkerSource,
+	configureWorker,
+	createWorkerPool,
+	getMaxWorkers,
+	getWorkerConfig,
+	setMaxWorkers,
+} from './pool';
 export {
 	BUILTIN_INDICATORS,
 	atr,

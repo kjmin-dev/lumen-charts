@@ -11,6 +11,9 @@ export class FakeWorker {
 	public static behavior: 'ok' | 'error' | 'silent' = 'ok';
 	/** Every worker created, in order. */
 	public static created: FakeWorker[] = [];
+	/** Arguments passed to `new Worker(url, options)` when constructed directly. */
+	public readonly url: string | URL | undefined;
+	public readonly workerOptions: WorkerOptions | undefined;
 	public terminated = false;
 	/** Messages posted to the worker, with the buffers handed over with each. */
 	public received: HostMessage[] = [];
@@ -24,7 +27,9 @@ export class FakeWorker {
 	private readonly _scopeListeners: ((event: MessageEvent<HostMessage>) => void)[] = [];
 	private readonly _scope: EngineScope;
 
-	public constructor() {
+	public constructor(url?: string | URL, options?: WorkerOptions) {
+		this.url = url;
+		this.workerOptions = options;
 		FakeWorker.created.push(this);
 		this._scope = {
 			addEventListener: (_type, listener) => {

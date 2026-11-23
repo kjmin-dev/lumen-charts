@@ -258,55 +258,65 @@ candles.setData(history);
 await chart.whenIdle(); // resolves once everything handed over so far is painted
 ```
 
-If the page's Content Security Policy blocks workers, Lumen Charts automatically falls back to running the engine on the main thread in short time slices behind the exact same API. To force main-thread mode or supply an explicit worker factory for your bundler, pass `worker` in `options`:
+If the page's Content Security Policy blocks workers, Lumen Charts automatically falls back to running the engine on the main thread in short time slices behind the exact same API.
+
+When a bundler needs the worker declared in application code — or when you want to cap shared workers globally — call `configureWorker(...)` once at app startup. Every package re-exports its own standalone `./worker` entry (so Vite `?worker` constructors, `?url` strings, `URL`s, static paths, and custom factories all work without installing `@lumen-charts/engine`). You can also override per chart with `worker: false`, `worker: 'dedicated'`, or an explicit `createWorkerPool(...)`:
 
 <Tabs syncKey="framework">
 <TabItem label="Vanilla">
 
 ```ts
-import { createChart } from 'lumen-charts';
+import { configureWorker, createChart } from 'lumen-charts';
+import ChartWorker from 'lumen-charts/worker?worker'; // Vite (or pass '/assets/lumen-worker.js' / new URL('lumen-charts/worker', import.meta.url))
 
-// Force main-thread time-sliced mode (no worker):
-const localChart = createChart(container, { worker: false });
+// Configure once at app startup — every chart shares the bounded pool automatically:
+configureWorker({ source: ChartWorker, maxWorkers: 2 });
 
-// Supply the worker explicitly when a bundler requires worker creation in app code:
-const createEngineWorker = () =>
-	new Worker(new URL('@lumen-charts/engine/worker', import.meta.url), { type: 'module' });
-const bundledChart = createChart(container, { worker: createEngineWorker });
+const chart = createChart(container);
+const dedicatedChart = createChart(mainContainer, { worker: 'dedicated' });
+const localChart = createChart(localContainer, { worker: false });
 ```
 
 </TabItem>
 <TabItem label="React">
 
 ```tsx
+// main.tsx — configure once at app entry:
+import { configureWorker } from '@lumen-charts/react';
+import ChartWorker from '@lumen-charts/react/worker?worker';
+
+configureWorker({ source: ChartWorker, maxWorkers: 2 });
+```
+
+```tsx
+// BundledChart.tsx — components stay free of worker boilerplate:
 import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/react';
 
-// Define the worker factory once at module scope so charts share the worker pool.
-const createEngineWorker = () =>
-	new Worker(new URL('@lumen-charts/engine/worker', import.meta.url), { type: 'module' });
-
-const workerOptions: DeepPartial<ChartOptions> = { worker: createEngineWorker };
 const localOptions: DeepPartial<ChartOptions> = { worker: false };
 
 export function BundledChart({ useWorker = true }: { useWorker?: boolean }) {
-	return <LumenChart options={useWorker ? workerOptions : localOptions} style={{ height: 420 }} />;
+	return <LumenChart options={useWorker ? undefined : localOptions} style={{ height: 420 }} />;
 }
 ```
 
 </TabItem>
 <TabItem label="Vue 3">
 
+```ts
+// main.ts — configure once at app entry:
+import { configureWorker } from '@lumen-charts/vue';
+import ChartWorker from '@lumen-charts/vue/worker?worker';
+
+configureWorker({ source: ChartWorker, maxWorkers: 2 });
+```
+
 ```vue
+<!-- BundledChart.vue -->
 <script setup lang="ts">
 import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/vue';
 
-// Define the worker factory once so charts share the worker pool.
-const createEngineWorker = () =>
-	new Worker(new URL('@lumen-charts/engine/worker', import.meta.url), { type: 'module' });
-
-const options: DeepPartial<ChartOptions> = {
-	worker: createEngineWorker, // or `worker: false` for main-thread time-sliced mode
-};
+// Omit `worker` to use the configured pool, or pass `false` / `'dedicated'` per chart.
+const options: DeepPartial<ChartOptions> = { theme: 'auto' };
 </script>
 
 <template>
@@ -317,16 +327,21 @@ const options: DeepPartial<ChartOptions> = {
 </TabItem>
 <TabItem label="Svelte 5">
 
+```ts
+// main.ts — configure once at app entry:
+import { configureWorker } from '@lumen-charts/svelte';
+import ChartWorker from '@lumen-charts/svelte/worker?worker';
+
+configureWorker({ source: ChartWorker, maxWorkers: 2 });
+```
+
 ```svelte
+<!-- BundledChart.svelte -->
 <script lang="ts">
 	import { lumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/svelte';
 
-	const createEngineWorker = () =>
-		new Worker(new URL('@lumen-charts/engine/worker', import.meta.url), { type: 'module' });
-
-	const options: DeepPartial<ChartOptions> = {
-		worker: createEngineWorker, // or `worker: false` for main-thread time-sliced mode
-	};
+	// Omit `worker` to use the configured pool, or pass `false` / `'dedicated'` per chart.
+	const options: DeepPartial<ChartOptions> = { theme: 'auto' };
 </script>
 
 <div style="height: 420px" use:lumenChart={{ options }}></div>
@@ -335,15 +350,20 @@ const options: DeepPartial<ChartOptions> = {
 </TabItem>
 <TabItem label="Solid">
 
+```ts
+// index.tsx — configure once at app entry:
+import { configureWorker } from '@lumen-charts/solid';
+import ChartWorker from '@lumen-charts/solid/worker?worker';
+
+configureWorker({ source: ChartWorker, maxWorkers: 2 });
+```
+
 ```tsx
+// BundledChart.tsx
 import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/solid';
 
-const createEngineWorker = () =>
-	new Worker(new URL('@lumen-charts/engine/worker', import.meta.url), { type: 'module' });
-
-const options: DeepPartial<ChartOptions> = {
-	worker: createEngineWorker, // or `worker: false` for main-thread time-sliced mode
-};
+// Omit `worker` to use the configured pool, or pass `false` / `'dedicated'` per chart.
+const options: DeepPartial<ChartOptions> = { theme: 'auto' };
 
 export function BundledChart() {
 	return <LumenChart class="chart-box" options={options} />;

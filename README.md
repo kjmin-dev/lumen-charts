@@ -26,9 +26,10 @@ candles.update({ time: Date.now(), open: 101, high: 102, low: 100.5, close: 101.
 History lives in the data engine, which runs in a worker. The main thread keeps only the bars
 around the visible range, so data is applied asynchronously: `await chart.whenIdle()` resolves once
 everything handed over so far is on screen. If the page blocks workers, the engine runs on the main
-thread in slices of a few milliseconds, behind the same interface. Pass `worker: false` to force
-that, or `worker: () => new Worker(...)` when a bundler needs the worker created in application
-code (the worker entry is `@lumen-charts/engine/worker`).
+thread in slices of a few milliseconds, behind the same interface. Call `configureWorker(...)` once
+at app startup when a bundler needs an explicit worker entry (every package exports `./worker`, so
+Vite `?worker` constructors, `?url` strings, `URL`s, and custom factories all work), or pass
+`worker: false`, `worker: 'dedicated'`, or `createWorkerPool(...)` per chart.
 
 ## Features
 

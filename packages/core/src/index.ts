@@ -105,4 +105,17 @@ export {
 	type IndicatorParam,
 	defineIndicator,
 } from '@lumen-charts/engine';
-export { getMaxWorkers, setMaxWorkers } from '@lumen-charts/engine';
+export {
+	type WorkerConfig,
+	type WorkerConstructor,
+	type WorkerFactory,
+	type WorkerOption,
+	type WorkerPool,
+	type WorkerPoolOptions,
+	type WorkerSource,
+	configureWorker,
+	createWorkerPool,
+	getMaxWorkers,
+	getWorkerConfig,
+	setMaxWorkers,
+} from '@lumen-charts/engine';

@@ -1,5 +1,12 @@
 import type { ChartApi } from '@lumen-charts/core';
-import { lumenChart } from '@lumen-charts/svelte';
+import {
+	configureWorker,
+	createWorkerPool,
+	getMaxWorkers,
+	getWorkerConfig,
+	lumenChart,
+	setMaxWorkers,
+} from '@lumen-charts/svelte';
 import { describe, expect, it } from 'vitest';
 
 describe('lumenChart (Svelte action)', () => {
@@ -22,5 +29,13 @@ describe('lumenChart (Svelte action)', () => {
 		action.destroy?.();
 		expect(node.querySelector('canvas')).toBeNull();
 		node.remove();
+	});
+
+	it('re-exports worker configuration helpers directly', () => {
+		expect(typeof configureWorker).toBe('function');
+		expect(typeof createWorkerPool).toBe('function');
+		expect(typeof getWorkerConfig).toBe('function');
+		expect(typeof getMaxWorkers).toBe('function');
+		expect(typeof setMaxWorkers).toBe('function');
 	});
 });

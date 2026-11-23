@@ -2,8 +2,13 @@ import {
 	type EngineClient,
 	EngineCore,
 	type EngineEvent,
+	type WorkerConstructor,
+	type WorkerOption,
+	configureWorker,
 	createEngine,
+	createWorkerPool,
 	getMaxWorkers,
+	getWorkerConfig,
 	setMaxWorkers,
 } from '@lumen-charts/engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +25,12 @@ function collect(engine: EngineClient): EngineEvent[] {
 
 const factory = (): Worker => new FakeWorker() as unknown as Worker;
 const other = (): Worker => new FakeWorker() as unknown as Worker;
+function TranspiledWorker(this: unknown): Worker {
+	if (!(this instanceof TranspiledWorker)) {
+		throw new TypeError("Class constructor TranspiledWorker cannot be invoked without 'new'");
+	}
+	return new FakeWorker() as unknown as Worker;
+}
 const firstWorker = (): FakeWorker => FakeWorker.created[0]!;
 const engineIds = (worker: FakeWorker): (number | undefined)[] => worker.received.map(message => message.engine);
 /** The notice of indicator values swapped in, which answers no command: it carries their latest values. */
@@ -31,8 +42,13 @@ const windowValues = (events: EngineEvent[], series: number): Float64Array =>
 
 describe('shared engine workers', () => {
 	let engines: EngineClient[];
-	const create = (worker: () => Worker = factory, workerTimeout?: number): EngineClient => {
+	const create = (worker: WorkerOption = factory, workerTimeout?: number): EngineClient => {
 		const engine = createEngine({ worker, ...(workerTimeout === undefined ? {} : { workerTimeout }) });
+		engines.push(engine);
+		return engine;
+	};
+	const createDefault = (workerTimeout?: number): EngineClient => {
+		const engine = createEngine(workerTimeout === undefined ? {} : { workerTimeout });
 		engines.push(engine);
 		return engine;
 	};
@@ -42,7 +58,7 @@ describe('shared engine workers', () => {
 		engines = [];
 		FakeWorker.created = [];
 		vi.stubGlobal('Worker', FakeWorker);
-		setMaxWorkers(1);
+		configureWorker({ source: true, maxWorkers: 1, timeout: 4000 });
 	});
 
 	afterEach(() => {
@@ -52,7 +68,7 @@ describe('shared engine workers', () => {
 		vi.restoreAllMocks();
 		vi.unstubAllGlobals();
 		FakeWorker.behavior = 'ok';
-		setMaxWorkers(4);
+		configureWorker({ source: true, maxWorkers: 4, timeout: 4000 });
 	});
 
 	it('gives the first engines a worker each, then shares the worker with the fewest engines', async () => {
@@ -408,5 +424,228 @@ describe('shared engine workers', () => {
 		expect(worker.terminated).toBe(true);
 		expect(b.mode).toBe('local');
 		expect(events.length).toBe(1);
+	});
+
+	it('constructs bundler worker classes (Vite ?worker) with new and shares their pool', async () => {
+		class BundlerWorker extends FakeWorker {
+			public constructor(_options?: { name?: string }) {
+				super();
+			}
+		}
+		const ctor: WorkerConstructor = BundlerWorker as unknown as WorkerConstructor;
+		const a = create(ctor);
+		const b = create(ctor);
+		a.addSeries('line');
+		b.addSeries('line');
+		await idle();
+		expect(FakeWorker.created.length).toBe(1);
+		expect(a.mode).toBe('worker');
+		expect(b.mode).toBe('worker');
+		expect(engineIds(FakeWorker.created[0]!)).toEqual([0, 1]);
+	});
+
+	it('falls back to new for transpiled class constructors that reject direct invocation', async () => {
+		const a = create(TranspiledWorker as unknown as WorkerConstructor);
+		a.addSeries('line');
+		await idle();
+		expect(FakeWorker.created.length).toBe(1);
+		expect(a.mode).toBe('worker');
+	});
+
+	it('starts string and URL worker sources as module workers and shares one pool by resolved href', async () => {
+		const a = create('https://example.test/assets/lumen-worker.js');
+		const b = create(new URL('https://example.test/assets/lumen-worker.js'));
+		const c = create(new URL('./lumen-worker.js', 'https://example.test/assets/app.js'));
+		for (const engine of [a, b, c]) {
+			engine.addSeries('line');
+		}
+		await idle();
+		expect(FakeWorker.created.length).toBe(1);
+		expect(FakeWorker.created[0]!.url).toBe('https://example.test/assets/lumen-worker.js');
+		expect(FakeWorker.created[0]!.workerOptions).toEqual({ type: 'module' });
+		expect(engineIds(FakeWorker.created[0]!)).toEqual([0, 1, 2]);
+	});
+
+	it('applies global worker configuration via configureWorker with predictable per-engine precedence', async () => {
+		class ConfiguredWorker extends FakeWorker {}
+		configureWorker({ source: ConfiguredWorker as unknown as WorkerConstructor, maxWorkers: 2, timeout: 1500 });
+		expect(getWorkerConfig()).toEqual({
+			source: ConfiguredWorker,
+			maxWorkers: 2,
+			timeout: 1500,
+		});
+
+		// Omitted `worker` and explicit `worker: true` both use the configured source and share its pool.
+		const a = createDefault();
+		const b = create(true);
+		const c = createDefault();
+		const local = create(false);
+		for (const engine of [a, b, c, local]) {
+			engine.addSeries('line');
+		}
+		await idle();
+		expect(FakeWorker.created.length).toBe(2);
+		expect([a.mode, b.mode, c.mode, local.mode]).toEqual(['worker', 'worker', 'worker', 'local']);
+
+		// Global `configureWorker(false)` disables workers when `worker` is omitted, while `worker: true` overrides.
+		configureWorker(false);
+		const defaultLocal = createDefault();
+		const forcedWorker = create(true);
+		defaultLocal.addSeries('line');
+		forcedWorker.addSeries('line');
+		await idle();
+		expect(defaultLocal.mode).toBe('local');
+		expect(forcedWorker.mode).toBe('worker');
+
+		// Global timeout applies when no per-engine `workerTimeout` is passed.
+		FakeWorker.behavior = 'silent';
+		configureWorker({ source: factory, timeout: 25 });
+		const timedOut = createDefault();
+		timedOut.addSeries('line');
+		await timedOut.whenIdle();
+		expect(timedOut.mode).toBe('local');
+	});
+
+	it('validates configureWorker and createWorkerPool arguments before mutating state', () => {
+		configureWorker({ source: factory, maxWorkers: 3, timeout: 2500 });
+		expect(() => configureWorker('')).toThrow(RangeError);
+		expect(() => configureWorker({ maxWorkers: 0, timeout: 1000 })).toThrow(RangeError);
+		expect(() => configureWorker({ maxWorkers: 2, timeout: 0 })).toThrow(RangeError);
+		expect(() => configureWorker({ maxWorkers: 2, timeout: Infinity })).toThrow(RangeError);
+		// Failed calls must leave the existing configuration untouched.
+		expect(getWorkerConfig()).toEqual({ source: factory, maxWorkers: 3, timeout: 2500 });
+
+		expect(() => createWorkerPool({ worker: '   ' })).toThrow(RangeError);
+		expect(() => createWorkerPool({ maxWorkers: 0 })).toThrow(RangeError);
+		expect(() => createWorkerPool({ timeout: -5 })).toThrow(RangeError);
+	});
+
+	it('gives worker: "dedicated" an unshared worker using the configured source and retires it on destroy', async () => {
+		configureWorker({ source: factory, maxWorkers: 1 });
+		const shared = createDefault();
+		const dedicatedA = create('dedicated');
+		const dedicatedB = create('dedicated');
+		for (const engine of [shared, dedicatedA, dedicatedB]) {
+			engine.addSeries('line');
+		}
+		await idle();
+		expect(FakeWorker.created.length).toBe(3);
+		expect(engineIds(FakeWorker.created[0]!)).toEqual([0]);
+		expect(engineIds(FakeWorker.created[1]!)).toEqual([0]);
+		expect(engineIds(FakeWorker.created[2]!)).toEqual([0]);
+
+		dedicatedA.destroy();
+		expect(FakeWorker.created[1]!.terminated).toBe(true);
+		expect(FakeWorker.created[0]!.terminated).toBe(false);
+		expect(FakeWorker.created[2]!.terminated).toBe(false);
+	});
+
+	it('supports explicit WorkerPool with independent limits, warmup reuse, and clean destroy', async () => {
+		setMaxWorkers(1);
+		const pool = createWorkerPool({ worker: factory, maxWorkers: 2 });
+		expect(pool.maxWorkers).toBe(2);
+		expect(pool.activeWorkers).toBe(0);
+		expect(pool.engines).toBe(0);
+
+		// Pre-start 1 worker; repeated warmup(1) is idempotent.
+		pool.warmup(1);
+		pool.warmup(1);
+		expect(pool.activeWorkers).toBe(1);
+		expect(pool.engines).toBe(0);
+		expect(FakeWorker.created.length).toBe(1);
+
+		// Let the warmed worker finish its ready handshake before any engine connects.
+		await Promise.resolve();
+		await Promise.resolve();
+
+		// First engine reuses the warmed worker synchronously instead of spawning a second one.
+		const a = create(pool);
+		expect(a.mode).toBe('worker');
+		expect(FakeWorker.created.length).toBe(1);
+		expect(pool.activeWorkers).toBe(1);
+		expect(pool.engines).toBe(1);
+
+		// Second engine gets the second slot allowed by this pool (ignoring global setMaxWorkers(1)).
+		const b = create(pool);
+		const c = create(pool);
+		for (const engine of [a, b, c]) {
+			engine.addSeries('line');
+		}
+		await idle();
+		expect(FakeWorker.created.length).toBe(2);
+		expect(pool.activeWorkers).toBe(2);
+		expect(pool.engines).toBe(3);
+
+		// Destroying the lone engine on the second worker retires it cleanly; the first still serves a and c.
+		b.destroy();
+		expect(pool.engines).toBe(2);
+		expect(FakeWorker.created[1]!.terminated).toBe(true);
+		expect(pool.activeWorkers).toBe(1);
+
+		// Destroying the pool terminates all remaining workers immediately and notifies active engines.
+		const lost: string[] = [];
+		a.onlost = message => lost.push(message);
+		c.onlost = message => lost.push(message);
+		pool.destroy();
+		expect(pool.activeWorkers).toBe(0);
+		expect(pool.engines).toBe(0);
+		expect(FakeWorker.created.every(worker => worker.terminated)).toBe(true);
+		expect(lost.length).toBe(2);
+
+		// A warmed worker that serves one engine retires once that engine is destroyed.
+		const single = createWorkerPool({ worker: factory, maxWorkers: 1 });
+		single.warmup(1);
+		await Promise.resolve();
+		await Promise.resolve();
+		const warmedWorker = FakeWorker.created.at(-1)!;
+		const lone = create(single);
+		expect(lone.mode).toBe('worker');
+		lone.destroy();
+		expect(warmedWorker.terminated).toBe(true);
+		expect(single.activeWorkers).toBe(0);
+		single.destroy();
+
+		// Warmup after destroy is a no-op and new engines fall back to local mode.
+		pool.warmup(2);
+		expect(pool.activeWorkers).toBe(0);
+		const afterDestroy = create(pool);
+		expect(afterDestroy.mode).toBe('local');
+	});
+
+	it('cleans up an unused warmed worker on pool.destroy() and handles CSP throws during warmup', () => {
+		const pool = createWorkerPool({ worker: factory, maxWorkers: 2 });
+		pool.warmup(2);
+		expect(pool.activeWorkers).toBe(2);
+		pool.destroy();
+		expect(pool.activeWorkers).toBe(0);
+		expect(FakeWorker.created.every(worker => worker.terminated)).toBe(true);
+
+		const blocked = createWorkerPool({
+			worker: () => {
+				throw new Error('SecurityError');
+			},
+		});
+		expect(() => blocked.warmup(2)).not.toThrow();
+		expect(blocked.activeWorkers).toBe(0);
+		expect(() => blocked.warmup(0)).toThrow(RangeError);
+	});
+
+	it('supports passing a WorkerPool to configureWorker and deriving dedicated workers from its source', async () => {
+		class PoolWorker extends FakeWorker {}
+		const pool = createWorkerPool({ worker: PoolWorker as unknown as WorkerConstructor, maxWorkers: 1 });
+		configureWorker(pool);
+
+		const a = createDefault();
+		const b = create(true);
+		const dedicated = create('dedicated');
+		for (const engine of [a, b, dedicated]) {
+			engine.addSeries('line');
+		}
+		await idle();
+		expect(pool.activeWorkers).toBe(1);
+		expect(pool.engines).toBe(2);
+		expect(FakeWorker.created.length).toBe(2);
+
+		pool.destroy();
 	});
 });

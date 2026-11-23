@@ -88,7 +88,9 @@ export default defineConfig({
 			alias: {
 				'@lumen-charts/engine/worker': pkg('engine', 'src/worker.ts'),
 				'@lumen-charts/engine': pkg('engine'),
+				'@lumen-charts/core/worker': pkg('core', 'src/worker.ts'),
 				'@lumen-charts/core': pkg('core'),
+				'lumen-charts/worker': pkg('lumen-charts', 'src/worker.ts'),
 				'lumen-charts': pkg('lumen-charts'),
 			},
 		},

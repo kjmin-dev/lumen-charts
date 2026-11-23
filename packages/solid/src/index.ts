@@ -41,4 +41,20 @@ export function LumenChart(props: LumenChartProps): JSX.Element {
 	return container;
 }
 
-export type { ChartApi, ChartOptions, DeepPartial } from '@lumen-charts/core';
+export {
+	type ChartApi,
+	type ChartOptions,
+	type DeepPartial,
+	type WorkerConfig,
+	type WorkerConstructor,
+	type WorkerFactory,
+	type WorkerOption,
+	type WorkerPool,
+	type WorkerPoolOptions,
+	type WorkerSource,
+	configureWorker,
+	createWorkerPool,
+	getMaxWorkers,
+	getWorkerConfig,
+	setMaxWorkers,
+} from '@lumen-charts/core';

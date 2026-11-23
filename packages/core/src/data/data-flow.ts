@@ -120,7 +120,8 @@ export class DataFlow {
 	/** The data engine, created with the first series (or plugin module). */
 	public ensureEngine(): EngineClient | null {
 		if (this.engine === null && !this._closed) {
-			this.engine = createEngine({ packedPatches: true, worker: this._settings.options.worker });
+			const worker = this._settings.input.worker;
+			this.engine = createEngine(worker === undefined ? { packedPatches: true } : { packedPatches: true, worker });
 			this.engine.onevent = this._onEvent;
 			this.engine.onlost = this._onLost;
 			this._memoryLimit = this._settings.options.memoryLimit;
