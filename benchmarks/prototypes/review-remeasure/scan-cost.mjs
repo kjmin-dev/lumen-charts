@@ -10,6 +10,7 @@ import { parseArgs } from 'node:util';
 import vm from 'node:vm';
 import { chromium, firefox, webkit } from 'playwright';
 import { build } from 'vite';
+import { formatJson } from '../../src/json.ts';
 
 const { values } = parseArgs({
 	options: {
@@ -68,7 +69,7 @@ try {
 		rows,
 		runs,
 	};
-	if (values.out) await writeFile(values.out, JSON.stringify(file, null, '\t') + '\n');
+	if (values.out) await writeFile(values.out, formatJson(file));
 } finally {
 	await rm(outDir, { recursive: true, force: true });
 }

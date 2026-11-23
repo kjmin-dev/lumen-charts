@@ -54,6 +54,8 @@ WebGPU chart drew the heatmap itself (its `renderer()` reported the backend aske
 automatic range went over to palette slots (WebGL2's slot program, WebGPU's `heatmap-slots` kernel).
 [Chromium](heat-grid-chromium.json) · [WebKit](heat-grid-webkit.json) · [Firefox](heat-grid-firefox.json)
 
+The whole-chart comparisons of `mark-charts.mjs` passed on this branch in Chromium with WebGL2 (78 checks), hardware WebGPU (73) and Canvas only (56), at ratios 1 and 2: [Chromium](marks-history-charts-chromium.json).
+
 ## The existing mark cases against `main`
 
 The scatter and heatmap cases of the harness, `main` (`aef336f`) and this branch alternately

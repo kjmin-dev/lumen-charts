@@ -3,6 +3,7 @@
 // fresh store five times after one warm-up; the median and the range are reported.
 import { writeFileSync } from 'node:fs';
 import { loadavg } from 'node:os';
+import { formatJson } from '../src/json.ts';
 import {
 	EngineCore,
 	type HeatmapColumns,
@@ -207,7 +208,7 @@ it('measures the mark operations', () => {
 	const out = process.env['LUMEN_MEASURE_OUT'];
 	const report = { node: process.version, load: load.map(value => Math.round(value * 10) / 10), runs: RUNS, results };
 	if (out !== undefined) {
-		writeFileSync(out, JSON.stringify(report, null, '\t') + '\n');
+		writeFileSync(out, formatJson(report));
 	}
 	for (const result of results) {
 		process.stdout.write(

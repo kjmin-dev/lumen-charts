@@ -3,25 +3,7 @@
 	"createdAt": "2026-11-22T08:19:49.286Z",
 	"environment": {
 		"runner": {
-			"arguments": [
-				"--android",
-				"<serial>",
-				"--lib",
-				"lumen-worker",
-				"--mark-renderer",
-				"webgpu",
-				"--mark-gpu-timers",
-				"--case",
-				"scatter/candles-2k/cloud-100k/zoom,scatter/candles-2k/cloud-300k/zoom,scatter/candles-2k/cloud-1m/zoom,scatter/candles-2k/cloud-1m/tick,scatter/candles-2k/cloud-1m/tick-redraw,heatmap/candles-4800/2400x600/pan,heatmap/candles-4800/2400x600/zoom,heatmap/candles-4800/2400x600/tick,heatmap/candles-4800/2400x600/tick-redraw,heatmap/candles-4800/2400x600-fixed/pan,heatmap/candles-4800/2400x600-fixed/zoom",
-				"--repeats",
-				"2",
-				"--budget",
-				"1.5",
-				"--timeout",
-				"180",
-				"--out",
-				"<runs>/phone/gpu-webgpu.json"
-			],
+			"arguments": ["--android","<serial>","--lib","lumen-worker","--mark-renderer","webgpu","--mark-gpu-timers","--case","scatter/candles-2k/cloud-100k/zoom,scatter/candles-2k/cloud-300k/zoom,scatter/candles-2k/cloud-1m/zoom,scatter/candles-2k/cloud-1m/tick,scatter/candles-2k/cloud-1m/tick-redraw,heatmap/candles-4800/2400x600/pan,heatmap/candles-4800/2400x600/zoom,heatmap/candles-4800/2400x600/tick,heatmap/candles-4800/2400x600/tick-redraw,heatmap/candles-4800/2400x600-fixed/pan,heatmap/candles-4800/2400x600-fixed/zoom","--repeats","2","--budget","1.5","--timeout","180","--out","<runs>/phone/gpu-webgpu.json"],
 			"node": "v26.13.1",
 			"durationSeconds": 87.15045933299999,
 			"skipped": []
@@ -34,8 +16,8 @@
 			"cpuCores": 8,
 			"totalMemoryBytes": 17179869184,
 			"power": "Now drawing from 'AC Power'",
-			"loadAverageStart": [92.40087890625, 79.80126953125, 47.96875],
-			"loadAverageEnd": [42.2763671875, 66.26513671875, 45.939453125]
+			"loadAverageStart": [92.40087890625,79.80126953125,47.96875],
+			"loadAverageEnd": [42.2763671875,66.26513671875,45.939453125]
 		},
 		"browser": {
 			"engine": "chromium",
@@ -45,113 +27,37 @@
 			"commandLine": "--flag-switches-begin --flag-switches-end --use-mobile-user-agent --use-mobile-user-agent --enable-viewport --enable-desktop-android-scrollbars --validate-input-event-stream --enable-longpress-drag-selection --touch-selection-strategy=direction --disable-composited-antialiasing --enable-dom-distiller --origin-trial-disabled-features=CanvasTextNg|WebAssemblyCustomDescriptors --top-controls-show-threshold=0.5 --top-controls-hide-threshold=0.5",
 			"gpuStatus": ""
 		},
-		"viewport": {
-			"width": 1200,
-			"height": 2470
-		},
+		"viewport": {"width":1200,"height":2470},
 		"deviceScaleFactor": 2.625,
-		"device": {
-			"serial": "<serial>",
-			"manufacturer": "samsung",
-			"model": "SM-F966N",
-			"soc": "SM8750",
-			"android": "17",
-			"sdk": "37",
-			"chrome": "157.0.8103.78",
-			"display": "Physical size: 1080x2520; Physical density: 420"
-		},
-		"chart": {
-			"width": 1200,
-			"height": 600
-		},
+		"device": {"serial":"<serial>","manufacturer":"samsung","model":"SM-F966N","soc":"SM8750","android":"17","sdk":"37","chrome":"157.0.8103.78","display":"Physical size: 1080x2520; Physical density: 420"},
+		"chart": {"width":1200,"height":600},
 		"page": {
 			"userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Mobile Safari/537.36",
 			"userAgentData": {
 				"architecture": "",
-				"brands": [
-					{
-						"brand": "Not-A.Brand",
-						"version": "99"
-					},
-					{
-						"brand": "Google Chrome",
-						"version": "157"
-					},
-					{
-						"brand": "Chromium",
-						"version": "157"
-					}
-				],
-				"fullVersionList": [
-					{
-						"brand": "Not-A.Brand",
-						"version": "99.0.0.0"
-					},
-					{
-						"brand": "Google Chrome",
-						"version": "157.0.8103.78"
-					},
-					{
-						"brand": "Chromium",
-						"version": "157.0.8103.78"
-					}
-				],
+				"brands": [{"brand":"Not-A.Brand","version":"99"},{"brand":"Google Chrome","version":"157"},{"brand":"Chromium","version":"157"}],
+				"fullVersionList": [{"brand":"Not-A.Brand","version":"99.0.0.0"},{"brand":"Google Chrome","version":"157.0.8103.78"},{"brand":"Chromium","version":"157.0.8103.78"}],
 				"mobile": true,
 				"model": "SM-F966N",
 				"platform": "Android",
 				"platformVersion": "17.0.0"
 			},
 			"devicePixelRatio": 2.625,
-			"viewport": {
-				"width": 1200,
-				"height": 2470
-			},
-			"screen": {
-				"width": 412,
-				"height": 960
-			},
-			"chart": {
-				"width": 1200,
-				"height": 600
-			},
+			"viewport": {"width":1200,"height":2470},
+			"screen": {"width":412,"height":960},
+			"chart": {"width":1200,"height":600},
 			"hardwareConcurrency": 8,
 			"deviceMemoryGb": 8,
 			"crossOriginIsolated": true,
-			"timer": {
-				"minStepMs": 0.004999995231628418,
-				"medianStepMs": 0.004999995231628418,
-				"steps": 2000
-			},
-			"idleFrameInterval": {
-				"count": 120,
-				"mean": 16.578708333333314,
-				"min": 15.789999999999964,
-				"p50": 16.579999999999927,
-				"p90": 16.580000000000155,
-				"p95": 16.585000000000036,
-				"p99": 16.66999999999996,
-				"max": 17.8900000000001
-			},
-			"webgl": {
-				"vendor": "Google Inc. (Qualcomm)",
-				"renderer": "ANGLE (Qualcomm, Adreno (TM) 830, OpenGL ES 3.2)"
-			},
+			"timer": {"minStepMs":0.004999995231628418,"medianStepMs":0.004999995231628418,"steps":2000},
+			"idleFrameInterval": {"count":120,"mean":16.578708333333314,"min":15.789999999999964,"p50":16.579999999999927,"p90":16.580000000000155,"p95":16.585000000000036,"p99":16.66999999999996,"max":17.8900000000001},
+			"webgl": {"vendor":"Google Inc. (Qualcomm)","renderer":"ANGLE (Qualcomm, Adreno (TM) 830, OpenGL ES 3.2)"},
 			"buildMode": "production",
-			"probes": {
-				"garbageCollection": "runner: CDP HeapProfiler.collectGarbage",
-				"memory": "runner: CDP Runtime.getHeapUsage of the page and of each dedicated worker"
-			}
+			"probes": {"garbageCollection":"runner: CDP HeapProfiler.collectGarbage","memory":"runner: CDP Runtime.getHeapUsage of the page and of each dedicated worker"}
 		},
-		"git": {
-			"commit": "d615cb0489d826af39f325e6d2e76e5808c41522",
-			"dirty": true
-		},
+		"git": {"commit":"d615cb0489d826af39f325e6d2e76e5808c41522","dirty":true},
 		"sources": "workspace",
-		"packages": {
-			"lightweight-charts": "5.3.0",
-			"playwright": "1.64.1",
-			"vite": "8.3.8"
-		}
+		"packages": {"lightweight-charts":"5.3.0","playwright":"1.64.1","vite":"8.3.8"}
 	},
 	"cases": [
 		{
@@ -159,15 +65,9 @@
 			"adapter": "lumen-worker",
 			"job": {
 				"scenario": "scatter",
-				"dataset": {
-					"kind": "candles",
-					"size": 2000
-				},
+				"dataset": {"kind":"candles","size":2000},
 				"seed": 1,
-				"chart": {
-					"width": 1200,
-					"height": 600
-				},
+				"chart": {"width":1200,"height":600},
 				"points": 100000,
 				"shape": "cloud",
 				"variant": "zoom",
@@ -180,15 +80,7 @@
 				"warmupFrames": 30,
 				"adapter": "lumen-worker"
 			},
-			"library": {
-				"library": {
-					"name": "@lumen-charts/core",
-					"version": "workspace"
-				},
-				"options": {
-					"worker": true
-				}
-			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
 			"status": "ok",
 			"runs": [
 				{
@@ -198,40 +90,11 @@
 						"rendererPath": "scatter-tiles",
 						"rendererBytes": 38529412,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 53,
-							"mean": 6.744025358490567,
-							"min": 6.422528,
-							"p50": 6.488064,
-							"p90": 8.454144,
-							"p95": 8.650752,
-							"p99": 8.781824,
-							"max": 8.781824
-						},
-						"backendFrames": {
-							"scatter-tiles": 52
-						},
+						"gpuPass": {"count":53,"mean":6.744025358490567,"min":6.422528,"p50":6.488064,"p90":8.454144,"p95":8.650752,"p99":8.781824,"max":8.781824},
+						"backendFrames": {"scatter-tiles":52},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 52,
-							"mean": 3.1086538365254035,
-							"min": 1.8049999475479126,
-							"p50": 2.759999990463257,
-							"p90": 3.2949999570846558,
-							"p95": 3.359999895095825,
-							"p99": 24.979999899864197,
-							"max": 24.979999899864197
-						},
-						"interval": {
-							"count": 52,
-							"mean": 29.010192307692304,
-							"min": 16.574999999999818,
-							"p50": 33.154999999999745,
-							"p90": 33.16000000000031,
-							"p95": 33.164999999999964,
-							"p99": 33.17000000000007,
-							"max": 33.17000000000007
-						},
+						"jsTime": {"count":52,"mean":3.1086538365254035,"min":1.8049999475479126,"p50":2.759999990463257,"p90":3.2949999570846558,"p95":3.359999895095825,"p99":24.979999899864197,"max":24.979999899864197},
+						"interval": {"count":52,"mean":29.010192307692304,"min":16.574999999999818,"p50":33.154999999999745,"p90":33.16000000000031,"p95":33.164999999999964,"p99":33.17000000000007,"max":33.17000000000007},
 						"frames": 52,
 						"warmupFrames": 30,
 						"level": 0,
@@ -246,46 +109,8 @@
 						"cpuIdle": 0.00449582530507386,
 						"loadAverage": 80.060546875,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 35.9,
-										"BAT": 31,
-										"CP": 35.1,
-										"PA": 35.4,
-										"SKIN": 36,
-										"SUBBAT": 29.7,
-										"USB": 30
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 37.1,
-										"BAT": 31,
-										"CP": 35.6,
-										"PA": 35.9,
-										"SKIN": 36,
-										"SUBBAT": 29.7,
-										"USB": 30.1
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":35.9,"BAT":31,"CP":35.1,"PA":35.4,"SKIN":36,"SUBBAT":29.7,"USB":30}}},
+							"after": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":37.1,"BAT":31,"CP":35.6,"PA":35.9,"SKIN":36,"SUBBAT":29.7,"USB":30.1}}}
 						}
 					}
 				},
@@ -296,40 +121,11 @@
 						"rendererPath": "scatter-tiles",
 						"rendererBytes": 38529412,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 52,
-							"mean": 6.552339692307696,
-							"min": 6.356992,
-							"p50": 6.488064,
-							"p90": 6.619136,
-							"p95": 6.619136,
-							"p99": 8.716288,
-							"max": 8.716288
-						},
-						"backendFrames": {
-							"scatter-tiles": 51
-						},
+						"gpuPass": {"count":52,"mean":6.552339692307696,"min":6.356992,"p50":6.488064,"p90":6.619136,"p95":6.619136,"p99":8.716288,"max":8.716288},
+						"backendFrames": {"scatter-tiles":51},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 51,
-							"mean": 3.2579411712347293,
-							"min": 1.7300000190734863,
-							"p50": 2.9800000190734863,
-							"p90": 3.584999918937683,
-							"p95": 3.7649999856948853,
-							"p99": 22.454999923706055,
-							"max": 22.454999923706055
-						},
-						"interval": {
-							"count": 51,
-							"mean": 29.905686274509804,
-							"min": 16.565000000000055,
-							"p50": 33.15499999999997,
-							"p90": 33.16000000000031,
-							"p95": 33.164999999999964,
-							"p99": 33.174999999999955,
-							"max": 33.174999999999955
-						},
+						"jsTime": {"count":51,"mean":3.2579411712347293,"min":1.7300000190734863,"p50":2.9800000190734863,"p90":3.584999918937683,"p95":3.7649999856948853,"p99":22.454999923706055,"max":22.454999923706055},
+						"interval": {"count":51,"mean":29.905686274509804,"min":16.565000000000055,"p50":33.15499999999997,"p90":33.16000000000031,"p95":33.164999999999964,"p99":33.174999999999955,"max":33.174999999999955},
 						"frames": 51,
 						"warmupFrames": 30,
 						"level": 0,
@@ -344,312 +140,21 @@
 						"cpuIdle": 0.05481972038263429,
 						"loadAverage": 80.060546875,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 37.1,
-										"BAT": 31,
-										"CP": 35.6,
-										"PA": 35.9,
-										"SKIN": 36,
-										"SUBBAT": 29.7,
-										"USB": 30.1
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 37.1,
-										"BAT": 31,
-										"CP": 35.6,
-										"PA": 35.9,
-										"SKIN": 36,
-										"SUBBAT": 29.7,
-										"USB": 30.1
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":37.1,"BAT":31,"CP":35.6,"PA":35.9,"SKIN":36,"SUBBAT":29.7,"USB":30.1}}},
+							"after": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":37.1,"BAT":31,"CP":35.6,"PA":35.9,"SKIN":36,"SUBBAT":29.7,"USB":30.1}}}
 						}
 					}
 				}
-			],
-			"summary": {
-				"rendererBytes": {
-					"median": 38529412,
-					"min": 38529412,
-					"max": 38529412,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.count": {
-					"median": 52.5,
-					"min": 52,
-					"max": 53,
-					"relativeRange": 0.01904761904761905,
-					"runs": 2
-				},
-				"gpuPass.mean": {
-					"median": 6.648182525399132,
-					"min": 6.552339692307696,
-					"max": 6.744025358490567,
-					"relativeRange": 0.028832792338438728,
-					"runs": 2
-				},
-				"gpuPass.min": {
-					"median": 6.38976,
-					"min": 6.356992,
-					"max": 6.422528,
-					"relativeRange": 0.010256410256410229,
-					"runs": 2
-				},
-				"gpuPass.p50": {
-					"median": 6.488064,
-					"min": 6.488064,
-					"max": 6.488064,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p90": {
-					"median": 7.53664,
-					"min": 6.619136,
-					"max": 8.454144,
-					"relativeRange": 0.24347826086956512,
-					"runs": 2
-				},
-				"gpuPass.p95": {
-					"median": 7.634944000000001,
-					"min": 6.619136,
-					"max": 8.650752,
-					"relativeRange": 0.2660944206008584,
-					"runs": 2
-				},
-				"gpuPass.p99": {
-					"median": 8.749056,
-					"min": 8.716288,
-					"max": 8.781824,
-					"relativeRange": 0.0074906367041198295,
-					"runs": 2
-				},
-				"gpuPass.max": {
-					"median": 8.749056,
-					"min": 8.716288,
-					"max": 8.781824,
-					"relativeRange": 0.0074906367041198295,
-					"runs": 2
-				},
-				"backendFrames.scatter-tiles": {
-					"median": 51.5,
-					"min": 51,
-					"max": 52,
-					"relativeRange": 0.019417475728155338,
-					"runs": 2
-				},
-				"backendTransitions": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.count": {
-					"median": 51.5,
-					"min": 51,
-					"max": 52,
-					"relativeRange": 0.019417475728155338,
-					"runs": 2
-				},
-				"jsTime.mean": {
-					"median": 3.183297503880066,
-					"min": 3.1086538365254035,
-					"max": 3.2579411712347293,
-					"relativeRange": 0.0468970727766921,
-					"runs": 2
-				},
-				"jsTime.min": {
-					"median": 1.7674999833106995,
-					"min": 1.7300000190734863,
-					"max": 1.8049999475479126,
-					"relativeRange": 0.042432774643620705,
-					"runs": 2
-				},
-				"jsTime.p50": {
-					"median": 2.8700000047683716,
-					"min": 2.759999990463257,
-					"max": 2.9800000190734863,
-					"relativeRange": 0.07665506210617062,
-					"runs": 2
-				},
-				"jsTime.p90": {
-					"median": 3.4399999380111694,
-					"min": 3.2949999570846558,
-					"max": 3.584999918937683,
-					"relativeRange": 0.0843023160112876,
-					"runs": 2
-				},
-				"jsTime.p95": {
-					"median": 3.5624999403953552,
-					"min": 3.359999895095825,
-					"max": 3.7649999856948853,
-					"relativeRange": 0.11368423785969647,
-					"runs": 2
-				},
-				"jsTime.p99": {
-					"median": 23.717499911785126,
-					"min": 22.454999923706055,
-					"max": 24.979999899864197,
-					"relativeRange": 0.10646147298617592,
-					"runs": 2
-				},
-				"jsTime.max": {
-					"median": 23.717499911785126,
-					"min": 22.454999923706055,
-					"max": 24.979999899864197,
-					"relativeRange": 0.10646147298617592,
-					"runs": 2
-				},
-				"interval.count": {
-					"median": 51.5,
-					"min": 51,
-					"max": 52,
-					"relativeRange": 0.019417475728155338,
-					"runs": 2
-				},
-				"interval.mean": {
-					"median": 29.457939291101056,
-					"min": 29.010192307692304,
-					"max": 29.905686274509804,
-					"relativeRange": 0.0303990702801136,
-					"runs": 2
-				},
-				"interval.min": {
-					"median": 16.569999999999936,
-					"min": 16.565000000000055,
-					"max": 16.574999999999818,
-					"relativeRange": 0.0006035003017358824,
-					"runs": 2
-				},
-				"interval.p50": {
-					"median": 33.15499999999986,
-					"min": 33.154999999999745,
-					"max": 33.15499999999997,
-					"relativeRange": 6.857900028449194e-15,
-					"runs": 2
-				},
-				"interval.p90": {
-					"median": 33.16000000000031,
-					"min": 33.16000000000031,
-					"max": 33.16000000000031,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p95": {
-					"median": 33.164999999999964,
-					"min": 33.164999999999964,
-					"max": 33.164999999999964,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p99": {
-					"median": 33.172500000000014,
-					"min": 33.17000000000007,
-					"max": 33.174999999999955,
-					"relativeRange": 0.00015072725902123035,
-					"runs": 2
-				},
-				"interval.max": {
-					"median": 33.172500000000014,
-					"min": 33.17000000000007,
-					"max": 33.174999999999955,
-					"relativeRange": 0.00015072725902123035,
-					"runs": 2
-				},
-				"frames": {
-					"median": 51.5,
-					"min": 51,
-					"max": 52,
-					"relativeRange": 0.019417475728155338,
-					"runs": 2
-				},
-				"warmupFrames": {
-					"median": 30,
-					"min": 30,
-					"max": 30,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"level": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marks": {
-					"median": 100130,
-					"min": 100130,
-					"max": 100130,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"levelEnd": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marksEnd": {
-					"median": 154432.5,
-					"min": 153545,
-					"max": 155320,
-					"relativeRange": 0.0114936946562414,
-					"runs": 2
-				},
-				"total": {
-					"median": 200000,
-					"min": 200000,
-					"max": 200000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"visibleBars": {
-					"median": 1000,
-					"min": 1000,
-					"max": 1000,
-					"relativeRange": 0,
-					"runs": 2
-				}
-			}
+			]
 		},
 		{
 			"caseId": "scatter/candles-2k/cloud-300k/zoom",
 			"adapter": "lumen-worker",
 			"job": {
 				"scenario": "scatter",
-				"dataset": {
-					"kind": "candles",
-					"size": 2000
-				},
+				"dataset": {"kind":"candles","size":2000},
 				"seed": 1,
-				"chart": {
-					"width": 1200,
-					"height": 600
-				},
+				"chart": {"width":1200,"height":600},
 				"points": 300000,
 				"shape": "cloud",
 				"variant": "zoom",
@@ -662,15 +167,7 @@
 				"warmupFrames": 30,
 				"adapter": "lumen-worker"
 			},
-			"library": {
-				"library": {
-					"name": "@lumen-charts/core",
-					"version": "workspace"
-				},
-				"options": {
-					"worker": true
-				}
-			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
 			"status": "ok",
 			"runs": [
 				{
@@ -680,40 +177,11 @@
 						"rendererPath": "scatter-columns",
 						"rendererBytes": 40777956,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 56,
-							"mean": 6.124105142857142,
-							"min": 4.653056,
-							"p50": 6.5536,
-							"p90": 7.471104,
-							"p95": 7.667712,
-							"p99": 9.568256,
-							"max": 9.568256
-						},
-						"backendFrames": {
-							"scatter-columns": 55
-						},
+						"gpuPass": {"count":56,"mean":6.124105142857142,"min":4.653056,"p50":6.5536,"p90":7.471104,"p95":7.667712,"p99":9.568256,"max":9.568256},
+						"backendFrames": {"scatter-columns":55},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 55,
-							"mean": 3.3816363724795253,
-							"min": 1.6299999952316284,
-							"p50": 3.084999918937683,
-							"p90": 4.145000100135803,
-							"p95": 4.614999890327454,
-							"p99": 18.139999985694885,
-							"max": 18.139999985694885
-						},
-						"interval": {
-							"count": 55,
-							"mean": 27.43109090909091,
-							"min": 16.565000000000055,
-							"p50": 33.15000000000009,
-							"p90": 33.17000000000007,
-							"p95": 49.720000000000255,
-							"p99": 49.74000000000024,
-							"max": 49.74000000000024
-						},
+						"jsTime": {"count":55,"mean":3.3816363724795253,"min":1.6299999952316284,"p50":3.084999918937683,"p90":4.145000100135803,"p95":4.614999890327454,"p99":18.139999985694885,"max":18.139999985694885},
+						"interval": {"count":55,"mean":27.43109090909091,"min":16.565000000000055,"p50":33.15000000000009,"p90":33.17000000000007,"p95":49.720000000000255,"p99":49.74000000000024,"max":49.74000000000024},
 						"frames": 55,
 						"warmupFrames": 30,
 						"level": 0,
@@ -728,46 +196,8 @@
 						"cpuIdle": 0.086654478976234,
 						"loadAverage": 74.6103515625,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 37.1,
-										"BAT": 31,
-										"CP": 35.6,
-										"PA": 35.9,
-										"SKIN": 36,
-										"SUBBAT": 29.7,
-										"USB": 30.1
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 37.1,
-										"BAT": 31,
-										"CP": 35.6,
-										"PA": 35.9,
-										"SKIN": 36,
-										"SUBBAT": 29.7,
-										"USB": 30.1
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":37.1,"BAT":31,"CP":35.6,"PA":35.9,"SKIN":36,"SUBBAT":29.7,"USB":30.1}}},
+							"after": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":37.1,"BAT":31,"CP":35.6,"PA":35.9,"SKIN":36,"SUBBAT":29.7,"USB":30.1}}}
 						}
 					}
 				},
@@ -778,40 +208,11 @@
 						"rendererPath": "scatter-columns",
 						"rendererBytes": 40777956,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 48,
-							"mean": 7.244458666666664,
-							"min": 6.488064,
-							"p50": 7.20896,
-							"p90": 7.602176,
-							"p95": 8.388608,
-							"p99": 9.568256,
-							"max": 9.568256
-						},
-						"backendFrames": {
-							"scatter-columns": 47
-						},
+						"gpuPass": {"count":48,"mean":7.244458666666664,"min":6.488064,"p50":7.20896,"p90":7.602176,"p95":8.388608,"p99":9.568256,"max":9.568256},
+						"backendFrames": {"scatter-columns":47},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 47,
-							"mean": 3.9798936057598033,
-							"min": 2.2299998998641968,
-							"p50": 3.434999942779541,
-							"p90": 4.235000133514404,
-							"p95": 4.745000123977661,
-							"p99": 28.524999856948853,
-							"max": 28.524999856948853
-						},
-						"interval": {
-							"count": 47,
-							"mean": 32.0977659574468,
-							"min": 16.574999999999818,
-							"p50": 33.15499999999997,
-							"p90": 33.17000000000007,
-							"p95": 49.73000000000002,
-							"p99": 49.73999999999978,
-							"max": 49.73999999999978
-						},
+						"jsTime": {"count":47,"mean":3.9798936057598033,"min":2.2299998998641968,"p50":3.434999942779541,"p90":4.235000133514404,"p95":4.745000123977661,"p99":28.524999856948853,"max":28.524999856948853},
+						"interval": {"count":47,"mean":32.0977659574468,"min":16.574999999999818,"p50":33.15499999999997,"p90":33.17000000000007,"p95":49.73000000000002,"p99":49.73999999999978,"max":49.73999999999978},
 						"frames": 47,
 						"warmupFrames": 30,
 						"level": 0,
@@ -826,312 +227,21 @@
 						"cpuIdle": 0.043478260869565216,
 						"loadAverage": 69.59619140625,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 37.1,
-										"BAT": 31,
-										"CP": 35.6,
-										"PA": 35.9,
-										"SKIN": 36,
-										"SUBBAT": 29.7,
-										"USB": 30.1
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 38.6,
-										"BAT": 31,
-										"CP": 36.9,
-										"PA": 37.2,
-										"SKIN": 36.4,
-										"SUBBAT": 29.7,
-										"USB": 30.2
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":37.1,"BAT":31,"CP":35.6,"PA":35.9,"SKIN":36,"SUBBAT":29.7,"USB":30.1}}},
+							"after": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":38.6,"BAT":31,"CP":36.9,"PA":37.2,"SKIN":36.4,"SUBBAT":29.7,"USB":30.2}}}
 						}
 					}
 				}
-			],
-			"summary": {
-				"rendererBytes": {
-					"median": 40777956,
-					"min": 40777956,
-					"max": 40777956,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.count": {
-					"median": 52,
-					"min": 48,
-					"max": 56,
-					"relativeRange": 0.15384615384615385,
-					"runs": 2
-				},
-				"gpuPass.mean": {
-					"median": 6.684281904761903,
-					"min": 6.124105142857142,
-					"max": 7.244458666666664,
-					"relativeRange": 0.16761015465421625,
-					"runs": 2
-				},
-				"gpuPass.min": {
-					"median": 5.57056,
-					"min": 4.653056,
-					"max": 6.488064,
-					"relativeRange": 0.3294117647058822,
-					"runs": 2
-				},
-				"gpuPass.p50": {
-					"median": 6.88128,
-					"min": 6.5536,
-					"max": 7.20896,
-					"relativeRange": 0.09523809523809522,
-					"runs": 2
-				},
-				"gpuPass.p90": {
-					"median": 7.53664,
-					"min": 7.471104,
-					"max": 7.602176,
-					"relativeRange": 0.01739130434782604,
-					"runs": 2
-				},
-				"gpuPass.p95": {
-					"median": 8.02816,
-					"min": 7.667712,
-					"max": 8.388608,
-					"relativeRange": 0.0897959183673469,
-					"runs": 2
-				},
-				"gpuPass.p99": {
-					"median": 9.568256,
-					"min": 9.568256,
-					"max": 9.568256,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.max": {
-					"median": 9.568256,
-					"min": 9.568256,
-					"max": 9.568256,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"backendFrames.scatter-columns": {
-					"median": 51,
-					"min": 47,
-					"max": 55,
-					"relativeRange": 0.1568627450980392,
-					"runs": 2
-				},
-				"backendTransitions": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.count": {
-					"median": 51,
-					"min": 47,
-					"max": 55,
-					"relativeRange": 0.1568627450980392,
-					"runs": 2
-				},
-				"jsTime.mean": {
-					"median": 3.6807649891196643,
-					"min": 3.3816363724795253,
-					"max": 3.9798936057598033,
-					"relativeRange": 0.16253611275067154,
-					"runs": 2
-				},
-				"jsTime.min": {
-					"median": 1.9299999475479126,
-					"min": 1.6299999952316284,
-					"max": 2.2299998998641968,
-					"relativeRange": 0.3108807880512511,
-					"runs": 2
-				},
-				"jsTime.p50": {
-					"median": 3.259999930858612,
-					"min": 3.084999918937683,
-					"max": 3.434999942779541,
-					"relativeRange": 0.10736197278067905,
-					"runs": 2
-				},
-				"jsTime.p90": {
-					"median": 4.190000116825104,
-					"min": 4.145000100135803,
-					"max": 4.235000133514404,
-					"relativeRange": 0.021479720971176716,
-					"runs": 2
-				},
-				"jsTime.p95": {
-					"median": 4.680000007152557,
-					"min": 4.614999890327454,
-					"max": 4.745000123977661,
-					"relativeRange": 0.027777827660582267,
-					"runs": 2
-				},
-				"jsTime.p99": {
-					"median": 23.33249992132187,
-					"min": 18.139999985694885,
-					"max": 28.524999856948853,
-					"relativeRange": 0.4450873205302735,
-					"runs": 2
-				},
-				"jsTime.max": {
-					"median": 23.33249992132187,
-					"min": 18.139999985694885,
-					"max": 28.524999856948853,
-					"relativeRange": 0.4450873205302735,
-					"runs": 2
-				},
-				"interval.count": {
-					"median": 51,
-					"min": 47,
-					"max": 55,
-					"relativeRange": 0.1568627450980392,
-					"runs": 2
-				},
-				"interval.mean": {
-					"median": 29.764428433268854,
-					"min": 27.43109090909091,
-					"max": 32.0977659574468,
-					"relativeRange": 0.15678698681610737,
-					"runs": 2
-				},
-				"interval.min": {
-					"median": 16.569999999999936,
-					"min": 16.565000000000055,
-					"max": 16.574999999999818,
-					"relativeRange": 0.0006035003017358824,
-					"runs": 2
-				},
-				"interval.p50": {
-					"median": 33.15250000000003,
-					"min": 33.15000000000009,
-					"max": 33.15499999999997,
-					"relativeRange": 0.0001508181886699875,
-					"runs": 2
-				},
-				"interval.p90": {
-					"median": 33.17000000000007,
-					"min": 33.17000000000007,
-					"max": 33.17000000000007,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p95": {
-					"median": 49.725000000000136,
-					"min": 49.720000000000255,
-					"max": 49.73000000000002,
-					"relativeRange": 0.00020110608345426856,
-					"runs": 2
-				},
-				"interval.p99": {
-					"median": 49.74000000000001,
-					"min": 49.73999999999978,
-					"max": 49.74000000000024,
-					"relativeRange": 9.142487955095779e-15,
-					"runs": 2
-				},
-				"interval.max": {
-					"median": 49.74000000000001,
-					"min": 49.73999999999978,
-					"max": 49.74000000000024,
-					"relativeRange": 9.142487955095779e-15,
-					"runs": 2
-				},
-				"frames": {
-					"median": 51,
-					"min": 47,
-					"max": 55,
-					"relativeRange": 0.1568627450980392,
-					"runs": 2
-				},
-				"warmupFrames": {
-					"median": 30,
-					"min": 30,
-					"max": 30,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"level": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marks": {
-					"median": 300406,
-					"min": 300406,
-					"max": 300406,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"levelEnd": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marksEnd": {
-					"median": 466463.5,
-					"min": 444932,
-					"max": 487995,
-					"relativeRange": 0.09231804846467087,
-					"runs": 2
-				},
-				"total": {
-					"median": 600000,
-					"min": 600000,
-					"max": 600000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"visibleBars": {
-					"median": 1000,
-					"min": 1000,
-					"max": 1000,
-					"relativeRange": 0,
-					"runs": 2
-				}
-			}
+			]
 		},
 		{
 			"caseId": "scatter/candles-2k/cloud-1m/zoom",
 			"adapter": "lumen-worker",
 			"job": {
 				"scenario": "scatter",
-				"dataset": {
-					"kind": "candles",
-					"size": 2000
-				},
+				"dataset": {"kind":"candles","size":2000},
 				"seed": 1,
-				"chart": {
-					"width": 1200,
-					"height": 600
-				},
+				"chart": {"width":1200,"height":600},
 				"points": 1000000,
 				"shape": "cloud",
 				"variant": "zoom",
@@ -1144,15 +254,7 @@
 				"warmupFrames": 30,
 				"adapter": "lumen-worker"
 			},
-			"library": {
-				"library": {
-					"name": "@lumen-charts/core",
-					"version": "workspace"
-				},
-				"options": {
-					"worker": true
-				}
-			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
 			"status": "ok",
 			"runs": [
 				{
@@ -1162,40 +264,11 @@
 						"rendererPath": "scatter-columns",
 						"rendererBytes": 51977956,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 46,
-							"mean": 10.713711304347825,
-							"min": 4.325376,
-							"p50": 8.192,
-							"p90": 16.646144,
-							"p95": 16.908288,
-							"p99": 17.563648,
-							"max": 17.563648
-						},
-						"backendFrames": {
-							"scatter-columns": 45
-						},
+						"gpuPass": {"count":46,"mean":10.713711304347825,"min":4.325376,"p50":8.192,"p90":16.646144,"p95":16.908288,"p99":17.563648,"max":17.563648},
+						"backendFrames": {"scatter-columns":45},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 45,
-							"mean": 5.255444428655836,
-							"min": 1.4799998998641968,
-							"p50": 4.150000095367432,
-							"p90": 5.074999928474426,
-							"p95": 5.825000047683716,
-							"p99": 57.21000003814697,
-							"max": 57.21000003814697
-						},
-						"interval": {
-							"count": 45,
-							"mean": 33.92411111111112,
-							"min": 16.56999999999971,
-							"p50": 33.149999999999636,
-							"p90": 49.815000000000055,
-							"p95": 51.20499999999993,
-							"p99": 66.32500000000005,
-							"max": 66.32500000000005
-						},
+						"jsTime": {"count":45,"mean":5.255444428655836,"min":1.4799998998641968,"p50":4.150000095367432,"p90":5.074999928474426,"p95":5.825000047683716,"p99":57.21000003814697,"max":57.21000003814697},
+						"interval": {"count":45,"mean":33.92411111111112,"min":16.56999999999971,"p50":33.149999999999636,"p90":49.815000000000055,"p95":51.20499999999993,"p99":66.32500000000005,"max":66.32500000000005},
 						"frames": 45,
 						"warmupFrames": 30,
 						"level": 0,
@@ -1210,46 +283,8 @@
 						"cpuIdle": 0.04549886252843679,
 						"loadAverage": 65.22412109375,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 38.6,
-										"BAT": 31,
-										"CP": 36.9,
-										"PA": 37.2,
-										"SKIN": 36.4,
-										"SUBBAT": 29.7,
-										"USB": 30.2
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40,
-										"BAT": 31,
-										"CP": 37.8,
-										"PA": 38,
-										"SKIN": 36.6,
-										"SUBBAT": 29.7,
-										"USB": 30.2
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":38.6,"BAT":31,"CP":36.9,"PA":37.2,"SKIN":36.4,"SUBBAT":29.7,"USB":30.2}}},
+							"after": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40,"BAT":31,"CP":37.8,"PA":38,"SKIN":36.6,"SUBBAT":29.7,"USB":30.2}}}
 						}
 					}
 				},
@@ -1260,40 +295,11 @@
 						"rendererPath": "scatter-columns",
 						"rendererBytes": 51977956,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 53,
-							"mean": 8.11904483018868,
-							"min": 2.686976,
-							"p50": 8.126464,
-							"p90": 12.12416,
-							"p95": 13.303808,
-							"p99": 14.680064,
-							"max": 14.680064
-						},
-						"backendFrames": {
-							"scatter-columns": 52
-						},
+						"gpuPass": {"count":53,"mean":8.11904483018868,"min":2.686976,"p50":8.126464,"p90":12.12416,"p95":13.303808,"p99":14.680064,"max":14.680064},
+						"backendFrames": {"scatter-columns":52},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 52,
-							"mean": 4.880769218389805,
-							"min": 1.6449999809265137,
-							"p50": 3.9900001287460327,
-							"p90": 4.979999899864197,
-							"p95": 5.829999923706055,
-							"p99": 54.84999990463257,
-							"max": 54.84999990463257
-						},
-						"interval": {
-							"count": 52,
-							"mean": 29.012307692307694,
-							"min": 16.565000000000055,
-							"p50": 33.15000000000009,
-							"p90": 49.73000000000002,
-							"p95": 49.74000000000024,
-							"p99": 49.745000000000346,
-							"max": 49.745000000000346
-						},
+						"jsTime": {"count":52,"mean":4.880769218389805,"min":1.6449999809265137,"p50":3.9900001287460327,"p90":4.979999899864197,"p95":5.829999923706055,"p99":54.84999990463257,"max":54.84999990463257},
+						"interval": {"count":52,"mean":29.012307692307694,"min":16.565000000000055,"p50":33.15000000000009,"p90":49.73000000000002,"p95":49.74000000000024,"p99":49.745000000000346,"max":49.745000000000346},
 						"frames": 52,
 						"warmupFrames": 30,
 						"level": 0,
@@ -1308,312 +314,21 @@
 						"cpuIdle": 0.0015669069257286117,
 						"loadAverage": 65.7666015625,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40,
-										"BAT": 31,
-										"CP": 37.8,
-										"PA": 38,
-										"SKIN": 36.6,
-										"SUBBAT": 29.7,
-										"USB": 30.2
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 41.1,
-										"BAT": 31,
-										"CP": 38.4,
-										"PA": 38.6,
-										"SKIN": 36.9,
-										"SUBBAT": 29.7,
-										"USB": 30.2
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40,"BAT":31,"CP":37.8,"PA":38,"SKIN":36.6,"SUBBAT":29.7,"USB":30.2}}},
+							"after": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":41.1,"BAT":31,"CP":38.4,"PA":38.6,"SKIN":36.9,"SUBBAT":29.7,"USB":30.2}}}
 						}
 					}
 				}
-			],
-			"summary": {
-				"rendererBytes": {
-					"median": 51977956,
-					"min": 51977956,
-					"max": 51977956,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.count": {
-					"median": 49.5,
-					"min": 46,
-					"max": 53,
-					"relativeRange": 0.1414141414141414,
-					"runs": 2
-				},
-				"gpuPass.mean": {
-					"median": 9.416378067268251,
-					"min": 8.11904483018868,
-					"max": 10.713711304347825,
-					"relativeRange": 0.2755482474921352,
-					"runs": 2
-				},
-				"gpuPass.min": {
-					"median": 3.506176,
-					"min": 2.686976,
-					"max": 4.325376,
-					"relativeRange": 0.46728971962616833,
-					"runs": 2
-				},
-				"gpuPass.p50": {
-					"median": 8.159232,
-					"min": 8.126464,
-					"max": 8.192,
-					"relativeRange": 0.008032128514056203,
-					"runs": 2
-				},
-				"gpuPass.p90": {
-					"median": 14.385152,
-					"min": 12.12416,
-					"max": 16.646144,
-					"relativeRange": 0.31435079726651477,
-					"runs": 2
-				},
-				"gpuPass.p95": {
-					"median": 15.106048,
-					"min": 13.303808,
-					"max": 16.908288,
-					"relativeRange": 0.23861171366594353,
-					"runs": 2
-				},
-				"gpuPass.p99": {
-					"median": 16.121856,
-					"min": 14.680064,
-					"max": 17.563648,
-					"relativeRange": 0.1788617886178862,
-					"runs": 2
-				},
-				"gpuPass.max": {
-					"median": 16.121856,
-					"min": 14.680064,
-					"max": 17.563648,
-					"relativeRange": 0.1788617886178862,
-					"runs": 2
-				},
-				"backendFrames.scatter-columns": {
-					"median": 48.5,
-					"min": 45,
-					"max": 52,
-					"relativeRange": 0.14432989690721648,
-					"runs": 2
-				},
-				"backendTransitions": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.count": {
-					"median": 48.5,
-					"min": 45,
-					"max": 52,
-					"relativeRange": 0.14432989690721648,
-					"runs": 2
-				},
-				"jsTime.mean": {
-					"median": 5.06810682352282,
-					"min": 4.880769218389805,
-					"max": 5.255444428655836,
-					"relativeRange": 0.07392804124156088,
-					"runs": 2
-				},
-				"jsTime.min": {
-					"median": 1.5624999403953552,
-					"min": 1.4799998998641968,
-					"max": 1.6449999809265137,
-					"relativeRange": 0.10560005590820526,
-					"runs": 2
-				},
-				"jsTime.p50": {
-					"median": 4.070000112056732,
-					"min": 3.9900001287460327,
-					"max": 4.150000095367432,
-					"relativeRange": 0.0393120300285556,
-					"runs": 2
-				},
-				"jsTime.p90": {
-					"median": 5.0274999141693115,
-					"min": 4.979999899864197,
-					"max": 5.074999928474426,
-					"relativeRange": 0.018896077619511256,
-					"runs": 2
-				},
-				"jsTime.p95": {
-					"median": 5.827499985694885,
-					"min": 5.825000047683716,
-					"max": 5.829999923706055,
-					"relativeRange": 0.0008579795855190671,
-					"runs": 2
-				},
-				"jsTime.p99": {
-					"median": 56.02999997138977,
-					"min": 54.84999990463257,
-					"max": 57.21000003814697,
-					"relativeRange": 0.04212029510475594,
-					"runs": 2
-				},
-				"jsTime.max": {
-					"median": 56.02999997138977,
-					"min": 54.84999990463257,
-					"max": 57.21000003814697,
-					"relativeRange": 0.04212029510475594,
-					"runs": 2
-				},
-				"interval.count": {
-					"median": 48.5,
-					"min": 45,
-					"max": 52,
-					"relativeRange": 0.14432989690721648,
-					"runs": 2
-				},
-				"interval.mean": {
-					"median": 31.468209401709405,
-					"min": 29.012307692307694,
-					"max": 33.92411111111112,
-					"relativeRange": 0.156087795022001,
-					"runs": 2
-				},
-				"interval.min": {
-					"median": 16.56749999999988,
-					"min": 16.565000000000055,
-					"max": 16.56999999999971,
-					"relativeRange": 0.0003017956843008558,
-					"runs": 2
-				},
-				"interval.p50": {
-					"median": 33.149999999999864,
-					"min": 33.149999999999636,
-					"max": 33.15000000000009,
-					"relativeRange": 1.3717868805021599e-14,
-					"runs": 2
-				},
-				"interval.p90": {
-					"median": 49.772500000000036,
-					"min": 49.73000000000002,
-					"max": 49.815000000000055,
-					"relativeRange": 0.0017077703551165065,
-					"runs": 2
-				},
-				"interval.p95": {
-					"median": 50.47250000000008,
-					"min": 49.74000000000024,
-					"max": 51.20499999999993,
-					"relativeRange": 0.029025707068199284,
-					"runs": 2
-				},
-				"interval.p99": {
-					"median": 58.035000000000196,
-					"min": 49.745000000000346,
-					"max": 66.32500000000005,
-					"relativeRange": 0.28568967002670187,
-					"runs": 2
-				},
-				"interval.max": {
-					"median": 58.035000000000196,
-					"min": 49.745000000000346,
-					"max": 66.32500000000005,
-					"relativeRange": 0.28568967002670187,
-					"runs": 2
-				},
-				"frames": {
-					"median": 48.5,
-					"min": 45,
-					"max": 52,
-					"relativeRange": 0.14432989690721648,
-					"runs": 2
-				},
-				"warmupFrames": {
-					"median": 30,
-					"min": 30,
-					"max": 30,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"level": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marks": {
-					"median": 1001327,
-					"min": 1001327,
-					"max": 1001327,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"levelEnd": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marksEnd": {
-					"median": 1600030.5,
-					"min": 1535377,
-					"max": 1664684,
-					"relativeRange": 0.0808153344576869,
-					"runs": 2
-				},
-				"total": {
-					"median": 2000000,
-					"min": 2000000,
-					"max": 2000000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"visibleBars": {
-					"median": 1000,
-					"min": 1000,
-					"max": 1000,
-					"relativeRange": 0,
-					"runs": 2
-				}
-			}
+			]
 		},
 		{
 			"caseId": "scatter/candles-2k/cloud-1m/tick",
 			"adapter": "lumen-worker",
 			"job": {
 				"scenario": "scatter",
-				"dataset": {
-					"kind": "candles",
-					"size": 2000
-				},
+				"dataset": {"kind":"candles","size":2000},
 				"seed": 1,
-				"chart": {
-					"width": 1200,
-					"height": 600
-				},
+				"chart": {"width":1200,"height":600},
 				"points": 1000000,
 				"shape": "cloud",
 				"variant": "tick",
@@ -1626,15 +341,7 @@
 				"warmupFrames": 30,
 				"adapter": "lumen-worker"
 			},
-			"library": {
-				"library": {
-					"name": "@lumen-charts/core",
-					"version": "workspace"
-				},
-				"options": {
-					"worker": true
-				}
-			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
 			"status": "ok",
 			"runs": [
 				{
@@ -1644,30 +351,10 @@
 						"rendererPath": "scatter-columns",
 						"rendererBytes": 54004876,
 						"rendererReason": null,
-						"backendFrames": {
-							"scatter-columns": 91
-						},
+						"backendFrames": {"scatter-columns":91},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 91,
-							"mean": 1.0089011035122715,
-							"min": 0.4549999237060547,
-							"p50": 0.9549999237060547,
-							"p90": 1.2450000047683716,
-							"p95": 1.4800000190734863,
-							"p99": 2.09499990940094,
-							"max": 2.09499990940094
-						},
-						"interval": {
-							"count": 91,
-							"mean": 16.57835164835165,
-							"min": 16.56999999999971,
-							"p50": 16.579999999999927,
-							"p90": 16.585000000000036,
-							"p95": 16.585000000000036,
-							"p99": 16.590000000000146,
-							"max": 16.590000000000146
-						},
+						"jsTime": {"count":91,"mean":1.0089011035122715,"min":0.4549999237060547,"p50":0.9549999237060547,"p90":1.2450000047683716,"p95":1.4800000190734863,"p99":2.09499990940094,"max":2.09499990940094},
+						"interval": {"count":91,"mean":16.57835164835165,"min":16.56999999999971,"p50":16.579999999999927,"p90":16.585000000000036,"p95":16.585000000000036,"p99":16.590000000000146,"max":16.590000000000146},
 						"frames": 91,
 						"warmupFrames": 30,
 						"level": 0,
@@ -1682,46 +369,8 @@
 						"cpuIdle": 0.001649620587264929,
 						"loadAverage": 65.7666015625,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 41.1,
-										"BAT": 31,
-										"CP": 38.4,
-										"PA": 38.6,
-										"SKIN": 36.9,
-										"SUBBAT": 29.7,
-										"USB": 30.2
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.3,
-										"BAT": 31,
-										"CP": 38.9,
-										"PA": 39,
-										"SKIN": 37.1,
-										"SUBBAT": 29.6,
-										"USB": 30.2
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":41.1,"BAT":31,"CP":38.4,"PA":38.6,"SKIN":36.9,"SUBBAT":29.7,"USB":30.2}}},
+							"after": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.3,"BAT":31,"CP":38.9,"PA":39,"SKIN":37.1,"SUBBAT":29.6,"USB":30.2}}}
 						}
 					}
 				},
@@ -1732,30 +381,10 @@
 						"rendererPath": "scatter-columns",
 						"rendererBytes": 54004876,
 						"rendererReason": null,
-						"backendFrames": {
-							"scatter-columns": 91
-						},
+						"backendFrames": {"scatter-columns":91},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 91,
-							"mean": 0.9415384779919634,
-							"min": 0.3049999475479126,
-							"p50": 0.9200000762939453,
-							"p90": 1.1349999904632568,
-							"p95": 1.2500001192092896,
-							"p99": 1.6850000619888306,
-							"max": 1.6850000619888306
-						},
-						"interval": {
-							"count": 91,
-							"mean": 16.58120879120879,
-							"min": 16.574999999999818,
-							"p50": 16.579999999999927,
-							"p90": 16.585000000000036,
-							"p95": 16.585000000000036,
-							"p99": 16.58999999999969,
-							"max": 16.58999999999969
-						},
+						"jsTime": {"count":91,"mean":0.9415384779919634,"min":0.3049999475479126,"p50":0.9200000762939453,"p90":1.1349999904632568,"p95":1.2500001192092896,"p99":1.6850000619888306,"max":1.6850000619888306},
+						"interval": {"count":91,"mean":16.58120879120879,"min":16.574999999999818,"p50":16.579999999999927,"p90":16.585000000000036,"p95":16.585000000000036,"p99":16.58999999999969,"max":16.58999999999969},
 						"frames": 91,
 						"warmupFrames": 30,
 						"level": 0,
@@ -1770,256 +399,21 @@
 						"cpuIdle": 0.006251953735542357,
 						"loadAverage": 62.982421875,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.3,
-										"BAT": 31,
-										"CP": 38.9,
-										"PA": 39,
-										"SKIN": 37.1,
-										"SUBBAT": 29.6,
-										"USB": 30.2
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.3,
-										"BAT": 31,
-										"CP": 38.9,
-										"PA": 39,
-										"SKIN": 37.2,
-										"SUBBAT": 29.6,
-										"USB": 30.3
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.3,"BAT":31,"CP":38.9,"PA":39,"SKIN":37.1,"SUBBAT":29.6,"USB":30.2}}},
+							"after": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.3,"BAT":31,"CP":38.9,"PA":39,"SKIN":37.2,"SUBBAT":29.6,"USB":30.3}}}
 						}
 					}
 				}
-			],
-			"summary": {
-				"rendererBytes": {
-					"median": 54004876,
-					"min": 54004876,
-					"max": 54004876,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"backendFrames.scatter-columns": {
-					"median": 91,
-					"min": 91,
-					"max": 91,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"backendTransitions": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.count": {
-					"median": 91,
-					"min": 91,
-					"max": 91,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.mean": {
-					"median": 0.9752197907521174,
-					"min": 0.9415384779919634,
-					"max": 1.0089011035122715,
-					"relativeRange": 0.06907430115662033,
-					"runs": 2
-				},
-				"jsTime.min": {
-					"median": 0.37999993562698364,
-					"min": 0.3049999475479126,
-					"max": 0.4549999237060547,
-					"relativeRange": 0.39473684623300936,
-					"runs": 2
-				},
-				"jsTime.p50": {
-					"median": 0.9375,
-					"min": 0.9200000762939453,
-					"max": 0.9549999237060547,
-					"relativeRange": 0.037333170572916664,
-					"runs": 2
-				},
-				"jsTime.p90": {
-					"median": 1.1899999976158142,
-					"min": 1.1349999904632568,
-					"max": 1.2450000047683716,
-					"relativeRange": 0.09243698699621991,
-					"runs": 2
-				},
-				"jsTime.p95": {
-					"median": 1.365000069141388,
-					"min": 1.2500001192092896,
-					"max": 1.4800000190734863,
-					"relativeRange": 0.16849808660366683,
-					"runs": 2
-				},
-				"jsTime.p99": {
-					"median": 1.8899999856948853,
-					"min": 1.6850000619888306,
-					"max": 2.09499990940094,
-					"relativeRange": 0.21693113783880116,
-					"runs": 2
-				},
-				"jsTime.max": {
-					"median": 1.8899999856948853,
-					"min": 1.6850000619888306,
-					"max": 2.09499990940094,
-					"relativeRange": 0.21693113783880116,
-					"runs": 2
-				},
-				"interval.count": {
-					"median": 91,
-					"min": 91,
-					"max": 91,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.mean": {
-					"median": 16.57978021978022,
-					"min": 16.57835164835165,
-					"max": 16.58120879120879,
-					"relativeRange": 0.0001723269439804224,
-					"runs": 2
-				},
-				"interval.min": {
-					"median": 16.572499999999764,
-					"min": 16.56999999999971,
-					"max": 16.574999999999818,
-					"relativeRange": 0.0003017046311726783,
-					"runs": 2
-				},
-				"interval.p50": {
-					"median": 16.579999999999927,
-					"min": 16.579999999999927,
-					"max": 16.579999999999927,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p90": {
-					"median": 16.585000000000036,
-					"min": 16.585000000000036,
-					"max": 16.585000000000036,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p95": {
-					"median": 16.585000000000036,
-					"min": 16.585000000000036,
-					"max": 16.585000000000036,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p99": {
-					"median": 16.589999999999918,
-					"min": 16.58999999999969,
-					"max": 16.590000000000146,
-					"relativeRange": 2.7410931337339746e-14,
-					"runs": 2
-				},
-				"interval.max": {
-					"median": 16.589999999999918,
-					"min": 16.58999999999969,
-					"max": 16.590000000000146,
-					"relativeRange": 2.7410931337339746e-14,
-					"runs": 2
-				},
-				"frames": {
-					"median": 91,
-					"min": 91,
-					"max": 91,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"warmupFrames": {
-					"median": 30,
-					"min": 30,
-					"max": 30,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"level": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marks": {
-					"median": 1001327,
-					"min": 1001327,
-					"max": 1001327,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"levelEnd": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marksEnd": {
-					"median": 1001448,
-					"min": 1001448,
-					"max": 1001448,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"total": {
-					"median": 2000000,
-					"min": 2000000,
-					"max": 2000000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"visibleBars": {
-					"median": 1000,
-					"min": 1000,
-					"max": 1000,
-					"relativeRange": 0,
-					"runs": 2
-				}
-			}
+			]
 		},
 		{
 			"caseId": "scatter/candles-2k/cloud-1m/tick-redraw",
 			"adapter": "lumen-worker",
 			"job": {
 				"scenario": "scatter",
-				"dataset": {
-					"kind": "candles",
-					"size": 2000
-				},
+				"dataset": {"kind":"candles","size":2000},
 				"seed": 1,
-				"chart": {
-					"width": 1200,
-					"height": 600
-				},
+				"chart": {"width":1200,"height":600},
 				"points": 1000000,
 				"shape": "cloud",
 				"variant": "tick-redraw",
@@ -2032,15 +426,7 @@
 				"warmupFrames": 30,
 				"adapter": "lumen-worker"
 			},
-			"library": {
-				"library": {
-					"name": "@lumen-charts/core",
-					"version": "workspace"
-				},
-				"options": {
-					"worker": true
-				}
-			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
 			"status": "ok",
 			"runs": [
 				{
@@ -2050,40 +436,11 @@
 						"rendererPath": "scatter-columns",
 						"rendererBytes": 54004876,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 10,
-							"mean": 11.200102400000002,
-							"min": 10.616832,
-							"p50": 10.616832,
-							"p90": 12.45184,
-							"p95": 12.648448,
-							"p99": 12.648448,
-							"max": 12.648448
-						},
-						"backendFrames": {
-							"scatter-columns": 80
-						},
+						"gpuPass": {"count":10,"mean":11.200102400000002,"min":10.616832,"p50":10.616832,"p90":12.45184,"p95":12.648448,"p99":12.648448,"max":12.648448},
+						"backendFrames": {"scatter-columns":80},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 80,
-							"mean": 1.8061874940991403,
-							"min": 0.1549999713897705,
-							"p50": 0.8350000381469727,
-							"p90": 8.639999866485596,
-							"p95": 9.264999985694885,
-							"p99": 11.584999918937683,
-							"max": 11.584999918937683
-						},
-						"interval": {
-							"count": 80,
-							"mean": 18.8584375,
-							"min": 16.565000000000055,
-							"p50": 16.579999999999927,
-							"p90": 33.15000000000009,
-							"p95": 33.17000000000007,
-							"p99": 49.75,
-							"max": 49.75
-						},
+						"jsTime": {"count":80,"mean":1.8061874940991403,"min":0.1549999713897705,"p50":0.8350000381469727,"p90":8.639999866485596,"p95":9.264999985694885,"p99":11.584999918937683,"max":11.584999918937683},
+						"interval": {"count":80,"mean":18.8584375,"min":16.565000000000055,"p50":16.579999999999927,"p90":33.15000000000009,"p95":33.17000000000007,"p99":49.75,"max":49.75},
 						"frames": 80,
 						"warmupFrames": 30,
 						"level": 0,
@@ -2098,46 +455,8 @@
 						"cpuIdle": 0.09288339458737054,
 						"loadAverage": 61.0615234375,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.3,
-										"BAT": 31,
-										"CP": 38.9,
-										"PA": 39,
-										"SKIN": 37.2,
-										"SUBBAT": 29.6,
-										"USB": 30.3
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.2,
-										"BAT": 31,
-										"CP": 39,
-										"PA": 39.1,
-										"SKIN": 37.3,
-										"SUBBAT": 29.9,
-										"USB": 30.3
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.3,"BAT":31,"CP":38.9,"PA":39,"SKIN":37.2,"SUBBAT":29.6,"USB":30.3}}},
+							"after": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.2,"BAT":31,"CP":39,"PA":39.1,"SKIN":37.3,"SUBBAT":29.9,"USB":30.3}}}
 						}
 					}
 				},
@@ -2148,40 +467,11 @@
 						"rendererPath": "scatter-columns",
 						"rendererBytes": 54004876,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 10,
-							"mean": 10.81344,
-							"min": 10.551296,
-							"p50": 10.616832,
-							"p90": 10.682368,
-							"p95": 12.713984,
-							"p99": 12.713984,
-							"max": 12.713984
-						},
-						"backendFrames": {
-							"scatter-columns": 77
-						},
+						"gpuPass": {"count":10,"mean":10.81344,"min":10.551296,"p50":10.616832,"p90":10.682368,"p95":12.713984,"p99":12.713984,"max":12.713984},
+						"backendFrames": {"scatter-columns":77},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 77,
-							"mean": 1.8510389544747092,
-							"min": 0.13999998569488525,
-							"p50": 0.8849998712539673,
-							"p90": 8.490000009536743,
-							"p95": 10.074999928474426,
-							"p99": 11.754999995231628,
-							"max": 11.754999995231628
-						},
-						"interval": {
-							"count": 77,
-							"mean": 19.376688311688312,
-							"min": 16.550000000000182,
-							"p50": 16.575000000000273,
-							"p90": 33.16500000000042,
-							"p95": 33.18000000000029,
-							"p99": 49.74499999999989,
-							"max": 49.74499999999989
-						},
+						"jsTime": {"count":77,"mean":1.8510389544747092,"min":0.13999998569488525,"p50":0.8849998712539673,"p90":8.490000009536743,"p95":10.074999928474426,"p99":11.754999995231628,"max":11.754999995231628},
+						"interval": {"count":77,"mean":19.376688311688312,"min":16.550000000000182,"p50":16.575000000000273,"p90":33.16500000000042,"p95":33.18000000000029,"p99":49.74499999999989,"max":49.74499999999989},
 						"frames": 77,
 						"warmupFrames": 30,
 						"level": 0,
@@ -2196,312 +486,21 @@
 						"cpuIdle": 0.38996010638297873,
 						"loadAverage": 56.57177734375,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.2,
-										"BAT": 31,
-										"CP": 39,
-										"PA": 39.1,
-										"SKIN": 37.3,
-										"SUBBAT": 29.9,
-										"USB": 30.3
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.1,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 41.6,
-										"BAT": 31.1,
-										"CP": 39,
-										"PA": 39.1,
-										"SKIN": 37.4,
-										"SUBBAT": 29.7,
-										"USB": 30.3
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.2,"BAT":31,"CP":39,"PA":39.1,"SKIN":37.3,"SUBBAT":29.9,"USB":30.3}}},
+							"after": {"battery":{"level":99,"temperatureC":31.1,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":41.6,"BAT":31.1,"CP":39,"PA":39.1,"SKIN":37.4,"SUBBAT":29.7,"USB":30.3}}}
 						}
 					}
 				}
-			],
-			"summary": {
-				"rendererBytes": {
-					"median": 54004876,
-					"min": 54004876,
-					"max": 54004876,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.count": {
-					"median": 10,
-					"min": 10,
-					"max": 10,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.mean": {
-					"median": 11.006771200000001,
-					"min": 10.81344,
-					"max": 11.200102400000002,
-					"relativeRange": 0.03512950282822289,
-					"runs": 2
-				},
-				"gpuPass.min": {
-					"median": 10.584064000000001,
-					"min": 10.551296,
-					"max": 10.616832,
-					"relativeRange": 0.006191950464396267,
-					"runs": 2
-				},
-				"gpuPass.p50": {
-					"median": 10.616832,
-					"min": 10.616832,
-					"max": 10.616832,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p90": {
-					"median": 11.567104,
-					"min": 10.682368,
-					"max": 12.45184,
-					"relativeRange": 0.15297450424929182,
-					"runs": 2
-				},
-				"gpuPass.p95": {
-					"median": 12.681216,
-					"min": 12.648448,
-					"max": 12.713984,
-					"relativeRange": 0.005167958656330735,
-					"runs": 2
-				},
-				"gpuPass.p99": {
-					"median": 12.681216,
-					"min": 12.648448,
-					"max": 12.713984,
-					"relativeRange": 0.005167958656330735,
-					"runs": 2
-				},
-				"gpuPass.max": {
-					"median": 12.681216,
-					"min": 12.648448,
-					"max": 12.713984,
-					"relativeRange": 0.005167958656330735,
-					"runs": 2
-				},
-				"backendFrames.scatter-columns": {
-					"median": 78.5,
-					"min": 77,
-					"max": 80,
-					"relativeRange": 0.03821656050955414,
-					"runs": 2
-				},
-				"backendTransitions": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.count": {
-					"median": 78.5,
-					"min": 77,
-					"max": 80,
-					"relativeRange": 0.03821656050955414,
-					"runs": 2
-				},
-				"jsTime.mean": {
-					"median": 1.8286132242869249,
-					"min": 1.8061874940991403,
-					"max": 1.8510389544747092,
-					"relativeRange": 0.024527581765170153,
-					"runs": 2
-				},
-				"jsTime.min": {
-					"median": 0.14749997854232788,
-					"min": 0.13999998569488525,
-					"max": 0.1549999713897705,
-					"relativeRange": 0.10169483306453991,
-					"runs": 2
-				},
-				"jsTime.p50": {
-					"median": 0.85999995470047,
-					"min": 0.8350000381469727,
-					"max": 0.8849998712539673,
-					"relativeRange": 0.05813934388451114,
-					"runs": 2
-				},
-				"jsTime.p90": {
-					"median": 8.56499993801117,
-					"min": 8.490000009536743,
-					"max": 8.639999866485596,
-					"relativeRange": 0.01751311827606191,
-					"runs": 2
-				},
-				"jsTime.p95": {
-					"median": 9.669999957084656,
-					"min": 9.264999985694885,
-					"max": 10.074999928474426,
-					"relativeRange": 0.08376421368917385,
-					"runs": 2
-				},
-				"jsTime.p99": {
-					"median": 11.669999957084656,
-					"min": 11.584999918937683,
-					"max": 11.754999995231628,
-					"relativeRange": 0.014567273086469996,
-					"runs": 2
-				},
-				"jsTime.max": {
-					"median": 11.669999957084656,
-					"min": 11.584999918937683,
-					"max": 11.754999995231628,
-					"relativeRange": 0.014567273086469996,
-					"runs": 2
-				},
-				"interval.count": {
-					"median": 78.5,
-					"min": 77,
-					"max": 80,
-					"relativeRange": 0.03821656050955414,
-					"runs": 2
-				},
-				"interval.mean": {
-					"median": 19.117562905844157,
-					"min": 18.8584375,
-					"max": 19.376688311688312,
-					"relativeRange": 0.027108623324047454,
-					"runs": 2
-				},
-				"interval.min": {
-					"median": 16.55750000000012,
-					"min": 16.550000000000182,
-					"max": 16.565000000000055,
-					"relativeRange": 0.000905933866820025,
-					"runs": 2
-				},
-				"interval.p50": {
-					"median": 16.5775000000001,
-					"min": 16.575000000000273,
-					"max": 16.579999999999927,
-					"relativeRange": 0.0003016136329153589,
-					"runs": 2
-				},
-				"interval.p90": {
-					"median": 33.157500000000255,
-					"min": 33.15000000000009,
-					"max": 33.16500000000042,
-					"relativeRange": 0.0004523863379424656,
-					"runs": 2
-				},
-				"interval.p95": {
-					"median": 33.17500000000018,
-					"min": 33.17000000000007,
-					"max": 33.18000000000029,
-					"relativeRange": 0.00030143180106158925,
-					"runs": 2
-				},
-				"interval.p99": {
-					"median": 49.747499999999945,
-					"min": 49.74499999999989,
-					"max": 49.75,
-					"relativeRange": 0.00010050756319632434,
-					"runs": 2
-				},
-				"interval.max": {
-					"median": 49.747499999999945,
-					"min": 49.74499999999989,
-					"max": 49.75,
-					"relativeRange": 0.00010050756319632434,
-					"runs": 2
-				},
-				"frames": {
-					"median": 78.5,
-					"min": 77,
-					"max": 80,
-					"relativeRange": 0.03821656050955414,
-					"runs": 2
-				},
-				"warmupFrames": {
-					"median": 30,
-					"min": 30,
-					"max": 30,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"level": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marks": {
-					"median": 1001327,
-					"min": 1001327,
-					"max": 1001327,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"levelEnd": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marksEnd": {
-					"median": 1001821,
-					"min": 1001821,
-					"max": 1001821,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"total": {
-					"median": 2000000,
-					"min": 2000000,
-					"max": 2000000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"visibleBars": {
-					"median": 1000,
-					"min": 1000,
-					"max": 1000,
-					"relativeRange": 0,
-					"runs": 2
-				}
-			}
+			]
 		},
 		{
 			"caseId": "heatmap/candles-4800/2400x600/pan",
 			"adapter": "lumen-worker",
 			"job": {
 				"scenario": "heatmap",
-				"dataset": {
-					"kind": "candles",
-					"size": 4800
-				},
+				"dataset": {"kind":"candles","size":4800},
 				"seed": 1,
-				"chart": {
-					"width": 1200,
-					"height": 600
-				},
+				"chart": {"width":1200,"height":600},
 				"variant": "pan",
 				"rows": 600,
 				"visibleBars": 2400,
@@ -2512,15 +511,7 @@
 				"warmupFrames": 30,
 				"adapter": "lumen-worker"
 			},
-			"library": {
-				"library": {
-					"name": "@lumen-charts/core",
-					"version": "workspace"
-				},
-				"options": {
-					"worker": true
-				}
-			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
 			"status": "ok",
 			"runs": [
 				{
@@ -2530,40 +521,11 @@
 						"rendererPath": "heatmap",
 						"rendererBytes": 47521928,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 50,
-							"mean": 6.860308479999995,
-							"min": 6.750208,
-							"p50": 6.750208,
-							"p90": 6.815744,
-							"p95": 7.20896,
-							"p99": 8.84736,
-							"max": 8.84736
-						},
-						"backendFrames": {
-							"heatmap": 49
-						},
+						"gpuPass": {"count":50,"mean":6.860308479999995,"min":6.750208,"p50":6.750208,"p90":6.815744,"p95":7.20896,"p99":8.84736,"max":8.84736},
+						"backendFrames": {"heatmap":49},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 49,
-							"mean": 2.006122460170668,
-							"min": 1.3050000667572021,
-							"p50": 2.0500000715255737,
-							"p90": 2.444999933242798,
-							"p95": 2.524999976158142,
-							"p99": 2.5950000286102295,
-							"max": 2.5950000286102295
-						},
-						"interval": {
-							"count": 49,
-							"mean": 31.124591836734695,
-							"min": 16.569999999999936,
-							"p50": 33.15000000000009,
-							"p90": 33.16500000000019,
-							"p95": 33.17000000000007,
-							"p99": 49.73500000000013,
-							"max": 49.73500000000013
-						},
+						"jsTime": {"count":49,"mean":2.006122460170668,"min":1.3050000667572021,"p50":2.0500000715255737,"p90":2.444999933242798,"p95":2.524999976158142,"p99":2.5950000286102295,"max":2.5950000286102295},
+						"interval": {"count":49,"mean":31.124591836734695,"min":16.569999999999936,"p50":33.15000000000009,"p90":33.16500000000019,"p95":33.17000000000007,"p99":49.73500000000013,"max":49.73500000000013},
 						"frames": 49,
 						"warmupFrames": 30,
 						"level": 0,
@@ -2578,46 +540,8 @@
 						"cpuIdle": 0.3508968609865471,
 						"loadAverage": 56.57177734375,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.1,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 41.6,
-										"BAT": 31.1,
-										"CP": 39,
-										"PA": 39.1,
-										"SKIN": 37.4,
-										"SUBBAT": 29.7,
-										"USB": 30.3
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.1,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.6,
-										"BAT": 31.1,
-										"CP": 39,
-										"PA": 39.1,
-										"SKIN": 37.5,
-										"SUBBAT": 29.7,
-										"USB": 30.3
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31.1,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":41.6,"BAT":31.1,"CP":39,"PA":39.1,"SKIN":37.4,"SUBBAT":29.7,"USB":30.3}}},
+							"after": {"battery":{"level":99,"temperatureC":31.1,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.6,"BAT":31.1,"CP":39,"PA":39.1,"SKIN":37.5,"SUBBAT":29.7,"USB":30.3}}}
 						}
 					}
 				},
@@ -2628,40 +552,11 @@
 						"rendererPath": "heatmap",
 						"rendererBytes": 47521928,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 50,
-							"mean": 6.887833599999996,
-							"min": 6.750208,
-							"p50": 6.750208,
-							"p90": 6.815744,
-							"p95": 8.716288,
-							"p99": 8.912896,
-							"max": 8.912896
-						},
-						"backendFrames": {
-							"heatmap": 49
-						},
+						"gpuPass": {"count":50,"mean":6.887833599999996,"min":6.750208,"p50":6.750208,"p90":6.815744,"p95":8.716288,"p99":8.912896,"max":8.912896},
+						"backendFrames": {"heatmap":49},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 49,
-							"mean": 2.109183676388799,
-							"min": 1.2549999952316284,
-							"p50": 2.200000047683716,
-							"p90": 2.555000066757202,
-							"p95": 2.600000023841858,
-							"p99": 2.9549999237060547,
-							"max": 2.9549999237060547
-						},
-						"interval": {
-							"count": 49,
-							"mean": 30.793367346938776,
-							"min": 16.574999999999818,
-							"p50": 33.16000000000008,
-							"p90": 33.17000000000007,
-							"p95": 33.180000000000064,
-							"p99": 49.75,
-							"max": 49.75
-						},
+						"jsTime": {"count":49,"mean":2.109183676388799,"min":1.2549999952316284,"p50":2.200000047683716,"p90":2.555000066757202,"p95":2.600000023841858,"p99":2.9549999237060547,"max":2.9549999237060547},
+						"interval": {"count":49,"mean":30.793367346938776,"min":16.574999999999818,"p50":33.16000000000008,"p90":33.17000000000007,"p95":33.180000000000064,"p99":49.75,"max":49.75},
 						"frames": 49,
 						"warmupFrames": 30,
 						"level": 0,
@@ -2676,312 +571,21 @@
 						"cpuIdle": 0.11641094062708472,
 						"loadAverage": 52.60205078125,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.1,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.6,
-										"BAT": 31.1,
-										"CP": 39,
-										"PA": 39.1,
-										"SKIN": 37.5,
-										"SUBBAT": 29.7,
-										"USB": 30.3
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.1,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.3,
-										"BAT": 31.1,
-										"CP": 38.8,
-										"PA": 38.9,
-										"SKIN": 37.4,
-										"SUBBAT": 29.7,
-										"USB": 30.4
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31.1,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.6,"BAT":31.1,"CP":39,"PA":39.1,"SKIN":37.5,"SUBBAT":29.7,"USB":30.3}}},
+							"after": {"battery":{"level":99,"temperatureC":31.1,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.3,"BAT":31.1,"CP":38.8,"PA":38.9,"SKIN":37.4,"SUBBAT":29.7,"USB":30.4}}}
 						}
 					}
 				}
-			],
-			"summary": {
-				"rendererBytes": {
-					"median": 47521928,
-					"min": 47521928,
-					"max": 47521928,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.count": {
-					"median": 50,
-					"min": 50,
-					"max": 50,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.mean": {
-					"median": 6.874071039999995,
-					"min": 6.860308479999995,
-					"max": 6.887833599999996,
-					"relativeRange": 0.004004194870817173,
-					"runs": 2
-				},
-				"gpuPass.min": {
-					"median": 6.750208,
-					"min": 6.750208,
-					"max": 6.750208,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p50": {
-					"median": 6.750208,
-					"min": 6.750208,
-					"max": 6.750208,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p90": {
-					"median": 6.815744,
-					"min": 6.815744,
-					"max": 6.815744,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p95": {
-					"median": 7.962624,
-					"min": 7.20896,
-					"max": 8.716288,
-					"relativeRange": 0.18930041152263377,
-					"runs": 2
-				},
-				"gpuPass.p99": {
-					"median": 8.880128,
-					"min": 8.84736,
-					"max": 8.912896,
-					"relativeRange": 0.007380073800737987,
-					"runs": 2
-				},
-				"gpuPass.max": {
-					"median": 8.880128,
-					"min": 8.84736,
-					"max": 8.912896,
-					"relativeRange": 0.007380073800737987,
-					"runs": 2
-				},
-				"backendFrames.heatmap": {
-					"median": 49,
-					"min": 49,
-					"max": 49,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"backendTransitions": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.count": {
-					"median": 49,
-					"min": 49,
-					"max": 49,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.mean": {
-					"median": 2.0576530682797336,
-					"min": 2.006122460170668,
-					"max": 2.109183676388799,
-					"relativeRange": 0.0500867798400502,
-					"runs": 2
-				},
-				"jsTime.min": {
-					"median": 1.2800000309944153,
-					"min": 1.2549999952316284,
-					"max": 1.3050000667572021,
-					"relativeRange": 0.039062554933478655,
-					"runs": 2
-				},
-				"jsTime.p50": {
-					"median": 2.1250000596046448,
-					"min": 2.0500000715255737,
-					"max": 2.200000047683716,
-					"relativeRange": 0.0705882220944735,
-					"runs": 2
-				},
-				"jsTime.p90": {
-					"median": 2.5,
-					"min": 2.444999933242798,
-					"max": 2.555000066757202,
-					"relativeRange": 0.04400005340576172,
-					"runs": 2
-				},
-				"jsTime.p95": {
-					"median": 2.5625,
-					"min": 2.524999976158142,
-					"max": 2.600000023841858,
-					"relativeRange": 0.029268311291206175,
-					"runs": 2
-				},
-				"jsTime.p99": {
-					"median": 2.774999976158142,
-					"min": 2.5950000286102295,
-					"max": 2.9549999237060547,
-					"relativeRange": 0.12972969304101697,
-					"runs": 2
-				},
-				"jsTime.max": {
-					"median": 2.774999976158142,
-					"min": 2.5950000286102295,
-					"max": 2.9549999237060547,
-					"relativeRange": 0.12972969304101697,
-					"runs": 2
-				},
-				"interval.count": {
-					"median": 49,
-					"min": 49,
-					"max": 49,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.mean": {
-					"median": 30.958979591836737,
-					"min": 30.793367346938776,
-					"max": 31.124591836734695,
-					"relativeRange": 0.01069881805417306,
-					"runs": 2
-				},
-				"interval.min": {
-					"median": 16.572499999999877,
-					"min": 16.569999999999936,
-					"max": 16.574999999999818,
-					"relativeRange": 0.0003017046311589563,
-					"runs": 2
-				},
-				"interval.p50": {
-					"median": 33.155000000000086,
-					"min": 33.15000000000009,
-					"max": 33.16000000000008,
-					"relativeRange": 0.0003016136329359336,
-					"runs": 2
-				},
-				"interval.p90": {
-					"median": 33.16750000000013,
-					"min": 33.16500000000019,
-					"max": 33.17000000000007,
-					"relativeRange": 0.000150749981152687,
-					"runs": 2
-				},
-				"interval.p95": {
-					"median": 33.17500000000007,
-					"min": 33.17000000000007,
-					"max": 33.180000000000064,
-					"relativeRange": 0.00030143180105473655,
-					"runs": 2
-				},
-				"interval.p99": {
-					"median": 49.742500000000064,
-					"min": 49.73500000000013,
-					"max": 49.75,
-					"relativeRange": 0.0003015529979368277,
-					"runs": 2
-				},
-				"interval.max": {
-					"median": 49.742500000000064,
-					"min": 49.73500000000013,
-					"max": 49.75,
-					"relativeRange": 0.0003015529979368277,
-					"runs": 2
-				},
-				"frames": {
-					"median": 49,
-					"min": 49,
-					"max": 49,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"warmupFrames": {
-					"median": 30,
-					"min": 30,
-					"max": 30,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"level": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marks": {
-					"median": 1441200,
-					"min": 1441200,
-					"max": 1441200,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"levelEnd": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marksEnd": {
-					"median": 1442400,
-					"min": 1442400,
-					"max": 1442400,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"total": {
-					"median": 2880000,
-					"min": 2880000,
-					"max": 2880000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"visibleBars": {
-					"median": 2400,
-					"min": 2400,
-					"max": 2400,
-					"relativeRange": 0,
-					"runs": 2
-				}
-			}
+			]
 		},
 		{
 			"caseId": "heatmap/candles-4800/2400x600/zoom",
 			"adapter": "lumen-worker",
 			"job": {
 				"scenario": "heatmap",
-				"dataset": {
-					"kind": "candles",
-					"size": 4800
-				},
+				"dataset": {"kind":"candles","size":4800},
 				"seed": 1,
-				"chart": {
-					"width": 1200,
-					"height": 600
-				},
+				"chart": {"width":1200,"height":600},
 				"variant": "zoom",
 				"rows": 600,
 				"visibleBars": 2400,
@@ -2992,15 +596,7 @@
 				"warmupFrames": 30,
 				"adapter": "lumen-worker"
 			},
-			"library": {
-				"library": {
-					"name": "@lumen-charts/core",
-					"version": "workspace"
-				},
-				"options": {
-					"worker": true
-				}
-			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
 			"status": "ok",
 			"runs": [
 				{
@@ -3010,40 +606,11 @@
 						"rendererPath": "heatmap",
 						"rendererBytes": 47521928,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 48,
-							"mean": 8.267093333333328,
-							"min": 7.995392,
-							"p50": 8.060928,
-							"p90": 8.454144,
-							"p95": 10.15808,
-							"p99": 10.289152,
-							"max": 10.289152
-						},
-						"backendFrames": {
-							"heatmap": 47
-						},
+						"gpuPass": {"count":48,"mean":8.267093333333328,"min":7.995392,"p50":8.060928,"p90":8.454144,"p95":10.15808,"p99":10.289152,"max":10.289152},
+						"backendFrames": {"heatmap":47},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 47,
-							"mean": 2.4505319189518056,
-							"min": 1.5250000953674316,
-							"p50": 2.5500000715255737,
-							"p90": 3.075000047683716,
-							"p95": 3.340000033378601,
-							"p99": 3.84499990940094,
-							"max": 3.84499990940094
-						},
-						"interval": {
-							"count": 47,
-							"mean": 32.79723404255319,
-							"min": 16.574999999999818,
-							"p50": 33.15000000000009,
-							"p90": 49.72499999999991,
-							"p95": 49.725000000000136,
-							"p99": 49.73500000000013,
-							"max": 49.73500000000013
-						},
+						"jsTime": {"count":47,"mean":2.4505319189518056,"min":1.5250000953674316,"p50":2.5500000715255737,"p90":3.075000047683716,"p95":3.340000033378601,"p99":3.84499990940094,"max":3.84499990940094},
+						"interval": {"count":47,"mean":32.79723404255319,"min":16.574999999999818,"p50":33.15000000000009,"p90":49.72499999999991,"p95":49.725000000000136,"p99":49.73500000000013,"max":49.73500000000013},
 						"frames": 47,
 						"warmupFrames": 30,
 						"level": 0,
@@ -3058,46 +625,8 @@
 						"cpuIdle": 0.023016145654414292,
 						"loadAverage": 49.6708984375,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.1,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.3,
-										"BAT": 31.1,
-										"CP": 38.8,
-										"PA": 38.9,
-										"SKIN": 37.4,
-										"SUBBAT": 29.7,
-										"USB": 30.4
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.2,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.3,
-										"BAT": 31.2,
-										"CP": 38.7,
-										"PA": 38.8,
-										"SKIN": 37.4,
-										"SUBBAT": 29.7,
-										"USB": 30.4
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31.1,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.3,"BAT":31.1,"CP":38.8,"PA":38.9,"SKIN":37.4,"SUBBAT":29.7,"USB":30.4}}},
+							"after": {"battery":{"level":99,"temperatureC":31.2,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.3,"BAT":31.2,"CP":38.7,"PA":38.8,"SKIN":37.4,"SUBBAT":29.7,"USB":30.4}}}
 						}
 					}
 				},
@@ -3108,40 +637,11 @@
 						"rendererPath": "heatmap",
 						"rendererBytes": 47521928,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 45,
-							"mean": 8.248797866666662,
-							"min": 7.995392,
-							"p50": 8.060928,
-							"p90": 8.388608,
-							"p95": 10.15808,
-							"p99": 10.289152,
-							"max": 10.289152
-						},
-						"backendFrames": {
-							"heatmap": 44
-						},
+						"gpuPass": {"count":45,"mean":8.248797866666662,"min":7.995392,"p50":8.060928,"p90":8.388608,"p95":10.15808,"p99":10.289152,"max":10.289152},
+						"backendFrames": {"heatmap":44},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 44,
-							"mean": 2.6770454699342903,
-							"min": 1.6950000524520874,
-							"p50": 2.630000114440918,
-							"p90": 3.555000066757202,
-							"p95": 3.944999933242798,
-							"p99": 4.4649999141693115,
-							"max": 4.4649999141693115
-						},
-						"interval": {
-							"count": 44,
-							"mean": 35.03840909090909,
-							"min": 16.570000000000164,
-							"p50": 33.1550000000002,
-							"p90": 49.73500000000013,
-							"p95": 49.74499999999989,
-							"p99": 49.74499999999989,
-							"max": 49.74499999999989
-						},
+						"jsTime": {"count":44,"mean":2.6770454699342903,"min":1.6950000524520874,"p50":2.630000114440918,"p90":3.555000066757202,"p95":3.944999933242798,"p99":4.4649999141693115,"max":4.4649999141693115},
+						"interval": {"count":44,"mean":35.03840909090909,"min":16.570000000000164,"p50":33.1550000000002,"p90":49.73500000000013,"p95":49.74499999999989,"p99":49.74499999999989,"max":49.74499999999989},
 						"frames": 44,
 						"warmupFrames": 30,
 						"level": 0,
@@ -3156,312 +656,21 @@
 						"cpuIdle": 0.03642384105960265,
 						"loadAverage": 46.09326171875,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.2,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.3,
-										"BAT": 31.2,
-										"CP": 38.7,
-										"PA": 38.8,
-										"SKIN": 37.4,
-										"SUBBAT": 29.7,
-										"USB": 30.4
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.2,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 39.9,
-										"BAT": 31.2,
-										"CP": 38.6,
-										"PA": 38.8,
-										"SKIN": 37.4,
-										"SUBBAT": 29.7,
-										"USB": 30.4
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31.2,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.3,"BAT":31.2,"CP":38.7,"PA":38.8,"SKIN":37.4,"SUBBAT":29.7,"USB":30.4}}},
+							"after": {"battery":{"level":99,"temperatureC":31.2,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":39.9,"BAT":31.2,"CP":38.6,"PA":38.8,"SKIN":37.4,"SUBBAT":29.7,"USB":30.4}}}
 						}
 					}
 				}
-			],
-			"summary": {
-				"rendererBytes": {
-					"median": 47521928,
-					"min": 47521928,
-					"max": 47521928,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.count": {
-					"median": 46.5,
-					"min": 45,
-					"max": 48,
-					"relativeRange": 0.06451612903225806,
-					"runs": 2
-				},
-				"gpuPass.mean": {
-					"median": 8.257945599999996,
-					"min": 8.248797866666662,
-					"max": 8.267093333333328,
-					"relativeRange": 0.0022154985698460378,
-					"runs": 2
-				},
-				"gpuPass.min": {
-					"median": 7.995392,
-					"min": 7.995392,
-					"max": 7.995392,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p50": {
-					"median": 8.060928,
-					"min": 8.060928,
-					"max": 8.060928,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p90": {
-					"median": 8.421375999999999,
-					"min": 8.388608,
-					"max": 8.454144,
-					"relativeRange": 0.007782101167315154,
-					"runs": 2
-				},
-				"gpuPass.p95": {
-					"median": 10.15808,
-					"min": 10.15808,
-					"max": 10.15808,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p99": {
-					"median": 10.289152,
-					"min": 10.289152,
-					"max": 10.289152,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.max": {
-					"median": 10.289152,
-					"min": 10.289152,
-					"max": 10.289152,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"backendFrames.heatmap": {
-					"median": 45.5,
-					"min": 44,
-					"max": 47,
-					"relativeRange": 0.06593406593406594,
-					"runs": 2
-				},
-				"backendTransitions": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.count": {
-					"median": 45.5,
-					"min": 44,
-					"max": 47,
-					"relativeRange": 0.06593406593406594,
-					"runs": 2
-				},
-				"jsTime.mean": {
-					"median": 2.5637886944430477,
-					"min": 2.4505319189518056,
-					"max": 2.6770454699342903,
-					"relativeRange": 0.08835109986772606,
-					"runs": 2
-				},
-				"jsTime.min": {
-					"median": 1.6100000739097595,
-					"min": 1.5250000953674316,
-					"max": 1.6950000524520874,
-					"relativeRange": 0.10559003060901986,
-					"runs": 2
-				},
-				"jsTime.p50": {
-					"median": 2.590000092983246,
-					"min": 2.5500000715255737,
-					"max": 2.630000114440918,
-					"relativeRange": 0.03088804634875422,
-					"runs": 2
-				},
-				"jsTime.p90": {
-					"median": 3.315000057220459,
-					"min": 3.075000047683716,
-					"max": 3.555000066757202,
-					"relativeRange": 0.1447963833448479,
-					"runs": 2
-				},
-				"jsTime.p95": {
-					"median": 3.6424999833106995,
-					"min": 3.340000033378601,
-					"max": 3.944999933242798,
-					"relativeRange": 0.16609468843821576,
-					"runs": 2
-				},
-				"jsTime.p99": {
-					"median": 4.154999911785126,
-					"min": 3.84499990940094,
-					"max": 4.4649999141693115,
-					"relativeRange": 0.1492178141832978,
-					"runs": 2
-				},
-				"jsTime.max": {
-					"median": 4.154999911785126,
-					"min": 3.84499990940094,
-					"max": 4.4649999141693115,
-					"relativeRange": 0.1492178141832978,
-					"runs": 2
-				},
-				"interval.count": {
-					"median": 45.5,
-					"min": 44,
-					"max": 47,
-					"relativeRange": 0.06593406593406594,
-					"runs": 2
-				},
-				"interval.mean": {
-					"median": 33.91782156673114,
-					"min": 32.79723404255319,
-					"max": 35.03840909090909,
-					"relativeRange": 0.06607662122246061,
-					"runs": 2
-				},
-				"interval.min": {
-					"median": 16.57249999999999,
-					"min": 16.570000000000164,
-					"max": 16.574999999999818,
-					"relativeRange": 0.00030170463114523424,
-					"runs": 2
-				},
-				"interval.p50": {
-					"median": 33.152500000000146,
-					"min": 33.15000000000009,
-					"max": 33.1550000000002,
-					"relativeRange": 0.0001508181886768454,
-					"runs": 2
-				},
-				"interval.p90": {
-					"median": 49.73000000000002,
-					"min": 49.72499999999991,
-					"max": 49.73500000000013,
-					"relativeRange": 0.00020108586366817364,
-					"runs": 2
-				},
-				"interval.p95": {
-					"median": 49.735000000000014,
-					"min": 49.725000000000136,
-					"max": 49.74499999999989,
-					"relativeRange": 0.00040213129586316336,
-					"runs": 2
-				},
-				"interval.p99": {
-					"median": 49.74000000000001,
-					"min": 49.73500000000013,
-					"max": 49.74499999999989,
-					"relativeRange": 0.00020104543626384258,
-					"runs": 2
-				},
-				"interval.max": {
-					"median": 49.74000000000001,
-					"min": 49.73500000000013,
-					"max": 49.74499999999989,
-					"relativeRange": 0.00020104543626384258,
-					"runs": 2
-				},
-				"frames": {
-					"median": 45.5,
-					"min": 44,
-					"max": 47,
-					"relativeRange": 0.06593406593406594,
-					"runs": 2
-				},
-				"warmupFrames": {
-					"median": 30,
-					"min": 30,
-					"max": 30,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"level": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marks": {
-					"median": 1441200,
-					"min": 1441200,
-					"max": 1441200,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"levelEnd": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marksEnd": {
-					"median": 2382000,
-					"min": 2340600,
-					"max": 2423400,
-					"relativeRange": 0.034760705289672546,
-					"runs": 2
-				},
-				"total": {
-					"median": 2880000,
-					"min": 2880000,
-					"max": 2880000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"visibleBars": {
-					"median": 2400,
-					"min": 2400,
-					"max": 2400,
-					"relativeRange": 0,
-					"runs": 2
-				}
-			}
+			]
 		},
 		{
 			"caseId": "heatmap/candles-4800/2400x600/tick",
 			"adapter": "lumen-worker",
 			"job": {
 				"scenario": "heatmap",
-				"dataset": {
-					"kind": "candles",
-					"size": 4800
-				},
+				"dataset": {"kind":"candles","size":4800},
 				"seed": 1,
-				"chart": {
-					"width": 1200,
-					"height": 600
-				},
+				"chart": {"width":1200,"height":600},
 				"variant": "tick",
 				"rows": 600,
 				"visibleBars": 2400,
@@ -3472,15 +681,7 @@
 				"warmupFrames": 30,
 				"adapter": "lumen-worker"
 			},
-			"library": {
-				"library": {
-					"name": "@lumen-charts/core",
-					"version": "workspace"
-				},
-				"options": {
-					"worker": true
-				}
-			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
 			"status": "ok",
 			"runs": [
 				{
@@ -3490,40 +691,11 @@
 						"rendererPath": "heatmap",
 						"rendererBytes": 47521928,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 92,
-							"mean": 0.13320904347826062,
-							"min": 0.131072,
-							"p50": 0.131072,
-							"p90": 0.131072,
-							"p95": 0.131072,
-							"p99": 0.196608,
-							"max": 0.196608
-						},
-						"backendFrames": {
-							"heatmap": 91
-						},
+						"gpuPass": {"count":92,"mean":0.13320904347826062,"min":0.131072,"p50":0.131072,"p90":0.131072,"p95":0.131072,"p99":0.196608,"max":0.196608},
+						"backendFrames": {"heatmap":91},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 91,
-							"mean": 0.5138461589813232,
-							"min": 0.37500011920928955,
-							"p50": 0.48500001430511475,
-							"p90": 0.625,
-							"p95": 0.6399999856948853,
-							"p99": 0.9300000667572021,
-							"max": 0.9300000667572021
-						},
-						"interval": {
-							"count": 91,
-							"mean": 16.577527472527475,
-							"min": 16.564999999999827,
-							"p50": 16.579999999999927,
-							"p90": 16.580000000000382,
-							"p95": 16.585000000000036,
-							"p99": 16.585000000000036,
-							"max": 16.585000000000036
-						},
+						"jsTime": {"count":91,"mean":0.5138461589813232,"min":0.37500011920928955,"p50":0.48500001430511475,"p90":0.625,"p95":0.6399999856948853,"p99":0.9300000667572021,"max":0.9300000667572021},
+						"interval": {"count":91,"mean":16.577527472527475,"min":16.564999999999827,"p50":16.579999999999927,"p90":16.580000000000382,"p95":16.585000000000036,"p99":16.585000000000036,"max":16.585000000000036},
 						"frames": 91,
 						"warmupFrames": 30,
 						"level": 0,
@@ -3538,46 +710,8 @@
 						"cpuIdle": 0.0003862495171881035,
 						"loadAverage": 46.09326171875,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.2,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 39.9,
-										"BAT": 31.2,
-										"CP": 38.6,
-										"PA": 38.8,
-										"SKIN": 37.4,
-										"SUBBAT": 29.7,
-										"USB": 30.4
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.2,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.2,
-										"BAT": 31.2,
-										"CP": 38.5,
-										"PA": 38.6,
-										"SKIN": 37.4,
-										"SUBBAT": 29.8,
-										"USB": 30.4
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31.2,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":39.9,"BAT":31.2,"CP":38.6,"PA":38.8,"SKIN":37.4,"SUBBAT":29.7,"USB":30.4}}},
+							"after": {"battery":{"level":99,"temperatureC":31.2,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.2,"BAT":31.2,"CP":38.5,"PA":38.6,"SKIN":37.4,"SUBBAT":29.8,"USB":30.4}}}
 						}
 					}
 				},
@@ -3588,40 +722,11 @@
 						"rendererPath": "heatmap",
 						"rendererBytes": 47521928,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 92,
-							"mean": 0.1381954782608693,
-							"min": 0.131072,
-							"p50": 0.131072,
-							"p90": 0.196608,
-							"p95": 0.196608,
-							"p99": 0.196608,
-							"max": 0.196608
-						},
-						"backendFrames": {
-							"heatmap": 91
-						},
+						"gpuPass": {"count":92,"mean":0.1381954782608693,"min":0.131072,"p50":0.131072,"p90":0.196608,"p95":0.196608,"p99":0.196608,"max":0.196608},
+						"backendFrames": {"heatmap":91},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 91,
-							"mean": 0.5302747239123334,
-							"min": 0.375,
-							"p50": 0.5049999952316284,
-							"p90": 0.6500000953674316,
-							"p95": 0.6899999380111694,
-							"p99": 0.8649998903274536,
-							"max": 0.8649998903274536
-						},
-						"interval": {
-							"count": 91,
-							"mean": 16.58214285714286,
-							"min": 16.574999999999818,
-							"p50": 16.580000000000155,
-							"p90": 16.585000000000036,
-							"p95": 16.585000000000036,
-							"p99": 16.585000000000036,
-							"max": 16.585000000000036
-						},
+						"jsTime": {"count":91,"mean":0.5302747239123334,"min":0.375,"p50":0.5049999952316284,"p90":0.6500000953674316,"p95":0.6899999380111694,"p99":0.8649998903274536,"max":0.8649998903274536},
+						"interval": {"count":91,"mean":16.58214285714286,"min":16.574999999999818,"p50":16.580000000000155,"p90":16.585000000000036,"p95":16.585000000000036,"p99":16.585000000000036,"max":16.585000000000036},
 						"frames": 91,
 						"warmupFrames": 30,
 						"level": 0,
@@ -3636,312 +741,21 @@
 						"cpuIdle": 0.008477842003853564,
 						"loadAverage": 48.16748046875,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.2,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.2,
-										"BAT": 31.2,
-										"CP": 38.5,
-										"PA": 38.6,
-										"SKIN": 37.4,
-										"SUBBAT": 29.8,
-										"USB": 30.4
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.2,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.5,
-										"BAT": 31.2,
-										"CP": 38.5,
-										"PA": 38.6,
-										"SKIN": 37.4,
-										"SUBBAT": 30,
-										"USB": 30.4
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31.2,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.2,"BAT":31.2,"CP":38.5,"PA":38.6,"SKIN":37.4,"SUBBAT":29.8,"USB":30.4}}},
+							"after": {"battery":{"level":99,"temperatureC":31.2,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.5,"BAT":31.2,"CP":38.5,"PA":38.6,"SKIN":37.4,"SUBBAT":30,"USB":30.4}}}
 						}
 					}
 				}
-			],
-			"summary": {
-				"rendererBytes": {
-					"median": 47521928,
-					"min": 47521928,
-					"max": 47521928,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.count": {
-					"median": 92,
-					"min": 92,
-					"max": 92,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.mean": {
-					"median": 0.13570226086956497,
-					"min": 0.13320904347826062,
-					"max": 0.1381954782608693,
-					"relativeRange": 0.03674540682414697,
-					"runs": 2
-				},
-				"gpuPass.min": {
-					"median": 0.131072,
-					"min": 0.131072,
-					"max": 0.131072,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p50": {
-					"median": 0.131072,
-					"min": 0.131072,
-					"max": 0.131072,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p90": {
-					"median": 0.16383999999999999,
-					"min": 0.131072,
-					"max": 0.196608,
-					"relativeRange": 0.4000000000000001,
-					"runs": 2
-				},
-				"gpuPass.p95": {
-					"median": 0.16383999999999999,
-					"min": 0.131072,
-					"max": 0.196608,
-					"relativeRange": 0.4000000000000001,
-					"runs": 2
-				},
-				"gpuPass.p99": {
-					"median": 0.196608,
-					"min": 0.196608,
-					"max": 0.196608,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.max": {
-					"median": 0.196608,
-					"min": 0.196608,
-					"max": 0.196608,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"backendFrames.heatmap": {
-					"median": 91,
-					"min": 91,
-					"max": 91,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"backendTransitions": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.count": {
-					"median": 91,
-					"min": 91,
-					"max": 91,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.mean": {
-					"median": 0.5220604414468284,
-					"min": 0.5138461589813232,
-					"max": 0.5302747239123334,
-					"relativeRange": 0.03146870290627725,
-					"runs": 2
-				},
-				"jsTime.min": {
-					"median": 0.3750000596046448,
-					"min": 0.375,
-					"max": 0.37500011920928955,
-					"relativeRange": 3.178913882746079e-7,
-					"runs": 2
-				},
-				"jsTime.p50": {
-					"median": 0.4950000047683716,
-					"min": 0.48500001430511475,
-					"max": 0.5049999952316284,
-					"relativeRange": 0.04040400148253006,
-					"runs": 2
-				},
-				"jsTime.p90": {
-					"median": 0.6375000476837158,
-					"min": 0.625,
-					"max": 0.6500000953674316,
-					"relativeRange": 0.0392158329372157,
-					"runs": 2
-				},
-				"jsTime.p95": {
-					"median": 0.6649999618530273,
-					"min": 0.6399999856948853,
-					"max": 0.6899999380111694,
-					"relativeRange": 0.07518790253304518,
-					"runs": 2
-				},
-				"jsTime.p99": {
-					"median": 0.8974999785423279,
-					"min": 0.8649998903274536,
-					"max": 0.9300000667572021,
-					"relativeRange": 0.0724235966393207,
-					"runs": 2
-				},
-				"jsTime.max": {
-					"median": 0.8974999785423279,
-					"min": 0.8649998903274536,
-					"max": 0.9300000667572021,
-					"relativeRange": 0.0724235966393207,
-					"runs": 2
-				},
-				"interval.count": {
-					"median": 91,
-					"min": 91,
-					"max": 91,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.mean": {
-					"median": 16.579835164835167,
-					"min": 16.577527472527475,
-					"max": 16.58214285714286,
-					"relativeRange": 0.0002783733715986029,
-					"runs": 2
-				},
-				"interval.min": {
-					"median": 16.569999999999823,
-					"min": 16.564999999999827,
-					"max": 16.574999999999818,
-					"relativeRange": 0.0006035003017496085,
-					"runs": 2
-				},
-				"interval.p50": {
-					"median": 16.58000000000004,
-					"min": 16.579999999999927,
-					"max": 16.580000000000155,
-					"relativeRange": 1.3713731932643636e-14,
-					"runs": 2
-				},
-				"interval.p90": {
-					"median": 16.58250000000021,
-					"min": 16.580000000000382,
-					"max": 16.585000000000036,
-					"relativeRange": 0.00030152268956154554,
-					"runs": 2
-				},
-				"interval.p95": {
-					"median": 16.585000000000036,
-					"min": 16.585000000000036,
-					"max": 16.585000000000036,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p99": {
-					"median": 16.585000000000036,
-					"min": 16.585000000000036,
-					"max": 16.585000000000036,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.max": {
-					"median": 16.585000000000036,
-					"min": 16.585000000000036,
-					"max": 16.585000000000036,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"frames": {
-					"median": 91,
-					"min": 91,
-					"max": 91,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"warmupFrames": {
-					"median": 30,
-					"min": 30,
-					"max": 30,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"level": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marks": {
-					"median": 1441200,
-					"min": 1441200,
-					"max": 1441200,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"levelEnd": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marksEnd": {
-					"median": 1441200,
-					"min": 1441200,
-					"max": 1441200,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"total": {
-					"median": 2880000,
-					"min": 2880000,
-					"max": 2880000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"visibleBars": {
-					"median": 2400,
-					"min": 2400,
-					"max": 2400,
-					"relativeRange": 0,
-					"runs": 2
-				}
-			}
+			]
 		},
 		{
 			"caseId": "heatmap/candles-4800/2400x600/tick-redraw",
 			"adapter": "lumen-worker",
 			"job": {
 				"scenario": "heatmap",
-				"dataset": {
-					"kind": "candles",
-					"size": 4800
-				},
+				"dataset": {"kind":"candles","size":4800},
 				"seed": 1,
-				"chart": {
-					"width": 1200,
-					"height": 600
-				},
+				"chart": {"width":1200,"height":600},
 				"variant": "tick-redraw",
 				"rows": 600,
 				"visibleBars": 2400,
@@ -3952,15 +766,7 @@
 				"warmupFrames": 30,
 				"adapter": "lumen-worker"
 			},
-			"library": {
-				"library": {
-					"name": "@lumen-charts/core",
-					"version": "workspace"
-				},
-				"options": {
-					"worker": true
-				}
-			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
 			"status": "ok",
 			"runs": [
 				{
@@ -3970,40 +776,11 @@
 						"rendererPath": "heatmap",
 						"rendererBytes": 47521928,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 44,
-							"mean": 1.7813876363636367,
-							"min": 0.131072,
-							"p50": 0.131072,
-							"p90": 6.684672,
-							"p95": 6.684672,
-							"p99": 6.88128,
-							"max": 6.88128
-						},
-						"backendFrames": {
-							"heatmap": 85
-						},
+						"gpuPass": {"count":44,"mean":1.7813876363636367,"min":0.131072,"p50":0.131072,"p90":6.684672,"p95":6.684672,"p99":6.88128,"max":6.88128},
+						"backendFrames": {"heatmap":85},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 85,
-							"mean": 1.023000010322122,
-							"min": 0.10000002384185791,
-							"p50": 0.6149998903274536,
-							"p90": 1.4450000524520874,
-							"p95": 5.945000052452087,
-							"p99": 6.830000042915344,
-							"max": 6.830000042915344
-						},
-						"interval": {
-							"count": 85,
-							"mean": 17.552705882352942,
-							"min": 16.559999999999945,
-							"p50": 16.579999999999927,
-							"p90": 16.590000000000146,
-							"p95": 33.13499999999999,
-							"p99": 33.15499999999997,
-							"max": 33.15499999999997
-						},
+						"jsTime": {"count":85,"mean":1.023000010322122,"min":0.10000002384185791,"p50":0.6149998903274536,"p90":1.4450000524520874,"p95":5.945000052452087,"p99":6.830000042915344,"max":6.830000042915344},
+						"interval": {"count":85,"mean":17.552705882352942,"min":16.559999999999945,"p50":16.579999999999927,"p90":16.590000000000146,"p95":33.13499999999999,"p99":33.15499999999997,"max":33.15499999999997},
 						"frames": 85,
 						"warmupFrames": 30,
 						"level": 0,
@@ -4018,46 +795,8 @@
 						"cpuIdle": 0.04959000390472472,
 						"loadAverage": 45.67138671875,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.2,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.5,
-										"BAT": 31.2,
-										"CP": 38.5,
-										"PA": 38.6,
-										"SKIN": 37.4,
-										"SUBBAT": 30,
-										"USB": 30.4
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.2,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.1,
-										"BAT": 31.3,
-										"CP": 38.6,
-										"PA": 38.7,
-										"SKIN": 37.5,
-										"SUBBAT": 29.9,
-										"USB": 30.4
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31.2,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.5,"BAT":31.2,"CP":38.5,"PA":38.6,"SKIN":37.4,"SUBBAT":30,"USB":30.4}}},
+							"after": {"battery":{"level":99,"temperatureC":31.2,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.1,"BAT":31.3,"CP":38.6,"PA":38.7,"SKIN":37.5,"SUBBAT":29.9,"USB":30.4}}}
 						}
 					}
 				},
@@ -4068,40 +807,11 @@
 						"rendererPath": "heatmap",
 						"rendererBytes": 47521928,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 41,
-							"mean": 1.9980487804878049,
-							"min": 0.065536,
-							"p50": 0.131072,
-							"p90": 6.684672,
-							"p95": 6.88128,
-							"p99": 8.781824,
-							"max": 8.781824
-						},
-						"backendFrames": {
-							"heatmap": 83
-						},
+						"gpuPass": {"count":41,"mean":1.9980487804878049,"min":0.065536,"p50":0.131072,"p90":6.684672,"p95":6.88128,"p99":8.781824,"max":8.781824},
+						"backendFrames": {"heatmap":83},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 83,
-							"mean": 1.0757831205804664,
-							"min": 0.10500001907348633,
-							"p50": 0.6449998617172241,
-							"p90": 1.5000001192092896,
-							"p95": 5.5299999713897705,
-							"p99": 8.634999990463257,
-							"max": 8.634999990463257
-						},
-						"interval": {
-							"count": 83,
-							"mean": 17.975481927710845,
-							"min": 16.559999999999945,
-							"p50": 16.579999999999927,
-							"p90": 16.590000000000146,
-							"p95": 33.14499999999998,
-							"p99": 49.72499999999991,
-							"max": 49.72499999999991
-						},
+						"jsTime": {"count":83,"mean":1.0757831205804664,"min":0.10500001907348633,"p50":0.6449998617172241,"p90":1.5000001192092896,"p95":5.5299999713897705,"p99":8.634999990463257,"max":8.634999990463257},
+						"interval": {"count":83,"mean":17.975481927710845,"min":16.559999999999945,"p50":16.579999999999927,"p90":16.590000000000146,"p95":33.14499999999998,"p99":49.72499999999991,"max":49.72499999999991},
 						"frames": 83,
 						"warmupFrames": 30,
 						"level": 0,
@@ -4116,319 +826,25 @@
 						"cpuIdle": 0,
 						"loadAverage": 43.935546875,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.2,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.1,
-										"BAT": 31.3,
-										"CP": 38.6,
-										"PA": 38.7,
-										"SKIN": 37.5,
-										"SUBBAT": 29.9,
-										"USB": 30.4
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.2,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 39.6,
-										"BAT": 31.3,
-										"CP": 38.4,
-										"PA": 38.5,
-										"SKIN": 37.5,
-										"SUBBAT": 29.9,
-										"USB": 30.4
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31.2,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.1,"BAT":31.3,"CP":38.6,"PA":38.7,"SKIN":37.5,"SUBBAT":29.9,"USB":30.4}}},
+							"after": {"battery":{"level":99,"temperatureC":31.2,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":39.6,"BAT":31.3,"CP":38.4,"PA":38.5,"SKIN":37.5,"SUBBAT":29.9,"USB":30.4}}}
 						}
 					}
 				}
-			],
-			"summary": {
-				"rendererBytes": {
-					"median": 47521928,
-					"min": 47521928,
-					"max": 47521928,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.count": {
-					"median": 42.5,
-					"min": 41,
-					"max": 44,
-					"relativeRange": 0.07058823529411765,
-					"runs": 2
-				},
-				"gpuPass.mean": {
-					"median": 1.889718208425721,
-					"min": 1.7813876363636367,
-					"max": 1.9980487804878049,
-					"relativeRange": 0.11465262024683742,
-					"runs": 2
-				},
-				"gpuPass.min": {
-					"median": 0.098304,
-					"min": 0.065536,
-					"max": 0.131072,
-					"relativeRange": 0.6666666666666666,
-					"runs": 2
-				},
-				"gpuPass.p50": {
-					"median": 0.131072,
-					"min": 0.131072,
-					"max": 0.131072,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p90": {
-					"median": 6.684672,
-					"min": 6.684672,
-					"max": 6.684672,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p95": {
-					"median": 6.782976,
-					"min": 6.684672,
-					"max": 6.88128,
-					"relativeRange": 0.028985507246376864,
-					"runs": 2
-				},
-				"gpuPass.p99": {
-					"median": 7.831552,
-					"min": 6.88128,
-					"max": 8.781824,
-					"relativeRange": 0.24267782426778242,
-					"runs": 2
-				},
-				"gpuPass.max": {
-					"median": 7.831552,
-					"min": 6.88128,
-					"max": 8.781824,
-					"relativeRange": 0.24267782426778242,
-					"runs": 2
-				},
-				"backendFrames.heatmap": {
-					"median": 84,
-					"min": 83,
-					"max": 85,
-					"relativeRange": 0.023809523809523808,
-					"runs": 2
-				},
-				"backendTransitions": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.count": {
-					"median": 84,
-					"min": 83,
-					"max": 85,
-					"relativeRange": 0.023809523809523808,
-					"runs": 2
-				},
-				"jsTime.mean": {
-					"median": 1.0493915654512942,
-					"min": 1.023000010322122,
-					"max": 1.0757831205804664,
-					"relativeRange": 0.0502987750198325,
-					"runs": 2
-				},
-				"jsTime.min": {
-					"median": 0.10250002145767212,
-					"min": 0.10000002384185791,
-					"max": 0.10500001907348633,
-					"relativeRange": 0.048780431072330946,
-					"runs": 2
-				},
-				"jsTime.p50": {
-					"median": 0.6299998760223389,
-					"min": 0.6149998903274536,
-					"max": 0.6449998617172241,
-					"relativeRange": 0.047619011576927286,
-					"runs": 2
-				},
-				"jsTime.p90": {
-					"median": 1.4725000858306885,
-					"min": 1.4450000524520874,
-					"max": 1.5000001192092896,
-					"relativeRange": 0.03735148628271536,
-					"runs": 2
-				},
-				"jsTime.p95": {
-					"median": 5.737500011920929,
-					"min": 5.5299999713897705,
-					"max": 5.945000052452087,
-					"relativeRange": 0.0723311686623202,
-					"runs": 2
-				},
-				"jsTime.p99": {
-					"median": 7.7325000166893005,
-					"min": 6.830000042915344,
-					"max": 8.634999990463257,
-					"relativeRange": 0.23343031925666005,
-					"runs": 2
-				},
-				"jsTime.max": {
-					"median": 7.7325000166893005,
-					"min": 6.830000042915344,
-					"max": 8.634999990463257,
-					"relativeRange": 0.23343031925666005,
-					"runs": 2
-				},
-				"interval.count": {
-					"median": 84,
-					"min": 83,
-					"max": 85,
-					"relativeRange": 0.023809523809523808,
-					"runs": 2
-				},
-				"interval.mean": {
-					"median": 17.764093905031892,
-					"min": 17.552705882352942,
-					"max": 17.975481927710845,
-					"relativeRange": 0.023799471429170202,
-					"runs": 2
-				},
-				"interval.min": {
-					"median": 16.559999999999945,
-					"min": 16.559999999999945,
-					"max": 16.559999999999945,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p50": {
-					"median": 16.579999999999927,
-					"min": 16.579999999999927,
-					"max": 16.579999999999927,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p90": {
-					"median": 16.590000000000146,
-					"min": 16.590000000000146,
-					"max": 16.590000000000146,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p95": {
-					"median": 33.139999999999986,
-					"min": 33.13499999999999,
-					"max": 33.14499999999998,
-					"relativeRange": 0.00030175015087480114,
-					"runs": 2
-				},
-				"interval.p99": {
-					"median": 41.43999999999994,
-					"min": 33.15499999999997,
-					"max": 49.72499999999991,
-					"relativeRange": 0.3998552123552114,
-					"runs": 2
-				},
-				"interval.max": {
-					"median": 41.43999999999994,
-					"min": 33.15499999999997,
-					"max": 49.72499999999991,
-					"relativeRange": 0.3998552123552114,
-					"runs": 2
-				},
-				"frames": {
-					"median": 84,
-					"min": 83,
-					"max": 85,
-					"relativeRange": 0.023809523809523808,
-					"runs": 2
-				},
-				"warmupFrames": {
-					"median": 30,
-					"min": 30,
-					"max": 30,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"level": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marks": {
-					"median": 1441200,
-					"min": 1441200,
-					"max": 1441200,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"levelEnd": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marksEnd": {
-					"median": 1441200,
-					"min": 1441200,
-					"max": 1441200,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"total": {
-					"median": 2880000,
-					"min": 2880000,
-					"max": 2880000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"visibleBars": {
-					"median": 2400,
-					"min": 2400,
-					"max": 2400,
-					"relativeRange": 0,
-					"runs": 2
-				}
-			}
+			]
 		},
 		{
 			"caseId": "heatmap/candles-4800/2400x600-fixed/pan",
 			"adapter": "lumen-worker",
 			"job": {
 				"scenario": "heatmap",
-				"dataset": {
-					"kind": "candles",
-					"size": 4800
-				},
+				"dataset": {"kind":"candles","size":4800},
 				"seed": 1,
-				"chart": {
-					"width": 1200,
-					"height": 600
-				},
+				"chart": {"width":1200,"height":600},
 				"variant": "pan",
 				"rows": 600,
 				"visibleBars": 2400,
-				"valueRange": {
-					"min": 0,
-					"max": 200
-				},
+				"valueRange": {"min":0,"max":200},
 				"budgetMs": 1500,
 				"warmupBudgetMs": 1500,
 				"frames": 240,
@@ -4436,15 +852,7 @@
 				"warmupFrames": 30,
 				"adapter": "lumen-worker"
 			},
-			"library": {
-				"library": {
-					"name": "@lumen-charts/core",
-					"version": "workspace"
-				},
-				"options": {
-					"worker": true
-				}
-			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
 			"status": "ok",
 			"runs": [
 				{
@@ -4454,40 +862,11 @@
 						"rendererPath": "heatmap-slots",
 						"rendererBytes": 38881928,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 62,
-							"mean": 4.697451354838709,
-							"min": 4.653056,
-							"p50": 4.653056,
-							"p90": 4.718592,
-							"p95": 4.718592,
-							"p99": 6.619136,
-							"max": 6.619136
-						},
-						"backendFrames": {
-							"heatmap-slots": 61
-						},
+						"gpuPass": {"count":62,"mean":4.697451354838709,"min":4.653056,"p50":4.653056,"p90":4.718592,"p95":4.718592,"p99":6.619136,"max":6.619136},
+						"backendFrames": {"heatmap-slots":61},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 61,
-							"mean": 1.803934425604148,
-							"min": 1.3049999475479126,
-							"p50": 1.7700001001358032,
-							"p90": 2.2300000190734863,
-							"p95": 2.294999837875366,
-							"p99": 2.4899998903274536,
-							"max": 2.4899998903274536
-						},
-						"interval": {
-							"count": 61,
-							"mean": 25.001475409836065,
-							"min": 16.56999999999971,
-							"p50": 33.13499999999999,
-							"p90": 33.159999999999854,
-							"p95": 33.164999999999964,
-							"p99": 33.17500000000018,
-							"max": 33.17500000000018
-						},
+						"jsTime": {"count":61,"mean":1.803934425604148,"min":1.3049999475479126,"p50":1.7700001001358032,"p90":2.2300000190734863,"p95":2.294999837875366,"p99":2.4899998903274536,"max":2.4899998903274536},
+						"interval": {"count":61,"mean":25.001475409836065,"min":16.56999999999971,"p50":33.13499999999999,"p90":33.159999999999854,"p95":33.164999999999964,"p99":33.17500000000018,"max":33.17500000000018},
 						"frames": 61,
 						"warmupFrames": 30,
 						"level": 0,
@@ -4502,46 +881,8 @@
 						"cpuIdle": 0.028622540250447227,
 						"loadAverage": 43.935546875,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 99,
-									"temperatureC": 31.2,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 39.6,
-										"BAT": 31.3,
-										"CP": 38.4,
-										"PA": 38.5,
-										"SKIN": 37.5,
-										"SUBBAT": 29.9,
-										"USB": 30.4
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 100,
-									"temperatureC": 31.3,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40,
-										"BAT": 31.3,
-										"CP": 38.3,
-										"PA": 38.5,
-										"SKIN": 37.4,
-										"SUBBAT": 29.8,
-										"USB": 30.5
-									}
-								}
-							}
+							"before": {"battery":{"level":99,"temperatureC":31.2,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":39.6,"BAT":31.3,"CP":38.4,"PA":38.5,"SKIN":37.5,"SUBBAT":29.9,"USB":30.4}}},
+							"after": {"battery":{"level":100,"temperatureC":31.3,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40,"BAT":31.3,"CP":38.3,"PA":38.5,"SKIN":37.4,"SUBBAT":29.8,"USB":30.5}}}
 						}
 					}
 				},
@@ -4552,40 +893,11 @@
 						"rendererPath": "heatmap-slots",
 						"rendererBytes": 38881928,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 60,
-							"mean": 4.727330133333331,
-							"min": 4.653056,
-							"p50": 4.653056,
-							"p90": 4.718592,
-							"p95": 4.718592,
-							"p99": 6.684672,
-							"max": 6.684672
-						},
-						"backendFrames": {
-							"heatmap-slots": 59
-						},
+						"gpuPass": {"count":60,"mean":4.727330133333331,"min":4.653056,"p50":4.653056,"p90":4.718592,"p95":4.718592,"p99":6.684672,"max":6.684672},
+						"backendFrames": {"heatmap-slots":59},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 59,
-							"mean": 1.890423732288813,
-							"min": 1.4450000524520874,
-							"p50": 1.815000057220459,
-							"p90": 2.3299999237060547,
-							"p95": 2.4200000762939453,
-							"p99": 3.069999933242798,
-							"max": 3.069999933242798
-						},
-						"interval": {
-							"count": 59,
-							"mean": 25.567118644067797,
-							"min": 16.570000000000164,
-							"p50": 33.13999999999987,
-							"p90": 33.16000000000008,
-							"p95": 33.164999999999964,
-							"p99": 33.17000000000007,
-							"max": 33.17000000000007
-						},
+						"jsTime": {"count":59,"mean":1.890423732288813,"min":1.4450000524520874,"p50":1.815000057220459,"p90":2.3299999237060547,"p95":2.4200000762939453,"p99":3.069999933242798,"max":3.069999933242798},
+						"interval": {"count":59,"mean":25.567118644067797,"min":16.570000000000164,"p50":33.13999999999987,"p90":33.16000000000008,"p95":33.164999999999964,"p99":33.17000000000007,"max":33.17000000000007},
 						"frames": 59,
 						"warmupFrames": 30,
 						"level": 0,
@@ -4600,319 +912,25 @@
 						"cpuIdle": 0.0032409074540871445,
 						"loadAverage": 43.7802734375,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 100,
-									"temperatureC": 31.3,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40,
-										"BAT": 31.3,
-										"CP": 38.3,
-										"PA": 38.5,
-										"SKIN": 37.4,
-										"SUBBAT": 29.8,
-										"USB": 30.5
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 100,
-									"temperatureC": 31.3,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.3,
-										"BAT": 31.3,
-										"CP": 38.4,
-										"PA": 38.5,
-										"SKIN": 37.4,
-										"SUBBAT": 29.9,
-										"USB": 30.5
-									}
-								}
-							}
+							"before": {"battery":{"level":100,"temperatureC":31.3,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40,"BAT":31.3,"CP":38.3,"PA":38.5,"SKIN":37.4,"SUBBAT":29.8,"USB":30.5}}},
+							"after": {"battery":{"level":100,"temperatureC":31.3,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.3,"BAT":31.3,"CP":38.4,"PA":38.5,"SKIN":37.4,"SUBBAT":29.9,"USB":30.5}}}
 						}
 					}
 				}
-			],
-			"summary": {
-				"rendererBytes": {
-					"median": 38881928,
-					"min": 38881928,
-					"max": 38881928,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.count": {
-					"median": 61,
-					"min": 60,
-					"max": 62,
-					"relativeRange": 0.03278688524590164,
-					"runs": 2
-				},
-				"gpuPass.mean": {
-					"median": 4.71239074408602,
-					"min": 4.697451354838709,
-					"max": 4.727330133333331,
-					"relativeRange": 0.006340471348247179,
-					"runs": 2
-				},
-				"gpuPass.min": {
-					"median": 4.653056,
-					"min": 4.653056,
-					"max": 4.653056,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p50": {
-					"median": 4.653056,
-					"min": 4.653056,
-					"max": 4.653056,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p90": {
-					"median": 4.718592,
-					"min": 4.718592,
-					"max": 4.718592,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p95": {
-					"median": 4.718592,
-					"min": 4.718592,
-					"max": 4.718592,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p99": {
-					"median": 6.651904,
-					"min": 6.619136,
-					"max": 6.684672,
-					"relativeRange": 0.009852216748768445,
-					"runs": 2
-				},
-				"gpuPass.max": {
-					"median": 6.651904,
-					"min": 6.619136,
-					"max": 6.684672,
-					"relativeRange": 0.009852216748768445,
-					"runs": 2
-				},
-				"backendFrames.heatmap-slots": {
-					"median": 60,
-					"min": 59,
-					"max": 61,
-					"relativeRange": 0.03333333333333333,
-					"runs": 2
-				},
-				"backendTransitions": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.count": {
-					"median": 60,
-					"min": 59,
-					"max": 61,
-					"relativeRange": 0.03333333333333333,
-					"runs": 2
-				},
-				"jsTime.mean": {
-					"median": 1.8471790789464806,
-					"min": 1.803934425604148,
-					"max": 1.890423732288813,
-					"relativeRange": 0.04682237237874809,
-					"runs": 2
-				},
-				"jsTime.min": {
-					"median": 1.375,
-					"min": 1.3049999475479126,
-					"max": 1.4450000524520874,
-					"relativeRange": 0.10181825811212714,
-					"runs": 2
-				},
-				"jsTime.p50": {
-					"median": 1.792500078678131,
-					"min": 1.7700001001358032,
-					"max": 1.815000057220459,
-					"relativeRange": 0.025104577466931396,
-					"runs": 2
-				},
-				"jsTime.p90": {
-					"median": 2.2799999713897705,
-					"min": 2.2300000190734863,
-					"max": 2.3299999237060547,
-					"relativeRange": 0.043859607845351666,
-					"runs": 2
-				},
-				"jsTime.p95": {
-					"median": 2.3574999570846558,
-					"min": 2.294999837875366,
-					"max": 2.4200000762939453,
-					"relativeRange": 0.05302237145028735,
-					"runs": 2
-				},
-				"jsTime.p99": {
-					"median": 2.7799999117851257,
-					"min": 2.4899998903274536,
-					"max": 3.069999933242798,
-					"relativeRange": 0.20863311558269362,
-					"runs": 2
-				},
-				"jsTime.max": {
-					"median": 2.7799999117851257,
-					"min": 2.4899998903274536,
-					"max": 3.069999933242798,
-					"relativeRange": 0.20863311558269362,
-					"runs": 2
-				},
-				"interval.count": {
-					"median": 60,
-					"min": 59,
-					"max": 61,
-					"relativeRange": 0.03333333333333333,
-					"runs": 2
-				},
-				"interval.mean": {
-					"median": 25.284297026951933,
-					"min": 25.001475409836065,
-					"max": 25.567118644067797,
-					"relativeRange": 0.022371325318191835,
-					"runs": 2
-				},
-				"interval.min": {
-					"median": 16.569999999999936,
-					"min": 16.56999999999971,
-					"max": 16.570000000000164,
-					"relativeRange": 2.744401634800639e-14,
-					"runs": 2
-				},
-				"interval.p50": {
-					"median": 33.13749999999993,
-					"min": 33.13499999999999,
-					"max": 33.13999999999987,
-					"relativeRange": 0.00015088645793683218,
-					"runs": 2
-				},
-				"interval.p90": {
-					"median": 33.15999999999997,
-					"min": 33.159999999999854,
-					"max": 33.16000000000008,
-					"relativeRange": 6.856865966321842e-15,
-					"runs": 2
-				},
-				"interval.p95": {
-					"median": 33.164999999999964,
-					"min": 33.164999999999964,
-					"max": 33.164999999999964,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p99": {
-					"median": 33.17250000000013,
-					"min": 33.17000000000007,
-					"max": 33.17500000000018,
-					"relativeRange": 0.0001507272590280841,
-					"runs": 2
-				},
-				"interval.max": {
-					"median": 33.17250000000013,
-					"min": 33.17000000000007,
-					"max": 33.17500000000018,
-					"relativeRange": 0.0001507272590280841,
-					"runs": 2
-				},
-				"frames": {
-					"median": 60,
-					"min": 59,
-					"max": 61,
-					"relativeRange": 0.03333333333333333,
-					"runs": 2
-				},
-				"warmupFrames": {
-					"median": 30,
-					"min": 30,
-					"max": 30,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"level": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marks": {
-					"median": 1441200,
-					"min": 1441200,
-					"max": 1441200,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"levelEnd": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marksEnd": {
-					"median": 1442400,
-					"min": 1442400,
-					"max": 1442400,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"total": {
-					"median": 2880000,
-					"min": 2880000,
-					"max": 2880000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"visibleBars": {
-					"median": 2400,
-					"min": 2400,
-					"max": 2400,
-					"relativeRange": 0,
-					"runs": 2
-				}
-			}
+			]
 		},
 		{
 			"caseId": "heatmap/candles-4800/2400x600-fixed/zoom",
 			"adapter": "lumen-worker",
 			"job": {
 				"scenario": "heatmap",
-				"dataset": {
-					"kind": "candles",
-					"size": 4800
-				},
+				"dataset": {"kind":"candles","size":4800},
 				"seed": 1,
-				"chart": {
-					"width": 1200,
-					"height": 600
-				},
+				"chart": {"width":1200,"height":600},
 				"variant": "zoom",
 				"rows": 600,
 				"visibleBars": 2400,
-				"valueRange": {
-					"min": 0,
-					"max": 200
-				},
+				"valueRange": {"min":0,"max":200},
 				"budgetMs": 1500,
 				"warmupBudgetMs": 1500,
 				"frames": 240,
@@ -4920,15 +938,7 @@
 				"warmupFrames": 30,
 				"adapter": "lumen-worker"
 			},
-			"library": {
-				"library": {
-					"name": "@lumen-charts/core",
-					"version": "workspace"
-				},
-				"options": {
-					"worker": true
-				}
-			},
+			"library": {"library":{"name":"@lumen-charts/core","version":"workspace"},"options":{"worker":true}},
 			"status": "ok",
 			"runs": [
 				{
@@ -4938,40 +948,11 @@
 						"rendererPath": "heatmap-slots",
 						"rendererBytes": 38881928,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 57,
-							"mean": 4.80482357894737,
-							"min": 4.653056,
-							"p50": 4.653056,
-							"p90": 4.718592,
-							"p95": 6.619136,
-							"p99": 6.619136,
-							"max": 6.619136
-						},
-						"backendFrames": {
-							"heatmap-slots": 56
-						},
+						"gpuPass": {"count":57,"mean":4.80482357894737,"min":4.653056,"p50":4.653056,"p90":4.718592,"p95":6.619136,"p99":6.619136,"max":6.619136},
+						"backendFrames": {"heatmap-slots":56},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 56,
-							"mean": 2.2579464337655475,
-							"min": 1.4300000667572021,
-							"p50": 2.375,
-							"p90": 2.7050000429153442,
-							"p95": 3.0100001096725464,
-							"p99": 3.1100000143051147,
-							"max": 3.1100000143051147
-						},
-						"interval": {
-							"count": 56,
-							"mean": 26.935892857142857,
-							"min": 16.565000000000055,
-							"p50": 33.14499999999998,
-							"p90": 33.164999999999964,
-							"p95": 33.17000000000007,
-							"p99": 33.17000000000007,
-							"max": 33.17000000000007
-						},
+						"jsTime": {"count":56,"mean":2.2579464337655475,"min":1.4300000667572021,"p50":2.375,"p90":2.7050000429153442,"p95":3.0100001096725464,"p99":3.1100000143051147,"max":3.1100000143051147},
+						"interval": {"count":56,"mean":26.935892857142857,"min":16.565000000000055,"p50":33.14499999999998,"p90":33.164999999999964,"p95":33.17000000000007,"p99":33.17000000000007,"max":33.17000000000007},
 						"frames": 56,
 						"warmupFrames": 30,
 						"level": 0,
@@ -4986,46 +967,8 @@
 						"cpuIdle": 0.005908419497784343,
 						"loadAverage": 42.2763671875,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 100,
-									"temperatureC": 31.3,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 39.9,
-										"BAT": 31.3,
-										"CP": 38.4,
-										"PA": 38.6,
-										"SKIN": 37.4,
-										"SUBBAT": 30,
-										"USB": 30.5
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 100,
-									"temperatureC": 31.4,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.3,
-										"BAT": 31.3,
-										"CP": 38.4,
-										"PA": 38.6,
-										"SKIN": 37.5,
-										"SUBBAT": 29.8,
-										"USB": 30.5
-									}
-								}
-							}
+							"before": {"battery":{"level":100,"temperatureC":31.3,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":39.9,"BAT":31.3,"CP":38.4,"PA":38.6,"SKIN":37.4,"SUBBAT":30,"USB":30.5}}},
+							"after": {"battery":{"level":100,"temperatureC":31.4,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.3,"BAT":31.3,"CP":38.4,"PA":38.6,"SKIN":37.5,"SUBBAT":29.8,"USB":30.5}}}
 						}
 					}
 				},
@@ -5036,40 +979,11 @@
 						"rendererPath": "heatmap-slots",
 						"rendererBytes": 38881928,
 						"rendererReason": null,
-						"gpuPass": {
-							"count": 62,
-							"mean": 4.787299096774193,
-							"min": 4.653056,
-							"p50": 4.653056,
-							"p90": 4.718592,
-							"p95": 6.5536,
-							"p99": 6.684672,
-							"max": 6.684672
-						},
-						"backendFrames": {
-							"heatmap-slots": 61
-						},
+						"gpuPass": {"count":62,"mean":4.787299096774193,"min":4.653056,"p50":4.653056,"p90":4.718592,"p95":6.5536,"p99":6.684672,"max":6.684672},
+						"backendFrames": {"heatmap-slots":61},
 						"backendTransitions": 0,
-						"jsTime": {
-							"count": 61,
-							"mean": 2.001475404520504,
-							"min": 1.4950000047683716,
-							"p50": 1.9700000286102295,
-							"p90": 2.40500009059906,
-							"p95": 2.504999876022339,
-							"p99": 3.1700000762939453,
-							"max": 3.1700000762939453
-						},
-						"interval": {
-							"count": 61,
-							"mean": 24.73049180327869,
-							"min": 16.545000000000073,
-							"p50": 16.585000000000036,
-							"p90": 33.164999999999964,
-							"p95": 33.169999999999845,
-							"p99": 33.17500000000018,
-							"max": 33.17500000000018
-						},
+						"jsTime": {"count":61,"mean":2.001475404520504,"min":1.4950000047683716,"p50":1.9700000286102295,"p90":2.40500009059906,"p95":2.504999876022339,"p99":3.1700000762939453,"max":3.1700000762939453},
+						"interval": {"count":61,"mean":24.73049180327869,"min":16.545000000000073,"p50":16.585000000000036,"p90":33.164999999999964,"p95":33.169999999999845,"p99":33.17500000000018,"max":33.17500000000018},
 						"frames": 61,
 						"warmupFrames": 30,
 						"level": 0,
@@ -5084,297 +998,12 @@
 						"cpuIdle": 0.08009066868152626,
 						"loadAverage": 42.2763671875,
 						"device": {
-							"before": {
-								"battery": {
-									"level": 100,
-									"temperatureC": 31.4,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.3,
-										"BAT": 31.3,
-										"CP": 38.4,
-										"PA": 38.6,
-										"SKIN": 37.5,
-										"SUBBAT": 29.8,
-										"USB": 30.5
-									}
-								}
-							},
-							"after": {
-								"battery": {
-									"level": 100,
-									"temperatureC": 31.4,
-									"status": "charging",
-									"powered": ["usb"]
-								},
-								"thermal": {
-									"status": 0,
-									"temperatures": {
-										"AP": 40.3,
-										"BAT": 31.4,
-										"CP": 38.5,
-										"PA": 38.7,
-										"SKIN": 37.5,
-										"SUBBAT": 29.9,
-										"USB": 30.5
-									}
-								}
-							}
+							"before": {"battery":{"level":100,"temperatureC":31.4,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.3,"BAT":31.3,"CP":38.4,"PA":38.6,"SKIN":37.5,"SUBBAT":29.8,"USB":30.5}}},
+							"after": {"battery":{"level":100,"temperatureC":31.4,"status":"charging","powered":["usb"]},"thermal":{"status":0,"temperatures":{"AP":40.3,"BAT":31.4,"CP":38.5,"PA":38.7,"SKIN":37.5,"SUBBAT":29.9,"USB":30.5}}}
 						}
 					}
 				}
-			],
-			"summary": {
-				"rendererBytes": {
-					"median": 38881928,
-					"min": 38881928,
-					"max": 38881928,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.count": {
-					"median": 59.5,
-					"min": 57,
-					"max": 62,
-					"relativeRange": 0.08403361344537816,
-					"runs": 2
-				},
-				"gpuPass.mean": {
-					"median": 4.796061337860781,
-					"min": 4.787299096774193,
-					"max": 4.80482357894737,
-					"relativeRange": 0.003653932036864519,
-					"runs": 2
-				},
-				"gpuPass.min": {
-					"median": 4.653056,
-					"min": 4.653056,
-					"max": 4.653056,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p50": {
-					"median": 4.653056,
-					"min": 4.653056,
-					"max": 4.653056,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p90": {
-					"median": 4.718592,
-					"min": 4.718592,
-					"max": 4.718592,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"gpuPass.p95": {
-					"median": 6.586368,
-					"min": 6.5536,
-					"max": 6.619136,
-					"relativeRange": 0.009950248756218878,
-					"runs": 2
-				},
-				"gpuPass.p99": {
-					"median": 6.651904,
-					"min": 6.619136,
-					"max": 6.684672,
-					"relativeRange": 0.009852216748768445,
-					"runs": 2
-				},
-				"gpuPass.max": {
-					"median": 6.651904,
-					"min": 6.619136,
-					"max": 6.684672,
-					"relativeRange": 0.009852216748768445,
-					"runs": 2
-				},
-				"backendFrames.heatmap-slots": {
-					"median": 58.5,
-					"min": 56,
-					"max": 61,
-					"relativeRange": 0.08547008547008547,
-					"runs": 2
-				},
-				"backendTransitions": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"jsTime.count": {
-					"median": 58.5,
-					"min": 56,
-					"max": 61,
-					"relativeRange": 0.08547008547008547,
-					"runs": 2
-				},
-				"jsTime.mean": {
-					"median": 2.129710919143026,
-					"min": 2.001475404520504,
-					"max": 2.2579464337655475,
-					"relativeRange": 0.12042527788149059,
-					"runs": 2
-				},
-				"jsTime.min": {
-					"median": 1.4625000357627869,
-					"min": 1.4300000667572021,
-					"max": 1.4950000047683716,
-					"relativeRange": 0.044444400972112,
-					"runs": 2
-				},
-				"jsTime.p50": {
-					"median": 2.1725000143051147,
-					"min": 1.9700000286102295,
-					"max": 2.375,
-					"relativeRange": 0.18642115936616543,
-					"runs": 2
-				},
-				"jsTime.p90": {
-					"median": 2.555000066757202,
-					"min": 2.40500009059906,
-					"max": 2.7050000429153442,
-					"relativeRange": 0.11741680801482059,
-					"runs": 2
-				},
-				"jsTime.p95": {
-					"median": 2.7574999928474426,
-					"min": 2.504999876022339,
-					"max": 3.0100001096725464,
-					"relativeRange": 0.18313698457302097,
-					"runs": 2
-				},
-				"jsTime.p99": {
-					"median": 3.14000004529953,
-					"min": 3.1100000143051147,
-					"max": 3.1700000762939453,
-					"relativeRange": 0.01910829972077502,
-					"runs": 2
-				},
-				"jsTime.max": {
-					"median": 3.14000004529953,
-					"min": 3.1100000143051147,
-					"max": 3.1700000762939453,
-					"relativeRange": 0.01910829972077502,
-					"runs": 2
-				},
-				"interval.count": {
-					"median": 58.5,
-					"min": 56,
-					"max": 61,
-					"relativeRange": 0.08547008547008547,
-					"runs": 2
-				},
-				"interval.mean": {
-					"median": 25.83319233021077,
-					"min": 24.73049180327869,
-					"max": 26.935892857142857,
-					"relativeRange": 0.08537082934520059,
-					"runs": 2
-				},
-				"interval.min": {
-					"median": 16.555000000000064,
-					"min": 16.545000000000073,
-					"max": 16.565000000000055,
-					"relativeRange": 0.001208094231348942,
-					"runs": 2
-				},
-				"interval.p50": {
-					"median": 24.86500000000001,
-					"min": 16.585000000000036,
-					"max": 33.14499999999998,
-					"relativeRange": 0.6659963804544516,
-					"runs": 2
-				},
-				"interval.p90": {
-					"median": 33.164999999999964,
-					"min": 33.164999999999964,
-					"max": 33.164999999999964,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"interval.p95": {
-					"median": 33.16999999999996,
-					"min": 33.169999999999845,
-					"max": 33.17000000000007,
-					"relativeRange": 6.854798777305768e-15,
-					"runs": 2
-				},
-				"interval.p99": {
-					"median": 33.17250000000013,
-					"min": 33.17000000000007,
-					"max": 33.17500000000018,
-					"relativeRange": 0.0001507272590280841,
-					"runs": 2
-				},
-				"interval.max": {
-					"median": 33.17250000000013,
-					"min": 33.17000000000007,
-					"max": 33.17500000000018,
-					"relativeRange": 0.0001507272590280841,
-					"runs": 2
-				},
-				"frames": {
-					"median": 58.5,
-					"min": 56,
-					"max": 61,
-					"relativeRange": 0.08547008547008547,
-					"runs": 2
-				},
-				"warmupFrames": {
-					"median": 30,
-					"min": 30,
-					"max": 30,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"level": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marks": {
-					"median": 1441200,
-					"min": 1441200,
-					"max": 1441200,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"levelEnd": {
-					"median": 0,
-					"min": 0,
-					"max": 0,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"marksEnd": {
-					"median": 2050500,
-					"min": 1991400,
-					"max": 2109600,
-					"relativeRange": 0.057644476956839795,
-					"runs": 2
-				},
-				"total": {
-					"median": 2880000,
-					"min": 2880000,
-					"max": 2880000,
-					"relativeRange": 0,
-					"runs": 2
-				},
-				"visibleBars": {
-					"median": 2400,
-					"min": 2400,
-					"max": 2400,
-					"relativeRange": 0,
-					"runs": 2
-				}
-			}
+			]
 		}
 	]
 }

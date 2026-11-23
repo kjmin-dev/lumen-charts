@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright';
 import { build } from 'vite';
+import { formatJson } from '../src/json.ts';
 import { servePreview } from './serve.ts';
 import type { PixelCase, PixelResult } from '../src/pixels/main.ts';
 
@@ -97,7 +98,12 @@ async function main(): Promise<void> {
 		const version = browser.version();
 		writeFileSync(
 			resolve(invokedFrom, args.out),
-			`${JSON.stringify({ createdAt: new Date().toISOString(), chromium: version, redraw: fullOnly ? 'full' : 'auto', results }, null, '\t')}\n`,
+			formatJson({
+				createdAt: new Date().toISOString(),
+				chromium: version,
+				redraw: fullOnly ? 'full' : 'auto',
+				results,
+			}),
 		);
 	}
 	process.exit(failed > 0 ? 1 : 0);

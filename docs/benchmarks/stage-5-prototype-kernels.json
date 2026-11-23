@@ -4,8 +4,8 @@
 	"v8": "14.6.202.34-node.40",
 	"rows": 1000000,
 	"repeats": 9,
-	"loadAverageStart": [22.16015625, 18.5234375, 12.34716796875],
-	"loadAverageEnd": [22.38720703125, 18.630859375, 12.4208984375],
+	"loadAverageStart": [22.16015625,18.5234375,12.34716796875],
+	"loadAverageEnd": [22.38720703125,18.630859375,12.4208984375],
 	"wasmBytes": 62000,
 	"kernels": [
 		{
@@ -128,214 +128,52 @@
 		"createdAt": "2026-11-16T14:28:41.166Z",
 		"node": "v26.13.1",
 		"v8": "14.6.202.34-node.40",
-		"loadAverageStart": [21.02294921875, 18.828125, 12.81396484375],
-		"loadAverageEnd": [21.02294921875, 18.828125, 12.81396484375],
+		"loadAverageStart": [21.02294921875,18.828125,12.81396484375],
+		"loadAverageEnd": [21.02294921875,18.828125,12.81396484375],
 		"results": [
-			{
-				"loop": "buckets of 16",
-				"variant": "compare",
-				"nsPerRow": 5.749083999999982,
-				"minNsPerRow": 4.286625000000015,
-				"different": 0
-			},
-			{
-				"loop": "buckets of 16",
-				"variant": "mathMinMax",
-				"nsPerRow": 0.8695000000000164,
-				"minNsPerRow": 0.6545419999999922,
-				"different": 0
-			},
-			{
-				"loop": "buckets of 16",
-				"variant": "mathMinMaxUnrolled",
-				"nsPerRow": 0.816791999999964,
-				"minNsPerRow": 0.6965830000000324,
-				"different": 0
-			},
-			{
-				"loop": "buckets of 16 (and first, last)",
-				"variant": "wasm",
-				"nsPerRow": 0.7277500000000146,
-				"minNsPerRow": 0.7164999999999964,
-				"different": 0
-			},
-			{
-				"loop": "buckets of 16 (and first, last)",
-				"variant": "wasm simd",
-				"nsPerRow": 0.2632499999999709,
-				"minNsPerRow": 0.2609170000000631,
-				"different": 0
-			},
-			{
-				"loop": "rolling highest 20",
-				"variant": "compare",
-				"nsPerRow": 10.75141700000006,
-				"minNsPerRow": 7.379542000000129,
-				"different": 0
-			},
-			{
-				"loop": "rolling highest 20",
-				"variant": "mathMax",
-				"nsPerRow": 5.685666999999967,
-				"minNsPerRow": 3.3156249999999545,
-				"different": 0
-			}
+			{"loop":"buckets of 16","variant":"compare","nsPerRow":5.749083999999982,"minNsPerRow":4.286625000000015,"different":0},
+			{"loop":"buckets of 16","variant":"mathMinMax","nsPerRow":0.8695000000000164,"minNsPerRow":0.6545419999999922,"different":0},
+			{"loop":"buckets of 16","variant":"mathMinMaxUnrolled","nsPerRow":0.816791999999964,"minNsPerRow":0.6965830000000324,"different":0},
+			{"loop":"buckets of 16 (and first, last)","variant":"wasm","nsPerRow":0.7277500000000146,"minNsPerRow":0.7164999999999964,"different":0},
+			{"loop":"buckets of 16 (and first, last)","variant":"wasm simd","nsPerRow":0.2632499999999709,"minNsPerRow":0.2609170000000631,"different":0},
+			{"loop":"rolling highest 20","variant":"compare","nsPerRow":10.75141700000006,"minNsPerRow":7.379542000000129,"different":0},
+			{"loop":"rolling highest 20","variant":"mathMax","nsPerRow":5.685666999999967,"minNsPerRow":3.3156249999999545,"different":0}
 		]
 	},
 	"viewMerge": {
 		"createdAt": "2026-11-16T14:35:33.051Z",
 		"node": "v26.13.1",
 		"v8": "14.6.202.34-node.40",
-		"loadAverage": [22.9775390625, 26.81640625, 19.37158203125],
+		"loadAverage": [22.9775390625,26.81640625,19.37158203125],
 		"results": [
-			{
-				"rows": 20000,
-				"kind": "line",
-				"compareUs": 115.45800000004647,
-				"mathUs": 31.542000000001735,
-				"different": 0
-			},
-			{
-				"rows": 20000,
-				"kind": "candles",
-				"compareUs": 135.83300000004783,
-				"mathUs": 37.95800000000327,
-				"different": 0
-			},
-			{
-				"rows": 36320,
-				"kind": "line",
-				"compareUs": 180.1660000000993,
-				"mathUs": 44.125000000008185,
-				"different": 0
-			},
-			{
-				"rows": 36320,
-				"kind": "candles",
-				"compareUs": 199.87500000002,
-				"mathUs": 53.83299999994051,
-				"different": 0
-			}
+			{"rows":20000,"kind":"line","compareUs":115.45800000004647,"mathUs":31.542000000001735,"different":0},
+			{"rows":20000,"kind":"candles","compareUs":135.83300000004783,"mathUs":37.95800000000327,"different":0},
+			{"rows":36320,"kind":"line","compareUs":180.1660000000993,"mathUs":44.125000000008185,"different":0},
+			{"rows":36320,"kind":"candles","compareUs":199.87500000002,"mathUs":53.83299999994051,"different":0}
 		]
 	},
 	"minMaxLoopsBySeries": {
 		"createdAt": "2026-11-16T14:42:06.481Z",
 		"node": "v26.13.1",
 		"v8": "14.6.202.34-node.40",
-		"loadAverage": [13.23779296875, 17.1650390625, 17.2841796875],
+		"loadAverage": [13.23779296875,17.1650390625,17.2841796875],
 		"results": [
-			{
-				"loop": "lineBuckets, groups of 16",
-				"series": "close (raw)",
-				"compareNsPerRow": 4.642458000000033,
-				"mathNsPerRow": 1.1783339999999498,
-				"different": 0
-			},
-			{
-				"loop": "lineBuckets, groups of 16",
-				"series": "high (raw)",
-				"compareNsPerRow": 4.616499999999974,
-				"mathNsPerRow": 1.197999999999979,
-				"different": 0
-			},
-			{
-				"loop": "lineBuckets, groups of 16",
-				"series": "SMA 20",
-				"compareNsPerRow": 2.3044170000000577,
-				"mathNsPerRow": 1.1807079999998678,
-				"different": 0
-			},
-			{
-				"loop": "lineBuckets, groups of 16",
-				"series": "EMA 100",
-				"compareNsPerRow": 1.8692499999999654,
-				"mathNsPerRow": 1.1762499999999818,
-				"different": 0
-			},
-			{
-				"loop": "lineBuckets, groups of 16",
-				"series": "RSI 14",
-				"compareNsPerRow": 5.688333000000057,
-				"mathNsPerRow": 1.1767090000000735,
-				"different": 0
-			},
-			{
-				"loop": "lineBuckets, groups of 16",
-				"series": "MACD histogram",
-				"compareNsPerRow": 4.032500000000027,
-				"mathNsPerRow": 1.1835419999999885,
-				"different": 0
-			},
-			{
-				"loop": "lineBuckets, groups of 16",
-				"series": "Bollinger upper",
-				"compareNsPerRow": 3.5969159999999647,
-				"mathNsPerRow": 1.2949999999998454,
-				"different": 0
-			},
-			{
-				"loop": "lineBuckets, groups of 16",
-				"series": "Stochastic %K",
-				"compareNsPerRow": 4.329208000000108,
-				"mathNsPerRow": 1.1711660000000848,
-				"different": 0
-			},
-			{
-				"loop": "SeriesView.update, 20,000 rows into 2,270 columns",
-				"series": "close (raw)",
-				"compareNsPerRow": 5.693750000000364,
-				"mathNsPerRow": 1.5687500000012733,
-				"different": 0
-			},
-			{
-				"loop": "SeriesView.update, 20,000 rows into 2,270 columns",
-				"series": "high (raw)",
-				"compareNsPerRow": 5.677099999991242,
-				"mathNsPerRow": 1.5750000000025466,
-				"different": 0
-			},
-			{
-				"loop": "SeriesView.update, 20,000 rows into 2,270 columns",
-				"series": "SMA 20",
-				"compareNsPerRow": 2.747900000008485,
-				"mathNsPerRow": 1.5687500000012733,
-				"different": 0
-			},
-			{
-				"loop": "SeriesView.update, 20,000 rows into 2,270 columns",
-				"series": "EMA 100",
-				"compareNsPerRow": 2.3312499999974534,
-				"mathNsPerRow": 1.57085000000734,
-				"different": 0
-			},
-			{
-				"loop": "SeriesView.update, 20,000 rows into 2,270 columns",
-				"series": "RSI 14",
-				"compareNsPerRow": 5.754149999984293,
-				"mathNsPerRow": 1.5687500000012733,
-				"different": 0
-			},
-			{
-				"loop": "SeriesView.update, 20,000 rows into 2,270 columns",
-				"series": "MACD histogram",
-				"compareNsPerRow": 4.416700000001583,
-				"mathNsPerRow": 1.568749999978536,
-				"different": 0
-			},
-			{
-				"loop": "SeriesView.update, 20,000 rows into 2,270 columns",
-				"series": "Bollinger upper",
-				"compareNsPerRow": 3.8354000000026645,
-				"mathNsPerRow": 1.5687500000012733,
-				"different": 0
-			},
-			{
-				"loop": "SeriesView.update, 20,000 rows into 2,270 columns",
-				"series": "Stochastic %K",
-				"compareNsPerRow": 5.5770499999880485,
-				"mathNsPerRow": 1.5687500000012733,
-				"different": 0
-			}
+			{"loop":"lineBuckets, groups of 16","series":"close (raw)","compareNsPerRow":4.642458000000033,"mathNsPerRow":1.1783339999999498,"different":0},
+			{"loop":"lineBuckets, groups of 16","series":"high (raw)","compareNsPerRow":4.616499999999974,"mathNsPerRow":1.197999999999979,"different":0},
+			{"loop":"lineBuckets, groups of 16","series":"SMA 20","compareNsPerRow":2.3044170000000577,"mathNsPerRow":1.1807079999998678,"different":0},
+			{"loop":"lineBuckets, groups of 16","series":"EMA 100","compareNsPerRow":1.8692499999999654,"mathNsPerRow":1.1762499999999818,"different":0},
+			{"loop":"lineBuckets, groups of 16","series":"RSI 14","compareNsPerRow":5.688333000000057,"mathNsPerRow":1.1767090000000735,"different":0},
+			{"loop":"lineBuckets, groups of 16","series":"MACD histogram","compareNsPerRow":4.032500000000027,"mathNsPerRow":1.1835419999999885,"different":0},
+			{"loop":"lineBuckets, groups of 16","series":"Bollinger upper","compareNsPerRow":3.5969159999999647,"mathNsPerRow":1.2949999999998454,"different":0},
+			{"loop":"lineBuckets, groups of 16","series":"Stochastic %K","compareNsPerRow":4.329208000000108,"mathNsPerRow":1.1711660000000848,"different":0},
+			{"loop":"SeriesView.update, 20,000 rows into 2,270 columns","series":"close (raw)","compareNsPerRow":5.693750000000364,"mathNsPerRow":1.5687500000012733,"different":0},
+			{"loop":"SeriesView.update, 20,000 rows into 2,270 columns","series":"high (raw)","compareNsPerRow":5.677099999991242,"mathNsPerRow":1.5750000000025466,"different":0},
+			{"loop":"SeriesView.update, 20,000 rows into 2,270 columns","series":"SMA 20","compareNsPerRow":2.747900000008485,"mathNsPerRow":1.5687500000012733,"different":0},
+			{"loop":"SeriesView.update, 20,000 rows into 2,270 columns","series":"EMA 100","compareNsPerRow":2.3312499999974534,"mathNsPerRow":1.57085000000734,"different":0},
+			{"loop":"SeriesView.update, 20,000 rows into 2,270 columns","series":"RSI 14","compareNsPerRow":5.754149999984293,"mathNsPerRow":1.5687500000012733,"different":0},
+			{"loop":"SeriesView.update, 20,000 rows into 2,270 columns","series":"MACD histogram","compareNsPerRow":4.416700000001583,"mathNsPerRow":1.568749999978536,"different":0},
+			{"loop":"SeriesView.update, 20,000 rows into 2,270 columns","series":"Bollinger upper","compareNsPerRow":3.8354000000026645,"mathNsPerRow":1.5687500000012733,"different":0},
+			{"loop":"SeriesView.update, 20,000 rows into 2,270 columns","series":"Stochastic %K","compareNsPerRow":5.5770499999880485,"mathNsPerRow":1.5687500000012733,"different":0}
 		]
 	}
 }
