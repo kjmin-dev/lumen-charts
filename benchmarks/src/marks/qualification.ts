@@ -460,6 +460,11 @@ async function check(
 			s.scatter.applyOptions({ shape: 'circle', pointSize: 5 }),
 		);
 		readouts();
+		// A translucent color (these points have no values): the WebGL2 records of cells hold it
+		// premultiplied, as those of points do.
+		await compare('coarse scatter cell area, translucent color', s =>
+			s.scatter.applyOptions({ color: 'rgba(40,150,90,0.55)' }),
+		);
 		await compare('coarse scatter cell area, circle density', s =>
 			s.scatter.applyOptions({ colorBy: 'density', valueScale: 'linear' }),
 		);
