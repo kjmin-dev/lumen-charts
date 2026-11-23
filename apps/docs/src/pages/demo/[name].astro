@@ -1,0 +1,55 @@
+---
+// One live interactive chart demo in an isolated page. Docs pages embed it in an iframe so the
+// chart's canvases, pointer handlers, and toolbar stay cleanly isolated from Starlight's layout.
+import { DEMO_NAMES, type DemoName } from '../../demos/names.ts';
+import '../../styles/demo.css';
+
+export function getStaticPaths() {
+	return DEMO_NAMES.map(name => ({ params: { name } }));
+}
+
+const name = Astro.params.name as DemoName;
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="robots" content="noindex" />
+		<title>Lumen Charts — {name}</title>
+		<script is:inline>
+			// The page that embeds this frame is on the same origin, so the frame follows its
+			// Starlight color mode synchronously before first paint. Outside a frame, `?theme=`
+			// or the OS preference picks the mode.
+			const host = frameElement && parent.document.documentElement;
+			const apply = theme => {
+				if (theme === 'light' || theme === 'dark') {
+					document.documentElement.dataset.theme = theme;
+				}
+			};
+			const param = new URLSearchParams(location.search).get('theme');
+			const fallback = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+			apply(param ?? host?.dataset.theme ?? fallback);
+			if (host) {
+				new MutationObserver(() => apply(host.dataset.theme)).observe(host, {
+					attributes: true,
+					attributeFilter: ['data-theme'],
+				});
+			}
+		</script>
+	</head>
+	<body>
+		<div id="demo-root" data-demo-name={name} style="width: 100%; height: 100%;"></div>
+		<script>
+			import { mountDemo, type DemoName } from '../../demos/index.ts';
+
+			const root = document.getElementById('demo-root');
+			const name = root?.dataset.demoName as DemoName | undefined;
+			if (root !== null && name !== undefined) {
+				const unmount = mountDemo(root, name);
+				window.addEventListener('pagehide', unmount, { once: true });
+			}
+		</script>
+	</body>
+</html>

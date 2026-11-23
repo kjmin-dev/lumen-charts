@@ -1,0 +1,30 @@
+---
+// Embeds a live interactive Lumen Charts example, synced with the site's light/dark theme.
+interface Props {
+	name: string;
+	title: string;
+	height?: number;
+}
+const { name, title, height = 420 } = Astro.props;
+---
+
+<!-- In a build, scripts/demo-frames.ts writes the demo page into the frame as `srcdoc`, and
+     finds the frame by `data-demo`, which must stay the first attribute. -->
+<div class="chart-demo not-content">
+	<iframe data-demo={name} title={title} src={`/demo/${name}/`} style={`height: ${height}px;`}></iframe>
+</div>
+
+<style>
+	.chart-demo {
+		border: 1px solid var(--sl-color-gray-5);
+		border-radius: var(--lumen-radius-lg);
+		overflow: hidden;
+		background: var(--sl-color-black);
+		margin-block: 1rem 0.25rem;
+	}
+	iframe {
+		display: block;
+		width: 100%;
+		border: 0;
+	}
+</style>

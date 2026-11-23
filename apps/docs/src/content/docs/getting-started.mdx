@@ -1,0 +1,98 @@
+---
+title: Getting started
+description: Install Lumen Charts, render your first candlestick chart, stream live ticks, and configure the worker data engine.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Lumen Charts renders financial charts on layered HTML canvases while keeping history, level-of-detail pyramids, and indicator computation inside an asynchronous data engine.
+
+## Install
+
+Install the main package for vanilla TypeScript or JavaScript:
+
+<Tabs>
+	<TabItem label="pnpm">```sh pnpm add lumen-charts ```</TabItem>
+	<TabItem label="npm">```sh npm install lumen-charts ```</TabItem>
+	<TabItem label="yarn">```sh yarn add lumen-charts ```</TabItem>
+</Tabs>
+
+If you use a UI framework, install its binding package instead (`@lumen-charts/react`, `@lumen-charts/vue`, `@lumen-charts/svelte`, or `@lumen-charts/solid`). See [Framework bindings](/frameworks/).
+
+## Create your first chart
+
+Give the container a height in CSS (`autoSize` is enabled by default and tracks the container's content box through a shared `ResizeObserver`):
+
+```ts
+import { createChart } from 'lumen-charts';
+
+const container = document.getElementById('chart')!;
+const chart = createChart(container, {
+	theme: 'auto', // 'light', 'dark', or follow prefers-color-scheme
+	accessibility: { label: 'BTC/USD 1-minute prices' },
+});
+
+const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+
+// Times are UTC milliseconds. Pass typed-array columns for long histories,
+// or an array of { time, open, high, low, close, volume? } objects.
+candles.setData({ time, open, high, low, close });
+chart.timeScale().fitContent();
+
+// Add indicators computed in the data engine.
+candles.addIndicator('bollinger', { params: { period: 20, multiplier: 2 } });
+candles.addIndicator('ema', { params: { period: 50 } });
+
+// Stream ticks: updates the bar with the same time, or appends a new bar.
+candles.update({
+	time: Date.now(),
+	open: 101.0,
+	high: 102.0,
+	low: 100.5,
+	close: 101.4,
+});
+```
+
+## Columnar vs. object input
+
+Both columnar typed arrays and arrays of bar objects work with `setData` and `prepend`:
+
+- **Columnar (`OhlcColumns` / `LineColumns`)**: `{ time: Float64Array, open: Float64Array, high: Float64Array, low: Float64Array, close: Float64Array, volume?: Float64Array }`. Fastest path for large histories — avoids allocating millions of objects and transfers cleanly to the worker.
+- **Objects (`OhlcBar[]` / `LinePoint[]`)**: `[{ time, open, high, low, close }, ...]`. Convenient for small datasets and JSON API payloads.
+
+Times must be UTC milliseconds in strictly increasing order.
+
+## Asynchronous engine & workers
+
+History lives in the data engine (`@lumen-charts/engine`), which runs in a Web Worker by default. Data calls return immediately and apply asynchronously:
+
+```ts
+candles.setData(history);
+await chart.whenIdle(); // resolves once everything handed over so far is painted
+```
+
+If the page's Content Security Policy blocks workers, Lumen Charts automatically falls back to running the engine on the main thread in short time slices behind the exact same API.
+
+```ts
+// Force main-thread time-sliced mode (no worker):
+const localChart = createChart(container, { worker: false });
+
+// Supply the worker explicitly when a bundler requires worker creation in app code:
+const bundledChart = createChart(container, {
+	worker: () => new Worker(new URL('@lumen-charts/engine/worker', import.meta.url), { type: 'module' }),
+});
+```
+
+Multiple charts on the same page share a bounded worker pool automatically; see [Several charts on one page](/guides/several-charts/).
+
+## Clean up
+
+Call `chart.destroy()` when removing a chart from the DOM so its canvases, observers, event listeners, and engine slot are released. The framework bindings call `destroy()` automatically on unmount.
+
+## Next steps
+
+- [Framework bindings](/frameworks/) — React, Vue, Svelte and Solid usage examples.
+- [Playground](/playground/) — experiment with indicators, mark layers, drawings and JSON state live.
+- [Indicators](/guides/indicators/) — built-in indicators, chains and independent indicator panes.
+- [Heatmap and scatter series](/guides/heatmap-scatter/) — GPU-accelerated order books and trade prints.
+- [API overview](/reference/api/) — every exported package and core interface.

@@ -1,0 +1,137 @@
+---
+title: 프레임워크 바인딩
+description: Vanilla TypeScript, React, Vue 3, Svelte 5, SolidJS에서 Lumen Charts를 사용하는 방법입니다.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Lumen Charts의 프레임워크 바인딩은 의도적으로 얇게 유지됩니다. 마운트 시 차트를 생성하고, 옵션 변경을 `applyOptions`로 전달하며, 언마운트 시 `destroy()`를 호출합니다.
+
+**시세 데이터는 props가 아니라 항상 `ChartApi`를 통해 전달합니다.** 수백만 개의 바를 프레임워크 반응형 props로 넘기지 않기 때문에 틱마다 불필요한 diff와 할당이 발생하지 않습니다.
+
+<Tabs>
+	<TabItem label="Vanilla">
+		```sh
+		pnpm add lumen-charts
+		```
+
+    	```ts
+    	import { createChart } from 'lumen-charts';
+
+    	const chart = createChart(document.getElementById('chart')!, { theme: 'dark' });
+    	const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+    	candles.setData(bars);
+    	chart.timeScale().fitContent();
+
+    	// 뷰를 떠날 때 리소스 해제
+    	chart.destroy();
+    	```
+    </TabItem>
+    <TabItem label="React">
+    	```sh
+    	pnpm add @lumen-charts/react react
+    	```
+
+    	```tsx
+    	import { LumenChart, type ChartApi } from '@lumen-charts/react';
+    	import { useEffect, useMemo, useRef } from 'react';
+
+    	export function PriceChart({ dark, bars }: { dark: boolean; bars: OhlcColumns }) {
+    		const chartRef = useRef<ChartApi | null>(null);
+    		const options = useMemo(
+    			() => ({ theme: dark ? ('dark' as const) : ('light' as const) }),
+    			[dark],
+    		);
+
+    		useEffect(() => {
+    			const chart = chartRef.current;
+    			if (chart === null) return;
+    			const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+    			candles.setData(bars);
+    			chart.timeScale().fitContent();
+    			return () => chart.removeSeries(candles);
+    		}, [bars]);
+
+    		return <LumenChart ref={chartRef} options={options} style={{ height: 420 }} />;
+    	}
+    	```
+    </TabItem>
+    <TabItem label="Vue 3">
+    	```sh
+    	pnpm add @lumen-charts/vue vue
+    	```
+
+    	```vue
+    	<script setup lang="ts">
+    	import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+    	import { computed, onMounted, useTemplateRef } from 'vue';
+
+    	const props = defineProps<{ dark: boolean; bars: OhlcColumns }>();
+    	const chartEl = useTemplateRef<{ chart: ChartApi | null }>('chartEl');
+    	const options = computed(() => ({ theme: props.dark ? ('dark' as const) : ('light' as const) }));
+
+    	onMounted(() => {
+    		const chart = chartEl.value?.chart;
+    		if (!chart) return;
+    		const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+    		candles.setData(props.bars);
+    		chart.timeScale().fitContent();
+    	});
+    	</script>
+
+    	<template>
+    		<LumenChart ref="chartEl" :options="options" style="height: 420px" />
+    	</template>
+    	```
+    </TabItem>
+    <TabItem label="Svelte 5">
+    	```sh
+    	pnpm add @lumen-charts/svelte svelte
+    	```
+
+    	```svelte
+    	<script lang="ts">
+    		import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+
+    		let { dark = false, bars } = $props();
+
+    		function onReady(chart: ChartApi) {
+    			const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+    			candles.setData(bars);
+    			chart.timeScale().fitContent();
+    		}
+    	</script>
+
+    	<div
+    		style="height: 420px"
+    		use:lumenChart={{ options: { theme: dark ? 'dark' : 'light' }, onReady }}
+    	></div>
+    	```
+    </TabItem>
+    <TabItem label="Solid">
+    	```sh
+    	pnpm add @lumen-charts/solid solid-js
+    	```
+
+    	```tsx
+    	import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+
+    	export function PriceChart(props: { dark: boolean; bars: OhlcColumns }) {
+    		const handleReady = (chart: ChartApi) => {
+    			const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+    			candles.setData(props.bars);
+    			chart.timeScale().fitContent();
+    		};
+
+    		return (
+    			<LumenChart
+    				class="chart-box"
+    				options={{ theme: props.dark ? 'dark' : 'light' }}
+    				onReady={handleReady}
+    			/>
+    		);
+    	}
+    	```
+    </TabItem>
+
+</Tabs>

@@ -1,0 +1,51 @@
+---
+title: Lumen Charts
+description: High-performance financial charting engine for the web. Constant-time ticks, millions of bars in a worker, built-in indicators, GPU heatmaps and scatter series, and thin framework bindings.
+template: splash
+hero:
+  tagline: High-performance financial charts for the web — constant-time ticks, millions of bars in a worker, built-in indicators, and GPU mark layers.
+  actions:
+    - text: Get started
+      link: /getting-started/
+      icon: right-arrow
+    - text: Playground
+      link: /playground/
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+import ChartDemo from '../../components/ChartDemo.astro';
+
+<ChartDemo name="hero" title="Live Lumen Charts candlestick, Bollinger Bands and EMA demo" height={450} />
+
+<p class="demo-caption">
+	Live 25,000-bar chart running directly in this browser with worker-backed Bollinger Bands, EMA 50 and streaming ticks.
+	Drag to pan, scroll to zoom, or toggle light and dark mode in the header.
+</p>
+
+<CardGrid>
+	<Card title="Worker-backed columnar engine" icon="rocket">
+		History and indicators live in a chunked Float64 columnar store inside a Web Worker. The main thread keeps only a
+		window around the visible range, with an automatic time-sliced main-thread fallback if workers are blocked.
+	</Card>
+	<Card title="Automatic level of detail" icon="magnifier">
+		Above 16 bars per device pixel, the engine draws from pre-aggregated 16, 64, 256… bar pyramids. Panning and zooming
+		across 10 million points stays around 1 ms of frame JavaScript.
+	</Card>
+	<Card title="Built-in & custom indicators" icon="seti:graphql">
+		Eleven built-in indicators (SMA, EMA, WMA, RSI, MACD, Bollinger, ATR, Stochastic, VWAP, Highest, Lowest) with output
+		chaining, independent indicator panes, and standalone ES module custom kernels.
+	</Card>
+	<Card title="GPU heatmaps & scatter series" icon="sun">
+		Render order-book depth heatmaps and trade execution scatters on WebGL2, WebGPU, or Canvas 2D with price-following
+		grids, density coloring, mark datafeeds and indicators over marks.
+	</Card>
+	<Card title="Drawings, primitives & state" icon="pencil">
+		Ten interactive drawing tools with magnet snapping and corner/edge handles, custom <code>PanePrimitive</code>{' '}
+		layers, custom series renderers, and atomic versioned JSON <code>saveState</code> / <code>restoreState</code>.
+	</Card>
+	<Card title="Thin bindings & accessibility" icon="laptop">
+		Framework-free core with thin adapters for React, Vue, Svelte and Solid, plus full keyboard chart navigation,
+		customizable key bindings, and screen-reader data summaries.
+	</Card>
+</CardGrid>

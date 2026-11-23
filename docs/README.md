@@ -1,13 +1,14 @@
 # Documentation
 
-| Where                               | What                                                                  |
-| ----------------------------------- | --------------------------------------------------------------------- |
-| [../README.md](../README.md)        | What the library is, a first chart, and the list of features          |
-| [guide/](guide)                     | One file per feature: how to use it                                   |
-| [design.md](design.md)              | The design: findings, principles, architecture, stages and gates      |
-| [design/](design)                   | One file per stage or part of a stage: what was decided and built     |
-| [benchmarks/](benchmarks/README.md) | The harness, and one file per round of measurements with its raw runs |
-| [releasing.md](releasing.md)        | How the packages get to npm                                           |
+| Where                               | What                                                                                                                 |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| [../README.md](../README.md)        | What the library is, a first chart, and the list of features                                                         |
+| [guide/](guide)                     | One file per feature: how to use it                                                                                  |
+| [design.md](design.md)              | The design: findings, principles, architecture, stages and gates                                                     |
+| [design/](design)                   | One file per stage or part of a stage: what was decided and built                                                    |
+| [benchmarks/](benchmarks/README.md) | The harness, and one file per round of measurements with its raw runs                                                |
+| [releasing.md](releasing.md)        | How the packages get to npm                                                                                          |
+| [../apps/docs/](../apps/docs)       | Official documentation site (`lumen-charts.studiocyf.app`), built from `guide/`, `releasing.md`, and package sources |
 
 ## Where a change goes
 

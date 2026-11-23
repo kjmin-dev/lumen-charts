@@ -1,4 +1,12 @@
 packages:
+  - 'apps/*'
   - 'packages/*'
   - 'examples/*'
   - 'benchmarks'
+  - 'tools/*'
+
+# Wrangler (tools/deploy) deploys the documentation site as static assets, which needs neither
+# package's install script. Deployments run with a credential, so nothing runs that does not have to.
+allowBuilds:
+  esbuild: false
+  workerd: false

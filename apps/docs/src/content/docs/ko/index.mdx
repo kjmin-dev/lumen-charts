@@ -1,0 +1,51 @@
+---
+title: Lumen Charts
+description: 웹을 위한 고성능 금융 차트 엔진입니다. 상수 시간 틱 처리, 워커 기반 수백만 개 바 저장소, 내장 인디케이터, GPU 히트맵·스캐터, 얇은 프레임워크 바인딩을 제공합니다.
+template: splash
+hero:
+  tagline: 상수 시간 틱 처리, 워커 기반 수백만 개의 바, 내장 인디케이터, GPU 히트맵·스캐터 레이어를 갖춘 웹 금융 차트 엔진.
+  actions:
+    - text: 시작하기
+      link: /ko/getting-started/
+      icon: right-arrow
+    - text: 플레이그라운드
+      link: /ko/playground/
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+import ChartDemo from '../../../components/ChartDemo.astro';
+
+<ChartDemo name="hero" title="Lumen Charts 실시간 캔들스틱, 볼린저 밴드 및 EMA 데모" height={450} />
+
+<p class="demo-caption">
+	브라우저에서 직접 실행 중인 25,000개 바 차트입니다. 워커 기반 볼린저 밴드·EMA 50과 실시간 틱이 동작합니다. 드래그로
+	팬, 스크롤로 줌하거나 상단 헤더에서 라이트/다크 모드를 전환해 보세요.
+</p>
+
+<CardGrid>
+	<Card title="워커 기반 컬럼형 데이터 엔진" icon="rocket">
+		히스토리와 인디케이터가 웹 워커 내부의 청크 Float64 컬럼 저장소에서 실행됩니다. 메인 스레드는 화면에 보이는 구간
+		주변 윈도우만 유지하며, 워커가 차단된 환경에서는 메인 스레드 타임슬라이스 모드로 자동 전환됩니다.
+	</Card>
+	<Card title="자동 LOD(Level of Detail)" icon="magnifier">
+		디바이스 픽셀당 16개 이상의 바가 들어가면 16, 64, 256… 단위 버킷 피라미드로 전환해 그립니다. 1,000만 포인트 전체를
+		팬·줌해도 프레임 JS 시간이 약 1ms 수준으로 유지됩니다.
+	</Card>
+	<Card title="내장 및 커스텀 인디케이터" icon="seti:graphql">
+		SMA, EMA, WMA, RSI, MACD, Bollinger, ATR, Stochastic, VWAP, Highest, Lowest 11종의 내장 인디케이터와 출력 체이닝,
+		독립 인디케이터 페인, ES 모듈 커스텀 커널을 지원합니다.
+	</Card>
+	<Card title="GPU 히트맵과 스캐터 시리즈" icon="sun">
+		호가창 히트맵과 체결 스캐터 시리즈를 WebGL2, WebGPU 또는 Canvas 2D로 렌더링합니다. 가격 추적 그리드, 밀도 컬러링,
+		마크 데이터피드, 마크 기반 인디케이터를 제공합니다.
+	</Card>
+	<Card title="드로잉, 프리미티브, 상태 저장" icon="pencil">
+		자석 스냅과 코너·엣지 핸들을 갖춘 10종의 드로잉 도구, 커스텀 <code>PanePrimitive</code> 및 시리즈 렌더러, 버전
+		관리되는 JSON <code>saveState</code> / <code>restoreState</code>를 제공합니다.
+	</Card>
+	<Card title="프레임워크 바인딩과 접근성" icon="laptop">
+		프레임워크 독립 코어와 React, Vue, Svelte, Solid용 얇은 어댑터를 제공하며, 키보드 차트 탐색, 사용자 지정 단축키,
+		스크린 리더 데이터 요약을 기본 지원합니다.
+	</Card>
+</CardGrid>
