@@ -137,14 +137,17 @@ evicted coarse chunk is needed again, it is rebuilt immediately from resident fi
 available; otherwise the view draws from the finest resident level meanwhile while the underlying
 level-0 chunks are fetched and materialized. A scatter keeps the first and last time of each chunk,
 how many of its rows share those times, and a checksum (level 0); a heatmap keeps the time and rows
-of every column and a checksum of the cells. `getMarks` returns the marks of the times asked for,
-which may include points of the chunks beside at the first and last time: the engine takes those of
-the chunk and refuses, with a console warning, marks that differ in number or in any value. To change
-existing history in place, call `correct(...)` (or `setData(...)` to replace everything); after a
-correction or `removeMarks`, the datafeed must return the updated history. A request the view no
-longer needs is aborted through `signal`; a failed or refused one is tried again after a pause that
-grows from 1 s to 30 s. A removal or correction that reads, moves or rebuilds from marks let go waits
-for them, and changes after it wait behind it. `chart.whenIdle()` waits for these requests.
+of every column and a checksum of the cells. `getMarks` returns the marks of the times asked for as
+your source holds them now, which may include points of the chunks beside at the first and last
+time: the engine takes those of the chunk. History changes through `correct(...)` and
+`removeMarks(...)` (or `setData(...)` to replace everything), made at your source first: a removal or
+correction that reads, moves or rebuilds from marks let go waits for them, changes after it wait
+behind it, and the marks it waits for may come back as they were or as the change (and those behind
+it) left them. Marks that are neither are refused with a console warning and asked for again after a
+pause that grows from 1 s to 30 s, once per round of requests. A waiting change whose marks are
+refused three rounds running is dropped and reported as a `refused` error of the series (see
+[errors](errors.md)), and the changes behind it run. A request the view no longer needs is aborted
+through `signal`. `chart.whenIdle()` waits for these requests.
 
 ## A chart without bars
 

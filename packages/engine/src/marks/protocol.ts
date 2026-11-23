@@ -177,7 +177,11 @@ export interface MarksFetchRequest {
 export interface MarksRestoreResult {
 	request: number;
 	series: number;
-	/** `restored`: the marks are back; `failed`: fetching failed; `mismatch`: they were not the ones let go. */
+	/**
+	 * `restored`: the marks are back, or taken as they are after the removals and corrections waiting
+	 * for them (put in when the first of those runs); `failed`: fetching failed; `mismatch`: they were
+	 * neither the ones let go nor those.
+	 */
 	outcome: 'restored' | 'failed' | 'mismatch';
 }
 
@@ -271,6 +275,19 @@ export interface MarksStore {
 	fetchRange(chunk: number): { from: number; to: number; count: number } | null;
 	/** Gives a level-0 chunk its marks back from what a datafeed returned; false when they are not those let go. */
 	restore(chunk: number, data: MarksData): boolean;
+	/**
+	 * Takes what a datafeed returned for a level-0 chunk let go that waiting changes need (`changes`,
+	 * the first one first) as the marks after the first of them, or after it and some of those behind
+	 * it: the marks inside their ranges must be the changes' own (none for a removal), and those
+	 * outside them are taken as returned. Returns what `commit` puts in, or null when they fit neither.
+	 */
+	prepare(chunk: number, data: MarksData, changes: readonly MarksChange[]): MarksProvisional | null;
+	/**
+	 * Puts marks `prepare` took into their chunk, with stand-ins for those the changes remove or
+	 * replace: the first waiting change runs right after. `revert` lets the chunk go again as it was.
+	 */
+	commit(provisional: MarksProvisional): void;
+	revert(provisional: MarksProvisional): void;
 
 	// Indicators over the marks
 
@@ -290,6 +307,18 @@ export interface MarksStore {
 	 * with times in `[from, to)`, in order.
 	 */
 	bucketTimes(interval: number, from: number, to: number): number[];
+}
+
+/** Marks a datafeed returned for a level-0 chunk as they are after waiting changes (`MarksStore.prepare`). */
+export interface MarksProvisional {
+	readonly chunk: number;
+	/**
+	 * The waiting changes, rewritten so that the marks are those after the first of them: changes of
+	 * other times commute, so they may be reordered or merged. The engine waits with these instead.
+	 */
+	queue?: MarksChange[];
+	/** The first waiting change is another one now: marks taken as after the one before do not hold. */
+	reordered?: boolean;
 }
 
 /** A chunk of level 0 or an intermediate coarse level that could be let go: its number, level, time span and bytes. */

@@ -985,7 +985,7 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxisHost {
 		const name = series === undefined ? 'a series the chart no longer has' : `series "${series.id}"`;
 		const error: ChartError = {
 			kind: 'refused',
-			message: `The data engine refused ${count} ${count === 1 ? 'update' : 'updates'} of ${name}: a time out of order, or between two bars.`,
+			message: `The data engine refused ${count} ${count === 1 ? 'update' : 'updates'} of ${name}: a time out of order, or between two bars, or a removal or correction of marks whose history the datafeed did not return.`,
 			count,
 		};
 		if (series !== undefined) {

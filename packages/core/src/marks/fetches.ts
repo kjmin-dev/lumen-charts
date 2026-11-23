@@ -11,9 +11,12 @@ export interface MarksDatafeedRequest {
 /**
  * Where a heatmap or scatter series fetches marks again that the data engine let go under the
  * chart's `memoryLimit`. `getMarks` returns the marks of the times asked for, in any form `setData`
- * of the series takes: the same marks the series was given, in the same order (points at one time
- * keep their order). The engine checks them against what it let go, and refuses marks that differ:
- * marks are not corrected after the fact, so the levels of detail made from them stay right.
+ * of the series takes, as the source holds them now: the marks the series was given, in the same
+ * order (points at one time keep their order), as the removals and corrections made since
+ * (`removeMarks`, `correct`) leave them, even those still waiting for these marks. The engine checks
+ * them against what it let go and what those changes leave, and refuses marks that are neither, so
+ * the levels of detail made from them stay right. History is changed through those calls (or
+ * `setData`), not by returning other marks.
  */
 export interface MarksDatafeed<T> {
 	getMarks(request: MarksDatafeedRequest): Promise<T>;
@@ -53,6 +56,8 @@ export class MarkFetches {
 	/** Marks handed back, by request id, until the engine says whether it took them. */
 	private readonly _answered = new Map<number, FetchingSeries>();
 	private readonly _timers = new Set<ReturnType<typeof setTimeout>>();
+	/** Series waiting out a pause, whose view asks again when it ends. */
+	private readonly _pausing = new Set<FetchingSeries>();
 	private readonly _engine: () => EngineClient | null;
 	private readonly _series: (engineId: number) => FetchingSeries | undefined;
 	private readonly _settled: () => void;
@@ -78,8 +83,8 @@ export class MarkFetches {
 				} else {
 					if (restored.outcome === 'mismatch') {
 						console.warn(
-							'lumen-charts: the datafeed of a heatmap or scatter returned marks that do not match those it ' +
-								'replaces; they were ignored.',
+							'lumen-charts: the datafeed of a heatmap or scatter returned marks that are neither those let go ' +
+								'nor those after the removals and corrections waiting for them; they were ignored.',
 						);
 					}
 					this._failed(series);
@@ -146,11 +151,20 @@ export class MarkFetches {
 		);
 	}
 
-	/** A request failed: the series waits out its pause, then its view asks again. */
+	/**
+	 * A request failed: the series waits out its pause, then its view asks again. Requests of one round
+	 * that fail together pause it once: the pause doubles from round to round (1, 2, 4 s ...), not
+	 * with every chunk refused.
+	 */
 	private _failed(series: FetchingSeries): void {
+		if (this._pausing.has(series)) {
+			return;
+		}
 		series.fetchBackoff = Math.min(RETRY_MAX_MS, Math.max(RETRY_MIN_MS, series.fetchBackoff * 2));
+		this._pausing.add(series);
 		const timer = setTimeout(() => {
 			this._timers.delete(timer);
+			this._pausing.delete(series);
 			series.retry();
 		}, series.fetchBackoff);
 		this._timers.add(timer);
@@ -183,5 +197,6 @@ export class MarkFetches {
 			clearTimeout(timer);
 		}
 		this._timers.clear();
+		this._pausing.clear();
 	}
 }

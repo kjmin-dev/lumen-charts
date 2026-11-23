@@ -5,6 +5,7 @@ import type {
 	MarksChunk,
 	MarksData,
 	MarksFetchRequest,
+	MarksProvisional,
 	MarksRequest,
 	MarksRestoreResult,
 	MarksStore,
@@ -52,6 +53,15 @@ interface Hosted {
 	pinned: Set<number>;
 	/** Changes waiting for chunks let go (a removal or correction that reads or moves them), and those after them. */
 	queue: MarksChange[];
+	/**
+	 * Chunks the first waiting change needs whose marks came back as they are after it (the datafeed
+	 * already returns the changed history): put in right before it runs, since they hold stand-ins for
+	 * the marks it removes or replaces, which nothing else may read.
+	 */
+	provisional: Map<number, MarksProvisional>;
+	/** Rounds of requests for the first waiting change in which marks were refused, and whether this one had any. */
+	refusedRounds: number;
+	roundRefused: boolean;
 	/** The line series whose bars the marks make, if any. */
 	timeline: MarksTimeline | null;
 }
@@ -136,6 +146,9 @@ export class MarksEngine {
 				forRead: new Set(),
 				pinned: new Set(),
 				queue: [],
+				provisional: new Map(),
+				refusedRounds: 0,
+				roundRefused: false,
 				timeline: change.timeline ?? null,
 			});
 			return;
@@ -168,32 +181,37 @@ export class MarksEngine {
 			hosted.queue.push(change);
 			return;
 		}
-		yield* this._apply(series, hosted, change, outcome);
+		if ((yield* this._apply(series, hosted, change, outcome)) === 'failed') {
+			// Every chunk it reads was held as it went: the levels made from them must fit.
+			throw new Error('lumen-charts: the levels of detail of a marks series do not fit its marks');
+		}
 	}
 
 	/**
-	 * Applies a change that does not wait. A removal that reads or moves marks let go waits for them:
-	 * it is queued, and they are asked for.
+	 * Applies a change that does not wait. A removal or correction that reads or moves marks let go
+	 * waits for them: it is queued, and they are asked for (`waiting`). One whose coarse chunks could
+	 * not be made from the marks held changed nothing (`failed`): only possible with marks taken from a
+	 * datafeed as they are after it (`MarksStore.prepare`), which were then not those.
 	 */
 	private *_apply(
 		series: number,
 		hosted: Hosted,
 		change: Exclude<MarksChange, { op: 'add' } | { op: 'remove' }>,
 		outcome: MarksOutcome,
-	): Generator<undefined, void, undefined> {
+	): Generator<undefined, 'applied' | 'waiting' | 'failed', undefined> {
 		const store = hosted.store;
 		(outcome.appliedMarks ??= []).push({ series, change });
 		switch (change.op) {
 			case 'set':
 				hosted.generation++;
 				hosted.subscription = null;
-				outcome.rejected = yield* store.set(change.data);
+				outcome.rejected += yield* store.set(change.data);
 				store.clearChanges();
-				return;
+				return 'applied';
 			case 'prepend': {
 				const subscription = hosted.subscription;
 				const head = subscription === null ? Infinity : store.first(subscription.level);
-				outcome.rejected = yield* store.prepend(change.data);
+				outcome.rejected += yield* store.prepend(change.data);
 				store.clearChanges();
 				if (subscription !== null && subscription.level > 0 && subscription.start <= head) {
 					// The first bucket of a coarse level took prepended marks in: the rows the client
@@ -202,7 +220,7 @@ export class MarksEngine {
 				}
 				// The rows held keep their indexes, but the view may now reach rows in front of them.
 				this._notice(series, hosted, outcome);
-				return;
+				return 'applied';
 			}
 			case 'correct': {
 				const needed: number[] = [];
@@ -211,9 +229,14 @@ export class MarksEngine {
 					hosted.queue.unshift(change);
 					outcome.appliedMarks!.pop();
 					this._fetch(series, hosted, needed, outcome, hosted.pinned);
-					return;
+					return 'waiting';
 				}
-				outcome.rejected = yield* store.correct(change.data, change.from, change.to);
+				const rejected = yield* store.correct(change.data, change.from, change.to);
+				if (rejected < 0) {
+					outcome.appliedMarks!.pop();
+					return 'failed';
+				}
+				outcome.rejected += rejected;
 				const modified = store.changedFrom(0) < Infinity;
 				store.clearChanges();
 				if (modified) {
@@ -227,7 +250,7 @@ export class MarksEngine {
 				} else {
 					outcome.appliedMarks!.pop();
 				}
-				return;
+				return 'applied';
 			}
 			case 'delete': {
 				const needed: number[] = [];
@@ -236,9 +259,13 @@ export class MarksEngine {
 					hosted.queue.unshift(change);
 					outcome.appliedMarks!.pop();
 					this._fetch(series, hosted, needed, outcome, hosted.pinned);
-					return;
+					return 'waiting';
 				}
 				const removed = yield* store.delete(change.from, change.to);
+				if (removed < 0) {
+					outcome.appliedMarks!.pop();
+					return 'failed';
+				}
 				store.clearChanges();
 				if (removed > 0) {
 					hosted.generation++;
@@ -247,10 +274,10 @@ export class MarksEngine {
 					// Rows moved: chunks asked for are other rows now. What still needs them asks again.
 					this._forget(hosted, outcome);
 				}
-				return;
+				return 'applied';
 			}
 		}
-		outcome.rejected = yield* store.append(change.data);
+		outcome.rejected += yield* store.append(change.data);
 		const subscription = hosted.subscription;
 		if (subscription !== null) {
 			const from = store.changedFrom(subscription.level);
@@ -265,6 +292,7 @@ export class MarksEngine {
 			}
 		}
 		store.clearChanges();
+		return 'applied';
 	}
 
 	/** Tells the client holding a window of the series to ask for its view again. */
@@ -306,10 +334,15 @@ export class MarksEngine {
 		}
 		hosted.forView.clear();
 		hosted.deferred = null;
-		// A waiting removal or correction whose marks failed to come back asks again, with the view.
+		// A waiting removal or correction whose marks failed to come back, or were refused, asks again,
+		// with the view: another round.
 		const waiting = this._queueNeeds(hosted);
 		if (waiting.length > 0) {
+			const next = this._nextRequest;
 			this._fetch(series, hosted, waiting, outcome, hosted.pinned);
+			if (this._nextRequest !== next) {
+				hosted.roundRefused = false;
+			}
 		}
 		if (missing.length > 0) {
 			this._fetch(series, hosted, missing, outcome, hosted.forView);
@@ -368,7 +401,11 @@ export class MarksEngine {
 
 	// Memory
 
-	/** Asks for the chunks of a series that are not asked for yet, noting them in `purpose`. */
+	/**
+	 * Asks for the chunks of a series that are not asked for yet, noting them in `purpose`. A chunk
+	 * whose marks came back as they are after the first waiting change is not asked for again: it is
+	 * put in when that change runs.
+	 */
 	private _fetch(
 		series: number,
 		hosted: Hosted,
@@ -378,7 +415,7 @@ export class MarksEngine {
 	): void {
 		for (const chunk of chunks) {
 			purpose.add(chunk);
-			if (hosted.fetching.has(chunk)) {
+			if (hosted.fetching.has(chunk) || hosted.provisional.has(chunk)) {
 				continue;
 			}
 			const range = hosted.store.fetchRange(chunk);
@@ -414,10 +451,16 @@ export class MarksEngine {
 		hosted.forView.clear();
 		hosted.forRead.clear();
 		hosted.pinned.clear();
+		hosted.provisional.clear();
+		hosted.refusedRounds = 0;
+		hosted.roundRefused = false;
 		hosted.deferred = null;
 	}
 
-	/** Chunks let go that the changes waiting for marks need first. */
+	/**
+	 * Chunks let go that the changes waiting for marks need first, but those whose marks came back
+	 * as they are after it.
+	 */
 	private _queueNeeds(hosted: Hosted): number[] {
 		const needed: number[] = [];
 		const first = hosted.queue[0];
@@ -428,13 +471,18 @@ export class MarksEngine {
 				hosted.store.needsCorrect(first.data, first.from, first.to, needed);
 			}
 		}
-		return needed;
+		return hosted.provisional.size === 0 ? needed : needed.filter(chunk => !hosted.provisional.has(chunk));
 	}
 
 	/**
-	 * Takes marks fetched again for request `request` (null: fetching failed). Changes that waited for
-	 * them run, and the client whose view needed them is told to ask again. Returns the number of
-	 * changes that ran.
+	 * Takes marks fetched again for request `request` (null: fetching failed). For a chunk the first
+	 * waiting change needs, they may be the marks as they went, or as they are after that change (and
+	 * maybe some behind it): the datafeed returns the history as the source holds it, which changed
+	 * before the change was asked for. Changes that waited for them run, and the client whose view
+	 * needed them is told to ask again. Marks a waiting change needs that fit neither are refused, and
+	 * after `REFUSED_ROUNDS` rounds of requests with refusals the change is dropped and counted in
+	 * `rejected`, so that it does not hold up those behind it for good. Returns the number of changes
+	 * that ran.
 	 */
 	public *restore(
 		request: number,
@@ -447,38 +495,91 @@ export class MarksEngine {
 			return 0;
 		}
 		this._requests.delete(request);
-		const hosted = this._series.get(entry.series)!;
-		hosted.fetching.delete(entry.chunk);
+		const series = entry.series;
+		const chunk = entry.chunk;
+		const hosted = this._series.get(series)!;
+		hosted.fetching.delete(chunk);
 		const store = hosted.store;
-		const restored = data !== null && store.restore(entry.chunk, data);
-		if (restored) {
-			hosted.forView.delete(entry.chunk);
-			hosted.forRead.delete(entry.chunk);
+		let result: 'restored' | 'failed' | 'mismatch' = 'failed';
+		if (data !== null) {
+			if (store.restore(chunk, data)) {
+				result = 'restored';
+				hosted.forView.delete(chunk);
+				hosted.forRead.delete(chunk);
+			} else {
+				const taken =
+					hosted.pinned.has(chunk) && hosted.queue.length > 0 ? store.prepare(chunk, data, hosted.queue) : null;
+				if (taken !== null) {
+					if (taken.queue !== undefined) {
+						// Changes of other times commute: they wait in the order, or merged, that the marks fit.
+						hosted.queue.splice(0, hosted.queue.length, ...taken.queue);
+						if (taken.reordered === true) {
+							hosted.provisional.clear();
+						}
+						hosted.refusedRounds = 0;
+						hosted.roundRefused = false;
+					}
+					hosted.provisional.set(chunk, taken);
+					result = 'restored';
+				} else {
+					result = 'mismatch';
+				}
+			}
 		}
-		outcome.marksRestored = {
-			request,
-			series: entry.series,
-			outcome: data === null ? 'failed' : restored ? 'restored' : 'mismatch',
-		};
-		if (!restored) {
+		const restored: MarksRestoreResult = { request, series, outcome: result };
+		outcome.marksRestored = restored;
+		let dropped = false;
+		if (result === 'mismatch' && hosted.pinned.has(chunk) && hosted.queue.length > 0) {
+			dropped = this._refused(hosted, outcome);
+		}
+		if (result !== 'restored' && !dropped) {
 			return 0;
 		}
 		// The changes that waited, while nothing they read is missing.
 		let applied = 0;
 		while (hosted.queue.length > 0) {
-			const needed = this._queueNeeds(hosted);
+			let needed = this._queueNeeds(hosted);
 			if (needed.length > 0) {
-				this._fetch(entry.series, hosted, needed, outcome, hosted.pinned);
+				this._fetch(series, hosted, needed, outcome, hosted.pinned);
 				break;
 			}
-			const change = hosted.queue.shift()!;
+			// Marks taken as they are after the change go in now, which makes the bounds of a scatter
+			// change exact: it may need more, and then they go out again until those are back.
+			const provisional = [...hosted.provisional.values()];
+			for (const taken of provisional) {
+				store.commit(taken);
+			}
+			if (provisional.length > 0) {
+				needed = this._queueNeeds(hosted);
+				if (needed.length > 0) {
+					for (const taken of provisional) {
+						store.revert(taken);
+					}
+					this._fetch(series, hosted, needed, outcome, hosted.pinned);
+					break;
+				}
+			}
+			const change = hosted.queue.shift()! as Exclude<MarksChange, { op: 'add' } | { op: 'remove' }>;
+			const status = yield* this._apply(series, hosted, change, outcome);
+			if (status !== 'applied') {
+				if (status === 'failed') {
+					// The marks taken as after it do not fit what the levels hold: they were not those.
+					hosted.queue.unshift(change);
+					for (const taken of provisional) {
+						store.revert(taken);
+					}
+					hosted.provisional.clear();
+					restored.outcome = 'mismatch';
+					if (this._refused(hosted, outcome)) {
+						continue;
+					}
+				}
+				break;
+			}
 			applied++;
-			yield* this._apply(
-				entry.series,
-				hosted,
-				change as Exclude<MarksChange, { op: 'add' } | { op: 'remove' }>,
-				outcome,
-			);
+			hosted.provisional.clear();
+			hosted.refusedRounds = 0;
+			hosted.roundRefused = false;
 		}
 		if (hosted.queue.length === 0) {
 			hosted.pinned.clear();
@@ -486,10 +587,9 @@ export class MarksEngine {
 		const deferred = hosted.deferred;
 		if (deferred !== null) {
 			const left: number[] = [];
-			for (const chunk of deferred) {
-				const range = store.fetchRange(chunk);
-				if (range !== null) {
-					left.push(chunk);
+			for (const n of deferred) {
+				if (store.fetchRange(n) !== null) {
+					left.push(n);
 				}
 			}
 			if (left.length === 0) {
@@ -498,10 +598,37 @@ export class MarksEngine {
 					store.materialize(hosted.deferredLevel, hosted.deferredStart, hosted.deferredEnd);
 				}
 				hosted.deferred = null;
-				this._notice(entry.series, hosted, outcome);
+				this._notice(series, hosted, outcome);
 			}
 		}
 		return applied;
+	}
+
+	/**
+	 * Marks the first waiting change needs were refused: counts the round, once per round. After
+	 * `REFUSED_ROUNDS` of them the change is dropped, counted in `rejected` (a removal as one, a
+	 * correction as its marks), and the requests only it needed are cancelled. Returns whether it was.
+	 */
+	private _refused(hosted: Hosted, outcome: MarksOutcome): boolean {
+		if (!hosted.roundRefused) {
+			hosted.roundRefused = true;
+			hosted.refusedRounds++;
+		}
+		if (hosted.refusedRounds < REFUSED_ROUNDS) {
+			return false;
+		}
+		const change = hosted.queue.shift()!;
+		outcome.rejected += change.op === 'correct' ? Math.max(1, change.data.count) : 1;
+		hosted.provisional.clear();
+		hosted.refusedRounds = 0;
+		hosted.roundRefused = false;
+		for (const chunk of hosted.pinned) {
+			if (!hosted.forView.has(chunk) && !hosted.forRead.has(chunk)) {
+				this._cancelChunk(hosted, chunk, outcome);
+			}
+		}
+		hosted.pinned.clear();
+		return true;
 	}
 
 	/**
@@ -681,6 +808,13 @@ export class MarksEngine {
 }
 
 const NO_SERIES: ReadonlySet<number> = new Set();
+
+/**
+ * Rounds of requests with marks refused after which a waiting removal or correction is dropped: with
+ * the client's pauses of 1, 2 and 4 s between them, a datafeed that answers with neither the marks as
+ * they went nor as they are after the change holds the series up for seconds, not for good.
+ */
+const REFUSED_ROUNDS = 3;
 
 /** Merges multiple sorted arrays of timestamps into one sorted, deduplicated array. */
 function mergeSortedUnique(lists: readonly (readonly number[])[]): number[] {
