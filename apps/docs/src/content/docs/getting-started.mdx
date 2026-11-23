@@ -4,6 +4,7 @@ description: Install Lumen Charts, render your first candlestick chart, stream l
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import InstallCommand from '../../components/InstallCommand.astro';
 
 Lumen Charts renders financial charts on layered HTML canvases while keeping history, level-of-detail pyramids, and indicator computation inside an asynchronous data engine.
 
@@ -14,42 +15,27 @@ Pick your framework below — your choice stays in sync across the [Framework bi
 <Tabs syncKey="framework">
 <TabItem label="Vanilla">
 
-```sh
-pnpm add lumen-charts
-# or: npm install lumen-charts
-```
+<InstallCommand packages="lumen-charts" />
 
 </TabItem>
 <TabItem label="React">
 
-```sh
-pnpm add @lumen-charts/react react
-# or: npm install @lumen-charts/react react
-```
+<InstallCommand packages="@lumen-charts/react react" />
 
 </TabItem>
 <TabItem label="Vue 3">
 
-```sh
-pnpm add @lumen-charts/vue vue
-# or: npm install @lumen-charts/vue vue
-```
+<InstallCommand packages="@lumen-charts/vue vue" />
 
 </TabItem>
 <TabItem label="Svelte 5">
 
-```sh
-pnpm add @lumen-charts/svelte svelte
-# or: npm install @lumen-charts/svelte svelte
-```
+<InstallCommand packages="@lumen-charts/svelte svelte" />
 
 </TabItem>
 <TabItem label="Solid">
 
-```sh
-pnpm add @lumen-charts/solid solid-js
-# or: npm install @lumen-charts/solid solid-js
-```
+<InstallCommand packages="@lumen-charts/solid solid-js" />
 
 </TabItem>
 </Tabs>

@@ -4,6 +4,7 @@ description: Use Lumen Charts with Vanilla TypeScript, React, Vue 3, Svelte 5, o
 ---
 
 import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+import InstallCommand from '../../components/InstallCommand.astro';
 
 Lumen Charts keeps framework adapters intentionally thin: each adapter creates the chart on mount, forwards option changes to `applyOptions`, and calls `destroy()` on unmount.
 
@@ -18,9 +19,7 @@ Pass display configuration (such as `theme`, `grid`, `crosshair`, `priceScales`,
 <Tabs syncKey="framework">
 <TabItem label="Vanilla">
 
-```sh
-pnpm add lumen-charts
-```
+<InstallCommand packages="lumen-charts" />
 
 ```ts
 import { createChart } from 'lumen-charts';
@@ -37,9 +36,7 @@ chart.destroy();
 </TabItem>
 <TabItem label="React">
 
-```sh
-pnpm add @lumen-charts/react react
-```
+<InstallCommand packages="@lumen-charts/react react" />
 
 `LumenChart` renders a `<div>` and exposes the `ChartApi` instance through a `ref` (`null` until mounted). Pass a state setter (`ref={setChart}`) when running `useEffect` against the chart so effects fire as soon as the instance is created — including across React `StrictMode` remounts.
 
@@ -67,9 +64,7 @@ export function PriceChart({ dark, bars }: { dark: boolean; bars: OhlcColumns })
 </TabItem>
 <TabItem label="Vue 3">
 
-```sh
-pnpm add @lumen-charts/vue vue
-```
+<InstallCommand packages="@lumen-charts/vue vue" />
 
 `LumenChart` exposes the `ChartApi` instance as `chart` on the template ref and deep-watches `:options` to forward updates to `applyOptions`.
 
@@ -100,9 +95,7 @@ onMounted(() => {
 </TabItem>
 <TabItem label="Svelte 5">
 
-```sh
-pnpm add @lumen-charts/svelte svelte
-```
+<InstallCommand packages="@lumen-charts/svelte svelte" />
 
 `@lumen-charts/svelte` exports the `lumenChart` action. Receive the `ChartApi` once in `onReady`; reactive reads inside `options` flow to `applyOptions` automatically.
 
@@ -129,9 +122,7 @@ pnpm add @lumen-charts/svelte svelte
 </TabItem>
 <TabItem label="Solid">
 
-```sh
-pnpm add @lumen-charts/solid solid-js
-```
+<InstallCommand packages="@lumen-charts/solid solid-js" />
 
 `@lumen-charts/solid` renders a client-side `<div>` and passes the `ChartApi` instance to `onReady`. Style the container through `class`.
 

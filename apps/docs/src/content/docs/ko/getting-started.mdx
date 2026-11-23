@@ -4,6 +4,7 @@ description: Vanilla TypeScript, React, Vue 3, Svelte 5, Solid에서 Lumen Chart
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import InstallCommand from '../../../components/InstallCommand.astro';
 
 Lumen Charts는 레이어드 HTML 캔버스로 금융 차트를 렌더링하면서 히스토리, LOD 피라미드, 인디케이터 연산은 비동기 데이터 엔진에서 처리합니다.
 
@@ -14,42 +15,27 @@ Lumen Charts는 레이어드 HTML 캔버스로 금융 차트를 렌더링하면�
 <Tabs syncKey="framework">
 <TabItem label="Vanilla">
 
-```sh
-pnpm add lumen-charts
-# 또는: npm install lumen-charts
-```
+<InstallCommand packages="lumen-charts" />
 
 </TabItem>
 <TabItem label="React">
 
-```sh
-pnpm add @lumen-charts/react react
-# 또는: npm install @lumen-charts/react react
-```
+<InstallCommand packages="@lumen-charts/react react" />
 
 </TabItem>
 <TabItem label="Vue 3">
 
-```sh
-pnpm add @lumen-charts/vue vue
-# 또는: npm install @lumen-charts/vue vue
-```
+<InstallCommand packages="@lumen-charts/vue vue" />
 
 </TabItem>
 <TabItem label="Svelte 5">
 
-```sh
-pnpm add @lumen-charts/svelte svelte
-# 또는: npm install @lumen-charts/svelte svelte
-```
+<InstallCommand packages="@lumen-charts/svelte svelte" />
 
 </TabItem>
 <TabItem label="Solid">
 
-```sh
-pnpm add @lumen-charts/solid solid-js
-# 또는: npm install @lumen-charts/solid solid-js
-```
+<InstallCommand packages="@lumen-charts/solid solid-js" />
 
 </TabItem>
 </Tabs>
