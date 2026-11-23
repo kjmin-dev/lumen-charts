@@ -1,0 +1,21 @@
+{
+	"name": "@lumen-charts/docs",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"generate": "node scripts/generate.ts",
+		"dev": "node scripts/generate.ts && astro dev",
+		"build": "node scripts/generate.ts && astro build",
+		"preview": "astro preview",
+		"typecheck": "tsrs --noEmit -p tsconfig.json",
+		"test": "node --test \"test/*.test.ts\""
+	},
+	"dependencies": {
+		"@astrojs/starlight": "^0.43.1",
+		"@lumen-charts/core": "workspace:*",
+		"@lumen-charts/engine": "workspace:*",
+		"astro": "^7.4.13",
+		"lumen-charts": "workspace:*",
+		"starlight-llms-txt": "^0.12.0"
+	}
+}

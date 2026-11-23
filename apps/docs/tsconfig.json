@@ -1,0 +1,16 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"lib": ["ES2024", "DOM", "DOM.Iterable"],
+		"types": ["node"],
+		"paths": {
+			"@lumen-charts/core": ["../../packages/core/src/index.ts"],
+			"@lumen-charts/engine": ["../../packages/engine/src/index.ts"],
+			"lumen-charts": ["../../packages/lumen-charts/src/index.ts"]
+		}
+	},
+	"include": ["scripts", "src/**/*.ts", "test"],
+	"exclude": ["src/pages", "src/content.config.ts"]
+}
