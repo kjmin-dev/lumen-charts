@@ -1,0 +1,950 @@
+{
+	"schema": 2,
+	"createdAt": "2026-11-22T17:23:54.236Z",
+	"environment": {
+		"runner": {
+			"arguments": [
+				"--case",
+				"ind-apply/candles-1m/all/20",
+				"--lib",
+				"lumen-worker,lumen-main",
+				"--repeats",
+				"1",
+				"--budget",
+				"1.5",
+				"--out",
+				"<scratch>"
+			],
+			"node": "v26.13.1",
+			"durationSeconds": 5.336955792,
+			"skipped": []
+		},
+		"machine": {
+			"platform": "darwin",
+			"release": "25.5.0",
+			"arch": "arm64",
+			"cpuModel": "Apple M1",
+			"cpuCores": 8,
+			"totalMemoryBytes": 17179869184,
+			"power": "Now drawing from 'AC Power'",
+			"loadAverageStart": [9.45361328125, 12.85595703125, 12.76123046875],
+			"loadAverageEnd": [8.45458984375, 12.5302734375, 12.646484375]
+		},
+		"browser": {
+			"engine": "chromium",
+			"version": "156.0.8078.4",
+			"channel": "chromium",
+			"headless": true,
+			"commandLine": "~/Library/Caches/ms-playwright/chromium-1248/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-edgeupdater --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,BlockOriginHeaderModificationOnRedirect,AvoidCorsURLLoaderRestartOnRedirect,Translate,AutoDeElevate,OptimizationHints,NetworkTimeServiceQuerying,AimEnabled,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion --enable-features=CDPScreenshotNewSurface --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --disable-updater-scheduler --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=<temporary-profile> --remote-debugging-pipe --no-startup-window --noerrdialogs --flag-switches-begin --flag-switches-end --enable-unsafe-swiftshader",
+			"gpuStatus": ""
+		},
+		"cpuThrottlingRate": 1,
+		"viewport": {
+			"width": 1280,
+			"height": 720
+		},
+		"deviceScaleFactor": 2,
+		"chart": {
+			"width": 1200,
+			"height": 600
+		},
+		"page": {
+			"userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+			"userAgentData": {
+				"architecture": "arm",
+				"brands": [
+					{
+						"brand": "Not:A-Brand",
+						"version": "8"
+					},
+					{
+						"brand": "Chromium",
+						"version": "156"
+					}
+				],
+				"fullVersionList": [
+					{
+						"brand": "Not:A-Brand",
+						"version": "8.0.0.0"
+					},
+					{
+						"brand": "Chromium",
+						"version": "156.0.8078.4"
+					}
+				],
+				"mobile": false,
+				"model": "",
+				"platform": "macOS",
+				"platformVersion": "26.5.2"
+			},
+			"devicePixelRatio": 2,
+			"viewport": {
+				"width": 1280,
+				"height": 720
+			},
+			"screen": {
+				"width": 1280,
+				"height": 720
+			},
+			"chart": {
+				"width": 1200,
+				"height": 600
+			},
+			"hardwareConcurrency": 8,
+			"deviceMemoryGb": 16,
+			"crossOriginIsolated": true,
+			"timer": {
+				"minStepMs": 0.004999876022338867,
+				"medianStepMs": 0.005000114440917969,
+				"steps": 2000
+			},
+			"idleFrameInterval": {
+				"count": 120,
+				"mean": 16.666,
+				"min": 16.659999999999854,
+				"p50": 16.664999999999964,
+				"p90": 16.670000000000073,
+				"p95": 16.670000000000073,
+				"p99": 16.670000000000073,
+				"max": 16.670000000000073
+			},
+			"webgl": {
+				"vendor": "Google Inc. (Apple)",
+				"renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"
+			},
+			"buildMode": "production",
+			"probes": {
+				"garbageCollection": "runner: CDP HeapProfiler.collectGarbage",
+				"memory": "runner: CDP Runtime.getHeapUsage of the page and of each dedicated worker"
+			}
+		},
+		"git": {
+			"commit": "80081f1b064db67ab5873d0c75d797f0b4abe0b1",
+			"dirty": true
+		},
+		"sources": "workspace",
+		"packages": {
+			"lightweight-charts": "5.3.0",
+			"playwright": "1.64.1",
+			"vite": "8.3.8"
+		},
+		"merged": [
+			{
+				"createdAt": "2026-11-22T17:23:54.236Z",
+				"runner": {
+					"arguments": [
+						"--case",
+						"ind-apply/candles-1m/all/20",
+						"--lib",
+						"lumen-worker,lumen-main",
+						"--repeats",
+						"1",
+						"--budget",
+						"1.5",
+						"--out",
+						"<scratch>"
+					],
+					"node": "v26.13.1",
+					"durationSeconds": 5.336955792,
+					"skipped": []
+				},
+				"loadAverageStart": [9.45361328125, 12.85595703125, 12.76123046875],
+				"loadAverageEnd": [8.45458984375, 12.5302734375, 12.646484375],
+				"git": {
+					"commit": "80081f1b064db67ab5873d0c75d797f0b4abe0b1",
+					"dirty": true
+				}
+			},
+			{
+				"createdAt": "2026-11-22T17:24:26.568Z",
+				"runner": {
+					"arguments": [
+						"--case",
+						"ind-apply/candles-1m/all/20",
+						"--lib",
+						"lumen-worker,lumen-main",
+						"--repeats",
+						"1",
+						"--budget",
+						"1.5",
+						"--out",
+						"<scratch>"
+					],
+					"node": "v26.13.1",
+					"durationSeconds": 5.50917225,
+					"skipped": []
+				},
+				"loadAverageStart": [7.2763671875, 11.9248046875, 12.423828125],
+				"loadAverageEnd": [6.69189453125, 11.64697265625, 12.31884765625],
+				"git": {
+					"commit": "80081f1b064db67ab5873d0c75d797f0b4abe0b1",
+					"dirty": true
+				}
+			}
+		]
+	},
+	"cases": [
+		{
+			"caseId": "ind-apply/candles-1m/all/20",
+			"adapter": "lumen-worker",
+			"job": {
+				"scenario": "ind-apply",
+				"dataset": {
+					"kind": "candles",
+					"size": 1000000
+				},
+				"seed": 1,
+				"chart": {
+					"width": 1200,
+					"height": 600
+				},
+				"indicators": 20,
+				"view": "all",
+				"ticks": 10000,
+				"minTicks": 1000,
+				"budgetMs": 1500,
+				"warmupTicks": 200,
+				"warmupBudgetMs": 1500,
+				"newBarEvery": 10,
+				"adapter": "lumen-worker"
+			},
+			"library": {
+				"library": {
+					"name": "@lumen-charts/core",
+					"version": "workspace"
+				},
+				"options": {
+					"worker": true
+				}
+			},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"applied": {
+							"count": 1000,
+							"mean": 0.1771649968624115,
+							"min": 0.06499981880187988,
+							"p50": 0.10000014305114746,
+							"p90": 0.309999942779541,
+							"p95": 0.4099998474121094,
+							"p99": 0.940000057220459,
+							"max": 5.019999980926514
+						},
+						"appliedUpdate": {
+							"count": 900,
+							"mean": 0.17819999721315172,
+							"min": 0.06499981880187988,
+							"p50": 0.09999990463256836,
+							"p90": 0.309999942779541,
+							"p95": 0.3950002193450928,
+							"p99": 0.940000057220459,
+							"max": 5.019999980926514
+						},
+						"appliedNewBar": {
+							"count": 100,
+							"mean": 0.16784999370574952,
+							"min": 0.07999992370605469,
+							"p50": 0.11500000953674316,
+							"p90": 0.309999942779541,
+							"p95": 0.41499996185302734,
+							"p99": 0.7300000190734863,
+							"max": 0.9500000476837158
+						},
+						"sync": {
+							"count": 1000,
+							"mean": 0.002480003356933594,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.005000114440917969,
+							"p95": 0.009999990463256836,
+							"p99": 0.015000104904174805,
+							"max": 0.039999961853027344
+						},
+						"visibleBars": 1000000,
+						"warmupTicks": 200
+					},
+					"durationMs": 2623.1055830000005,
+					"host": {
+						"cpuIdle": 0.5028625954198473,
+						"loadAverage": 8.45458984375
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"applied": {
+							"count": 1000,
+							"mean": 0.19805000281333923,
+							"min": 0.06499981880187988,
+							"p50": 0.1100001335144043,
+							"p90": 0.36500000953674316,
+							"p95": 0.5349998474121094,
+							"p99": 0.929999828338623,
+							"max": 4.890000104904175
+						},
+						"appliedUpdate": {
+							"count": 900,
+							"mean": 0.19445555713441637,
+							"min": 0.06499981880187988,
+							"p50": 0.1099998950958252,
+							"p90": 0.36999988555908203,
+							"p95": 0.554999828338623,
+							"p99": 0.929999828338623,
+							"max": 4.890000104904175
+						},
+						"appliedNewBar": {
+							"count": 100,
+							"mean": 0.230400013923645,
+							"min": 0.08500003814697266,
+							"p50": 0.12999987602233887,
+							"p90": 0.3399999141693115,
+							"p95": 0.505000114440918,
+							"p99": 0.7699999809265137,
+							"max": 4.879999876022339
+						},
+						"sync": {
+							"count": 1000,
+							"mean": 0.00308500337600708,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.009999990463256836,
+							"p95": 0.009999990463256836,
+							"p99": 0.015000104904174805,
+							"max": 0.059999942779541016
+						},
+						"visibleBars": 1000000,
+						"warmupTicks": 200
+					},
+					"durationMs": 2733.4599579999995,
+					"host": {
+						"cpuIdle": 0.4299406663623916,
+						"loadAverage": 7.013671875
+					}
+				}
+			],
+			"summary": {
+				"applied.count": {
+					"median": 1000,
+					"min": 1000,
+					"max": 1000,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"applied.mean": {
+					"median": 0.18760749983787536,
+					"min": 0.1771649968624115,
+					"max": 0.19805000281333923,
+					"relativeRange": 0.11132287338712961,
+					"runs": 2
+				},
+				"applied.min": {
+					"median": 0.06499981880187988,
+					"min": 0.06499981880187988,
+					"max": 0.06499981880187988,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"applied.p50": {
+					"median": 0.10500013828277588,
+					"min": 0.10000014305114746,
+					"max": 0.1100001335144043,
+					"relativeRange": 0.09523787898570057,
+					"runs": 2
+				},
+				"applied.p90": {
+					"median": 0.3374999761581421,
+					"min": 0.309999942779541,
+					"max": 0.36500000953674316,
+					"relativeRange": 0.16296317227421317,
+					"runs": 2
+				},
+				"applied.p95": {
+					"median": 0.4724998474121094,
+					"min": 0.4099998474121094,
+					"max": 0.5349998474121094,
+					"relativeRange": 0.26455034998344945,
+					"runs": 2
+				},
+				"applied.p99": {
+					"median": 0.934999942779541,
+					"min": 0.929999828338623,
+					"max": 0.940000057220459,
+					"relativeRange": 0.010695432613725669,
+					"runs": 2
+				},
+				"applied.max": {
+					"median": 4.955000042915344,
+					"min": 4.890000104904175,
+					"max": 5.019999980926514,
+					"relativeRange": 0.02623609987818519,
+					"runs": 2
+				},
+				"appliedUpdate.count": {
+					"median": 900,
+					"min": 900,
+					"max": 900,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"appliedUpdate.mean": {
+					"median": 0.18632777717378404,
+					"min": 0.17819999721315172,
+					"max": 0.19445555713441637,
+					"relativeRange": 0.0872417423093253,
+					"runs": 2
+				},
+				"appliedUpdate.min": {
+					"median": 0.06499981880187988,
+					"min": 0.06499981880187988,
+					"max": 0.06499981880187988,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"appliedUpdate.p50": {
+					"median": 0.10499989986419678,
+					"min": 0.09999990463256836,
+					"max": 0.1099998950958252,
+					"relativeRange": 0.09523809523809523,
+					"runs": 2
+				},
+				"appliedUpdate.p90": {
+					"median": 0.3399999141693115,
+					"min": 0.309999942779541,
+					"max": 0.36999988555908203,
+					"relativeRange": 0.17647046448859552,
+					"runs": 2
+				},
+				"appliedUpdate.p95": {
+					"median": 0.4750000238418579,
+					"min": 0.3950002193450928,
+					"max": 0.554999828338623,
+					"relativeRange": 0.33684126518443935,
+					"runs": 2
+				},
+				"appliedUpdate.p99": {
+					"median": 0.934999942779541,
+					"min": 0.929999828338623,
+					"max": 0.940000057220459,
+					"relativeRange": 0.010695432613725669,
+					"runs": 2
+				},
+				"appliedUpdate.max": {
+					"median": 4.955000042915344,
+					"min": 4.890000104904175,
+					"max": 5.019999980926514,
+					"relativeRange": 0.02623609987818519,
+					"runs": 2
+				},
+				"appliedNewBar.count": {
+					"median": 100,
+					"min": 100,
+					"max": 100,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"appliedNewBar.mean": {
+					"median": 0.19912500381469728,
+					"min": 0.16784999370574952,
+					"max": 0.230400013923645,
+					"relativeRange": 0.31412438930122305,
+					"runs": 2
+				},
+				"appliedNewBar.min": {
+					"median": 0.08249998092651367,
+					"min": 0.07999992370605469,
+					"max": 0.08500003814697266,
+					"relativeRange": 0.06060746178077046,
+					"runs": 2
+				},
+				"appliedNewBar.p50": {
+					"median": 0.12249994277954102,
+					"min": 0.11500000953674316,
+					"max": 0.12999987602233887,
+					"relativeRange": 0.12244794687447694,
+					"runs": 2
+				},
+				"appliedNewBar.p90": {
+					"median": 0.32499992847442627,
+					"min": 0.309999942779541,
+					"max": 0.3399999141693115,
+					"relativeRange": 0.09230762459115789,
+					"runs": 2
+				},
+				"appliedNewBar.p95": {
+					"median": 0.46000003814697266,
+					"min": 0.41499996185302734,
+					"max": 0.505000114440918,
+					"relativeRange": 0.19565248940074012,
+					"runs": 2
+				},
+				"appliedNewBar.p99": {
+					"median": 0.75,
+					"min": 0.7300000190734863,
+					"max": 0.7699999809265137,
+					"relativeRange": 0.053333282470703125,
+					"runs": 2
+				},
+				"appliedNewBar.max": {
+					"median": 2.9149999618530273,
+					"min": 0.9500000476837158,
+					"max": 4.879999876022339,
+					"relativeRange": 1.3481989295946246,
+					"runs": 2
+				},
+				"sync.count": {
+					"median": 1000,
+					"min": 1000,
+					"max": 1000,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"sync.mean": {
+					"median": 0.002782503366470337,
+					"min": 0.002480003356933594,
+					"max": 0.00308500337600708,
+					"relativeRange": 0.2174301121658447,
+					"runs": 2
+				},
+				"sync.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"sync.p50": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"sync.p90": {
+					"median": 0.007500052452087402,
+					"min": 0.005000114440917969,
+					"max": 0.009999990463256836,
+					"relativeRange": 0.6666454740522928,
+					"runs": 2
+				},
+				"sync.p95": {
+					"median": 0.009999990463256836,
+					"min": 0.009999990463256836,
+					"max": 0.009999990463256836,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"sync.p99": {
+					"median": 0.015000104904174805,
+					"min": 0.015000104904174805,
+					"max": 0.015000104904174805,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"sync.max": {
+					"median": 0.04999995231628418,
+					"min": 0.039999961853027344,
+					"max": 0.059999942779541016,
+					"relativeRange": 0.4,
+					"runs": 2
+				},
+				"visibleBars": {
+					"median": 1000000,
+					"min": 1000000,
+					"max": 1000000,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"warmupTicks": {
+					"median": 200,
+					"min": 200,
+					"max": 200,
+					"relativeRange": 0,
+					"runs": 2
+				}
+			}
+		},
+		{
+			"caseId": "ind-apply/candles-1m/all/20",
+			"adapter": "lumen-main",
+			"job": {
+				"scenario": "ind-apply",
+				"dataset": {
+					"kind": "candles",
+					"size": 1000000
+				},
+				"seed": 1,
+				"chart": {
+					"width": 1200,
+					"height": 600
+				},
+				"indicators": 20,
+				"view": "all",
+				"ticks": 10000,
+				"minTicks": 1000,
+				"budgetMs": 1500,
+				"warmupTicks": 200,
+				"warmupBudgetMs": 1500,
+				"newBarEvery": 10,
+				"adapter": "lumen-main"
+			},
+			"library": {
+				"library": {
+					"name": "@lumen-charts/core",
+					"version": "workspace"
+				},
+				"options": {
+					"worker": false
+				}
+			},
+			"status": "ok",
+			"runs": [
+				{
+					"status": "ok",
+					"result": {
+						"applied": {
+							"count": 1000,
+							"mean": 0.10607499957084655,
+							"min": 0.04499983787536621,
+							"p50": 0.06999993324279785,
+							"p90": 0.21499991416931152,
+							"p95": 0.26999998092651367,
+							"p99": 0.46000003814697266,
+							"max": 1.130000114440918
+						},
+						"appliedUpdate": {
+							"count": 900,
+							"mean": 0.10557222180896335,
+							"min": 0.04499983787536621,
+							"p50": 0.06500005722045898,
+							"p90": 0.21499991416931152,
+							"p95": 0.2649998664855957,
+							"p99": 0.440000057220459,
+							"max": 1.130000114440918
+						},
+						"appliedNewBar": {
+							"count": 100,
+							"mean": 0.11059999942779541,
+							"min": 0.05500006675720215,
+							"p50": 0.07500004768371582,
+							"p90": 0.17499995231628418,
+							"p95": 0.2799999713897705,
+							"p99": 0.505000114440918,
+							"max": 0.5200002193450928
+						},
+						"sync": {
+							"count": 1000,
+							"mean": 0.002315001964569092,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.005000114440917969,
+							"p95": 0.009999990463256836,
+							"p99": 0.014999866485595703,
+							"max": 0.04999995231628418
+						},
+						"visibleBars": 1000000,
+						"warmupTicks": 200
+					},
+					"durationMs": 2692.507791000001,
+					"host": {
+						"cpuIdle": 0.455985095482068,
+						"loadAverage": 8.45458984375
+					}
+				},
+				{
+					"status": "ok",
+					"result": {
+						"applied": {
+							"count": 1000,
+							"mean": 0.11380499291419983,
+							"min": 0.04499983787536621,
+							"p50": 0.07500004768371582,
+							"p90": 0.23000001907348633,
+							"p95": 0.2799999713897705,
+							"p99": 0.4099998474121094,
+							"max": 0.809999942779541
+						},
+						"appliedUpdate": {
+							"count": 900,
+							"mean": 0.1145499931441413,
+							"min": 0.04499983787536621,
+							"p50": 0.07500004768371582,
+							"p90": 0.2349998950958252,
+							"p95": 0.2849998474121094,
+							"p99": 0.42999982833862305,
+							"max": 0.809999942779541
+						},
+						"appliedNewBar": {
+							"count": 100,
+							"mean": 0.10709999084472656,
+							"min": 0.059999942779541016,
+							"p50": 0.07999992370605469,
+							"p90": 0.20000004768371582,
+							"p95": 0.22499990463256836,
+							"p99": 0.27499985694885254,
+							"max": 0.2799999713897705
+						},
+						"sync": {
+							"count": 1000,
+							"mean": 0.0024549973011016844,
+							"min": 0,
+							"p50": 0,
+							"p90": 0.005000114440917969,
+							"p95": 0.009999990463256836,
+							"p99": 0.015000104904174805,
+							"max": 0.034999847412109375
+						},
+						"visibleBars": 1000000,
+						"warmupTicks": 200
+					},
+					"durationMs": 2749.8267909999995,
+					"host": {
+						"cpuIdle": 0.4243391066545123,
+						"loadAverage": 6.69189453125
+					}
+				}
+			],
+			"summary": {
+				"applied.count": {
+					"median": 1000,
+					"min": 1000,
+					"max": 1000,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"applied.mean": {
+					"median": 0.1099399962425232,
+					"min": 0.10607499957084655,
+					"max": 0.11380499291419983,
+					"relativeRange": 0.07031102062529844,
+					"runs": 2
+				},
+				"applied.min": {
+					"median": 0.04499983787536621,
+					"min": 0.04499983787536621,
+					"max": 0.04499983787536621,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"applied.p50": {
+					"median": 0.07249999046325684,
+					"min": 0.06999993324279785,
+					"max": 0.07500004768371582,
+					"relativeRange": 0.06896710480882116,
+					"runs": 2
+				},
+				"applied.p90": {
+					"median": 0.22249996662139893,
+					"min": 0.21499991416931152,
+					"max": 0.23000001907348633,
+					"relativeRange": 0.06741621193003887,
+					"runs": 2
+				},
+				"applied.p95": {
+					"median": 0.2749999761581421,
+					"min": 0.26999998092651367,
+					"max": 0.2799999713897705,
+					"relativeRange": 0.03636360483720995,
+					"runs": 2
+				},
+				"applied.p99": {
+					"median": 0.434999942779541,
+					"min": 0.4099998474121094,
+					"max": 0.46000003814697266,
+					"relativeRange": 0.11494298232632985,
+					"runs": 2
+				},
+				"applied.max": {
+					"median": 0.9700000286102295,
+					"min": 0.809999942779541,
+					"max": 1.130000114440918,
+					"relativeRange": 0.3298970744566453,
+					"runs": 2
+				},
+				"appliedUpdate.count": {
+					"median": 900,
+					"min": 900,
+					"max": 900,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"appliedUpdate.mean": {
+					"median": 0.11006110747655232,
+					"min": 0.10557222180896335,
+					"max": 0.1145499931441413,
+					"relativeRange": 0.08157078863749029,
+					"runs": 2
+				},
+				"appliedUpdate.min": {
+					"median": 0.04499983787536621,
+					"min": 0.04499983787536621,
+					"max": 0.04499983787536621,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"appliedUpdate.p50": {
+					"median": 0.0700000524520874,
+					"min": 0.06500005722045898,
+					"max": 0.07500004768371582,
+					"relativeRange": 0.14285689957306077,
+					"runs": 2
+				},
+				"appliedUpdate.p90": {
+					"median": 0.22499990463256836,
+					"min": 0.21499991416931152,
+					"max": 0.2349998950958252,
+					"relativeRange": 0.08888884179384096,
+					"runs": 2
+				},
+				"appliedUpdate.p95": {
+					"median": 0.27499985694885254,
+					"min": 0.2649998664855957,
+					"max": 0.2849998474121094,
+					"relativeRange": 0.07272724120083264,
+					"runs": 2
+				},
+				"appliedUpdate.p99": {
+					"median": 0.434999942779541,
+					"min": 0.42999982833862305,
+					"max": 0.440000057220459,
+					"relativeRange": 0.02298903493627372,
+					"runs": 2
+				},
+				"appliedUpdate.max": {
+					"median": 0.9700000286102295,
+					"min": 0.809999942779541,
+					"max": 1.130000114440918,
+					"relativeRange": 0.3298970744566453,
+					"runs": 2
+				},
+				"appliedNewBar.count": {
+					"median": 100,
+					"min": 100,
+					"max": 100,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"appliedNewBar.mean": {
+					"median": 0.10884999513626098,
+					"min": 0.10709999084472656,
+					"max": 0.11059999942779541,
+					"relativeRange": 0.03215442112503049,
+					"runs": 2
+				},
+				"appliedNewBar.min": {
+					"median": 0.05750000476837158,
+					"min": 0.05500006675720215,
+					"max": 0.059999942779541016,
+					"relativeRange": 0.0869543583949248,
+					"runs": 2
+				},
+				"appliedNewBar.p50": {
+					"median": 0.07749998569488525,
+					"min": 0.07500004768371582,
+					"max": 0.07999992370605469,
+					"relativeRange": 0.06451454122873268,
+					"runs": 2
+				},
+				"appliedNewBar.p90": {
+					"median": 0.1875,
+					"min": 0.17499995231628418,
+					"max": 0.20000004768371582,
+					"relativeRange": 0.1333338419596354,
+					"runs": 2
+				},
+				"appliedNewBar.p95": {
+					"median": 0.25249993801116943,
+					"min": 0.22499990463256836,
+					"max": 0.2799999713897705,
+					"relativeRange": 0.2178221000385719,
+					"runs": 2
+				},
+				"appliedNewBar.p99": {
+					"median": 0.38999998569488525,
+					"min": 0.27499985694885254,
+					"max": 0.505000114440918,
+					"relativeRange": 0.5897442716113459,
+					"runs": 2
+				},
+				"appliedNewBar.max": {
+					"median": 0.40000009536743164,
+					"min": 0.2799999713897705,
+					"max": 0.5200002193450928,
+					"relativeRange": 0.6000004768370445,
+					"runs": 2
+				},
+				"sync.count": {
+					"median": 1000,
+					"min": 1000,
+					"max": 1000,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"sync.mean": {
+					"median": 0.002384999632835388,
+					"min": 0.002315001964569092,
+					"max": 0.0024549973011016844,
+					"relativeRange": 0.05869826334780614,
+					"runs": 2
+				},
+				"sync.min": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"sync.p50": {
+					"median": 0,
+					"min": 0,
+					"max": 0,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"sync.p90": {
+					"median": 0.005000114440917969,
+					"min": 0.005000114440917969,
+					"max": 0.005000114440917969,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"sync.p95": {
+					"median": 0.009999990463256836,
+					"min": 0.009999990463256836,
+					"max": 0.009999990463256836,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"sync.p99": {
+					"median": 0.014999985694885254,
+					"min": 0.014999866485595703,
+					"max": 0.015000104904174805,
+					"relativeRange": 0.000015894587098363652,
+					"runs": 2
+				},
+				"sync.max": {
+					"median": 0.04249989986419678,
+					"min": 0.034999847412109375,
+					"max": 0.04999995231628418,
+					"relativeRange": 0.3529444763894927,
+					"runs": 2
+				},
+				"visibleBars": {
+					"median": 1000000,
+					"min": 1000000,
+					"max": 1000000,
+					"relativeRange": 0,
+					"runs": 2
+				},
+				"warmupTicks": {
+					"median": 200,
+					"min": 200,
+					"max": 200,
+					"relativeRange": 0,
+					"runs": 2
+				}
+			}
+		}
+	]
+}

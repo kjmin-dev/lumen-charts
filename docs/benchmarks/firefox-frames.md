@@ -33,7 +33,7 @@ Round 4 waited for the load average to fall below 15, then ran the frame and hov
 
 - **Chromium meets every gate in every round**, whatever the load: tick average 0.30–0.43 µs and p99 one timer step (5 µs), worst pan or zoom frame 1.07–1.29 ms against 8 ms, hover 0.55–0.80 ms against 1 ms, 20 indicators 0.6–3.2 ms against 4 ms.
 - **Firefox meets the tick gates** (average 0.36–2.2 µs, p99 one 20 µs step) **and misses the others in every round.** Its worst pan or zoom frame ranged from 35 to 342 ms, and even its best cases took 7–10 ms in round 4; hover took 7–105 ms, almost all of it the overlay redraw (the hit test stays under 0.4 ms except once); with 20 indicators a tick reached its patch at p99 13–26 ms.
-- **Firefox degrades with load far more than Chromium.** Between round 3 (load 59 → 32) and round 2 (174 → 238) Firefox's worst frame grew from 54 to 342 ms while Chromium's stayed between 1.07 and 1.26 ms. An earlier single Firefox run on a load of about 24 took 3.5 ms at p95 for the 200-bar pan, against 6.3–79 ms in these rounds. The numbers above are an upper bound for this Mac; a quiet machine is needed to tell how much of Firefox's time is the browser and how much the load.
+- **Firefox degrades with load far more than Chromium**, since it rasterizes the canvases on the page's own thread in software (see the mark section). Between round 3 (load 59 → 32) and round 2 (174 → 238) Firefox's worst frame grew from 54 to 342 ms while Chromium's stayed between 1.07 and 1.26 ms. An earlier single Firefox run on a load of about 24 took 3.5 ms at p95 for the 200-bar pan, against 6.3–79 ms in these rounds. The numbers above are an upper bound for this Mac; a quiet machine is needed to tell how much of Firefox's time is the browser and how much the load.
 
 ## Mark-series frames
 
@@ -53,6 +53,7 @@ Frame JS p95 in milliseconds, median of the two rounds with their range; bold ov
 
 - Every mark case misses its budget in Firefox, with either backend, by 2 to 30 times; Chromium on the same machine at the same time fits every WebGL2 budget. Even replacing one heatmap column takes 28–66 ms with WebGL2 in Firefox, against 0.4–0.5 ms in Chromium.
 - Firefox's WebGL2 path is slower than its own Canvas 2D path in six of the nine cases, which points at the cost of getting the GL image into the pane's 2D canvas, or at the canvas itself, rather than at the mark shaders. This run does not separate the two: headless Firefox's `about:support` did not load under Playwright, so whether its Canvas 2D or WebGL ran on the GPU is not recorded.
+- **Since measured** ([slow-device gates](slow-device-gates.md#headless-firefox)): headless Firefox draws Canvas 2D in software by default and WebGL on the GPU (`Apple M1`), and copying a WebGL canvas of the pane's size into a 2D canvas takes 13 ms there, a transposed copy of a 2D canvas 11 ms. With `gfx.canvas.accelerated` forced on, both take 0.1 ms. That explains the WebGL2 path's cost here; the numbers above are those of Firefox's default headless configuration, not of a Firefox window with GPU canvases.
 
 ## Raw runs
 

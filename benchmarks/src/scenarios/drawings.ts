@@ -4,6 +4,7 @@ import { supports } from '../adapter.ts';
 import { type CandleColumns, generateSeries } from '../data.ts';
 import { type BenchDrawing, generateDrawings } from '../drawings.ts';
 import { ms } from '../format.ts';
+import { countDrawCalls } from '../harness/draw-calls.ts';
 import { requestTimedFrame, startFrameRecording, stopFrameRecording } from '../harness/frames.ts';
 import { markMeasured } from '../harness/marks.ts';
 import { MIN_WARMUP_FRAMES, createSettled, overBudget, prepare } from '../harness/steps.ts';
@@ -73,6 +74,11 @@ export interface DrawingsRun {
 	redraw: Distribution | null;
 	/** `hover` only: positions of the path where a drawing was hit. */
 	hits: number | null;
+	/**
+	 * `hover` only: Canvas 2D calls of a hover frame, on average over `COUNTED_HOVERS` more steps of
+	 * the path after the measured ones, counted untimed (see `countDrawCalls`).
+	 */
+	drawCalls: Record<string, number> | null;
 	interval: Distribution;
 	frames: number;
 	warmupFrames: number;
@@ -100,6 +106,9 @@ const QUICK_DRAWINGS_CASES: readonly DrawingsCase[] = [
 	{ drawings: 100, variant: 'hover' },
 	{ drawings: 100, variant: 'drag' },
 ];
+
+/** Hover steps whose Canvas 2D calls are counted, after the measured ones. */
+const COUNTED_HOVERS = 60;
 
 /** Path of the pointer over the pane at step `k`: two sines of different periods, so it sweeps the pane. */
 function pathPoint(k: number, rect: DOMRect, out: { x: number; y: number }): void {
@@ -243,6 +252,7 @@ async function runDrawings(job: DrawingsJob, { factory, container }: RunContext)
 		let hitTestMean: number | null = null;
 		let redraw: DrawingsRun['redraw'] = null;
 		let hits: number | null = null;
+		let drawCalls: Record<string, number> | null = null;
 		if (job.variant === 'hover') {
 			// Frame k drew the hover of step k: the same positions, hit-tested alone.
 			const single: number[] = [];
@@ -272,6 +282,17 @@ async function runDrawings(job: DrawingsJob, { factory, container }: RunContext)
 			hitTestMean = (performance.now() - t0) / (passes * (last - first));
 			hitTest = summarize(single);
 			redraw = summarize(rest);
+			const counts = await countDrawCalls(async () => {
+				for (let k = 0; k < COUNTED_HOVERS; k++) {
+					step(last + 1 + k);
+					// oxlint-disable-next-line no-await-in-loop
+					await adapter.settle();
+				}
+			});
+			drawCalls = {};
+			for (const [name, count] of Object.entries(counts)) {
+				drawCalls[name] = count / COUNTED_HOVERS;
+			}
 		}
 		return {
 			frameJs: summarize(frameJs),
@@ -279,6 +300,7 @@ async function runDrawings(job: DrawingsJob, { factory, container }: RunContext)
 			hitTestMean,
 			redraw,
 			hits,
+			drawCalls,
 			interval: summarize(interval),
 			frames: last - first,
 			warmupFrames: first - 1,
@@ -367,7 +389,9 @@ export const drawings = defineScenario<DrawingsJob, DrawingsRun>({
 			(m('hitTest.p99') === undefined
 				? ''
 				: `; hit test mean ${ms(m('hitTestMean'))} p99 ${ms(m('hitTest.p99'))}; ` +
-					`redraw p50 ${ms(m('redraw.p50'))} p99 ${ms(m('redraw.p99'))}; hits ${m('hits') ?? '–'}`) +
+					`redraw p50 ${ms(m('redraw.p50'))} p99 ${ms(m('redraw.p99'))}; hits ${m('hits') ?? '–'}; ` +
+					`calls a frame: fillRect ${m('drawCalls.fillRect') ?? '–'}, fillText ${m('drawCalls.fillText') ?? '–'}, ` +
+					`drawImage ${m('drawCalls.drawImage') ?? '–'}, clearRect ${m('drawCalls.clearRect') ?? '–'}`) +
 			`; frames ${m('frames') ?? '–'}`
 		);
 	},

@@ -120,6 +120,15 @@ export class SeriesView {
 	private _shift = 0;
 	private _firstRow = 0;
 	private _firstColumn = 0;
+	/**
+	 * Price range of items `[0, _headEnd)`, which no update rebuilt since it was taken (see `update`),
+	 * and the range `_range` takes.
+	 */
+	private _headMin = Infinity;
+	private _headMax = -Infinity;
+	private _headEnd = 0;
+	private _rangeMin = Infinity;
+	private _rangeMax = -Infinity;
 	/** Items `_keepShifted` kept, `[_keptFrom, _keptTo)`. */
 	private _keptFrom = 0;
 	private _keptTo = 0;
@@ -245,11 +254,36 @@ export class SeriesView {
 			}
 		}
 
+		// The price range of the items: that of the items before the rebuilt ones, kept from earlier
+		// frames while none of them changed, and that of the rest. A tick rebuilds the last items, so
+		// it looks at a few items instead of all of them (thousands of merged columns, for each series).
+		const head = same ? itemFrom : Math.max(0, count - 2);
+		if (!same || head < this._headEnd) {
+			this._headMin = Infinity;
+			this._headMax = -Infinity;
+			this._headEnd = 0;
+		}
+		this._range(this._headEnd, head);
+		this._headMin = this._rangeMin;
+		this._headMax = this._rangeMax;
+		this._headEnd = head;
+		this._range(head, count);
+		this.min = this._rangeMin;
+		this.max = this._rangeMax;
+	}
+
+	/**
+	 * The price range of the items before `_headEnd` (`_headMin`, `_headMax`) widened by items
+	 * `[from, to)`, into `_rangeMin` and `_rangeMax`. Extremes are taken with `Math.min` and `Math.max`,
+	 * which give the same result in any order and grouping, the sign of zero included (see the rule of
+	 * design section 5.1), so a range taken in parts is the range taken at once.
+	 */
+	private _range(from: number, to: number): void {
 		const itemHigh = this.high;
 		const itemLow = this.low;
-		let min = Infinity;
-		let max = -Infinity;
-		for (let k = 0; k < count; k++) {
+		let min = this._headMin;
+		let max = this._headMax;
+		for (let k = from; k < to; k++) {
 			const h = itemHigh[k]!;
 			const l = itemLow[k]!;
 			if (h === h) {
@@ -259,8 +293,8 @@ export class SeriesView {
 				min = Math.min(min, l);
 			}
 		}
-		this.min = min;
-		this.max = max;
+		this._rangeMin = min;
+		this._rangeMax = max;
 	}
 
 	/**
@@ -382,6 +416,7 @@ export class SeriesView {
 		this.pathLengthCount = 0;
 		this.min = Infinity;
 		this.max = -Infinity;
+		this._headEnd = 0;
 	}
 
 	/** The frame has drawn the items as they are: from here on `dirtyFrom` and `dirtyTo` collect anew. */

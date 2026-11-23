@@ -1,7 +1,7 @@
 // Counts Canvas 2D drawing calls. Only for diagnostics in untimed passes: the wrappers add a
 // function call to every drawing operation.
 
-const COUNTED = ['fillRect', 'strokeRect', 'fill', 'stroke', 'lineTo', 'fillText', 'drawImage'] as const;
+const COUNTED = ['fillRect', 'strokeRect', 'fill', 'stroke', 'lineTo', 'fillText', 'drawImage', 'clearRect'] as const;
 
 type Counted = (typeof COUNTED)[number];
 

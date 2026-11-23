@@ -27,9 +27,11 @@ pnpm bench:profile benchmarks/results/traces    # the breakdowns again from the 
 pnpm bench --case ind-apply,tick --allocations benchmarks/results/allocations   # what the main thread allocates per tick, by call site, and its collections
 pnpm bench:report <results.json>        # Markdown tables from a results file
 pnpm bench:merge <out.json> <a.json> <b.json>   # join runs of the same cases into one file
-pnpm bench:pixels                       # partial redraws against full redraws, pixel for pixel (--dpr, --raster, --redraw, --case)
+pnpm bench:pixels                       # partial redraws of the series layer and the overlay against full redraws, pixel for pixel (--dpr, --raster, --redraw, --case)
 pnpm bench:serve                        # production build of the harness page, to run by hand
+pnpm bench --case drawings/candles-1m/1000/hover --cpu-throttle 4   # the page's CPU four times slower, as a stand-in for a slower device (Chromium only)
 pnpm bench --browser firefox --case frames/candles-1m --lib lumen-worker   # headless Firefox: no DevTools protocol, so no memory, traces or forced GC
+pnpm bench --browser firefox --firefox-pref gfx.canvas.accelerated=true,gfx.canvas.accelerated.force-enabled=true   # Firefox preferences for the run
 pnpm bench --android <serial> --case frames/candles-1m --lib lumen-worker # Chrome on a USB-connected Android device, at its own viewport and ratio
 node benchmarks/runner/mark-charts.mjs --android <serial> --tolerance 2   # image comparisons on the device
 ```
@@ -113,3 +115,4 @@ The JSON files beside each document are the runs its numbers come from.
 - [Firefox on the M1](firefox-frames.md) runs the gate and mark cases in headless Firefox against Chromium.
 - [Automatic renderer selection](mark-renderer-auto.md) compares the three backends on the M1 and the phone and keeps `auto` on WebGL2.
 - [Review experiments](review-remeasure.md) measures the chunked store's scan cost again.
+- [Slow-device gates](slow-device-gates.md): the hover and indicator gates the phone misses, traced on the M1 with `--cpu-throttle`; the overlay draws only what changed; why headless Firefox misses its frame budgets (Canvas 2D in software, WebGL read back), with `--firefox-pref`.

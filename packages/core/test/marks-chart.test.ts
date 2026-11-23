@@ -43,7 +43,10 @@ class MarksChart extends TestChart {
 	/** The canvases series keep their pixels on: every canvas with a context that is not in the chart. */
 	public surfaces(): HTMLCanvasElement[] {
 		const layers = new Set(this.canvases());
-		return [...this.recorders.keys()].filter(canvas => !layers.has(canvas));
+		// Canvases of the chart's own, such as the overlay's strips of dashes, get no pixels put.
+		return [...this.recorders.keys()].filter(
+			canvas => !layers.has(canvas) && this.calls(canvas).some(call => call.name === 'putImageData'),
+		);
 	}
 
 	/** The calls that handed pixels to a canvas, over all series. */

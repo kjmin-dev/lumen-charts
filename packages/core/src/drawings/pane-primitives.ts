@@ -38,6 +38,8 @@ export class PanePrimitives {
 	private _rangesTimeline = -1;
 	/** The views primitives are drawn with, one per price scale they use. */
 	private readonly _views = new Map<string, PaneViewState>();
+	/** Changes whenever a view changes (see `PrimitiveLayer.update`). */
+	private _viewEpoch = 0;
 	private readonly _target = {
 		context: null as unknown as CanvasRenderingContext2D,
 		pixelRatio: 1,
@@ -432,6 +434,7 @@ export class PanePrimitives {
 		const geometry = this._model.geometry;
 		const scale = this._scale;
 		for (const view of this._views.values()) {
+			const version = view.version;
 			view.sync(
 				geometry.origin,
 				geometry.spacing,
@@ -441,6 +444,9 @@ export class PanePrimitives {
 				scale.first,
 				scale.end - 1,
 			);
+			if (view.version !== version) {
+				this._viewEpoch++;
+			}
 		}
 	}
 
@@ -449,8 +455,8 @@ export class PanePrimitives {
 		this.syncPaneView();
 		const layers = this.layers;
 		const bounds = this.bounds;
-		let updated = layers.normal.update(bounds);
-		if (layers.top.update(bounds)) {
+		let updated = layers.normal.update(bounds, this._viewEpoch);
+		if (layers.top.update(bounds, this._viewEpoch)) {
 			updated = true;
 		}
 		return updated;

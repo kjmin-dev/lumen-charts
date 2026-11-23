@@ -274,6 +274,10 @@ export class PrimitiveLayer {
 	public bounds = new Float64Array(64);
 	/** Needs a redraw: something in it changed since it was last drawn. */
 	public changed = true;
+	/** An entry asked for an update since the last `update` (see `PrimitiveLayers.changed`). */
+	public pending = true;
+	/** The views' epoch as of the last `update` that looked at every entry. */
+	private _epoch = -1;
 	private _orderDirty = false;
 	private readonly _free: number[] = [];
 	private _slots = 0;
@@ -298,6 +302,7 @@ export class PrimitiveLayer {
 		this.entries.push(entry);
 		this._orderDirty = true;
 		this.changed = true;
+		this.pending = true;
 	}
 
 	public remove(entry: PrimitiveEntry): boolean {
@@ -327,10 +332,18 @@ export class PrimitiveLayer {
 
 	/**
 	 * Updates the entries whose view changed or that asked for it, keeping their bounds. Returns true
-	 * when any was updated, so the layer needs a redraw.
+	 * when any was updated, so the layer needs a redraw. `epoch` changes whenever a view of the pane
+	 * does (`PanePrimitives.syncPaneView`): while it stays and no entry asked, none needs an update,
+	 * and the entries are not looked at (a thousand drawings under a moving pointer).
 	 */
-	public update(scratch: PrimitiveBounds): boolean {
+	public update(scratch: PrimitiveBounds, epoch = -1): boolean {
 		this.sort();
+		if (epoch >= 0 && epoch === this._epoch && !this.pending) {
+			return false;
+		}
+		this._epoch = epoch;
+		// Before the entries are updated: one may ask again while it is.
+		this.pending = false;
 		const entries = this.entries;
 		const bounds = this.bounds;
 		let updated = false;
@@ -526,6 +539,7 @@ export class PrimitiveLayers {
 	 */
 	public changed(entry: PrimitiveEntry): void {
 		entry.dirty = true;
+		this.layer(entry.zOrder).pending = true;
 		if (!this._setAutoscales(entry, entry.primitive.autoscale !== undefined) && entry.autoscales) {
 			// Asked again; what it gave last stands meanwhile.
 			this._forget(entry.rangeSlot);
