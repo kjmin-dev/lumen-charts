@@ -70,6 +70,8 @@ Each has a guide:
 
 Bindings stay thin: they create the chart on mount, forward option changes to
 `applyOptions`, and destroy it on unmount. Data goes through the chart API, never through props.
+See [Framework bindings](https://lumen-charts.studiocyf.app/frameworks/) for React, Vue 3, Svelte 5,
+and Solid examples (also available as synced tabs on every guide page).
 
 ## Development
 

@@ -13,6 +13,35 @@ export const getStaticPaths: GetStaticPaths = async () => {
 	}));
 };
 
+/** Removes shared leading indentation (spaces or tabs) from a block extracted from an MDX tag. */
+function dedent(block: string): string {
+	const lines = block.replace(/^\n+|\n+$/g, '').split('\n');
+	const indents = lines
+		.filter(line => line.trim() !== '')
+		.map(line => {
+			const match = line.match(/^[ \t]*/);
+			return match === null ? '' : match[0];
+		});
+	if (indents.length === 0) {
+		return '';
+	}
+	let common = indents[0]!;
+	for (const indent of indents.slice(1)) {
+		let i = 0;
+		while (i < common.length && i < indent.length && common[i] === indent[i]) {
+			i++;
+		}
+		common = common.slice(0, i);
+	}
+	if (common === '') {
+		return lines.join('\n').trim();
+	}
+	return lines
+		.map(line => (line.startsWith(common) ? line.slice(common.length) : line))
+		.join('\n')
+		.trim();
+}
+
 /** Strips MDX imports, comments, interactive chart frames, and purely decorative swatches. */
 function plain(body: string): string {
 	return body
@@ -25,13 +54,22 @@ function plain(body: string): string {
 		.replace(/<span class="swatch"[^>]*><\/span>/g, '')
 		.replace(/\{' '\}/g, ' ')
 		.replace(/<code>([^<]+)<\/code>/g, '`$1`')
+		.replace(/<Aside([^>]*)>([\s\S]*?)<\/Aside>/g, (_, attrs: string, inner: string) => {
+			const titleMatch = attrs.match(/title="([^"]+)"/);
+			const prefix = titleMatch !== null ? `**${titleMatch[1]}:** ` : '';
+			const content = dedent(inner)
+				.split('\n')
+				.map((line, i) => `> ${i === 0 ? prefix : ''}${line}`)
+				.join('\n');
+			return `\n\n${content}\n\n`;
+		})
+		.replace(/<Card title="([^"]+)"[^>]*>([\s\S]*?)<\/Card>/g, (_, title: string, inner: string) => {
+			return `\n\n### ${title}\n\n${dedent(inner)}\n\n`;
+		})
+		.replace(/<TabItem label="([^"]+)"[^>]*>([\s\S]*?)<\/TabItem>/g, (_, label: string, inner: string) => {
+			return `\n\n### ${label}\n\n${dedent(inner)}\n\n`;
+		})
 		.replace(/<\/?(?:CardGrid|Tabs)[^>]*>/g, '')
-		.replace(/^\s*<Card title="([^"]+)"[^>]*>/gm, '### $1\n')
-		.replace(/^\s*<\/Card>/gm, '')
-		.replace(/^\s*<TabItem label="([^"]+)"[^>]*>/gm, '### $1\n')
-		.replace(/^\s*<\/TabItem>/gm, '')
-		.replace(/^\t+(?=### |```)/gm, '')
-		.replace(/^\t{2}(?=\S)/gm, '')
 		.replace(/\n{3,}/g, '\n\n')
 		.trim();
 }

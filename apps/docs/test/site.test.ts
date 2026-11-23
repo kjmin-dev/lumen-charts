@@ -6,7 +6,10 @@ import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
+import { GUIDE_EXAMPLES } from '../scripts/guide-examples.ts';
 import { DEMO_NAMES } from '../src/demos/names.ts';
+
+const FRAMEWORK_LABELS = ['Vanilla', 'React', 'Vue 3', 'Svelte 5', 'Solid'] as const;
 
 const docsRoot = join(import.meta.dirname, '..');
 const repoRoot = join(docsRoot, '../..');
@@ -87,6 +90,50 @@ describe('docs build output', () => {
 		assert.ok(llms.includes('Lumen Charts'), 'llms.txt should include project title');
 		assert.ok(!llms.includes('/ko/'), 'llms.txt should exclude Korean translations');
 		assert.ok(!existsSync(join(dist, 'ko.md')), 'Korean landing page should not be emitted as /ko.md');
+	});
+
+	test('framework wrapper tabs are synced across getting-started, frameworks, and all guides with code', async () => {
+		const guideSlugs = Object.keys(GUIDE_EXAMPLES);
+		assert.ok(
+			guideSlugs.length >= 14,
+			`expected at least 14 guides with framework examples, found ${guideSlugs.length}`,
+		);
+
+		const htmlTargets = [
+			'getting-started/index.html',
+			'frameworks/index.html',
+			'ko/getting-started/index.html',
+			'ko/frameworks/index.html',
+			...guideSlugs.map(slug => `guides/${slug}/index.html`),
+		];
+
+		await Promise.all(
+			htmlTargets.map(async rel => {
+				const html = await readFile(join(dist, rel), 'utf8');
+				assert.ok(
+					html.includes('data-sync-key="framework"'),
+					`${rel} should include synced framework tabs (data-sync-key="framework")`,
+				);
+				for (const label of FRAMEWORK_LABELS) {
+					assert.ok(html.includes(`>${label}</a>`), `${rel} is missing a "${label}" framework tab`);
+				}
+			}),
+		);
+
+		const mdTargets = ['getting-started.md', 'frameworks.md', ...guideSlugs.map(slug => `guides/${slug}.md`)];
+		await Promise.all(
+			mdTargets.map(async rel => {
+				const md = await readFile(join(dist, rel), 'utf8');
+				assert.ok(!/<\/?(?:Tabs|TabItem|Aside|CardGrid|Card)\b/.test(md), `${rel} contains unstripped MDX tags`);
+				assert.ok(!/^```[a-z]+\s+\S+.*```$/m.test(md), `${rel} contains a collapsed single-line fenced code block`);
+				for (const label of FRAMEWORK_LABELS) {
+					assert.ok(md.includes(`### ${label}\n`), `${rel} is missing "### ${label}" section`);
+				}
+			}),
+		);
+
+		const apiMd = await readFile(join(dist, 'reference', 'api.md'), 'utf8');
+		assert.ok(apiMd.includes('## Framework bindings'), 'reference/api.md should document framework bindings');
 	});
 
 	test('every demo page is built and every embedded frame is inlined as srcdoc with modulepreload', async () => {

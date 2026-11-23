@@ -1,156 +1,470 @@
 ---
 title: Framework bindings
-description: Use Lumen Charts with Vanilla TypeScript, React, Vue 3, Svelte 5, or SolidJS.
+description: Use Lumen Charts with Vanilla TypeScript, React, Vue 3, Svelte 5, or SolidJS — reactive options, streaming ticks, event subscriptions, and SSR tips.
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 Lumen Charts keeps framework adapters intentionally thin: each adapter creates the chart on mount, forwards option changes to `applyOptions`, and calls `destroy()` on unmount.
 
 **Data always goes through the `ChartApi`**, never through reactive framework props. Passing millions of bars through component props would force unnecessary diffing and allocations on every tick.
 
-<Tabs>
-	<TabItem label="Vanilla">
-		```sh
-		pnpm add lumen-charts
-		```
+Selecting a tab below also selects that framework across [Getting started](/getting-started/) and every [feature guide](/guides/themes/).
 
-    	```ts
-    	import { createChart } from 'lumen-charts';
+## Basic setup & reactive options
 
-    	const chart = createChart(document.getElementById('chart')!, { theme: 'dark' });
-    	const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
-    	candles.setData(bars);
-    	chart.timeScale().fitContent();
+Pass display configuration (such as `theme`, `grid`, `crosshair`, `priceScales`, or `localization`) through the wrapper's `options` prop and load data through the `ChartApi` instance:
 
-    	// Clean up when leaving the page or view:
-    	chart.destroy();
-    	```
-    </TabItem>
-    <TabItem label="React">
-    	```sh
-    	pnpm add @lumen-charts/react react
-    	```
+<Tabs syncKey="framework">
+<TabItem label="Vanilla">
 
-    	`LumenChart` renders a `<div>` and exposes the `ChartApi` instance through a `ref` (`null` until mounted).
+```sh
+pnpm add lumen-charts
+```
 
-    	```tsx
-    	import { LumenChart, type ChartApi } from '@lumen-charts/react';
-    	import { useEffect, useMemo, useRef } from 'react';
+```ts
+import { createChart } from 'lumen-charts';
 
-    	export function PriceChart({ dark, bars }: { dark: boolean; bars: OhlcColumns }) {
-    		const chartRef = useRef<ChartApi | null>(null);
-    		const options = useMemo(
-    			() => ({ theme: dark ? ('dark' as const) : ('light' as const) }),
-    			[dark],
-    		);
+const chart = createChart(document.getElementById('chart')!, { theme: 'dark' });
+const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+candles.setData(bars);
+chart.timeScale().fitContent();
 
-    		useEffect(() => {
-    			const chart = chartRef.current;
-    			if (chart === null) return;
-    			const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
-    			candles.setData(bars);
-    			chart.timeScale().fitContent();
-    			return () => chart.removeSeries(candles);
-    		}, [bars]);
+// Clean up when leaving the page or view:
+chart.destroy();
+```
 
-    		return <LumenChart ref={chartRef} options={options} style={{ height: 420 }} />;
-    	}
-    	```
-    </TabItem>
-    <TabItem label="Vue 3">
-    	```sh
-    	pnpm add @lumen-charts/vue vue
-    	```
+</TabItem>
+<TabItem label="React">
 
-    	`LumenChart` exposes the `ChartApi` instance as `chart` on the template ref.
+```sh
+pnpm add @lumen-charts/react react
+```
 
-    	```vue
-    	<script setup lang="ts">
-    	import { LumenChart, type ChartApi } from '@lumen-charts/vue';
-    	import { computed, onMounted, useTemplateRef } from 'vue';
+`LumenChart` renders a `<div>` and exposes the `ChartApi` instance through a `ref` (`null` until mounted). Pass a state setter (`ref={setChart}`) when running `useEffect` against the chart so effects fire as soon as the instance is created — including across React `StrictMode` remounts.
 
-    	const props = defineProps<{ dark: boolean; bars: OhlcColumns }>();
-    	const chartEl = useTemplateRef<{ chart: ChartApi | null }>('chartEl');
-    	const options = computed(() => ({ theme: props.dark ? ('dark' as const) : ('light' as const) }));
+```tsx
+import type { OhlcColumns } from '@lumen-charts/core';
+import { LumenChart, type ChartApi } from '@lumen-charts/react';
+import { useEffect, useMemo, useState } from 'react';
 
-    	onMounted(() => {
-    		const chart = chartEl.value?.chart;
-    		if (!chart) return;
-    		const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
-    		candles.setData(props.bars);
-    		chart.timeScale().fitContent();
-    	});
-    	</script>
+export function PriceChart({ dark, bars }: { dark: boolean; bars: OhlcColumns }) {
+	const [chart, setChart] = useState<ChartApi | null>(null);
+	const options = useMemo(() => ({ theme: dark ? ('dark' as const) : ('light' as const) }), [dark]);
 
-    	<template>
-    		<LumenChart ref="chartEl" :options="options" style="height: 420px" />
-    	</template>
-    	```
-    </TabItem>
-    <TabItem label="Svelte 5">
-    	```sh
-    	pnpm add @lumen-charts/svelte svelte
-    	```
+	useEffect(() => {
+		if (chart === null) return;
+		const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+		candles.setData(bars);
+		chart.timeScale().fitContent();
+		return () => chart.removeSeries(candles);
+	}, [chart, bars]);
 
-    	`@lumen-charts/svelte` exports the `lumenChart` action. Receive the `ChartApi` once in `onReady`.
+	return <LumenChart ref={setChart} options={options} style={{ height: 420 }} />;
+}
+```
 
-    	```svelte
-    	<script lang="ts">
-    		import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+</TabItem>
+<TabItem label="Vue 3">
 
-    		let { dark = false, bars } = $props();
+```sh
+pnpm add @lumen-charts/vue vue
+```
 
-    		function onReady(chart: ChartApi) {
-    			const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
-    			candles.setData(bars);
-    			chart.timeScale().fitContent();
-    		}
-    	</script>
+`LumenChart` exposes the `ChartApi` instance as `chart` on the template ref and deep-watches `:options` to forward updates to `applyOptions`.
 
-    	<div
-    		style="height: 420px"
-    		use:lumenChart={{ options: { theme: dark ? 'dark' : 'light' }, onReady }}
-    	></div>
-    	```
-    </TabItem>
-    <TabItem label="Solid">
-    	```sh
-    	pnpm add @lumen-charts/solid solid-js
-    	```
+```vue
+<script setup lang="ts">
+import type { OhlcColumns } from '@lumen-charts/core';
+import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import { computed, onMounted, useTemplateRef } from 'vue';
 
-    	`@lumen-charts/solid` renders a client-side `<div>` and passes the `ChartApi` instance to `onReady`.
+const props = defineProps<{ dark: boolean; bars: OhlcColumns }>();
+const chartEl = useTemplateRef<{ chart: ChartApi | null }>('chartEl');
+const options = computed(() => ({ theme: props.dark ? ('dark' as const) : ('light' as const) }));
 
-    	```tsx
-    	import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+onMounted(() => {
+	const chart = chartEl.value?.chart;
+	if (!chart) return;
+	const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+	candles.setData(props.bars);
+	chart.timeScale().fitContent();
+});
+</script>
 
-    	export function PriceChart(props: { dark: boolean; bars: OhlcColumns }) {
-    		const handleReady = (chart: ChartApi) => {
-    			const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
-    			candles.setData(props.bars);
-    			chart.timeScale().fitContent();
-    		};
+<template>
+	<LumenChart ref="chartEl" :options="options" style="height: 420px" />
+</template>
+```
 
-    		return (
-    			<LumenChart
-    				class="chart-box"
-    				options={{ theme: props.dark ? 'dark' : 'light' }}
-    				onReady={handleReady}
-    			/>
-    		);
-    	}
-    	```
-    </TabItem>
+</TabItem>
+<TabItem label="Svelte 5">
 
+```sh
+pnpm add @lumen-charts/svelte svelte
+```
+
+`@lumen-charts/svelte` exports the `lumenChart` action. Receive the `ChartApi` once in `onReady`; reactive reads inside `options` flow to `applyOptions` automatically.
+
+```svelte
+<script lang="ts">
+	import type { OhlcColumns } from '@lumen-charts/core';
+	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+
+	let { dark = false, bars }: { dark?: boolean; bars: OhlcColumns } = $props();
+
+	function onReady(chart: ChartApi) {
+		const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+		candles.setData(bars);
+		chart.timeScale().fitContent();
+	}
+</script>
+
+<div
+	style="height: 420px"
+	use:lumenChart={{ options: { theme: dark ? 'dark' : 'light' }, onReady }}
+></div>
+```
+
+</TabItem>
+<TabItem label="Solid">
+
+```sh
+pnpm add @lumen-charts/solid solid-js
+```
+
+`@lumen-charts/solid` renders a client-side `<div>` and passes the `ChartApi` instance to `onReady`. Style the container through `class`.
+
+```tsx
+import type { OhlcColumns } from '@lumen-charts/core';
+import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+
+export function PriceChart(props: { dark: boolean; bars: OhlcColumns }) {
+	const handleReady = (chart: ChartApi) => {
+		const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+		candles.setData(props.bars);
+		chart.timeScale().fitContent();
+	};
+
+	return <LumenChart class="chart-box" options={{ theme: props.dark ? 'dark' : 'light' }} onReady={handleReady} />;
+}
+```
+
+</TabItem>
+</Tabs>
+
+## Streaming live ticks & indicators
+
+Keep the series handle outside component state and forward incoming ticks straight to `candles.update(tick)`. Your UI framework never re-renders on price ticks, while the data engine updates the bar and every indicator incrementally in one atomic patch:
+
+<Tabs syncKey="framework">
+<TabItem label="Vanilla">
+
+```ts
+import { createChart, type OhlcBar, type OhlcColumns } from 'lumen-charts';
+
+const chart = createChart(document.getElementById('chart')!, { theme: 'auto' });
+const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
+candles.setData(history);
+candles.addIndicator('ema', { params: { period: 20 } });
+chart.timeScale().fitContent();
+
+const stopStream = subscribeTicks('BTCUSD', (tick: OhlcBar) => {
+	candles.update(tick);
+});
+
+// Later on teardown:
+stopStream();
+chart.destroy();
+```
+
+</TabItem>
+<TabItem label="React">
+
+```tsx
+import type { OhlcBar, OhlcColumns } from '@lumen-charts/core';
+import { LumenChart, type ChartApi } from '@lumen-charts/react';
+import { useEffect, useState } from 'react';
+
+const options = { theme: 'auto' as const };
+
+export function LiveChart({ symbol, history }: { symbol: string; history: OhlcColumns }) {
+	const [chart, setChart] = useState<ChartApi | null>(null);
+
+	useEffect(() => {
+		if (chart === null) return;
+		const candles = chart.addSeries('candlestick', { id: symbol });
+		candles.setData(history);
+		candles.addIndicator('ema', { params: { period: 20 } });
+		chart.timeScale().fitContent();
+
+		const stopStream = subscribeTicks(symbol, (tick: OhlcBar) => {
+			candles.update(tick);
+		});
+
+		return () => {
+			stopStream();
+			chart.removeSeries(candles);
+		};
+	}, [chart, symbol, history]);
+
+	return <LumenChart ref={setChart} options={options} style={{ height: 420 }} />;
+}
+```
+
+</TabItem>
+<TabItem label="Vue 3">
+
+```vue
+<script setup lang="ts">
+import type { OhlcBar, OhlcColumns } from '@lumen-charts/core';
+import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import { onBeforeUnmount, onMounted, useTemplateRef } from 'vue';
+
+const props = defineProps<{ symbol: string; history: OhlcColumns }>();
+const chartEl = useTemplateRef<{ chart: ChartApi | null }>('chartEl');
+const options = { theme: 'auto' as const };
+let stopStream: (() => void) | undefined;
+
+onMounted(() => {
+	const chart = chartEl.value?.chart;
+	if (!chart) return;
+	const candles = chart.addSeries('candlestick', { id: props.symbol });
+	candles.setData(props.history);
+	candles.addIndicator('ema', { params: { period: 20 } });
+	chart.timeScale().fitContent();
+
+	stopStream = subscribeTicks(props.symbol, (tick: OhlcBar) => {
+		candles.update(tick);
+	});
+});
+
+onBeforeUnmount(() => stopStream?.());
+</script>
+
+<template>
+	<LumenChart ref="chartEl" :options="options" style="height: 420px" />
+</template>
+```
+
+</TabItem>
+<TabItem label="Svelte 5">
+
+```svelte
+<script lang="ts">
+	import type { OhlcBar, OhlcColumns } from '@lumen-charts/core';
+	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import { onDestroy } from 'svelte';
+
+	let { symbol, history }: { symbol: string; history: OhlcColumns } = $props();
+	let stopStream: (() => void) | undefined;
+
+	function onReady(chart: ChartApi) {
+		const candles = chart.addSeries('candlestick', { id: symbol });
+		candles.setData(history);
+		candles.addIndicator('ema', { params: { period: 20 } });
+		chart.timeScale().fitContent();
+
+		stopStream = subscribeTicks(symbol, (tick: OhlcBar) => {
+			candles.update(tick);
+		});
+	}
+
+	onDestroy(() => stopStream?.());
+</script>
+
+<div style="height: 420px" use:lumenChart={{ options: { theme: 'auto' }, onReady }}></div>
+```
+
+</TabItem>
+<TabItem label="Solid">
+
+```tsx
+import type { OhlcBar, OhlcColumns } from '@lumen-charts/core';
+import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+import { onCleanup } from 'solid-js';
+
+export function LiveChart(props: { symbol: string; history: OhlcColumns }) {
+	const handleReady = (chart: ChartApi) => {
+		const candles = chart.addSeries('candlestick', { id: props.symbol });
+		candles.setData(props.history);
+		candles.addIndicator('ema', { params: { period: 20 } });
+		chart.timeScale().fitContent();
+
+		const stopStream = subscribeTicks(props.symbol, (tick: OhlcBar) => {
+			candles.update(tick);
+		});
+		onCleanup(stopStream);
+	};
+
+	return <LumenChart class="chart-box" options={{ theme: 'auto' }} onReady={handleReady} />;
+}
+```
+
+</TabItem>
+</Tabs>
+
+## Subscribing to chart events
+
+Chart events such as `crosshairMove`, `click`, `error`, and `timeScale().subscribe('visibleTimeRangeChange', ...)` return an unsubscribe function. Wire them into reactive state to render custom legends, toolbars, or alerts:
+
+<Tabs syncKey="framework">
+<TabItem label="Vanilla">
+
+```ts
+import { createChart } from 'lumen-charts';
+
+const chart = createChart(document.getElementById('chart')!);
+const legend = document.getElementById('legend')!;
+
+const unsubscribe = chart.subscribe('crosshairMove', event => {
+	const bar = event.values.get('BTCUSD');
+	legend.textContent =
+		bar && 'close' in bar ? `O ${bar.open.toFixed(2)}  H ${bar.high.toFixed(2)}  C ${bar.close.toFixed(2)}` : '';
+});
+
+// Call unsubscribe() when no longer needed (or chart.destroy() removes all listeners).
+```
+
+</TabItem>
+<TabItem label="React">
+
+```tsx
+import { LumenChart, type ChartApi } from '@lumen-charts/react';
+import { useEffect, useState } from 'react';
+
+export function ChartWithLegend() {
+	const [chart, setChart] = useState<ChartApi | null>(null);
+	const [readout, setReadout] = useState('');
+
+	useEffect(() => {
+		if (chart === null) return;
+		return chart.subscribe('crosshairMove', event => {
+			const bar = event.values.get('BTCUSD');
+			setReadout(
+				bar && 'close' in bar ? `O ${bar.open.toFixed(2)}  H ${bar.high.toFixed(2)}  C ${bar.close.toFixed(2)}` : '',
+			);
+		});
+	}, [chart]);
+
+	return (
+		<>
+			<output>{readout}</output>
+			<LumenChart ref={setChart} style={{ height: 420 }} />
+		</>
+	);
+}
+```
+
+</TabItem>
+<TabItem label="Vue 3">
+
+```vue
+<script setup lang="ts">
+import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import { onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue';
+
+const chartEl = useTemplateRef<{ chart: ChartApi | null }>('chartEl');
+const readout = ref('');
+let unsubscribe: (() => void) | undefined;
+
+onMounted(() => {
+	const chart = chartEl.value?.chart;
+	if (!chart) return;
+	unsubscribe = chart.subscribe('crosshairMove', event => {
+		const bar = event.values.get('BTCUSD');
+		readout.value =
+			bar && 'close' in bar ? `O ${bar.open.toFixed(2)}  H ${bar.high.toFixed(2)}  C ${bar.close.toFixed(2)}` : '';
+	});
+});
+
+onBeforeUnmount(() => unsubscribe?.());
+</script>
+
+<template>
+	<output>{{ readout }}</output>
+	<LumenChart ref="chartEl" style="height: 420px" />
+</template>
+```
+
+</TabItem>
+<TabItem label="Svelte 5">
+
+```svelte
+<script lang="ts">
+	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import { onDestroy } from 'svelte';
+
+	let readout = $state('');
+	let unsubscribe: (() => void) | undefined;
+
+	function onReady(chart: ChartApi) {
+		unsubscribe = chart.subscribe('crosshairMove', event => {
+			const bar = event.values.get('BTCUSD');
+			readout =
+				bar && 'close' in bar
+					? `O ${bar.open.toFixed(2)}  H ${bar.high.toFixed(2)}  C ${bar.close.toFixed(2)}`
+					: '';
+		});
+	}
+
+	onDestroy(() => unsubscribe?.());
+</script>
+
+<output>{readout}</output>
+<div style="height: 420px" use:lumenChart={{ onReady }}></div>
+```
+
+</TabItem>
+<TabItem label="Solid">
+
+```tsx
+import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+import { createSignal, onCleanup } from 'solid-js';
+
+export function ChartWithLegend() {
+	const [readout, setReadout] = createSignal('');
+
+	const handleReady = (chart: ChartApi) => {
+		const unsubscribe = chart.subscribe('crosshairMove', event => {
+			const bar = event.values.get('BTCUSD');
+			setReadout(
+				bar && 'close' in bar ? `O ${bar.open.toFixed(2)}  H ${bar.high.toFixed(2)}  C ${bar.close.toFixed(2)}` : '',
+			);
+		});
+		onCleanup(unsubscribe);
+	};
+
+	return (
+		<>
+			<output>{readout()}</output>
+			<LumenChart class="chart-box" onReady={handleReady} />
+		</>
+	);
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Package summary
 
-| Package                | Export        | Lifecycle                                                     |
-| ---------------------- | ------------- | ------------------------------------------------------------- |
-| `lumen-charts`         | `createChart` | Manual `destroy()`                                            |
-| `@lumen-charts/core`   | `createChart` | Manual `destroy()`                                            |
-| `@lumen-charts/react`  | `LumenChart`  | Mount/unmount via `useEffect`, exposes `ChartApi` on `ref`    |
-| `@lumen-charts/vue`    | `LumenChart`  | `onMounted` / `onBeforeUnmount`, exposes `{ chart }`          |
-| `@lumen-charts/svelte` | `lumenChart`  | Svelte action `update` / `destroy`, callback `onReady(chart)` |
-| `@lumen-charts/solid`  | `LumenChart`  | `onMount` / `onCleanup`, callback `onReady(chart)`            |
+| Package                | Export        | Props / params                      | Chart access                               | Lifecycle                                  |
+| ---------------------- | ------------- | ----------------------------------- | ------------------------------------------ | ------------------------------------------ |
+| `lumen-charts`         | `createChart` | `(container, options?)`             | Returned `ChartApi`                        | Manual `destroy()`                         |
+| `@lumen-charts/core`   | `createChart` | `(container, options?)`             | Returned `ChartApi`                        | Manual `destroy()`                         |
+| `@lumen-charts/react`  | `LumenChart`  | `options?`, `className?`, `style?`  | `ref` (`ChartApi \| null`)                 | `useEffect` mount / unmount (`StrictMode`) |
+| `@lumen-charts/vue`    | `LumenChart`  | `options?` (plus fallthrough attrs) | Template ref `{ chart: ChartApi \| null }` | `onMounted` / `onBeforeUnmount`            |
+| `@lumen-charts/svelte` | `lumenChart`  | `{ options?, onReady? }`            | `onReady(chart)` callback                  | Svelte action `update` / `destroy`         |
+| `@lumen-charts/solid`  | `LumenChart`  | `options?`, `class?`, `onReady?`    | `onReady(chart)` callback                  | `onMount` / `onCleanup` (client-side only) |
+
+Every framework package also re-exports the `ChartApi`, `ChartOptions`, and `DeepPartial` TypeScript types. Core helpers such as `setMaxWorkers` or `PanePrimitive` types can be imported from `@lumen-charts/core` (or `lumen-charts`).
+
+## Adapter tips & SSR
+
+<Aside type="tip" title="React refs and memoized options">
+	Use a state callback ref (`const [chart, setChart] = useState<ChartApi | null>(null)` with `<LumenChart ref={setChart} />`) when attaching series or listeners inside `useEffect`. A plain `useRef` is great for reading `chartRef.current` inside click handlers, but updating `ref.current` after mount does not trigger a parent `useEffect`. Also memoize dynamic `options` with `useMemo` (or define static options outside the component) so unrelated renders do not call `applyOptions`.
+</Aside>
+
+- **Server-side rendering (SSR)**: Canvases and `ResizeObserver` run in the browser. Mark React components with `'use client'` in Next.js App Router, wrap Vue charts in `<ClientOnly>` in Nuxt, mount Svelte actions on the client in SvelteKit (Svelte actions only execute in the browser), and wrap `@lumen-charts/solid` with `clientOnly()` in SolidStart because it calls `document.createElement('div')` during component setup.
+- **Sizing**: Give the chart element an explicit CSS height (`style={{ height: 420 }}`, `style="height: 420px"`, or a CSS class with `height` for Solid). `autoSize` is enabled by default and shares one `ResizeObserver` across all charts on the page.
