@@ -449,7 +449,7 @@ export function ChartWithLegend() {
 | `@lumen-charts/svelte` | `lumenChart`  | `{ options?, onReady? }`            | `onReady(chart)` callback                  | Svelte action `update` / `destroy`         |
 | `@lumen-charts/solid`  | `LumenChart`  | `options?`, `class?`, `onReady?`    | `onReady(chart)` callback                  | `onMount` / `onCleanup` (client-side only) |
 
-Every framework package also re-exports the `ChartApi`, `ChartOptions`, and `DeepPartial` TypeScript types. Core helpers such as `setMaxWorkers` or `PanePrimitive` types can be imported from `@lumen-charts/core` (or `lumen-charts`).
+Every framework package also re-exports `ChartApi`, `ChartOptions`, `DeepPartial`, the worker configuration helpers (`configureWorker`, `createWorkerPool`, `getWorkerConfig`, `setMaxWorkers`, `getMaxWorkers`), and a standalone `./worker` subpath entry. Lower-level types such as `PanePrimitive` or `OhlcColumns` can be imported from `@lumen-charts/core` (or `lumen-charts`).
 
 ## Adapter tips & SSR
 

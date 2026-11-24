@@ -1,6 +1,6 @@
 import type { MarksChange, MarksData, MarksKind, MarksRequest, MarksTimeline, MarksUpdate } from './marks/protocol';
 import { type EngineTransport, LocalTransport } from './host';
-import { connectWorker } from './pool';
+import { type WorkerOption, connectEngineWorker } from './pool';
 import {
 	type Command,
 	type EngineEvent,
@@ -12,20 +12,21 @@ import {
 
 export interface EngineOptions {
 	/**
-	 * Where the engine runs. `true` (default) uses a worker and falls back to the calling thread if
-	 * the page blocks workers; `false` always uses the calling thread; a function supplies the worker,
-	 * for bundlers that need the worker created in application code.
-	 *
-	 * Workers are shared: engines with the same setting run in at most `getMaxWorkers()` workers (see
-	 * `setMaxWorkers`), each engine with a state of its own. Engines given the same function share
-	 * the workers it makes, and it is called once per worker; pass a function of its own to give an
-	 * engine a worker of its own.
+	 * Where the engine runs:
+	 * - omitted: follows the global default configured via `configureWorker` (default: built-in worker).
+	 * - `true`: uses a worker (using the source configured via `configureWorker`, or the built-in worker)
+	 *   and falls back to the calling thread if the page blocks workers.
+	 * - `false`: always runs time-sliced on the calling thread.
+	 * - `'dedicated'`: runs in an unshared worker of its own.
+	 * - `WorkerSource`: URL string, `URL`, bundler worker constructor (`?worker`), or factory function.
+	 *   Callers passing the same URL or constructor/factory share up to `getMaxWorkers()` workers.
+	 * - `WorkerPool`: explicit pool created with `createWorkerPool`.
 	 */
-	worker?: boolean | (() => Worker);
+	worker?: WorkerOption;
 	/**
-	 * How long to wait for the worker to start before falling back, in milliseconds (default 4000).
-	 * The wait starts with the worker, so an engine that joins a worker still starting waits for
-	 * what is left of the first engine's timeout.
+	 * How long to wait for the worker to start before falling back, in milliseconds (defaults to
+	 * `configureWorker`'s `timeout`, or 4000). The wait starts with the worker, so an engine that
+	 * joins a worker still starting waits for what is left of the first engine's timeout.
 	 */
 	workerTimeout?: number;
 	/** Receive changed rows in two typed arrays on `event.packedPatches`. Defaults to object patches. */
@@ -41,10 +42,6 @@ interface Held {
 }
 
 const NO_TRANSFER: ArrayBuffer[] = [];
-
-function defaultWorker(): Worker {
-	return new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
-}
 
 /**
  * Asynchronous interface to the data engine. Calling code is the same whether the engine runs in a
@@ -88,28 +85,23 @@ export class EngineClient {
 
 	public constructor(options: EngineOptions = {}) {
 		this._packedPatches = options.packedPatches ?? false;
-		const worker = options.worker ?? true;
-		if (worker === false || typeof Worker === 'undefined') {
-			this._attach(new LocalTransport(), 'local');
-		} else {
-			const release = connectWorker(
-				worker === true ? defaultWorker : worker,
-				options.workerTimeout ?? 4000,
-				transport => {
-					this._abortConnect = null;
-					this._attach(transport, 'worker');
-				},
-				() => {
-					this._abortConnect = null;
-					this._attach(new LocalTransport(), 'local');
-				},
-			);
-			if (release === null) {
-				// Creating the worker threw: the page does not allow workers.
+		const release = connectEngineWorker(
+			options.worker,
+			options.workerTimeout,
+			transport => {
+				this._abortConnect = null;
+				this._attach(transport, 'worker');
+			},
+			() => {
+				this._abortConnect = null;
 				this._attach(new LocalTransport(), 'local');
-			} else if (this._transport === null) {
-				this._abortConnect = release;
-			}
+			},
+		);
+		if (release === false || release === null) {
+			// Local mode requested, workers unavailable, or creating the worker threw.
+			this._attach(new LocalTransport(), 'local');
+		} else if (this._transport === null) {
+			this._abortConnect = release;
 		}
 	}
 

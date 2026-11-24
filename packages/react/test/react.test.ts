@@ -1,5 +1,12 @@
 import type { ChartApi } from '@lumen-charts/core';
-import { LumenChart } from '@lumen-charts/react';
+import {
+	LumenChart,
+	configureWorker,
+	createWorkerPool,
+	getMaxWorkers,
+	getWorkerConfig,
+	setMaxWorkers,
+} from '@lumen-charts/react';
 import { StrictMode, act, createElement, createRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it } from 'vitest';
@@ -63,5 +70,13 @@ describe('LumenChart (React)', () => {
 		});
 		expect(ref.current).toBeNull();
 		host.remove();
+	});
+
+	it('re-exports worker configuration helpers directly', () => {
+		expect(typeof configureWorker).toBe('function');
+		expect(typeof createWorkerPool).toBe('function');
+		expect(typeof getWorkerConfig).toBe('function');
+		expect(typeof getMaxWorkers).toBe('function');
+		expect(typeof setMaxWorkers).toBe('function');
 	});
 });

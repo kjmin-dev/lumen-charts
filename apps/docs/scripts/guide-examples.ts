@@ -1784,57 +1784,67 @@ export function DatafeedChart(props: { symbol: string; history: OhlcColumns }) {
 	'several-charts': [
 		{
 			blockIndex: 0,
-			match: 'setMaxWorkers(2)',
-			react: `import { setMaxWorkers } from '@lumen-charts/core';
-import { LumenChart } from '@lumen-charts/react';
+			match: 'configureWorker({ maxWorkers: 2 })',
+			react: `import { LumenChart, configureWorker, createWorkerPool } from '@lumen-charts/react';
 
-setMaxWorkers(2); // optional, before any chart mounts
+configureWorker({ maxWorkers: 2 }); // optional, once before charts mount
+
+const watchlistPool = createWorkerPool({ maxWorkers: 2 });
+watchlistPool.warmup(1);
+const gridOptions = { worker: watchlistPool };
 
 export function ChartGrid({ symbols }: { symbols: string[] }) {
 	return (
 		<div className="chart-grid">
 			{symbols.map(symbol => (
-				<LumenChart key={symbol} style={{ height: 260 }} />
+				<LumenChart key={symbol} options={gridOptions} style={{ height: 260 }} />
 			))}
 		</div>
 	);
 }`,
 			vue: `<script setup lang="ts">
-import { setMaxWorkers } from '@lumen-charts/core';
-import { LumenChart } from '@lumen-charts/vue';
+import { LumenChart, configureWorker, createWorkerPool } from '@lumen-charts/vue';
 
-setMaxWorkers(2); // optional, before any chart mounts
+configureWorker({ maxWorkers: 2 }); // optional, once before charts mount
+
+const watchlistPool = createWorkerPool({ maxWorkers: 2 });
+watchlistPool.warmup(1);
+const gridOptions = { worker: watchlistPool };
 defineProps<{ symbols: string[] }>();
 </script>
 
 <template>
 	<div class="chart-grid">
-		<LumenChart v-for="symbol in symbols" :key="symbol" style="height: 260px" />
+		<LumenChart v-for="symbol in symbols" :key="symbol" :options="gridOptions" style="height: 260px" />
 	</div>
 </template>`,
 			svelte: `<script lang="ts">
-	import { setMaxWorkers } from '@lumen-charts/core';
-	import { lumenChart } from '@lumen-charts/svelte';
+	import { configureWorker, createWorkerPool, lumenChart } from '@lumen-charts/svelte';
 
-	setMaxWorkers(2); // optional, before any chart mounts
+	configureWorker({ maxWorkers: 2 }); // optional, once before charts mount
+
+	const watchlistPool = createWorkerPool({ maxWorkers: 2 });
+	watchlistPool.warmup(1);
 	let { symbols }: { symbols: string[] } = $props();
 </script>
 
 <div class="chart-grid">
 	{#each symbols as symbol (symbol)}
-		<div style="height: 260px" use:lumenChart></div>
+		<div style="height: 260px" use:lumenChart={{ options: { worker: watchlistPool } }}></div>
 	{/each}
 </div>`,
-			solid: `import { setMaxWorkers } from '@lumen-charts/core';
-import { LumenChart } from '@lumen-charts/solid';
+			solid: `import { LumenChart, configureWorker, createWorkerPool } from '@lumen-charts/solid';
 import { For } from 'solid-js';
 
-setMaxWorkers(2); // optional, before any chart mounts
+configureWorker({ maxWorkers: 2 }); // optional, once before charts mount
+
+const watchlistPool = createWorkerPool({ maxWorkers: 2 });
+watchlistPool.warmup(1);
 
 export function ChartGrid(props: { symbols: string[] }) {
 	return (
 		<div class="chart-grid">
-			<For each={props.symbols}>{() => <LumenChart class="chart-cell" />}</For>
+			<For each={props.symbols}>{() => <LumenChart class="chart-cell" options={{ worker: watchlistPool }} />}</For>
 		</div>
 	);
 }`,

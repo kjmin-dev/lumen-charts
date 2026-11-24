@@ -1,16 +1,21 @@
+import type { WorkerOption, WorkerPool } from '@lumen-charts/engine';
 import { type ChartKeyBindings, ChartKeymap, defaultChartKeymap } from './input/chart-key-bindings';
 import type { MarkRenderer } from './marks/backend';
 import type { SessionSchedule } from './model/sessions';
 import type { TickMarkFormatter, TimeFormatter } from './model/time-format';
 
-/** Every key optional, at every level. Functions and arrays are taken as they are. */
+/** Every key optional, at every level. Functions, constructors, arrays, URLs and worker pools are taken as they are. */
 export type DeepPartial<T> = T extends (...args: never[]) => unknown
 	? T
-	: T extends readonly unknown[]
+	: T extends abstract new (...args: never[]) => unknown
 		? T
-		: T extends object
-			? { [K in keyof T]?: DeepPartial<T[K]> }
-			: T;
+		: T extends readonly unknown[]
+			? T
+			: T extends URL | WorkerPool
+				? T
+				: T extends object
+					? { [K in keyof T]?: DeepPartial<T[K]> }
+					: T;
 
 export type LineStyle = 'solid' | 'dotted' | 'dashed';
 
@@ -231,16 +236,21 @@ export interface ChartOptions {
 	localization: LocalizationOptions;
 	sessions: SessionOptions;
 	/**
-	 * Where the data engine runs. `true` uses a worker and falls back to the main thread if the
-	 * page blocks workers; `false` always uses the main thread; a function supplies the worker.
-	 * Read once, when the first series is added.
+	 * Where the data engine runs. Read once, when the first series is added:
+	 *
+	 * - omitted (default): follows the global configuration set via `configureWorker` (which defaults
+	 *   to the built-in module worker with automatic main-thread fallback if workers are blocked).
+	 * - `true`: uses a worker (with the configured global source, or the built-in worker).
+	 * - `false`: always runs time-sliced on the main thread.
+	 * - `'dedicated'`: runs in an unshared worker of its own.
+	 * - `WorkerSource`: URL string, `URL`, bundler worker constructor (`?worker`), or factory function.
+	 * - `WorkerPool`: explicit pool created with `createWorkerPool`.
 	 *
 	 * Charts share workers: the charts of a page run in at most `getMaxWorkers()` workers (see
-	 * `setMaxWorkers`), each chart with a data engine of its own inside its worker. Charts given
-	 * the same function share the workers it makes, and it is called once per worker; a chart given
-	 * a function of its own has a worker of its own.
+	 * `configureWorker` / `setMaxWorkers`), each chart with a data engine of its own inside its worker.
+	 * Callers passing the same URL, constructor, factory or pool share its workers automatically.
 	 */
-	worker: boolean | (() => Worker);
+	worker: WorkerOption;
 	/**
 	 * Memory the data engine aims to stay under, in bytes. It applies to every series with a
 	 * `datafeed`: bars far from the view are let go and fetched back from the datafeed when they are
@@ -547,7 +557,11 @@ export const DEFAULT_HISTOGRAM_OPTIONS: HistogramOptions = {
 type Plain = Record<string, unknown>;
 
 function isPlain(value: unknown): value is Plain {
-	return typeof value === 'object' && value !== null && !Array.isArray(value);
+	if (typeof value !== 'object' || value === null) {
+		return false;
+	}
+	const proto: unknown = Object.getPrototypeOf(value);
+	return proto === Object.prototype || proto === null;
 }
 
 /**
@@ -592,6 +606,9 @@ function merge<T extends object>(base: T, patch: unknown, knownOnly: boolean): T
 export function optionsEqual(a: unknown, b: unknown): boolean {
 	if (a === b) {
 		return true;
+	}
+	if (a instanceof URL && b instanceof URL) {
+		return a.href === b.href;
 	}
 	if (!isPlain(a) || !isPlain(b)) {
 		return false;

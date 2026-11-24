@@ -249,54 +249,65 @@ candles.setData(history);
 await chart.whenIdle(); // 지금까지 전달한 데이터가 화면에 그려지면 resolve
 ```
 
-페이지의 CSP가 워커를 차단하면 동일한 인터페이스로 메인 스레드 타임슬라이스 모드로 자동 전환됩니다. 메인 스레드 모드를 강제하거나 번들러에 맞춰 워커를 직접 생성하려면 `options`의 `worker` 항목을 설정하세요:
+페이지의 CSP가 워커를 차단하면 동일한 인터페이스로 메인 스레드 타임슬라이스 모드로 자동 전환됩니다.
+
+번들러에서 워커 엔트리를 명시적으로 선언하거나 페이지 전체의 워커 수를 제한하려면 앱 진입점에서 `configureWorker(...)`를 한 번만 호출하세요. 모든 패키지가 독립 번들된 `./worker` 엔트리를 직접 제공하므로 `@lumen-charts/engine`을 따로 설치하지 않아도 Vite `?worker` 생성자, `?url` 문자열, `URL`, 정적 경로, 커스텀 팩토리를 그대로 넘길 수 있습니다. 개별 차트에서는 `worker: false`, `worker: 'dedicated'`, 또는 `createWorkerPool(...)`로 세밀하게 오버라이드할 수 있습니다:
 
 <Tabs syncKey="framework">
 <TabItem label="Vanilla">
 
 ```ts
-import { createChart } from 'lumen-charts';
+import { configureWorker, createChart } from 'lumen-charts';
+import ChartWorker from 'lumen-charts/worker?worker'; // Vite (또는 '/assets/lumen-worker.js' / new URL('lumen-charts/worker', import.meta.url))
 
-// 워커 없이 메인 스레드 타임슬라이스 모드 강제
-const localChart = createChart(container, { worker: false });
+// 앱 진입점에서 1회 선언 — 이후 생성되는 모든 차트가 워커 풀을 자동 공유합니다.
+configureWorker({ source: ChartWorker, maxWorkers: 2 });
 
-// 번들러가 앱 코드에서 직접 워커를 생성해야 하는 경우
-const createEngineWorker = () =>
-	new Worker(new URL('@lumen-charts/engine/worker', import.meta.url), { type: 'module' });
-const bundledChart = createChart(container, { worker: createEngineWorker });
+const chart = createChart(container);
+const dedicatedChart = createChart(mainContainer, { worker: 'dedicated' });
+const localChart = createChart(localContainer, { worker: false });
 ```
 
 </TabItem>
 <TabItem label="React">
 
 ```tsx
+// main.tsx — 앱 진입점에서 1회만 설정합니다.
+import { configureWorker } from '@lumen-charts/react';
+import ChartWorker from '@lumen-charts/react/worker?worker';
+
+configureWorker({ source: ChartWorker, maxWorkers: 2 });
+```
+
+```tsx
+// BundledChart.tsx — 컴포넌트에는 워커 보일러플레이트가 남지 않습니다.
 import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/react';
 
-// 여러 차트가 워커 풀을 공유하도록 팩토리는 모듈 스코프에 한 번만 정의합니다.
-const createEngineWorker = () =>
-	new Worker(new URL('@lumen-charts/engine/worker', import.meta.url), { type: 'module' });
-
-const workerOptions: DeepPartial<ChartOptions> = { worker: createEngineWorker };
 const localOptions: DeepPartial<ChartOptions> = { worker: false };
 
 export function BundledChart({ useWorker = true }: { useWorker?: boolean }) {
-	return <LumenChart options={useWorker ? workerOptions : localOptions} style={{ height: 420 }} />;
+	return <LumenChart options={useWorker ? undefined : localOptions} style={{ height: 420 }} />;
 }
 ```
 
 </TabItem>
 <TabItem label="Vue 3">
 
+```ts
+// main.ts — 앱 진입점에서 1회만 설정합니다.
+import { configureWorker } from '@lumen-charts/vue';
+import ChartWorker from '@lumen-charts/vue/worker?worker';
+
+configureWorker({ source: ChartWorker, maxWorkers: 2 });
+```
+
 ```vue
+<!-- BundledChart.vue -->
 <script setup lang="ts">
 import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/vue';
 
-const createEngineWorker = () =>
-	new Worker(new URL('@lumen-charts/engine/worker', import.meta.url), { type: 'module' });
-
-const options: DeepPartial<ChartOptions> = {
-	worker: createEngineWorker, // 또는 메인 스레드 타임슬라이스 모드: worker: false
-};
+// `worker`를 생략하면 전역 설정 풀을 사용하며, 차트별로 `false` 또는 `'dedicated'` 지정 가능
+const options: DeepPartial<ChartOptions> = { theme: 'auto' };
 </script>
 
 <template>
@@ -307,16 +318,21 @@ const options: DeepPartial<ChartOptions> = {
 </TabItem>
 <TabItem label="Svelte 5">
 
+```ts
+// main.ts — 앱 진입점에서 1회만 설정합니다.
+import { configureWorker } from '@lumen-charts/svelte';
+import ChartWorker from '@lumen-charts/svelte/worker?worker';
+
+configureWorker({ source: ChartWorker, maxWorkers: 2 });
+```
+
 ```svelte
+<!-- BundledChart.svelte -->
 <script lang="ts">
 	import { lumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/svelte';
 
-	const createEngineWorker = () =>
-		new Worker(new URL('@lumen-charts/engine/worker', import.meta.url), { type: 'module' });
-
-	const options: DeepPartial<ChartOptions> = {
-		worker: createEngineWorker, // 또는 메인 스레드 타임슬라이스 모드: worker: false
-	};
+	// `worker`를 생략하면 전역 설정 풀을 사용하며, 차트별로 `false` 또는 `'dedicated'` 지정 가능
+	const options: DeepPartial<ChartOptions> = { theme: 'auto' };
 </script>
 
 <div style="height: 420px" use:lumenChart={{ options }}></div>
@@ -325,15 +341,20 @@ const options: DeepPartial<ChartOptions> = {
 </TabItem>
 <TabItem label="Solid">
 
+```ts
+// index.tsx — 앱 진입점에서 1회만 설정합니다.
+import { configureWorker } from '@lumen-charts/solid';
+import ChartWorker from '@lumen-charts/solid/worker?worker';
+
+configureWorker({ source: ChartWorker, maxWorkers: 2 });
+```
+
 ```tsx
+// BundledChart.tsx
 import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/solid';
 
-const createEngineWorker = () =>
-	new Worker(new URL('@lumen-charts/engine/worker', import.meta.url), { type: 'module' });
-
-const options: DeepPartial<ChartOptions> = {
-	worker: createEngineWorker, // 또는 메인 스레드 타임슬라이스 모드: worker: false
-};
+// `worker`를 생략하면 전역 설정 풀을 사용하며, 차트별로 `false` 또는 `'dedicated'` 지정 가능
+const options: DeepPartial<ChartOptions> = { theme: 'auto' };
 
 export function BundledChart() {
 	return <LumenChart class="chart-box" options={options} />;

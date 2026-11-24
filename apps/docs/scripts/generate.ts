@@ -400,43 +400,43 @@ async function generateReference(): Promise<void> {
 			[
 				[
 					'`lumen-charts`',
-					'`createChart`',
-					'Re-exports `@lumen-charts/core`',
+					'`createChart`, `configureWorker`, `./worker`',
+					'Re-exports `@lumen-charts/core` and the standalone `./worker` entry',
 					`[packages/lumen-charts](${REPO}/packages/lumen-charts/src/index.ts)`,
 				],
 				[
 					'`@lumen-charts/core`',
-					'`createChart`, `themes`, `PALETTES`',
+					'`createChart`, `configureWorker`, `createWorkerPool`, `./worker`',
 					'Framework-free chart, scales, canvas & GPU mark renderers',
 					`[packages/core](${REPO}/packages/core/src/index.ts)`,
 				],
 				[
 					'`@lumen-charts/engine`',
-					'`EngineClient`, `defineIndicator`, `./worker`',
+					'`EngineClient`, `configureWorker`, `createWorkerPool`, `defineIndicator`, `./worker`',
 					'Columnar chunk store, LOD pyramids, indicator engine, worker host',
 					`[packages/engine](${REPO}/packages/engine/src/index.ts)`,
 				],
 				[
 					'`@lumen-charts/react`',
-					'`LumenChart`',
+					'`LumenChart`, `configureWorker`, `createWorkerPool`, `./worker`',
 					'React 19 component with `ref` exposing `ChartApi`',
 					`[packages/react](${REPO}/packages/react/src/index.ts)`,
 				],
 				[
 					'`@lumen-charts/vue`',
-					'`LumenChart`',
+					'`LumenChart`, `configureWorker`, `createWorkerPool`, `./worker`',
 					'Vue 3 component exposing `chart` on template ref',
 					`[packages/vue](${REPO}/packages/vue/src/index.ts)`,
 				],
 				[
 					'`@lumen-charts/svelte`',
-					'`lumenChart`',
+					'`lumenChart`, `configureWorker`, `createWorkerPool`, `./worker`',
 					'Svelte 5 action (`use:lumenChart`) with `onReady`',
 					`[packages/svelte](${REPO}/packages/svelte/src/index.ts)`,
 				],
 				[
 					'`@lumen-charts/solid`',
-					'`LumenChart`',
+					'`LumenChart`, `configureWorker`, `createWorkerPool`, `./worker`',
 					'Client-side Solid component with `onReady`',
 					`[packages/solid](${REPO}/packages/solid/src/index.ts)`,
 				],
@@ -492,6 +492,16 @@ async function generateReference(): Promise<void> {
 					`[primitives.ts](${REPO}/packages/core/src/primitives.ts)`,
 				],
 				[
+					'`configureWorker(config)` / `getWorkerConfig()`',
+					'Sets or reads default worker source (URL, `?worker` class, factory, pool or `false`), `maxWorkers` and `timeout`',
+					`[pool.ts](${REPO}/packages/engine/src/pool.ts)`,
+				],
+				[
+					'`createWorkerPool(options?)`',
+					'Creates an explicit bounded `WorkerPool` with `warmup()` and `destroy()`',
+					`[pool.ts](${REPO}/packages/engine/src/pool.ts)`,
+				],
+				[
 					'`setMaxWorkers(n)` / `getMaxWorkers()`',
 					'Limits shared engine workers across charts on one page',
 					`[pool.ts](${REPO}/packages/engine/src/pool.ts)`,
@@ -509,7 +519,7 @@ async function generateReference(): Promise<void> {
 			],
 		),
 		'## Framework bindings',
-		'Each framework binding creates a `ChartApi` on mount, forwards reactive option updates to `applyOptions`, destroys the chart on unmount, and re-exports `ChartApi`, `ChartOptions`, and `DeepPartial`. Data always goes through `ChartApi`, never through props. See [Framework bindings](/frameworks/) for complete usage patterns.',
+		'Each framework binding creates a `ChartApi` on mount, forwards reactive option updates to `applyOptions`, destroys the chart on unmount, and re-exports `ChartApi`, `ChartOptions`, `DeepPartial`, `configureWorker`, `createWorkerPool`, `getWorkerConfig`, `setMaxWorkers`, `getMaxWorkers`, and `./worker`. Data always goes through `ChartApi`, never through props. See [Framework bindings](/frameworks/) for complete usage patterns.',
 		table(
 			['Package', 'Export & props / params', 'Accessing `ChartApi`', 'Notes'],
 			[
@@ -659,7 +669,11 @@ async function generateReference(): Promise<void> {
 		['`timeScale.barSpacing`', fmt(base.timeScale.barSpacing), 'Initial CSS pixels per bar'],
 		['`timeScale.rightOffset`', fmt(base.timeScale.rightOffset), 'Empty bars to the right of the latest bar'],
 		['`localization.timeZone`', fmt(base.localization.timeZone), "IANA zone name, `'UTC'`, or `'local'`"],
-		['`worker`', fmt(base.worker), '`true`, `false`, or `() => Worker` factory'],
+		[
+			'`worker`',
+			fmt(base.worker),
+			"`true`, `false`, `'dedicated'`, URL string / `URL`, `?worker` constructor, factory or `WorkerPool`",
+		],
 		['`memoryLimit`', fmt(base.memoryLimit), 'Target byte cap in the data engine (requires datafeed)'],
 		['`redraw`', fmt(base.redraw), "`'auto'` (partial column redraws) or `'full'`"],
 		['`markRenderer`', fmt(base.markRenderer), "`'webgl2'`, `'webgpu'`, or `'canvas2d'`"],
