@@ -1,8 +1,0 @@
----
-'@lumen-charts/engine': patch
-'@lumen-charts/core': patch
----
-
-Run heatmap and scatter removals and corrections that wait for marks let go under the memory limit when the datafeed already returns the changed history. Such a change stood for a change at the source, yet the marks it waited for were refused unless they were the ones let go, so it was asked for again forever and every later change of the series waited behind it. A chunk the first waiting change needs may now come back as it went or as the change, and maybe some behind it, leave it: marks inside the changes' ranges must be their own, and are put in only right before the change runs. Scatter changes of other times are reordered or merged so that the marks returned fit. A change whose marks fit neither is dropped after three rounds of requests (pauses of 1, 2 and 4 s, once per round) and reported as a `refused` error of its series, and the changes behind it run.
-
-A removal or correction now fetches only marks that stay: none inside it, a heatmap level is kept rather than fetched only to be dropped, coarse chunks let go are made from the finest level held instead of whole chunks of every level, and a scatter removal decides which side moves only once its edges are back. A heatmap correction of one column fetches one chunk instead of up to 64; 30 points removed from a million let go fetch 4 to 9 chunks of 14 instead of 4 to 13. Reading a row let go, or writing a chunk let go in part, now throws instead of leaving zeros. Also fixes a scatter prepend that lost coarse cells where a bucket ended in a chunk let go, and a search over chunks that failed once points were prepended.

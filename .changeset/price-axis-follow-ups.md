@@ -1,7 +1,0 @@
----
-'@lumen-charts/core': minor
----
-
-Finish the price axes. Value labels on an axis no longer cover each other: each stays as near its value as the others allow, in value order, labels that would overlap move apart around the mean of their values, and when an axis cannot fit them all the series drawn last lose theirs first (before, labels were pushed down from the top and those nearest the top were kept); the crosshair's label stays at the pointer, over them. Price scales follow what is on them: a scale no option lists goes once no series, indicator output, heatmap, scatter, primitive or drawing is on it, and one `priceScales` lists keeps its options and range but takes no axis width or pane while nothing is on it. `chart.removePriceScale(id)` takes a scale out of the options; `PriceScaleApi` handles stay valid by id. The wheel, a trackpad pinch and a two-finger pinch over a price axis scale that axis around the price under the pointer and turn its `autoScale` off, as dragging it does; over the pane they still zoom time.
-
-Behaviour change: the `magnet` crosshair mode now snaps to the open, high, low or close (the value, for lines and histograms) nearest to the pointer on screen among the visible series of the pane under the pointer, each placed by its own price scale, instead of the close of the first eligible series. `nearest` does the same with closes only. Drawing points snap the same way among the series on the drawing's scale, so `nearest` mode now snaps them to closes.
