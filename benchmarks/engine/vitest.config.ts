@@ -10,7 +10,7 @@ const src = (name: string) => fileURLToPath(new URL(`../../packages/${name}/src/
  */
 export default defineConfig({
 	root: fileURLToPath(new URL('../..', import.meta.url)),
-	resolve: { alias: { '@lumen-charts/engine': src('engine') } },
+	resolve: { alias: { '@lumen-ticks/engine': src('engine') } },
 	test: {
 		environment: 'node',
 		include: ['benchmarks/engine/**/*.measure.ts'],

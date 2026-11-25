@@ -1,4 +1,4 @@
-import type { ChartPointerEvent, LogicalRange, SeriesApi, TimeRange } from '@lumen-charts/core';
+import type { ChartPointerEvent, LogicalRange, SeriesApi, TimeRange } from '@lumen-ticks/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChartEvents } from '../src/input/chart-events';
 import { MINUTE, TestChart, candles } from './drawing-helpers';

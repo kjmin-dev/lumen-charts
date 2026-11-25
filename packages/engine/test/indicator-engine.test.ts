@@ -12,7 +12,7 @@ import {
 	levelCount,
 	levelShift,
 	resolveParams,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import { describe, expect, it, vi } from 'vitest';
 import { counts } from './fixtures/plugin';
 import { random, run } from './helpers';

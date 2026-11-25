@@ -1,4 +1,4 @@
-import { createChart } from '@lumen-charts/core';
+import { createChart } from '@lumen-ticks/core';
 import { installMarkPassTimer } from '../../src/marks/pass-timer.ts';
 
 const time = i => 1700000000000 + i * 60000;

@@ -1,4 +1,4 @@
-import type { EngineClient, SeriesKind } from '@lumen-charts/engine';
+import type { EngineClient, SeriesKind } from '@lumen-ticks/engine';
 import {
 	type LineColumns,
 	type LinePoint,

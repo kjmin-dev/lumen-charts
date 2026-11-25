@@ -1,4 +1,4 @@
-import { type EngineClient, EngineCore, type EngineEvent, createEngine, setMaxWorkers } from '@lumen-charts/engine';
+import { type EngineClient, EngineCore, type EngineEvent, createEngine, setMaxWorkers } from '@lumen-ticks/engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeWorker } from './fake-worker';
 import { line, ohlcv, run, ticks } from './helpers';

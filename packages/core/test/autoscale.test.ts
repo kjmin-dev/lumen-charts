@@ -1,4 +1,4 @@
-import type { AutoscaleRange, PanePrimitive, PaneView, PrimitiveHost } from '@lumen-charts/core';
+import type { AutoscaleRange, PanePrimitive, PaneView, PrimitiveHost } from '@lumen-ticks/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Drawing } from '../src/drawings/drawing';
 import { MINUTE, TestChart, candles } from './drawing-helpers';

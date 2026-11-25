@@ -1,7 +1,7 @@
 # Several charts on one page
 
 ```ts
-import { configureWorker, createChart, createWorkerPool } from 'lumen-charts';
+import { configureWorker, createChart, createWorkerPool } from '@lumen-ticks/core';
 
 // Optional: cap shared workers globally (same as `setMaxWorkers(2)`), or configure a bundler entry once.
 configureWorker({ maxWorkers: 2 });

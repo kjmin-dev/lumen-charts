@@ -1,12 +1,12 @@
 ---
 title: 프레임워크 바인딩
-description: Vanilla TypeScript, React, Vue 3, Svelte 5, SolidJS에서 Lumen Charts를 사용하는 방법 — 반응형 옵션, 실시간 틱 스트리밍, 이벤트 구독, SSR 가이드를 안내합니다.
+description: Vanilla TypeScript, React, Vue 3, Svelte 5, SolidJS에서 Lumen Ticks를 사용하는 방법 — 반응형 옵션, 실시간 틱 스트리밍, 이벤트 구독, SSR 가이드를 안내합니다.
 ---
 
 import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 import InstallCommand from '../../../components/InstallCommand.astro';
 
-Lumen Charts의 프레임워크 바인딩은 의도적으로 얇게 유지됩니다. 마운트 시 차트를 생성하고, 옵션 변경을 `applyOptions`로 전달하며, 언마운트 시 `destroy()`를 호출합니다.
+Lumen Ticks의 프레임워크 바인딩은 의도적으로 얇게 유지됩니다. 마운트 시 차트를 생성하고, 옵션 변경을 `applyOptions`로 전달하며, 언마운트 시 `destroy()`를 호출합니다.
 
 **시세 데이터는 props가 아니라 항상 `ChartApi`를 통해 전달합니다.** 수백만 개의 바를 프레임워크 반응형 props로 넘기지 않기 때문에 틱마다 불필요한 diff와 할당이 발생하지 않습니다.
 
@@ -19,10 +19,10 @@ Lumen Charts의 프레임워크 바인딩은 의도적으로 얇게 유지됩니
 <Tabs syncKey="framework">
 <TabItem label="Vanilla">
 
-<InstallCommand packages="lumen-charts" />
+<InstallCommand packages="@lumen-ticks/core" />
 
 ```ts
-import { createChart } from 'lumen-charts';
+import { createChart } from '@lumen-ticks/core';
 
 const chart = createChart(document.getElementById('chart')!, { theme: 'dark' });
 const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
@@ -36,13 +36,13 @@ chart.destroy();
 </TabItem>
 <TabItem label="React">
 
-<InstallCommand packages="@lumen-charts/react react" />
+<InstallCommand packages="@lumen-ticks/react react" />
 
 `LumenChart`는 `<div>`를 렌더링하고 `ref`로 `ChartApi` 인스턴스(마운트 전에는 `null`)를 노출합니다. `useEffect` 안에서 차트를 초기화할 때는 `ref={setChart}`처럼 상태 setter를 콜백 ref로 전달하면 마운트 직후와 React `StrictMode` 재마운트에서도 effect가 안정적으로 실행됩니다.
 
 ```tsx
-import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/react';
+import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/react';
 import { useEffect, useMemo, useState } from 'react';
 
 export function PriceChart({ dark, bars }: { dark: boolean; bars: OhlcColumns }) {
@@ -64,14 +64,14 @@ export function PriceChart({ dark, bars }: { dark: boolean; bars: OhlcColumns })
 </TabItem>
 <TabItem label="Vue 3">
 
-<InstallCommand packages="@lumen-charts/vue vue" />
+<InstallCommand packages="@lumen-ticks/vue vue" />
 
 `LumenChart`는 템플릿 ref에 `chart` 속성으로 `ChartApi` 인스턴스를 노출하며, `:options`를 깊게 감시해 `applyOptions`로 자동 전달합니다.
 
 ```vue
 <script setup lang="ts">
-import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/vue';
 import { computed, onMounted, useTemplateRef } from 'vue';
 
 const props = defineProps<{ dark: boolean; bars: OhlcColumns }>();
@@ -95,14 +95,14 @@ onMounted(() => {
 </TabItem>
 <TabItem label="Svelte 5">
 
-<InstallCommand packages="@lumen-charts/svelte svelte" />
+<InstallCommand packages="@lumen-ticks/svelte svelte" />
 
-`@lumen-charts/svelte`는 `lumenChart` 액션을 제공합니다. `onReady` 콜백으로 `ChartApi`를 한 번 전달받으며, `options` 안의 반응형 값이 바뀌면 액션 `update`가 `applyOptions`를 호출합니다.
+`@lumen-ticks/svelte`는 `lumenChart` 액션을 제공합니다. `onReady` 콜백으로 `ChartApi`를 한 번 전달받으며, `options` 안의 반응형 값이 바뀌면 액션 `update`가 `applyOptions`를 호출합니다.
 
 ```svelte
 <script lang="ts">
-	import type { OhlcColumns } from '@lumen-charts/core';
-	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import type { OhlcColumns } from '@lumen-ticks/core';
+	import { lumenChart, type ChartApi } from '@lumen-ticks/svelte';
 
 	let { dark = false, bars }: { dark?: boolean; bars: OhlcColumns } = $props();
 
@@ -122,13 +122,13 @@ onMounted(() => {
 </TabItem>
 <TabItem label="Solid">
 
-<InstallCommand packages="@lumen-charts/solid solid-js" />
+<InstallCommand packages="@lumen-ticks/solid solid-js" />
 
-`@lumen-charts/solid`는 클라이언트 전용 `<div>`를 렌더링하고 `onReady` 콜백으로 `ChartApi`를 전달합니다. 컨테이너 크기는 `class`로 지정합니다.
+`@lumen-ticks/solid`는 클라이언트 전용 `<div>`를 렌더링하고 `onReady` 콜백으로 `ChartApi`를 전달합니다. 컨테이너 크기는 `class`로 지정합니다.
 
 ```tsx
-import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 
 export function PriceChart(props: { dark: boolean; bars: OhlcColumns }) {
 	const handleReady = (chart: ChartApi) => {
@@ -152,7 +152,7 @@ export function PriceChart(props: { dark: boolean; bars: OhlcColumns }) {
 <TabItem label="Vanilla">
 
 ```ts
-import { createChart, type OhlcBar, type OhlcColumns } from 'lumen-charts';
+import { createChart, type OhlcBar, type OhlcColumns } from '@lumen-ticks/core';
 
 const chart = createChart(document.getElementById('chart')!, { theme: 'auto' });
 const candles = chart.addSeries('candlestick', { id: 'BTCUSD' });
@@ -173,8 +173,8 @@ chart.destroy();
 <TabItem label="React">
 
 ```tsx
-import type { OhlcBar, OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/react';
+import type { OhlcBar, OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 
 const options = { theme: 'auto' as const };
@@ -208,8 +208,8 @@ export function LiveChart({ symbol, history }: { symbol: string; history: OhlcCo
 
 ```vue
 <script setup lang="ts">
-import type { OhlcBar, OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import type { OhlcBar, OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/vue';
 import { onBeforeUnmount, onMounted, useTemplateRef } from 'vue';
 
 const props = defineProps<{ symbol: string; history: OhlcColumns }>();
@@ -243,8 +243,8 @@ onBeforeUnmount(() => stopStream?.());
 
 ```svelte
 <script lang="ts">
-	import type { OhlcBar, OhlcColumns } from '@lumen-charts/core';
-	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import type { OhlcBar, OhlcColumns } from '@lumen-ticks/core';
+	import { lumenChart, type ChartApi } from '@lumen-ticks/svelte';
 	import { onDestroy } from 'svelte';
 
 	let { symbol, history }: { symbol: string; history: OhlcColumns } = $props();
@@ -271,8 +271,8 @@ onBeforeUnmount(() => stopStream?.());
 <TabItem label="Solid">
 
 ```tsx
-import type { OhlcBar, OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+import type { OhlcBar, OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 import { onCleanup } from 'solid-js';
 
 export function LiveChart(props: { symbol: string; history: OhlcColumns }) {
@@ -303,7 +303,7 @@ export function LiveChart(props: { symbol: string; history: OhlcColumns }) {
 <TabItem label="Vanilla">
 
 ```ts
-import { createChart } from 'lumen-charts';
+import { createChart } from '@lumen-ticks/core';
 
 const chart = createChart(document.getElementById('chart')!);
 const legend = document.getElementById('legend')!;
@@ -321,7 +321,7 @@ const unsubscribe = chart.subscribe('crosshairMove', event => {
 <TabItem label="React">
 
 ```tsx
-import { LumenChart, type ChartApi } from '@lumen-charts/react';
+import { LumenChart, type ChartApi } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 
 export function ChartWithLegend() {
@@ -352,7 +352,7 @@ export function ChartWithLegend() {
 
 ```vue
 <script setup lang="ts">
-import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import { LumenChart, type ChartApi } from '@lumen-ticks/vue';
 import { onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue';
 
 const chartEl = useTemplateRef<{ chart: ChartApi | null }>('chartEl');
@@ -383,7 +383,7 @@ onBeforeUnmount(() => unsubscribe?.());
 
 ```svelte
 <script lang="ts">
-	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import { lumenChart, type ChartApi } from '@lumen-ticks/svelte';
 	import { onDestroy } from 'svelte';
 
 	let readout = $state('');
@@ -410,7 +410,7 @@ onBeforeUnmount(() => unsubscribe?.());
 <TabItem label="Solid">
 
 ```tsx
-import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 import { createSignal, onCleanup } from 'solid-js';
 
 export function ChartWithLegend() {
@@ -440,16 +440,16 @@ export function ChartWithLegend() {
 
 ## 패키지 요약
 
-| 패키지                 | 내보내기      | Props / 파라미터                   | `ChartApi` 접근                          | 수명 주기                                  |
-| ---------------------- | ------------- | ---------------------------------- | ---------------------------------------- | ------------------------------------------ |
-| `lumen-charts`         | `createChart` | `(container, options?)`            | 반환된 `ChartApi`                        | 수동 `destroy()`                           |
-| `@lumen-charts/core`   | `createChart` | `(container, options?)`            | 반환된 `ChartApi`                        | 수동 `destroy()`                           |
-| `@lumen-charts/react`  | `LumenChart`  | `options?`, `className?`, `style?` | `ref` (`ChartApi \| null`)               | `useEffect` 마운트/언마운트 (`StrictMode`) |
-| `@lumen-charts/vue`    | `LumenChart`  | `options?` (및 fallthrough 속성)   | 템플릿 ref `{ chart: ChartApi \| null }` | `onMounted` / `onBeforeUnmount`            |
-| `@lumen-charts/svelte` | `lumenChart`  | `{ options?, onReady? }`           | `onReady(chart)` 콜백                    | Svelte 액션 `update` / `destroy`           |
-| `@lumen-charts/solid`  | `LumenChart`  | `options?`, `class?`, `onReady?`   | `onReady(chart)` 콜백                    | `onMount` / `onCleanup` (클라이언트 전용)  |
+| 패키지                | 내보내기      | Props / 파라미터                   | `ChartApi` 접근                          | 수명 주기                                  |
+| --------------------- | ------------- | ---------------------------------- | ---------------------------------------- | ------------------------------------------ |
+| `@lumen-ticks/core`   | `createChart` | `(container, options?)`            | 반환된 `ChartApi`                        | 수동 `destroy()`                           |
+| `@lumen-ticks/core`   | `createChart` | `(container, options?)`            | 반환된 `ChartApi`                        | 수동 `destroy()`                           |
+| `@lumen-ticks/react`  | `LumenChart`  | `options?`, `className?`, `style?` | `ref` (`ChartApi \| null`)               | `useEffect` 마운트/언마운트 (`StrictMode`) |
+| `@lumen-ticks/vue`    | `LumenChart`  | `options?` (및 fallthrough 속성)   | 템플릿 ref `{ chart: ChartApi \| null }` | `onMounted` / `onBeforeUnmount`            |
+| `@lumen-ticks/svelte` | `lumenChart`  | `{ options?, onReady? }`           | `onReady(chart)` 콜백                    | Svelte 액션 `update` / `destroy`           |
+| `@lumen-ticks/solid`  | `LumenChart`  | `options?`, `class?`, `onReady?`   | `onReady(chart)` 콜백                    | `onMount` / `onCleanup` (클라이언트 전용)  |
 
-모든 프레임워크 패키지는 `ChartApi`, `ChartOptions`, `DeepPartial` 타입과 워커 구성 헬퍼(`configureWorker`, `createWorkerPool`, `getWorkerConfig`, `setMaxWorkers`, `getMaxWorkers`), 그리고 독립 번들된 `./worker` 서브패스 엔트리를 함께 re-export합니다. `PanePrimitive`나 `OhlcColumns` 같은 하위 타입은 `@lumen-charts/core`(또는 `lumen-charts`)에서 가져올 수 있습니다.
+모든 프레임워크 패키지는 `ChartApi`, `ChartOptions`, `DeepPartial` 타입과 워커 구성 헬퍼(`configureWorker`, `createWorkerPool`, `getWorkerConfig`, `setMaxWorkers`, `getMaxWorkers`), 그리고 독립 번들된 `./worker` 서브패스 엔트리를 함께 re-export합니다. `PanePrimitive`나 `OhlcColumns` 같은 하위 타입은 `@lumen-ticks/core`(또는 `lumen-ticks`)에서 가져올 수 있습니다.
 
 ## 어댑터 팁과 SSR
 

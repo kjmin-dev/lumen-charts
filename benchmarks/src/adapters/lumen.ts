@@ -1,4 +1,4 @@
-import * as lumen from '@lumen-charts/core';
+import * as lumen from '@lumen-ticks/core';
 import {
 	type ChartApi,
 	type ChartState,
@@ -6,7 +6,7 @@ import {
 	type IndicatorInput,
 	type SeriesApi,
 	createChart,
-} from '@lumen-charts/core';
+} from '@lumen-ticks/core';
 import type { AdapterFactory, ChartAdapter, ChartSize, LogicalRange } from '../adapter.ts';
 import type { CandleColumns, LineColumns, SeriesColumns, TickColumns } from '../data.ts';
 import type { BenchDrawing } from '../drawings.ts';
@@ -428,7 +428,7 @@ class LumenAdapter
 function factory(worker: boolean): AdapterFactory & WorkerLimitFactory {
 	return {
 		// The workspace sources at the commit recorded with every results file.
-		library: { name: '@lumen-charts/core', version: 'workspace' },
+		library: { name: '@lumen-ticks/core', version: 'workspace' },
 		options: { worker },
 		create: (container, size) => Promise.resolve(new LumenAdapter(container, size, worker)),
 		setMaxWorkers: count => {

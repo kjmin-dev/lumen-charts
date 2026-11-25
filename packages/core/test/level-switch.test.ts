@@ -1,4 +1,4 @@
-import { type Command, EngineCore, type EngineEvent, levelCount, levelFor, levelShift } from '@lumen-charts/engine';
+import { type Command, EngineCore, type EngineEvent, levelCount, levelFor, levelShift } from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { type Geometry, SeriesView, placeElements } from '../src/views/series-view';
 

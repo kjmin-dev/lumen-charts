@@ -489,7 +489,7 @@ pnpm bench --case $CASES --lib lumen-worker,lumen-main --repeats 1 --budget 3 --
 pnpm bench --case $CASES --lib lumen-worker,lumen-main --repeats 2 --budget 3 --timeout 240 \
   --out benchmarks/results/stage-5-profile-timings.json
 # The breakdowns again from the traces (needs the unminified build the traces were made with):
-LUMEN_BENCH_PROFILE=1 pnpm --filter @lumen-charts/benchmarks build
+LUMEN_BENCH_PROFILE=1 pnpm --filter @lumen-ticks/benchmarks build
 pnpm bench:profile benchmarks/results/stage-5-traces
 ```
 

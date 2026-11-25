@@ -8,7 +8,7 @@ import {
 	type Datafeed,
 	type DrawingInput,
 	type SeriesRenderer,
-} from '@lumen-charts/core';
+} from '@lumen-ticks/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MINUTE, TestChart, candles } from './drawing-helpers';
 

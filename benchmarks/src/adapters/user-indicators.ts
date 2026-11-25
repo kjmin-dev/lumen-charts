@@ -3,7 +3,7 @@
 // incrementally (the last bar from the state at the bar before it), so the computation costs what
 // it costs in lumen and only what the library does with the values differs.
 
-import { BUILTIN_INDICATORS, type IndicatorDefinition, Runner, resolveParams } from '@lumen-charts/engine';
+import { BUILTIN_INDICATORS, type IndicatorDefinition, Runner, resolveParams } from '@lumen-ticks/engine';
 import type { CandleColumns } from '../data.ts';
 import { type BenchIndicator, INDICATOR_SET } from '../indicators.ts';
 

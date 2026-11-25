@@ -8,12 +8,10 @@ export default defineConfig({
 	resolve: {
 		// Use the package sources directly so edits show up without a build.
 		alias: {
-			'@lumen-charts/core/worker': src('core', 'worker.ts'),
-			'@lumen-charts/core': src('core'),
-			'@lumen-charts/engine/worker': src('engine', 'worker.ts'),
-			'@lumen-charts/engine': src('engine'),
-			'lumen-charts/worker': src('lumen-charts', 'worker.ts'),
-			'lumen-charts': src('lumen-charts'),
+			'@lumen-ticks/core/worker': src('core', 'worker.ts'),
+			'@lumen-ticks/core': src('core'),
+			'@lumen-ticks/engine/worker': src('engine', 'worker.ts'),
+			'@lumen-ticks/engine': src('engine'),
 		},
 	},
 });

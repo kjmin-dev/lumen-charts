@@ -1,1 +1,1 @@
-export * from '@lumen-charts/core/worker';
+export * from '@lumen-ticks/core/worker';

@@ -25,7 +25,7 @@ export type WorkerFactory = () => Worker;
  * Tells the engine how to start a worker:
  * - `string` or `URL`: module URL of the worker entry, started with `{ type: 'module' }`. Normalized
  *   by absolute `href`, so callers passing the same URL share one worker pool automatically.
- * - `WorkerConstructor`: a bundler worker class (e.g. `import ChartWorker from 'lumen-charts/worker?worker'`),
+ * - `WorkerConstructor`: a bundler worker class (e.g. `import ChartWorker from '@lumen-ticks/core/worker?worker'`),
  *   invoked with `new`.
  * - `WorkerFactory`: a function returning a `Worker` instance.
  */

@@ -1,5 +1,5 @@
-import { type ChartApi, type DatafeedRequest, createChart, themes } from '@lumen-charts/core';
-import { EngineClient } from '@lumen-charts/engine';
+import { type ChartApi, type DatafeedRequest, createChart, themes } from '@lumen-ticks/core';
+import { EngineClient } from '@lumen-ticks/engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { timeZone } from '../src/model/time-zone';
 

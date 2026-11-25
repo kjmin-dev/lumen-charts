@@ -1,9 +1,9 @@
 ---
 title: Architecture
-description: Core design principles, worker-backed columnar storage, level-of-detail pyramids, and shared page resources behind Lumen Charts.
+description: Core design principles, worker-backed columnar storage, level-of-detail pyramids, and shared page resources behind Lumen Ticks.
 ---
 
-Lumen Charts is built around four engineering principles established in [docs/design.md](https://github.com/kjmin-dev/lumen-charts/blob/main/docs/design.md):
+Lumen Ticks is built around four engineering principles established in [docs/design.md](https://github.com/kjmin-dev/lumen-ticks/blob/main/docs/design.md):
 
 1. **Per-frame work is bounded by visible pixels; per-tick work is constant.**
 2. **Algorithms (level of detail, incremental indicator state) come before low-level optimization.**
@@ -46,8 +46,8 @@ Main thread                              Data engine (worker; time-sliced on mai
 
 The repository preserves the full design document and per-stage decision records:
 
-- [High-performance chart engine design](https://github.com/kjmin-dev/lumen-charts/blob/main/docs/design.md)
-- [Stage 2: Level of detail & memory limit](https://github.com/kjmin-dev/lumen-charts/blob/main/docs/design/stage-2.md)
-- [Stage 3: Indicators & plugins](https://github.com/kjmin-dev/lumen-charts/blob/main/docs/design/stage-3-indicators.md)
-- [Stage 4: Price axes, drawings, time zones, save/restore](https://github.com/kjmin-dev/lumen-charts/blob/main/docs/README.md#what-each-stage-built)
-- [Stage 5: Heatmap, scatter & mark renderers](https://github.com/kjmin-dev/lumen-charts/blob/main/docs/design/stage-5-heatmap-scatter.md)
+- [High-performance chart engine design](https://github.com/kjmin-dev/lumen-ticks/blob/main/docs/design.md)
+- [Stage 2: Level of detail & memory limit](https://github.com/kjmin-dev/lumen-ticks/blob/main/docs/design/stage-2.md)
+- [Stage 3: Indicators & plugins](https://github.com/kjmin-dev/lumen-ticks/blob/main/docs/design/stage-3-indicators.md)
+- [Stage 4: Price axes, drawings, time zones, save/restore](https://github.com/kjmin-dev/lumen-ticks/blob/main/docs/README.md#what-each-stage-built)
+- [Stage 5: Heatmap, scatter & mark renderers](https://github.com/kjmin-dev/lumen-ticks/blob/main/docs/design/stage-5-heatmap-scatter.md)

@@ -7,7 +7,7 @@ import {
 	type PanePrimitive,
 	type SeriesApi,
 	createChart,
-} from '@lumen-charts/core';
+} from '@lumen-ticks/core';
 import { afterEach, assert, describe, expect, it, vi } from 'vitest';
 
 // A cursor frame clears and draws again only where the crosshair and the highlights of drawings

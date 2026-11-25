@@ -6,7 +6,7 @@ import {
 	MARK_COLUMNS,
 	type MarkColumn,
 	type ScatterRows,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { random, run, ticks } from './helpers';
 

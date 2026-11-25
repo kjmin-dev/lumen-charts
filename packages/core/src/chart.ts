@@ -6,7 +6,7 @@ import type {
 	MarkSeriesCreateOptions,
 	TimeScaleApi,
 } from './api';
-import type { EngineClient, IndicatorInfo } from '@lumen-charts/engine';
+import type { EngineClient, IndicatorInfo } from '@lumen-ticks/engine';
 import { DataFlow } from './data/data-flow';
 import { DatafeedFetches } from './data/datafeed';
 import { WindowCache } from './data/window-cache';
@@ -362,7 +362,7 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxesHost {
 			subscribe: ((event: string, handler: (range: LogicalRange | null) => void) => {
 				const unsubscribe = this._events.subscribeRange(event, handler);
 				if (unsubscribe === null) {
-					throw new Error(`lumen-charts: the time scale has no event "${String(event)}"`);
+					throw new Error(`lumen-ticks: the time scale has no event "${String(event)}"`);
 				}
 				return unsubscribe;
 			}) as TimeScaleApi['subscribe'],
@@ -484,10 +484,10 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxesHost {
 			return name;
 		}
 		if (typeof id !== 'string') {
-			throw new Error('lumen-charts: the id of a series must be a string');
+			throw new Error('lumen-ticks: the id of a series must be a string');
 		}
 		if (taken(id)) {
-			throw new Error(`lumen-charts: a series with id "${id}" exists already`);
+			throw new Error(`lumen-ticks: a series with id "${id}" exists already`);
 		}
 		return id;
 	}
@@ -709,7 +709,7 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxesHost {
 		}
 		const unsubscribe = this._events.subscribePointer(event, handler as (event: ChartPointerEvent) => void);
 		if (unsubscribe === null) {
-			throw new Error(`lumen-charts: the chart has no event "${String(event)}"`);
+			throw new Error(`lumen-ticks: the chart has no event "${String(event)}"`);
 		}
 		return unsubscribe;
 	}
@@ -988,7 +988,7 @@ class Chart implements ChartApi, InteractionHost, FrameClient, PriceAxesHost {
 			// The engine ran on this thread: what it threw, with its stack.
 			report(cause);
 		} else {
-			report(new Error(`lumen-charts: ${message}`, { cause }));
+			report(new Error(`lumen-ticks: ${message}`, { cause }));
 		}
 	}
 

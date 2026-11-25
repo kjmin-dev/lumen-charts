@@ -26,8 +26,8 @@ export default defineConfig({
 	resolve: {
 		// Measure the workspace sources as they are, without building the packages first.
 		alias: {
-			'@lumen-charts/core': source('core'),
-			'@lumen-charts/engine': source('engine'),
+			'@lumen-ticks/core': source('core'),
+			'@lumen-ticks/engine': source('engine'),
 		},
 		// Always resolve the "production" export condition, also on the dev server, so libraries
 		// that ship a development build with extra checks (Lightweight Charts does) are measured

@@ -6,7 +6,7 @@ import {
 	computeIndicator,
 	ema,
 	sma,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { line, run } from './helpers';
 

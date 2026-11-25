@@ -1,4 +1,4 @@
-import type { MarksRequest, MarksUpdate } from '@lumen-charts/engine';
+import type { MarksRequest, MarksUpdate } from '@lumen-ticks/engine';
 
 /** A request without an answer is given up after this long, so a failed command cannot stall a series. */
 const REQUEST_TIMEOUT_MS = 2000;

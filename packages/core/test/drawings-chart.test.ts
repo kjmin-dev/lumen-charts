@@ -1,4 +1,4 @@
-import { type DrawingApi, type DrawingState, type SeriesApi, setCanvasBudget } from '@lumen-charts/core';
+import { type DrawingApi, type DrawingState, type SeriesApi, setCanvasBudget } from '@lumen-ticks/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Drawing } from '../src/drawings/drawing';
 import { MINUTE, TestChart, candles } from './drawing-helpers';

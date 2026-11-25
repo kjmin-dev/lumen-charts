@@ -1,5 +1,5 @@
 /// <reference types="node" />
-// Copies the standalone worker bundle emitted by `@lumen-charts/engine` into a re-exporting package's
+// Copies the standalone worker bundle emitted by `@lumen-ticks/engine` into a re-exporting package's
 // `dist/worker.js` so `./worker` works as both a bundler worker entry and a standalone static asset URL.
 
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';

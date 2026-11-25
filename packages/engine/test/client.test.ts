@@ -1,6 +1,6 @@
 import { resolve as resolvePath } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { type EngineClient, type EngineEvent, LocalTransport, createEngine } from '@lumen-charts/engine';
+import { type EngineClient, type EngineEvent, LocalTransport, createEngine } from '@lumen-ticks/engine';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeWorker } from './fake-worker';
 import { ohlcv } from './helpers';

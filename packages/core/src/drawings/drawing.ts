@@ -181,10 +181,10 @@ export class Drawing implements PanePrimitive, DrawingApi {
 	}): Required<Omit<DrawingState, 'version'>> {
 		const count = POINT_COUNTS[input.type];
 		if (count === undefined) {
-			throw new Error(`lumen-charts: unknown drawing type "${String(input.type)}"`);
+			throw new Error(`lumen-ticks: unknown drawing type "${String(input.type)}"`);
 		}
 		if (input.version !== undefined && input.version !== DRAWING_STATE_VERSION) {
-			throw new Error(`lumen-charts: drawing state version ${input.version} is not supported`);
+			throw new Error(`lumen-ticks: drawing state version ${input.version} is not supported`);
 		}
 		checkPoints(input.points, count, input.type);
 		return {
@@ -1188,11 +1188,11 @@ function insideChannel(x: number, y: number, g: Float64Array): boolean {
 /** Throws unless `points` are `count` points with a finite time and price each. */
 export function checkPoints(points: readonly DrawingPoint[], count: number, type: DrawingType): void {
 	if (!Array.isArray(points) || points.length !== count) {
-		throw new Error(`lumen-charts: a ${type} drawing takes ${count} point${count === 1 ? '' : 's'}`);
+		throw new Error(`lumen-ticks: a ${type} drawing takes ${count} point${count === 1 ? '' : 's'}`);
 	}
 	for (const point of points) {
 		if (!Number.isFinite(point?.time) || !Number.isFinite(point?.price)) {
-			throw new Error('lumen-charts: drawing points need a finite time and price');
+			throw new Error('lumen-ticks: drawing points need a finite time and price');
 		}
 	}
 }

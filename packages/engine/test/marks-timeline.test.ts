@@ -1,4 +1,4 @@
-import { EngineCore, type ScatterRows } from '@lumen-charts/engine';
+import { EngineCore, type ScatterRows } from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { heat, rows } from './marks-helpers';
 import { run } from './helpers';

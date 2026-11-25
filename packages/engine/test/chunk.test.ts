@@ -1,4 +1,4 @@
-import { CHUNK_MASK, CHUNK_ROWS, CHUNK_SHIFT, OHLCV_COLUMNS, createChunk } from '@lumen-charts/engine';
+import { CHUNK_MASK, CHUNK_ROWS, CHUNK_SHIFT, OHLCV_COLUMNS, createChunk } from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 
 describe('chunk', () => {

@@ -183,7 +183,7 @@ export class MarksEngine {
 		}
 		if ((yield* this._apply(series, hosted, change, outcome)) === 'failed') {
 			// Every chunk it reads was held as it went: the levels made from them must fit.
-			throw new Error('lumen-charts: the levels of detail of a marks series do not fit its marks');
+			throw new Error('lumen-ticks: the levels of detail of a marks series do not fit its marks');
 		}
 	}
 

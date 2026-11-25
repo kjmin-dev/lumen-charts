@@ -11,7 +11,7 @@ import {
 	hasLevel,
 	levelCount,
 	setMaxWorkers,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeWorker } from './fake-worker';
 import { ohlcv, run, ticks } from './helpers';

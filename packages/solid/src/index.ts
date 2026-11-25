@@ -1,4 +1,4 @@
-import { type ChartApi, type ChartOptions, type DeepPartial, createChart } from '@lumen-charts/core';
+import { type ChartApi, type ChartOptions, type DeepPartial, createChart } from '@lumen-ticks/core';
 import { createEffect, type JSX, onCleanup, onMount } from 'solid-js';
 
 export interface LumenChartProps {
@@ -57,4 +57,4 @@ export {
 	getMaxWorkers,
 	getWorkerConfig,
 	setMaxWorkers,
-} from '@lumen-charts/core';
+} from '@lumen-ticks/core';

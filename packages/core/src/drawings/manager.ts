@@ -121,7 +121,7 @@ export class Drawings implements DrawingsApi, DrawingOwner {
 	public add(input: DrawingInput): DrawingApi {
 		const state = Drawing.stateOf(input);
 		if (this._byId.has(state.id)) {
-			throw new Error(`lumen-charts: a drawing with id "${state.id}" exists already`);
+			throw new Error(`lumen-ticks: a drawing with id "${state.id}" exists already`);
 		}
 		const view = this._viewOf(state.priceScaleId);
 		const drawing = new Drawing(this, state);
@@ -258,7 +258,7 @@ export class Drawings implements DrawingsApi, DrawingOwner {
 
 	public startTool(type: DrawingType, options?: Partial<DrawingOptions>): void {
 		if (POINT_COUNTS[type] === undefined) {
-			throw new Error(`lumen-charts: unknown drawing type "${String(type)}"`);
+			throw new Error(`lumen-ticks: unknown drawing type "${String(type)}"`);
 		}
 		this.cancelTool();
 		this._endDrag(false);

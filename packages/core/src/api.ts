@@ -1,4 +1,4 @@
-import type { IndicatorInfo } from '@lumen-charts/engine';
+import type { IndicatorInfo } from '@lumen-ticks/engine';
 import type { DrawingsApi } from './drawings/types';
 import type { IndicatorApi, IndicatorOptions, IndicatorOutputApi } from './indicators';
 import type { SessionInfo } from './model/sessions';

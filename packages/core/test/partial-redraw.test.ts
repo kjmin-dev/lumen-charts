@@ -6,7 +6,7 @@ import {
 	type PanePrimitive,
 	type SeriesApi,
 	createChart,
-} from '@lumen-charts/core';
+} from '@lumen-ticks/core';
 import { afterEach, assert, describe, expect, it, vi } from 'vitest';
 
 // A frame that redraws only the columns a tick changed must leave the pixels of a full redraw

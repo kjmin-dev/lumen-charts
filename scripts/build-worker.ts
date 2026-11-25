@@ -2,7 +2,7 @@
 // Bundles `packages/engine/src/worker.ts` into a single, zero-import ESM module at
 // `packages/engine/dist/worker.js` with a valid source map referencing `../src/**`.
 // That lets downstream apps load `./worker` through Vite `?worker`, Vite `?url`,
-// `new URL('lumen-charts/worker', import.meta.url)`, or static hosting without extra bundler rules.
+// `new URL('@lumen-ticks/core/worker', import.meta.url)`, or static hosting without extra bundler rules.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';

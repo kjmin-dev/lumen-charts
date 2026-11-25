@@ -1,12 +1,12 @@
 ---
 title: Getting started
-description: Install Lumen Charts, render your first candlestick chart, stream live ticks, and configure the worker data engine in Vanilla TypeScript, React, Vue 3, Svelte 5, or Solid.
+description: Install Lumen Ticks, render your first candlestick chart, stream live ticks, and configure the worker data engine in Vanilla TypeScript, React, Vue 3, Svelte 5, or Solid.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 import InstallCommand from '../../components/InstallCommand.astro';
 
-Lumen Charts renders financial charts on layered HTML canvases while keeping history, level-of-detail pyramids, and indicator computation inside an asynchronous data engine.
+Lumen Ticks renders financial charts on layered HTML canvases while keeping history, level-of-detail pyramids, and indicator computation inside an asynchronous data engine.
 
 Pick your framework below — your choice stays in sync across the [Framework bindings](/frameworks/) page and every guide on this site.
 
@@ -15,27 +15,27 @@ Pick your framework below — your choice stays in sync across the [Framework bi
 <Tabs syncKey="framework">
 <TabItem label="Vanilla">
 
-<InstallCommand packages="lumen-charts" />
+<InstallCommand packages="@lumen-ticks/core" />
 
 </TabItem>
 <TabItem label="React">
 
-<InstallCommand packages="@lumen-charts/react react" />
+<InstallCommand packages="@lumen-ticks/react react" />
 
 </TabItem>
 <TabItem label="Vue 3">
 
-<InstallCommand packages="@lumen-charts/vue vue" />
+<InstallCommand packages="@lumen-ticks/vue vue" />
 
 </TabItem>
 <TabItem label="Svelte 5">
 
-<InstallCommand packages="@lumen-charts/svelte svelte" />
+<InstallCommand packages="@lumen-ticks/svelte svelte" />
 
 </TabItem>
 <TabItem label="Solid">
 
-<InstallCommand packages="@lumen-charts/solid solid-js" />
+<InstallCommand packages="@lumen-ticks/solid solid-js" />
 
 </TabItem>
 </Tabs>
@@ -48,7 +48,7 @@ Give the container a height in CSS (`autoSize` is enabled by default and tracks 
 <TabItem label="Vanilla">
 
 ```ts
-import { createChart } from 'lumen-charts';
+import { createChart } from '@lumen-ticks/core';
 
 const container = document.getElementById('chart')!;
 const chart = createChart(container, {
@@ -81,8 +81,8 @@ candles.update({
 <TabItem label="React">
 
 ```tsx
-import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/react';
+import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 
 const options: DeepPartial<ChartOptions> = {
@@ -125,8 +125,8 @@ export function FirstChart({ bars }: { bars: OhlcColumns }) {
 
 ```vue
 <script setup lang="ts">
-import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/vue';
+import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/vue';
 import { onMounted, useTemplateRef } from 'vue';
 
 const props = defineProps<{ bars: OhlcColumns }>();
@@ -169,8 +169,8 @@ onMounted(() => {
 
 ```svelte
 <script lang="ts">
-	import type { OhlcColumns } from '@lumen-charts/core';
-	import { lumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/svelte';
+	import type { OhlcColumns } from '@lumen-ticks/core';
+	import { lumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/svelte';
 
 	let { bars }: { bars: OhlcColumns } = $props();
 	const options: DeepPartial<ChartOptions> = {
@@ -205,8 +205,8 @@ onMounted(() => {
 <TabItem label="Solid">
 
 ```tsx
-import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/solid';
+import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/solid';
 
 const options: DeepPartial<ChartOptions> = {
 	theme: 'auto', // 'light', 'dark', or follow prefers-color-scheme
@@ -251,23 +251,23 @@ Times must be UTC milliseconds in strictly increasing order.
 
 ## Asynchronous engine & workers
 
-History lives in the data engine (`@lumen-charts/engine`), which runs in a Web Worker by default. Data calls return immediately and apply asynchronously:
+History lives in the data engine (`@lumen-ticks/engine`), which runs in a Web Worker by default. Data calls return immediately and apply asynchronously:
 
 ```ts
 candles.setData(history);
 await chart.whenIdle(); // resolves once everything handed over so far is painted
 ```
 
-If the page's Content Security Policy blocks workers, Lumen Charts automatically falls back to running the engine on the main thread in short time slices behind the exact same API.
+If the page's Content Security Policy blocks workers, Lumen Ticks automatically falls back to running the engine on the main thread in short time slices behind the exact same API.
 
-When a bundler needs the worker declared in application code — or when you want to cap shared workers globally — call `configureWorker(...)` once at app startup. Every package re-exports its own standalone `./worker` entry (so Vite `?worker` constructors, `?url` strings, `URL`s, static paths, and custom factories all work without installing `@lumen-charts/engine`). You can also override per chart with `worker: false`, `worker: 'dedicated'`, or an explicit `createWorkerPool(...)`:
+When a bundler needs the worker declared in application code — or when you want to cap shared workers globally — call `configureWorker(...)` once at app startup. Every package re-exports its own standalone `./worker` entry (so Vite `?worker` constructors, `?url` strings, `URL`s, static paths, and custom factories all work without installing `@lumen-ticks/engine`). You can also override per chart with `worker: false`, `worker: 'dedicated'`, or an explicit `createWorkerPool(...)`:
 
 <Tabs syncKey="framework">
 <TabItem label="Vanilla">
 
 ```ts
-import { configureWorker, createChart } from 'lumen-charts';
-import ChartWorker from 'lumen-charts/worker?worker'; // Vite (or pass '/assets/lumen-worker.js' / new URL('lumen-charts/worker', import.meta.url))
+import { configureWorker, createChart } from '@lumen-ticks/core';
+import ChartWorker from '@lumen-ticks/core/worker?worker'; // Vite (or pass '/assets/lumen-worker.js' / new URL('@lumen-ticks/core/worker', import.meta.url))
 
 // Configure once at app startup — every chart shares the bounded pool automatically:
 configureWorker({ source: ChartWorker, maxWorkers: 2 });
@@ -282,15 +282,15 @@ const localChart = createChart(localContainer, { worker: false });
 
 ```tsx
 // main.tsx — configure once at app entry:
-import { configureWorker } from '@lumen-charts/react';
-import ChartWorker from '@lumen-charts/react/worker?worker';
+import { configureWorker } from '@lumen-ticks/react';
+import ChartWorker from '@lumen-ticks/react/worker?worker';
 
 configureWorker({ source: ChartWorker, maxWorkers: 2 });
 ```
 
 ```tsx
 // BundledChart.tsx — components stay free of worker boilerplate:
-import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/react';
+import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-ticks/react';
 
 const localOptions: DeepPartial<ChartOptions> = { worker: false };
 
@@ -304,8 +304,8 @@ export function BundledChart({ useWorker = true }: { useWorker?: boolean }) {
 
 ```ts
 // main.ts — configure once at app entry:
-import { configureWorker } from '@lumen-charts/vue';
-import ChartWorker from '@lumen-charts/vue/worker?worker';
+import { configureWorker } from '@lumen-ticks/vue';
+import ChartWorker from '@lumen-ticks/vue/worker?worker';
 
 configureWorker({ source: ChartWorker, maxWorkers: 2 });
 ```
@@ -313,7 +313,7 @@ configureWorker({ source: ChartWorker, maxWorkers: 2 });
 ```vue
 <!-- BundledChart.vue -->
 <script setup lang="ts">
-import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/vue';
+import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-ticks/vue';
 
 // Omit `worker` to use the configured pool, or pass `false` / `'dedicated'` per chart.
 const options: DeepPartial<ChartOptions> = { theme: 'auto' };
@@ -329,8 +329,8 @@ const options: DeepPartial<ChartOptions> = { theme: 'auto' };
 
 ```ts
 // main.ts — configure once at app entry:
-import { configureWorker } from '@lumen-charts/svelte';
-import ChartWorker from '@lumen-charts/svelte/worker?worker';
+import { configureWorker } from '@lumen-ticks/svelte';
+import ChartWorker from '@lumen-ticks/svelte/worker?worker';
 
 configureWorker({ source: ChartWorker, maxWorkers: 2 });
 ```
@@ -338,7 +338,7 @@ configureWorker({ source: ChartWorker, maxWorkers: 2 });
 ```svelte
 <!-- BundledChart.svelte -->
 <script lang="ts">
-	import { lumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/svelte';
+	import { lumenChart, type ChartOptions, type DeepPartial } from '@lumen-ticks/svelte';
 
 	// Omit `worker` to use the configured pool, or pass `false` / `'dedicated'` per chart.
 	const options: DeepPartial<ChartOptions> = { theme: 'auto' };
@@ -352,15 +352,15 @@ configureWorker({ source: ChartWorker, maxWorkers: 2 });
 
 ```ts
 // index.tsx — configure once at app entry:
-import { configureWorker } from '@lumen-charts/solid';
-import ChartWorker from '@lumen-charts/solid/worker?worker';
+import { configureWorker } from '@lumen-ticks/solid';
+import ChartWorker from '@lumen-ticks/solid/worker?worker';
 
 configureWorker({ source: ChartWorker, maxWorkers: 2 });
 ```
 
 ```tsx
 // BundledChart.tsx
-import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/solid';
+import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-ticks/solid';
 
 // Omit `worker` to use the configured pool, or pass `false` / `'dedicated'` per chart.
 const options: DeepPartial<ChartOptions> = { theme: 'auto' };

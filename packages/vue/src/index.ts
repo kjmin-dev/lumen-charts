@@ -1,4 +1,4 @@
-import { type ChartApi, type ChartOptions, type DeepPartial, createChart } from '@lumen-charts/core';
+import { type ChartApi, type ChartOptions, type DeepPartial, createChart } from '@lumen-ticks/core';
 import { defineComponent, h, onBeforeUnmount, onMounted, type PropType, shallowRef, watch } from 'vue';
 
 /**
@@ -56,4 +56,4 @@ export {
 	getMaxWorkers,
 	getWorkerConfig,
 	setMaxWorkers,
-} from '@lumen-charts/core';
+} from '@lumen-ticks/core';

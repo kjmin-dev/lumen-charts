@@ -1,4 +1,4 @@
-import type { HeatmapColumns, ScatterRows } from '@lumen-charts/engine';
+import type { HeatmapColumns, ScatterRows } from '@lumen-ticks/engine';
 
 /** One point of a scatter series. `time` is a UTC timestamp in milliseconds. */
 export interface ScatterPoint {
@@ -57,7 +57,7 @@ export interface HeatmapData {
 
 function column(source: ArrayLike<number>, count: number, name: string): Float64Array {
 	if (source.length < count) {
-		throw new RangeError(`lumen-charts: the ${name} column must have the length of the time column`);
+		throw new RangeError(`lumen-ticks: the ${name} column must have the length of the time column`);
 	}
 	const target = new Float64Array(count);
 	if (source.length === count) {
@@ -75,7 +75,7 @@ function floats(source: ArrayLike<number> | undefined, count: number, name: stri
 		return null;
 	}
 	if (source.length < count) {
-		throw new RangeError(`lumen-charts: the ${name} column must have the length of the time column`);
+		throw new RangeError(`lumen-ticks: the ${name} column must have the length of the time column`);
 	}
 	const target = new Float32Array(count);
 	for (let i = 0; i < count; i++) {
@@ -151,7 +151,7 @@ function gridRow(priceStart: number, base: number, step: number): number {
 	const whole = Math.round(row);
 	if (!Number.isFinite(priceStart) || !(Math.abs(row - whole) <= GRID_TOLERANCE) || Math.abs(whole) > 0x3fffffff) {
 		throw new RangeError(
-			`lumen-charts: a heatmap column's priceStart ${priceStart} is not a whole number of priceStep (${step}) from the grid's ${base}`,
+			`lumen-ticks: a heatmap column's priceStart ${priceStart} is not a whole number of priceStep (${step}) from the grid's ${base}`,
 		);
 	}
 	return whole;
@@ -168,15 +168,15 @@ export function packHeatmap(input: HeatmapData, grid?: HeatmapGrid | null): Heat
 	const starts = typeof input.priceStart === 'number' ? null : input.priceStart;
 	const count = input.time.length;
 	if (starts !== null && starts.length < count) {
-		throw new RangeError('lumen-charts: a heatmap needs a `priceStart` for every column');
+		throw new RangeError('lumen-ticks: a heatmap needs a `priceStart` for every column');
 	}
 	const priceStart =
 		grid?.priceStart ?? (starts === null ? (input.priceStart as number) : count > 0 ? starts[0]! : Number.NaN);
 	if (!Number.isInteger(rows) || rows < 1) {
-		throw new RangeError('lumen-charts: a heatmap needs `rows`, a whole number of at least 1');
+		throw new RangeError('lumen-ticks: a heatmap needs `rows`, a whole number of at least 1');
 	}
 	if (!(priceStep > 0) || !Number.isFinite(priceStep) || !Number.isFinite(priceStart)) {
-		throw new RangeError('lumen-charts: a heatmap needs a finite `priceStart` and a `priceStep` above 0');
+		throw new RangeError('lumen-ticks: a heatmap needs a finite `priceStart` and a `priceStep` above 0');
 	}
 	let offsets: Int32Array | null = null;
 	if (starts !== null) {
@@ -192,7 +192,7 @@ export function packHeatmap(input: HeatmapData, grid?: HeatmapGrid | null): Heat
 		}
 	}
 	if (input.values.length < count * rows) {
-		throw new RangeError('lumen-charts: a heatmap needs `rows` values for every column');
+		throw new RangeError('lumen-ticks: a heatmap needs `rows` values for every column');
 	}
 	const values = new Float32Array(count * rows);
 	if (input.values.length === values.length) {

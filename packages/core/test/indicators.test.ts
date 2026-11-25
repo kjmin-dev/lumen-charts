@@ -1,7 +1,7 @@
 import { resolve as resolvePath } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { type ChartApi, createChart } from '@lumen-charts/core';
-import { computeIndicator, macd, resolveParams, rsi, sma } from '@lumen-charts/engine';
+import { type ChartApi, createChart } from '@lumen-ticks/core';
+import { computeIndicator, macd, resolveParams, rsi, sma } from '@lumen-ticks/engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 interface Call {

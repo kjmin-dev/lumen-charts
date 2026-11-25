@@ -95,16 +95,16 @@ export function buildPalette(palette: Palette): Uint32Array {
 	const stops = typeof palette === 'string' ? PALETTES[palette] : palette;
 	if (stops === undefined) {
 		throw new RangeError(
-			`lumen-charts: unknown palette "${String(palette)}" (built in: ${Object.keys(PALETTES).join(', ')})`,
+			`lumen-ticks: unknown palette "${String(palette)}" (built in: ${Object.keys(PALETTES).join(', ')})`,
 		);
 	}
 	if (!Array.isArray(stops) || stops.length === 0) {
-		throw new RangeError('lumen-charts: a palette is a name or an array of at least one color');
+		throw new RangeError('lumen-ticks: a palette is a name or an array of at least one color');
 	}
 	const channels = stops.map(stop => {
 		const pixel = typeof stop === 'string' ? parseColor(stop) : null;
 		if (pixel === null) {
-			throw new RangeError(`lumen-charts: cannot read the palette color "${String(stop)}"`);
+			throw new RangeError(`lumen-ticks: cannot read the palette color "${String(stop)}"`);
 		}
 		return unpackColor(pixel);
 	});

@@ -1,15 +1,15 @@
-# Lumen Charts
+# Lumen Ticks
 
 High-performance financial charting engine for the web.
 
-- **Documentation:** [lumen-charts.studiocyf.app](https://lumen-charts.studiocyf.app) (with interactive chart demos and [`llms.txt`](https://lumen-charts.studiocyf.app/llms.txt))
+- **Documentation:** [lumen-ticks.studiocyf.app](https://lumen-ticks.studiocyf.app) (with interactive chart demos and [`llms.txt`](https://lumen-ticks.studiocyf.app/llms.txt))
 
 > Status: stage 4 of the [design](docs/design.md) is complete; of the optional steps of stage 5, [these](docs/design/stage-5.md) are decided or built.
 
 ## Usage
 
 ```ts
-import { createChart } from 'lumen-charts';
+import { createChart } from '@lumen-ticks/core';
 
 const chart = createChart(document.getElementById('chart')!);
 const candles = chart.addSeries('candlestick');
@@ -59,19 +59,19 @@ Each has a guide:
 
 ## Packages
 
-| Package                | Purpose                                                     |
-| ---------------------- | ----------------------------------------------------------- |
-| `@lumen-charts/core`   | Framework-free chart: scales, series views, canvas renderer |
-| `@lumen-charts/engine` | Data engine: column store, indicators, worker host, client  |
-| `@lumen-charts/react`  | `LumenChart` component                                      |
-| `@lumen-charts/vue`    | `LumenChart` component                                      |
-| `@lumen-charts/svelte` | `lumenChart` action                                         |
-| `@lumen-charts/solid`  | `LumenChart` component (client-side)                        |
-| `lumen-charts`         | Re-exports `@lumen-charts/core`                             |
+| Package               | Purpose                                                     |
+| --------------------- | ----------------------------------------------------------- |
+| `@lumen-ticks/core`   | Framework-free chart: scales, series views, canvas renderer |
+| `@lumen-ticks/engine` | Data engine: column store, indicators, worker host, client  |
+| `@lumen-ticks/react`  | `LumenChart` component                                      |
+| `@lumen-ticks/vue`    | `LumenChart` component                                      |
+| `@lumen-ticks/svelte` | `lumenChart` action                                         |
+| `@lumen-ticks/solid`  | `LumenChart` component (client-side)                        |
+| `lumenticks`          | Alias of `@lumen-ticks/core`                                |
 
 Bindings stay thin: they create the chart on mount, forward option changes to
 `applyOptions`, and destroy it on unmount. Data goes through the chart API, never through props.
-See [Framework bindings](https://lumen-charts.studiocyf.app/frameworks/) for React, Vue 3, Svelte 5,
+See [Framework bindings](https://lumen-ticks.studiocyf.app/frameworks/) for React, Vue 3, Svelte 5,
 and Solid examples (also available as synced tabs on every guide page).
 
 ## Development
@@ -109,7 +109,7 @@ feature in a guide of its own, what a stage built and measured in files of their
 ## Layout
 
 ```
-apps/         documentation site (Astro Starlight, deployed to lumen-charts.studiocyf.app)
+apps/         documentation site (Astro Starlight, deployed to lumen-ticks.studiocyf.app)
 packages/     libraries published to npm
 examples/     runnable examples (not published)
 benchmarks/   benchmark harness (not published)

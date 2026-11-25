@@ -11,7 +11,7 @@ import {
 	TIME_PATCH,
 	levelShift,
 	packPatches,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 
 export interface WindowRequest {
 	level: number;

@@ -3,7 +3,7 @@
 // Run on its own, it summarizes the traces of a directory again:
 //   pnpm bench:profile <dir>
 // The source maps come from `benchmarks/dist`, which must hold the build the traces were made
-// with: an unminified one (`LUMEN_BENCH_PROFILE=1 pnpm --filter @lumen-charts/benchmarks build`) of
+// with: an unminified one (`LUMEN_BENCH_PROFILE=1 pnpm --filter @lumen-ticks/benchmarks build`) of
 // the same sources.
 
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';

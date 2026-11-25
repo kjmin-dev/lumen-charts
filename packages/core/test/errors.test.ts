@@ -1,5 +1,5 @@
-import type { ChartError } from '@lumen-charts/core';
-import { EngineCore, setMaxWorkers } from '@lumen-charts/engine';
+import type { ChartError } from '@lumen-ticks/core';
+import { EngineCore, setMaxWorkers } from '@lumen-ticks/engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeWorker } from '../../engine/test/fake-worker';
 import { MINUTE, TestChart, candles } from './drawing-helpers';
@@ -181,7 +181,7 @@ describe('chart errors', () => {
 			FakeWorker.created[0]!.crash('messageerror');
 			expect(reported).toHaveBeenCalledTimes(1);
 			const error = reported.mock.calls[0]![0] as Error;
-			expect(error.message).toBe('lumen-charts: The data engine worker sent a message that could not be read');
+			expect(error.message).toBe('lumen-ticks: The data engine worker sent a message that could not be read');
 			expect(error.cause).toMatchObject({ type: 'messageerror' });
 		});
 	});

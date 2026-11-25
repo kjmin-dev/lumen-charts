@@ -12,7 +12,7 @@ import {
 	type PrimitiveBounds,
 	type ThemeName,
 	createChart,
-} from '@lumen-charts/core';
+} from '@lumen-ticks/core';
 import { generateCandles, generateOrderBookAndTrades, generateSessionCandles } from './data.ts';
 import type { DemoName } from './names.ts';
 
@@ -965,7 +965,7 @@ function mountPlayground(ctx: DemoContext): void {
 	const { book, trades } = generateOrderBookAndTrades(tailSlice, stepMs, 2027);
 
 	const chart = makeChart(ctx, stage, {
-		accessibility: { label: 'Lumen Charts interactive playground' },
+		accessibility: { label: 'Lumen Ticks interactive playground' },
 		watermark: { visible: true, text: 'LUMEN PLAYGROUND' },
 		crosshair: { mode: 'nearest' },
 		markRenderer: 'webgl2',

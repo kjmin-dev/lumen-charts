@@ -13,7 +13,7 @@ import {
 	type LineOptions,
 	type SeriesApi,
 	createChart,
-} from '@lumen-charts/core';
+} from '@lumen-ticks/core';
 
 const MINUTE = 60_000;
 /** A Wednesday, 09:40 in New York: the bars before 09:30 are in the pre-market session. */

@@ -1,4 +1,4 @@
-import type { TimelineResolution } from '@lumen-charts/engine';
+import type { TimelineResolution } from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { LevelWindow } from '../src/data/window-cache';
 import { TimeIndex } from '../src/model/time-index';

@@ -13,7 +13,7 @@ import {
 	packPatches,
 	transferables,
 	unpackPatches,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { ohlcv, run, ticks } from './helpers';
 

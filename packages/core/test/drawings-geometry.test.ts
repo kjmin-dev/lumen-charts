@@ -1,4 +1,4 @@
-import { HIT_BODY, HIT_NONE, type PaneView, type PrimitiveBounds } from '@lumen-charts/core';
+import { HIT_BODY, HIT_NONE, type PaneView, type PrimitiveBounds } from '@lumen-ticks/core';
 import { describe, expect, it } from 'vitest';
 import { Drawing, type DrawingOwner } from '../src/drawings/drawing';
 import { clipLine, segmentDistance2 } from '../src/drawings/geometry';

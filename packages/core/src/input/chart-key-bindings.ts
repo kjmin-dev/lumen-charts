@@ -38,7 +38,7 @@ function keyName(key: string): string {
 
 /** Canonical chord spelling is also the lookup key and the text shown in the navigator. */
 function parseChord(value: string): string {
-	const invalid = () => new RangeError('lumen-charts: invalid navigator key binding ' + JSON.stringify(value));
+	const invalid = () => new RangeError('lumen-ticks: invalid navigator key binding ' + JSON.stringify(value));
 	if (typeof value !== 'string') throw invalid();
 	// A final plus is a key, including in "Ctrl++". "Plus" is equivalent.
 	const parts = value
@@ -72,14 +72,14 @@ export class ChartKeymap {
 
 	public constructor(overrides: ChartKeyBindings = {}) {
 		if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides))
-			throw new RangeError('lumen-charts: expected a navigator key binding map');
+			throw new RangeError('lumen-ticks: expected a navigator key binding map');
 		const bindings = {} as Required<ChartKeyBindings>;
 		const hints: string[] = [];
 		for (const action of Object.keys(actions) as ChartKeyboardAction[]) {
 			const definition = actions[action];
 			const extra = overrides[action];
 			if (extra !== undefined && !Array.isArray(extra))
-				throw new RangeError('lumen-charts: expected a key binding array for ' + action);
+				throw new RangeError('lumen-ticks: expected a key binding array for ' + action);
 			// Preserve the native range keys. Other shortcuts belong to the application once configured.
 			const keys =
 				'navigation' in definition ? [...definition.navigation, ...(extra ?? [])] : (extra ?? definition.shortcuts);
@@ -88,7 +88,7 @@ export class ChartKeymap {
 				const chord = parseChord(key);
 				const owner = this.chords.get(chord);
 				if (owner && owner !== action)
-					throw new RangeError('lumen-charts: ' + chord + ' is bound to both ' + owner + ' and ' + action);
+					throw new RangeError('lumen-ticks: ' + chord + ' is bound to both ' + owner + ' and ' + action);
 				this.chords.set(chord, action);
 				names.add(chord);
 			}

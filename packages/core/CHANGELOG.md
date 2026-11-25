@@ -1,4 +1,4 @@
-# @lumen-charts/core
+# @lumen-ticks/core
 
 ## 0.1.0
 
@@ -35,7 +35,7 @@
   - Pointer input: hover, wheel and pinch read the chart's position at most once per frame. A wheel
     or pinch zoom is applied in the next frame, or earlier when the time scale is read or set.
 
-  `@lumen-charts/engine`: a worker host serves several engines, told apart by the `engine` id on
+  `@lumen-ticks/engine`: a worker host serves several engines, told apart by the `engine` id on
   commands and events (`HostMessage`); `EngineClient` takes its place on a pooled worker.
 
 - dcf50f3: Add candlestick and line series on an ordinal time scale. The data engine keeps history in a chunked
@@ -166,7 +166,7 @@
   - **Polymorphic `WorkerSource` & `WorkerOption`**: `worker` now accepts URL strings, `URL` objects (normalized by absolute `href` so callers share a pool automatically), bundler worker constructors such as Vite `?worker` imports (invoked safely with `new` instead of silently falling back to the main thread), `'dedicated'` for an unshared worker per chart, explicit `WorkerPool` handles, and existing booleans or `() => Worker` factories.
   - **Global configuration (`configureWorker` / `getWorkerConfig`)**: configure the default worker source, `maxWorkers`, and `timeout` once at app startup instead of threading worker factories through every chart.
   - **Explicit `WorkerPool` (`createWorkerPool`)**: manage isolated bounded worker pools with `maxWorkers`, `activeWorkers`, `engines`, optional `warmup(count?)` pre-starting, and `destroy()` teardown.
-  - **Standalone `./worker` across every package**: `lumen-charts`, `@lumen-charts/core`, and all four framework bindings (`react`, `vue`, `svelte`, `solid`) now export a zero-import bundled `./worker` entry (with explicit `"sideEffects": ["./dist/worker.js"]`) and re-export the worker helpers directly.
+  - **Standalone `./worker` across every package**: `lumen-ticks`, `@lumen-ticks/core`, and all four framework bindings (`react`, `vue`, `svelte`, `solid`) now export a zero-import bundled `./worker` entry (with explicit `"sideEffects": ["./dist/worker.js"]`) and re-export the worker helpers directly.
   - **Options handling**: `DeepPartial`, `mergeOptions`, and `optionsEqual` now preserve `URL`, constructor, and `WorkerPool` values intact instead of flattening non-plain objects.
 
 ### Patch Changes
@@ -263,4 +263,4 @@
 - Updated dependencies [cea020e]
 - Updated dependencies [99d02d3]
 - Updated dependencies [3dd18c0]
-  - @lumen-charts/engine@0.1.0
+  - @lumen-ticks/engine@0.1.0

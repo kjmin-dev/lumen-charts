@@ -5,7 +5,7 @@ import {
 	getMaxWorkers,
 	getWorkerConfig,
 	setMaxWorkers,
-} from '@lumen-charts/vue';
+} from '@lumen-ticks/vue';
 import { describe, expect, it } from 'vitest';
 import { createApp, h, nextTick, ref } from 'vue';
 

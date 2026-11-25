@@ -11,7 +11,7 @@ import {
 	type PaneView,
 	type PrimitiveBounds,
 	type SeriesItems,
-} from 'lumen-charts';
+} from '@lumen-ticks/core';
 
 class SessionBox implements PanePrimitive {
 	readonly zOrder = 'bottom'; // under the series; 'normal' (default) with the drawings; 'top' over all
@@ -62,7 +62,7 @@ A primitive leaves the price scale to the series unless it has an `autoscale` me
 is asked, in every frame that computes price ranges, which prices to keep in view:
 
 ```ts
-import type { AutoscaleRange, PaneView } from 'lumen-charts';
+import type { AutoscaleRange, PaneView } from '@lumen-ticks/core';
 
 class Band implements PanePrimitive {
 	// ... `draw`, and `update` as above.

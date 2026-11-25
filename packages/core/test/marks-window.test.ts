@@ -1,4 +1,4 @@
-import type { MarksUpdate } from '@lumen-charts/engine';
+import type { MarksUpdate } from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { MarksWindow } from '../src/marks/window';
 

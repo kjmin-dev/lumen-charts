@@ -1,18 +1,18 @@
-# @lumen-charts/core
+# @lumen-ticks/core
 
 The framework-free chart: rendering, interaction, themes, level of detail and the datafeed API.
 
-Part of [Lumen Charts](https://github.com/kjmin-dev/lumen-charts), high-performance financial charts for the web.
+Part of [Lumen Ticks](https://github.com/kjmin-dev/lumen-ticks), high-performance financial charts for the web.
 
 ```sh
-npm install @lumen-charts/core
+npm install @lumen-ticks/core
 ```
 
 ```ts
-import { createChart } from '@lumen-charts/core';
+import { createChart } from '@lumen-ticks/core';
 ```
 
-Usage, options and examples are in the [main README](https://github.com/kjmin-dev/lumen-charts#readme).
+Usage, options and examples are in the [main README](https://github.com/kjmin-dev/lumen-ticks#readme).
 
 ## License
 

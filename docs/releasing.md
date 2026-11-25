@@ -8,15 +8,15 @@ How the packages get to npm. The pipeline is built for three things:
 
 ## What is published
 
-| Package                | Contents                        |
-| ---------------------- | ------------------------------- |
-| `lumen-charts`         | Re-exports `@lumen-charts/core` |
-| `@lumen-charts/core`   | The chart                       |
-| `@lumen-charts/engine` | Data engine and worker entry    |
-| `@lumen-charts/react`  | React binding                   |
-| `@lumen-charts/vue`    | Vue binding                     |
-| `@lumen-charts/svelte` | Svelte binding                  |
-| `@lumen-charts/solid`  | Solid binding                   |
+| Package               | Contents                     |
+| --------------------- | ---------------------------- |
+| `@lumen-ticks/core`   | The chart                    |
+| `lumenticks`          | Alias of `@lumen-ticks/core` |
+| `@lumen-ticks/engine` | Data engine and worker entry |
+| `@lumen-ticks/react`  | React binding                |
+| `@lumen-ticks/vue`    | Vue binding                  |
+| `@lumen-ticks/svelte` | Svelte binding               |
+| `@lumen-ticks/solid`  | Solid binding                |
 
 **Versioning:** all seven packages are released together under one version: a Changesets `fixed` group.
 
@@ -86,7 +86,7 @@ Running `pnpm version-packages` by hand costs one command. Publishing still runs
 
 ### On npm
 
-1. **Create the scope.** Create the npm organization `lumen-charts` (free for public packages); it owns the `@lumen-charts` scope. Enable two-factor authentication for the account.
+1. **Create the scope.** Create the npm organization `lumen-ticks` (free for public packages); it owns the `@lumen-ticks` scope. Enable two-factor authentication for the account.
 2. **First publish, from a local session.** Trusted publishing is configured per package, on a package that exists:
 
    ```sh
@@ -102,7 +102,7 @@ Running `pnpm version-packages` by hand costs one command. Publishing still runs
 
 3. **Add the trusted publisher.** For each of the seven packages: package settings → _Publishing access_ → _Trusted publisher_ → GitHub Actions, with:
    - organization or user: `kjmin-dev`
-   - repository: `lumen-charts`
+   - repository: `lumen-ticks`
    - workflow file: `release.yml`
    - environment: `npm`
 

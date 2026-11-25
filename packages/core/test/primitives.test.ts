@@ -9,7 +9,7 @@ import {
 	type PrimitiveZOrder,
 	type SeriesItems,
 	type SeriesRenderer,
-} from '@lumen-charts/core';
+} from '@lumen-ticks/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MINUTE, TestChart, candles } from './drawing-helpers';
 

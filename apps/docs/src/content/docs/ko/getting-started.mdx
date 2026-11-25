@@ -1,12 +1,12 @@
 ---
 title: 시작하기
-description: Vanilla TypeScript, React, Vue 3, Svelte 5, Solid에서 Lumen Charts를 설치하고 첫 번째 캔들스틱 차트를 렌더링하며, 실시간 틱과 웹 워커 엔진을 구성하는 방법을 안내합니다.
+description: Vanilla TypeScript, React, Vue 3, Svelte 5, Solid에서 Lumen Ticks를 설치하고 첫 번째 캔들스틱 차트를 렌더링하며, 실시간 틱과 웹 워커 엔진을 구성하는 방법을 안내합니다.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 import InstallCommand from '../../../components/InstallCommand.astro';
 
-Lumen Charts는 레이어드 HTML 캔버스로 금융 차트를 렌더링하면서 히스토리, LOD 피라미드, 인디케이터 연산은 비동기 데이터 엔진에서 처리합니다.
+Lumen Ticks는 레이어드 HTML 캔버스로 금융 차트를 렌더링하면서 히스토리, LOD 피라미드, 인디케이터 연산은 비동기 데이터 엔진에서 처리합니다.
 
 아래에서 사용하는 프레임워크를 선택하면 [프레임워크 바인딩](/ko/frameworks/) 페이지와 모든 가이드 문서의 코드 예시가 함께 동기화됩니다.
 
@@ -15,27 +15,27 @@ Lumen Charts는 레이어드 HTML 캔버스로 금융 차트를 렌더링하면�
 <Tabs syncKey="framework">
 <TabItem label="Vanilla">
 
-<InstallCommand packages="lumen-charts" />
+<InstallCommand packages="@lumen-ticks/core" />
 
 </TabItem>
 <TabItem label="React">
 
-<InstallCommand packages="@lumen-charts/react react" />
+<InstallCommand packages="@lumen-ticks/react react" />
 
 </TabItem>
 <TabItem label="Vue 3">
 
-<InstallCommand packages="@lumen-charts/vue vue" />
+<InstallCommand packages="@lumen-ticks/vue vue" />
 
 </TabItem>
 <TabItem label="Svelte 5">
 
-<InstallCommand packages="@lumen-charts/svelte svelte" />
+<InstallCommand packages="@lumen-ticks/svelte svelte" />
 
 </TabItem>
 <TabItem label="Solid">
 
-<InstallCommand packages="@lumen-charts/solid solid-js" />
+<InstallCommand packages="@lumen-ticks/solid solid-js" />
 
 </TabItem>
 </Tabs>
@@ -48,7 +48,7 @@ Lumen Charts는 레이어드 HTML 캔버스로 금융 차트를 렌더링하면�
 <TabItem label="Vanilla">
 
 ```ts
-import { createChart } from 'lumen-charts';
+import { createChart } from '@lumen-ticks/core';
 
 const container = document.getElementById('chart')!;
 const chart = createChart(container, {
@@ -81,8 +81,8 @@ candles.update({
 <TabItem label="React">
 
 ```tsx
-import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/react';
+import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 
 const options: DeepPartial<ChartOptions> = {
@@ -125,8 +125,8 @@ export function FirstChart({ bars }: { bars: OhlcColumns }) {
 
 ```vue
 <script setup lang="ts">
-import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/vue';
+import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/vue';
 import { onMounted, useTemplateRef } from 'vue';
 
 const props = defineProps<{ bars: OhlcColumns }>();
@@ -169,8 +169,8 @@ onMounted(() => {
 
 ```svelte
 <script lang="ts">
-	import type { OhlcColumns } from '@lumen-charts/core';
-	import { lumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/svelte';
+	import type { OhlcColumns } from '@lumen-ticks/core';
+	import { lumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/svelte';
 
 	let { bars }: { bars: OhlcColumns } = $props();
 	const options: DeepPartial<ChartOptions> = {
@@ -205,8 +205,8 @@ onMounted(() => {
 <TabItem label="Solid">
 
 ```tsx
-import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/solid';
+import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/solid';
 
 const options: DeepPartial<ChartOptions> = {
 	theme: 'auto', // 'light', 'dark' 또는 prefers-color-scheme 추적
@@ -242,7 +242,7 @@ export function FirstChart(props: { bars: OhlcColumns }) {
 
 ## 비동기 데이터 엔진과 워커
 
-히스토리는 기본적으로 웹 워커 안의 데이터 엔진(`@lumen-charts/engine`)에 저장됩니다. 데이터 메서드는 즉시 반환되며 비동기적으로 반영됩니다:
+히스토리는 기본적으로 웹 워커 안의 데이터 엔진(`@lumen-ticks/engine`)에 저장됩니다. 데이터 메서드는 즉시 반환되며 비동기적으로 반영됩니다:
 
 ```ts
 candles.setData(history);
@@ -251,14 +251,14 @@ await chart.whenIdle(); // 지금까지 전달한 데이터가 화면에 그려�
 
 페이지의 CSP가 워커를 차단하면 동일한 인터페이스로 메인 스레드 타임슬라이스 모드로 자동 전환됩니다.
 
-번들러에서 워커 엔트리를 명시적으로 선언하거나 페이지 전체의 워커 수를 제한하려면 앱 진입점에서 `configureWorker(...)`를 한 번만 호출하세요. 모든 패키지가 독립 번들된 `./worker` 엔트리를 직접 제공하므로 `@lumen-charts/engine`을 따로 설치하지 않아도 Vite `?worker` 생성자, `?url` 문자열, `URL`, 정적 경로, 커스텀 팩토리를 그대로 넘길 수 있습니다. 개별 차트에서는 `worker: false`, `worker: 'dedicated'`, 또는 `createWorkerPool(...)`로 세밀하게 오버라이드할 수 있습니다:
+번들러에서 워커 엔트리를 명시적으로 선언하거나 페이지 전체의 워커 수를 제한하려면 앱 진입점에서 `configureWorker(...)`를 한 번만 호출하세요. 모든 패키지가 독립 번들된 `./worker` 엔트리를 직접 제공하므로 `@lumen-ticks/engine`을 따로 설치하지 않아도 Vite `?worker` 생성자, `?url` 문자열, `URL`, 정적 경로, 커스텀 팩토리를 그대로 넘길 수 있습니다. 개별 차트에서는 `worker: false`, `worker: 'dedicated'`, 또는 `createWorkerPool(...)`로 세밀하게 오버라이드할 수 있습니다:
 
 <Tabs syncKey="framework">
 <TabItem label="Vanilla">
 
 ```ts
-import { configureWorker, createChart } from 'lumen-charts';
-import ChartWorker from 'lumen-charts/worker?worker'; // Vite (또는 '/assets/lumen-worker.js' / new URL('lumen-charts/worker', import.meta.url))
+import { configureWorker, createChart } from '@lumen-ticks/core';
+import ChartWorker from '@lumen-ticks/core/worker?worker'; // Vite (또는 '/assets/lumen-worker.js' / new URL('@lumen-ticks/core/worker', import.meta.url))
 
 // 앱 진입점에서 1회 선언 — 이후 생성되는 모든 차트가 워커 풀을 자동 공유합니다.
 configureWorker({ source: ChartWorker, maxWorkers: 2 });
@@ -273,15 +273,15 @@ const localChart = createChart(localContainer, { worker: false });
 
 ```tsx
 // main.tsx — 앱 진입점에서 1회만 설정합니다.
-import { configureWorker } from '@lumen-charts/react';
-import ChartWorker from '@lumen-charts/react/worker?worker';
+import { configureWorker } from '@lumen-ticks/react';
+import ChartWorker from '@lumen-ticks/react/worker?worker';
 
 configureWorker({ source: ChartWorker, maxWorkers: 2 });
 ```
 
 ```tsx
 // BundledChart.tsx — 컴포넌트에는 워커 보일러플레이트가 남지 않습니다.
-import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/react';
+import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-ticks/react';
 
 const localOptions: DeepPartial<ChartOptions> = { worker: false };
 
@@ -295,8 +295,8 @@ export function BundledChart({ useWorker = true }: { useWorker?: boolean }) {
 
 ```ts
 // main.ts — 앱 진입점에서 1회만 설정합니다.
-import { configureWorker } from '@lumen-charts/vue';
-import ChartWorker from '@lumen-charts/vue/worker?worker';
+import { configureWorker } from '@lumen-ticks/vue';
+import ChartWorker from '@lumen-ticks/vue/worker?worker';
 
 configureWorker({ source: ChartWorker, maxWorkers: 2 });
 ```
@@ -304,7 +304,7 @@ configureWorker({ source: ChartWorker, maxWorkers: 2 });
 ```vue
 <!-- BundledChart.vue -->
 <script setup lang="ts">
-import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/vue';
+import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-ticks/vue';
 
 // `worker`를 생략하면 전역 설정 풀을 사용하며, 차트별로 `false` 또는 `'dedicated'` 지정 가능
 const options: DeepPartial<ChartOptions> = { theme: 'auto' };
@@ -320,8 +320,8 @@ const options: DeepPartial<ChartOptions> = { theme: 'auto' };
 
 ```ts
 // main.ts — 앱 진입점에서 1회만 설정합니다.
-import { configureWorker } from '@lumen-charts/svelte';
-import ChartWorker from '@lumen-charts/svelte/worker?worker';
+import { configureWorker } from '@lumen-ticks/svelte';
+import ChartWorker from '@lumen-ticks/svelte/worker?worker';
 
 configureWorker({ source: ChartWorker, maxWorkers: 2 });
 ```
@@ -329,7 +329,7 @@ configureWorker({ source: ChartWorker, maxWorkers: 2 });
 ```svelte
 <!-- BundledChart.svelte -->
 <script lang="ts">
-	import { lumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/svelte';
+	import { lumenChart, type ChartOptions, type DeepPartial } from '@lumen-ticks/svelte';
 
 	// `worker`를 생략하면 전역 설정 풀을 사용하며, 차트별로 `false` 또는 `'dedicated'` 지정 가능
 	const options: DeepPartial<ChartOptions> = { theme: 'auto' };
@@ -343,15 +343,15 @@ configureWorker({ source: ChartWorker, maxWorkers: 2 });
 
 ```ts
 // index.tsx — 앱 진입점에서 1회만 설정합니다.
-import { configureWorker } from '@lumen-charts/solid';
-import ChartWorker from '@lumen-charts/solid/worker?worker';
+import { configureWorker } from '@lumen-ticks/solid';
+import ChartWorker from '@lumen-ticks/solid/worker?worker';
 
 configureWorker({ source: ChartWorker, maxWorkers: 2 });
 ```
 
 ```tsx
 // BundledChart.tsx
-import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/solid';
+import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-ticks/solid';
 
 // `worker`를 생략하면 전역 설정 풀을 사용하며, 차트별로 `false` 또는 `'dedicated'` 지정 가능
 const options: DeepPartial<ChartOptions> = { theme: 'auto' };

@@ -1,4 +1,4 @@
-import { type ChartApi, type ChartOptions, type DeepPartial, createChart } from '@lumen-charts/core';
+import { type ChartApi, type ChartOptions, type DeepPartial, createChart } from '@lumen-ticks/core';
 import { vi } from 'vitest';
 
 export interface Call {

@@ -1,4 +1,4 @@
-import type { EngineClient, EngineEvent, MarksData } from '@lumen-charts/engine';
+import type { EngineClient, EngineEvent, MarksData } from '@lumen-ticks/engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type FetchingSeries, MarkFetches } from '../src/marks/fetches';
 

@@ -10,7 +10,7 @@ import {
 	SOURCE_COLUMNS,
 	indicatorInfo,
 	resolveParams,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import type { HeatmapSeriesApi, ScatterSeriesApi } from './marks/series';
 import { INVALIDATE_LIGHT } from './model/invalidation';
 import { type DeepPartial, type HistogramOptions, type LineOptions, definedOnly, shallowEqual } from './options';
@@ -412,9 +412,9 @@ export class ChartIndicators {
 				id = `indicator-${++this._named}`;
 			} while (this._byId(id) !== undefined);
 		} else if (typeof id !== 'string') {
-			throw new Error('lumen-charts: the id of an indicator must be a string');
+			throw new Error('lumen-ticks: the id of an indicator must be a string');
 		} else if (this._byId(id) !== undefined) {
-			throw new Error(`lumen-charts: an indicator with id "${id}" exists already`);
+			throw new Error(`lumen-ticks: an indicator with id "${id}" exists already`);
 		}
 		let self: Indicator | null = null;
 		const resolve = (input: IndicatorInput, index: number): IndicatorInputRef =>
@@ -669,7 +669,7 @@ export class ChartIndicators {
 			const field = (input as { column?: string }).column as MarkColumn;
 			if (!MARK_COLUMNS_OF[mark.type].includes(field)) {
 				throw new RangeError(
-					`lumen-charts: an indicator reads a ${mark.type} by one of ${MARK_COLUMNS_OF[mark.type].join(', ')}, not "${String(field)}"`,
+					`lumen-ticks: an indicator reads a ${mark.type} by one of ${MARK_COLUMNS_OF[mark.type].join(', ')}, not "${String(field)}"`,
 				);
 			}
 			return { series: mark.engineId, column: MARK_COLUMNS[field] };

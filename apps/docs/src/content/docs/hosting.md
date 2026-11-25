@@ -1,13 +1,13 @@
 ---
 title: Hosting this site
-description: How to build and deploy the Lumen Charts documentation site to Cloudflare Workers as static assets at lumen-charts.studiocyf.app.
+description: How to build and deploy the Lumen Ticks documentation site to Cloudflare Workers as static assets at lumen-ticks.studiocyf.app.
 ---
 
 This documentation site is an [Astro Starlight](https://starlight.astro.build) project in `apps/docs`. It is private to this repository and is never published to npm.
 
-| Site          | Address                              | Source      | Workflow                     |
-| ------------- | ------------------------------------ | ----------- | ---------------------------- |
-| Documentation | `https://lumen-charts.studiocyf.app` | `apps/docs` | `.github/workflows/docs.yml` |
+| Site          | Address                             | Source      | Workflow                     |
+| ------------- | ----------------------------------- | ----------- | ---------------------------- |
+| Documentation | `https://lumen-ticks.studiocyf.app` | `apps/docs` | `.github/workflows/docs.yml` |
 
 ## Build locally
 
@@ -39,7 +39,7 @@ The build also produces:
 To deploy manually from your machine, build first (setting `DOCS_SITE`), then run the deploy script using your `wrangler login` session:
 
 ```sh
-DOCS_SITE=https://lumen-charts.studiocyf.app pnpm docs:build
+DOCS_SITE=https://lumen-ticks.studiocyf.app pnpm docs:build
 pnpm deploy:docs
 ```
 
@@ -47,7 +47,7 @@ The GitHub Actions workflow in `.github/workflows/docs.yml` does not deploy auto
 
 1. Create a Cloudflare API token as described in [The API token](#the-api-token).
 2. In the GitHub repository settings, create an environment named `cloudflare`. Restrict its deployment branches to `main` only. Add the token as the environment secret `CLOUDFLARE_API_TOKEN` and your Cloudflare account ID as the environment secret `CLOUDFLARE_ACCOUNT_ID`. Use environment secrets — not repository secrets — so only runs on `main` can read them.
-3. Optionally set the repository variable `DOCS_SITE` to your site's public address (defaults to `https://lumen-charts.studiocyf.app`). Canonical links, the sitemap, and `llms.txt` are generated from this value.
+3. Optionally set the repository variable `DOCS_SITE` to your site's public address (defaults to `https://lumen-ticks.studiocyf.app`). Canonical links, the sitemap, and `llms.txt` are generated from this value.
 4. Run the **Docs** workflow manually once from the Actions tab (`workflow_dispatch`) to verify the deployment.
 5. To deploy automatically on every push to `main` that touches docs or library sources, set the repository variable `DOCS_DEPLOY` to `true`.
 
@@ -69,7 +69,7 @@ This repository is public, so `.github/workflows/docs.yml` assumes anyone can re
 - **No deploy on pull requests.** The workflow triggers only on `workflow_dispatch` and pushes to `main`. Fork pull requests never see any secret.
 - **Branch-restricted environment.** Secrets live in the `cloudflare` environment, restricted to `main`.
 - **Split build and deploy jobs.** The `build` job runs Astro, Vite, and workspace code with **zero secrets** and uploads `apps/docs/dist` as an artifact. The `deploy` job holds the Cloudflare credentials and runs only Wrangler on the uploaded artifact.
-- **Lockfile-pinned Wrangler without install scripts or shared cache.** Wrangler is isolated in `tools/deploy` (`@lumen-charts/deploy`), pinned to an exact version in `pnpm-lock.yaml`, with `esbuild` and `workerd` install scripts disabled in `pnpm-workspace.yaml`. The deploy job installs it with `--frozen-lockfile --ignore-scripts --filter @lumen-charts/deploy` and disables tool/pnpm caching so untrusted build-job caches can never cross into the deploy job.
+- **Lockfile-pinned Wrangler without install scripts or shared cache.** Wrangler is isolated in `tools/deploy` (`@lumen-ticks/deploy`), pinned to an exact version in `pnpm-lock.yaml`, with `esbuild` and `workerd` install scripts disabled in `pnpm-workspace.yaml`. The deploy job installs it with `--frozen-lockfile --ignore-scripts --filter @lumen-ticks/deploy` and disables tool/pnpm caching so untrusted build-job caches can never cross into the deploy job.
 - **Commit-pinned actions.** Every GitHub Action in `docs.yml` is pinned to a full commit SHA, updated monthly with a 14-day cooldown via `.github/dependabot.yml`.
 - **No account ID in git.** `wrangler.jsonc` intentionally omits `account_id`; Wrangler reads `CLOUDFLARE_ACCOUNT_ID` from the environment.
 
@@ -77,7 +77,7 @@ Never commit `.wrangler/` or `.dev.vars` — both are listed in `.gitignore`.
 
 ## Use a domain of your own
 
-`apps/docs/wrangler.jsonc` attaches the Worker to `lumen-charts.studiocyf.app` as a Workers Custom Domain (`custom_domain: true`). On deploy, Cloudflare provisions the DNS record and TLS certificate automatically:
+`apps/docs/wrangler.jsonc` attaches the Worker to `lumen-ticks.studiocyf.app` as a Workers Custom Domain (`custom_domain: true`). On deploy, Cloudflare provisions the DNS record and TLS certificate automatically:
 
 - The domain's zone must exist in the same Cloudflare account, and the hostname must not already have a manual CNAME record.
 - `workers_dev` and `preview_urls` are explicitly set to `false` so the site is served solely from its custom domain and never exposed on a `*.workers.dev` subdomain.

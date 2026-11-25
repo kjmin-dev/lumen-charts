@@ -327,7 +327,7 @@ export function timeZone(name: string): TimeZone {
 		try {
 			zone = new TimeZone(resolved);
 		} catch {
-			throw new RangeError(`lumen-charts: unknown time zone "${name}"`);
+			throw new RangeError(`lumen-ticks: unknown time zone "${name}"`);
 		}
 		zones.set(resolved, zone);
 	}

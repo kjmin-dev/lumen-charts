@@ -1,4 +1,4 @@
-import type { ChartApi } from '@lumen-charts/core';
+import type { ChartApi } from '@lumen-ticks/core';
 import {
 	configureWorker,
 	createWorkerPool,
@@ -6,7 +6,7 @@ import {
 	getWorkerConfig,
 	lumenChart,
 	setMaxWorkers,
-} from '@lumen-charts/svelte';
+} from '@lumen-ticks/svelte';
 import { describe, expect, it } from 'vitest';
 
 describe('lumenChart (Svelte action)', () => {

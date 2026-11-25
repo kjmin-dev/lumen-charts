@@ -6,7 +6,7 @@ import {
 	MAX_LEVEL,
 	levelCount,
 	levelShift,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { type LevelWindow, WindowCache } from '../src/data/window-cache';
 
