@@ -1,4 +1,4 @@
-import type { HeatmapSeriesApi } from '@lumen-charts/core';
+import type { HeatmapSeriesApi } from '@lumen-ticks/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GpuBackend } from '../src/marks/backend';
 import type { acquire } from '../src/marks/gpu/device';

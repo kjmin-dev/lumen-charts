@@ -1,4 +1,4 @@
-import type { WorkerOption, WorkerPool } from '@lumen-charts/engine';
+import type { WorkerOption, WorkerPool } from '@lumen-ticks/engine';
 import { type ChartKeyBindings, ChartKeymap, defaultChartKeymap } from './input/chart-key-bindings';
 import type { MarkRenderer } from './marks/backend';
 import type { SessionSchedule } from './model/sessions';
@@ -397,7 +397,7 @@ export function prepareChartKeymap(input: DeepPartial<ChartOptions>): ChartKeyma
 
 export function checkMarkRenderer(value: MarkRenderer | undefined): void {
 	if (value !== undefined && value !== 'canvas2d' && value !== 'webgl2' && value !== 'webgpu' && value !== 'auto')
-		throw new RangeError('lumen-charts: invalid markRenderer');
+		throw new RangeError('lumen-ticks: invalid markRenderer');
 }
 
 /**

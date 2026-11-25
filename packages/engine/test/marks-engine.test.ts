@@ -1,4 +1,4 @@
-import { type EngineClient, type EngineEvent, type MarksUpdate, createEngine } from '@lumen-charts/engine';
+import { type EngineClient, type EngineEvent, type MarksUpdate, createEngine } from '@lumen-ticks/engine';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeWorker } from './fake-worker';
 import { heat, request, rows, trades } from './marks-helpers';

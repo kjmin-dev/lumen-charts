@@ -1,4 +1,4 @@
-import { MARK_COLUMNS_OF, type MarkColumn, type IndicatorInfo, resolveParams } from '@lumen-charts/engine';
+import { MARK_COLUMNS_OF, type MarkColumn, type IndicatorInfo, resolveParams } from '@lumen-ticks/engine';
 import { type Drawing, checkPoints } from './drawings/drawing';
 import {
 	DRAWING_STATE_VERSION,
@@ -187,7 +187,7 @@ function isPlain(value: unknown): value is Plain {
 }
 
 function fail(path: string, reason: string): never {
-	throw new Error(`lumen-charts: invalid chart state: ${path} ${reason}`);
+	throw new Error(`lumen-ticks: invalid chart state: ${path} ${reason}`);
 }
 
 const LINE_STYLES = ['solid', 'dotted', 'dashed'];
@@ -611,7 +611,7 @@ function planDrawings(value: unknown): DrawingPlan[] {
 		try {
 			checkPoints(points, POINT_COUNTS[type as DrawingType], type as DrawingType);
 		} catch (error) {
-			fail(where(), `is not a drawing: ${(error as Error).message.replace('lumen-charts: ', '')}`);
+			fail(where(), `is not a drawing: ${(error as Error).message.replace('lumen-ticks: ', '')}`);
 		}
 		// The defaults of the tool, then what the state sets, in one object.
 		const style = drawingOptions(type as DrawingType, undefined);
@@ -669,21 +669,21 @@ export function planRestore(
 	context: RestoreContext,
 ): RestorePlan {
 	if (!isPlain(state)) {
-		throw new Error('lumen-charts: invalid chart state: it must be an object');
+		throw new Error('lumen-ticks: invalid chart state: it must be an object');
 	}
 	if (state.version !== CHART_STATE_VERSION) {
 		throw new Error(
-			`lumen-charts: chart state version ${String(state.version)} is not supported: ` +
+			`lumen-ticks: chart state version ${String(state.version)} is not supported: ` +
 				`this version of the library reads version ${CHART_STATE_VERSION}`,
 		);
 	}
 	if (parts !== undefined) {
 		if (!Array.isArray(parts)) {
-			throw new Error('lumen-charts: parts must be an array');
+			throw new Error('lumen-ticks: parts must be an array');
 		}
 		for (const part of parts) {
 			if (!CHART_STATE_PARTS.includes(part)) {
-				throw new Error(`lumen-charts: "${String(part)}" is not a part of a chart state`);
+				throw new Error(`lumen-ticks: "${String(part)}" is not a part of a chart state`);
 			}
 		}
 	}

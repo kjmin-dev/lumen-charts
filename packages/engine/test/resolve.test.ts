@@ -1,4 +1,4 @@
-import { CHUNK_ROWS, EngineCore, transferables } from '@lumen-charts/engine';
+import { CHUNK_ROWS, EngineCore, transferables } from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { line, run } from './helpers';
 

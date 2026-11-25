@@ -18,27 +18,27 @@ export default defineConfig({
 	prefetch: { prefetchAll: true, defaultStrategy: 'hover' },
 	integrations: [
 		starlight({
-			title: 'Lumen Charts',
+			title: 'Lumen Ticks',
 			description:
 				'High-performance financial charting engine for the web: constant-time ticks, millions of bars in a worker, built-in and custom indicators, GPU heatmaps and scatter series, and thin framework bindings.',
 			favicon: '/favicon.svg',
 			logo: {
 				src: './src/assets/logo.svg',
-				alt: 'Lumen Charts',
+				alt: 'Lumen Ticks',
 			},
 			defaultLocale: 'root',
 			locales: {
 				root: { label: 'English', lang: 'en' },
 				ko: { label: '한국어', lang: 'ko' },
 			},
-			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/kjmin-dev/lumen-charts' }],
-			editLink: { baseUrl: 'https://github.com/kjmin-dev/lumen-charts/edit/main/apps/docs/' },
+			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/kjmin-dev/lumen-ticks' }],
+			editLink: { baseUrl: 'https://github.com/kjmin-dev/lumen-ticks/edit/main/apps/docs/' },
 			customCss: ['./src/styles/site.css'],
 			plugins: [
 				starlightLlmsTxt({
-					projectName: 'Lumen Charts',
+					projectName: 'Lumen Ticks',
 					description:
-						'Lumen Charts is a high-performance financial charting engine for the web. History and indicators run in a worker-backed columnar engine with automatic level of detail, while the main thread renders candlesticks, lines, histograms, GPU heatmaps and scatter series, drawings, primitives, multiple price axes, time zones and trading sessions, with thin bindings for React, Vue, Svelte and Solid.',
+						'Lumen Ticks is a high-performance financial charting engine for the web. History and indicators run in a worker-backed columnar engine with automatic level of detail, while the main thread renders candlesticks, lines, histograms, GPU heatmaps and scatter series, drawings, primitives, multiple price axes, time zones and trading sessions, with thin bindings for React, Vue, Svelte and Solid.',
 					// The Korean pages translate the English entry pages; one language is enough for a model.
 					exclude: ['ko', 'ko/**'],
 					customSelectors: {
@@ -86,12 +86,10 @@ export default defineConfig({
 	vite: {
 		resolve: {
 			alias: {
-				'@lumen-charts/engine/worker': pkg('engine', 'src/worker.ts'),
-				'@lumen-charts/engine': pkg('engine'),
-				'@lumen-charts/core/worker': pkg('core', 'src/worker.ts'),
-				'@lumen-charts/core': pkg('core'),
-				'lumen-charts/worker': pkg('lumen-charts', 'src/worker.ts'),
-				'lumen-charts': pkg('lumen-charts'),
+				'@lumen-ticks/engine/worker': pkg('engine', 'src/worker.ts'),
+				'@lumen-ticks/engine': pkg('engine'),
+				'@lumen-ticks/core/worker': pkg('core', 'src/worker.ts'),
+				'@lumen-ticks/core': pkg('core'),
 			},
 		},
 	},

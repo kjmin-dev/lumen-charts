@@ -1701,7 +1701,7 @@ export class EngineCore {
 		const at = index === index ? store.timeAt(index) : NaN;
 		if (at !== at) {
 			// The main series keeps every time while other series have data (see `_evictable`).
-			throw new Error('lumen-charts: the time of a main bar that was let go was needed');
+			throw new Error('lumen-ticks: the time of a main bar that was let go was needed');
 		}
 		return at === time ? index : index - 1;
 	}
@@ -2133,7 +2133,7 @@ export class EngineCore {
 		yield* this._drain();
 		const plan = this._plan;
 		if (!this._planDelete(op, plan)) {
-			throw new Error('lumen-charts: a deletion ran before its rows were back');
+			throw new Error('lumen-ticks: a deletion ran before its rows were back');
 		}
 		if (plan.mode === 'none') {
 			return;
@@ -3471,7 +3471,7 @@ export class EngineCore {
 		const end = store.end;
 		let j = store.lowerBound(times[0]!);
 		if (j !== j || times[rows] !== times[rows]) {
-			throw new Error('lumen-charts: bars that were let go were needed');
+			throw new Error('lumen-ticks: bars that were let go were needed');
 		}
 		if (j >= end) {
 			return;
@@ -3497,7 +3497,7 @@ export class EngineCore {
 			// of such rows has no value.
 			do {
 				if (columns.length === 0) {
-					throw new Error('lumen-charts: bars that were let go were needed');
+					throw new Error('lumen-ticks: bars that were let go were needed');
 				}
 				if (!held) {
 					// Nothing to merge.

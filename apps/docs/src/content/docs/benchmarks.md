@@ -3,13 +3,13 @@ title: Benchmarks
 description: Browser benchmark harness methodology and measured results across millions of bars, 20 indicators, 1,000 drawings, and GPU mark series.
 ---
 
-Lumen Charts ships a Playwright browser benchmark harness in [`benchmarks/`](https://github.com/kjmin-dev/lumen-charts/blob/main/docs/benchmarks/README.md) that measures chart libraries through one adapter interface (`lumen-worker`, `lumen-main`, and Lightweight Charts 5.3.0 with conflation on/off).
+Lumen Ticks ships a Playwright browser benchmark harness in [`benchmarks/`](https://github.com/kjmin-dev/lumen-ticks/blob/main/docs/benchmarks/README.md) that measures chart libraries through one adapter interface (`lumen-worker`, `lumen-main`, and Lightweight Charts 5.3.0 with conflation on/off).
 
-Every major stage was gated against explicit latency and frame-time budgets. All figures below come from committed benchmark reports recorded in [`docs/benchmarks/`](https://github.com/kjmin-dev/lumen-charts/tree/main/docs/benchmarks) on an Apple M1 (headless Chromium, GPU rasterization, 1280 × 720 viewport at DPR 2, 1200 × 600 chart).
+Every major stage was gated against explicit latency and frame-time budgets. All figures below come from committed benchmark reports recorded in [`docs/benchmarks/`](https://github.com/kjmin-dev/lumen-ticks/tree/main/docs/benchmarks) on an Apple M1 (headless Chromium, GPU rasterization, 1280 × 720 viewport at DPR 2, 1200 × 600 chart).
 
 ## 10M line points — pan, zoom & prepends (Stage 2)
 
-Source: [`docs/benchmarks/stage-2.md`](https://github.com/kjmin-dev/lumen-charts/blob/main/docs/benchmarks/stage-2.md)
+Source: [`docs/benchmarks/stage-2.md`](https://github.com/kjmin-dev/lumen-ticks/blob/main/docs/benchmarks/stage-2.md)
 
 | Metric (10M line points)                   | Target | `lumen-worker`        | `lumen-main`          |
 | ------------------------------------------ | ------ | --------------------- | --------------------- |
@@ -24,7 +24,7 @@ Because level-of-detail pyramids start at 16 bars per device pixel, frame time s
 
 ## 20 indicators on 1M candles (Stage 3)
 
-Source: [`docs/benchmarks/stage-3.md`](https://github.com/kjmin-dev/lumen-charts/blob/main/docs/benchmarks/stage-3.md)
+Source: [`docs/benchmarks/stage-3.md`](https://github.com/kjmin-dev/lumen-ticks/blob/main/docs/benchmarks/stage-3.md)
 
 Running 20 simultaneous indicators (25 output series: SMA, EMA, WMA, RSI, MACD, Bollinger, ATR, Stochastic, VWAP, Highest/Lowest, plus chained indicators) on 1,000,000 candlesticks:
 
@@ -38,9 +38,9 @@ Subsequent optimizations — starting worker background work immediately after c
 
 ## Drawings, save/restore & time zones (Stage 4)
 
-- **1,000 drawings on 1M candles**: hover hit testing takes ~0.3 ms of JavaScript; opt-in drawing autoscale adds ~2 µs per range-computing frame ([`stage-4-drawings.md`](https://github.com/kjmin-dev/lumen-charts/blob/main/docs/benchmarks/stage-4-drawings.md), [`stage-4-follow-ups.md`](https://github.com/kjmin-dev/lumen-charts/blob/main/docs/benchmarks/stage-4-follow-ups.md)).
-- **Save & restore (1,000 drawings + 5 indicators on 1M candles)**: `saveState()` takes ~0.07 ms; `restoreState()` into an empty chart takes ~3 ms including its frame ([`stage-4-save-restore.md`](https://github.com/kjmin-dev/lumen-charts/blob/main/docs/benchmarks/stage-4-save-restore.md)).
-- **Time zones**: converting timestamps uses precomputed zone offset tables with zero `Intl` calls per frame; first switch to a zone takes ~1 ms for two years of bars ([`stage-4-time-zones.md`](https://github.com/kjmin-dev/lumen-charts/blob/main/docs/benchmarks/stage-4-time-zones.md)).
+- **1,000 drawings on 1M candles**: hover hit testing takes ~0.3 ms of JavaScript; opt-in drawing autoscale adds ~2 µs per range-computing frame ([`stage-4-drawings.md`](https://github.com/kjmin-dev/lumen-ticks/blob/main/docs/benchmarks/stage-4-drawings.md), [`stage-4-follow-ups.md`](https://github.com/kjmin-dev/lumen-ticks/blob/main/docs/benchmarks/stage-4-follow-ups.md)).
+- **Save & restore (1,000 drawings + 5 indicators on 1M candles)**: `saveState()` takes ~0.07 ms; `restoreState()` into an empty chart takes ~3 ms including its frame ([`stage-4-save-restore.md`](https://github.com/kjmin-dev/lumen-ticks/blob/main/docs/benchmarks/stage-4-save-restore.md)).
+- **Time zones**: converting timestamps uses precomputed zone offset tables with zero `Intl` calls per frame; first switch to a zone takes ~1 ms for two years of bars ([`stage-4-time-zones.md`](https://github.com/kjmin-dev/lumen-ticks/blob/main/docs/benchmarks/stage-4-time-zones.md)).
 
 ## Running the harness locally
 
@@ -52,4 +52,4 @@ pnpm bench:pixels                               # pixel-for-pixel partial vs ful
 pnpm bench:report benchmarks/results/<run>.json # generate Markdown tables
 ```
 
-See the full index of benchmark reports and raw JSON runs in [`docs/benchmarks/README.md`](https://github.com/kjmin-dev/lumen-charts/blob/main/docs/benchmarks/README.md).
+See the full index of benchmark reports and raw JSON runs in [`docs/benchmarks/README.md`](https://github.com/kjmin-dev/lumen-ticks/blob/main/docs/benchmarks/README.md).

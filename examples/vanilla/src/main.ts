@@ -1,4 +1,4 @@
-import { DRAWING_TYPES, createChart } from '@lumen-charts/core';
+import { DRAWING_TYPES, createChart } from '@lumen-ticks/core';
 
 const container = document.getElementById('chart');
 if (container === null) {

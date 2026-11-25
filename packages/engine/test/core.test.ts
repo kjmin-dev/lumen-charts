@@ -1,4 +1,4 @@
-import { CHUNK_ROWS, EngineCore, type EngineEvent, TIME_PATCH } from '@lumen-charts/engine';
+import { CHUNK_ROWS, EngineCore, type EngineEvent, TIME_PATCH } from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { line, ohlcv, random, run, ticks } from './helpers';
 

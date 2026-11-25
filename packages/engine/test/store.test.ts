@@ -1,4 +1,4 @@
-import { CHUNK_ROWS, ChunkedStore, SUMMARY_BYTES, TIME } from '@lumen-charts/engine';
+import { CHUNK_ROWS, ChunkedStore, SUMMARY_BYTES, TIME } from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { ohlcv } from './helpers';
 

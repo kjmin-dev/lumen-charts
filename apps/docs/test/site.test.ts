@@ -87,7 +87,7 @@ describe('docs build output', () => {
 		}
 
 		const llms = await readFile(join(dist, 'llms.txt'), 'utf8');
-		assert.ok(llms.includes('Lumen Charts'), 'llms.txt should include project title');
+		assert.ok(llms.includes('Lumen Ticks'), 'llms.txt should include project title');
 		assert.ok(!llms.includes('/ko/'), 'llms.txt should exclude Korean translations');
 		assert.ok(!existsSync(join(dist, 'ko.md')), 'Korean landing page should not be emitted as /ko.md');
 	});
@@ -155,7 +155,7 @@ describe('docs build output', () => {
 					assert.ok(html.includes(`data-pm="${pm}"`), `${rel} is missing "${pm}" package manager tab`);
 				}
 				assert.ok(
-					html.includes(`data-cmd="npm install @lumen-charts/react react"`),
+					html.includes(`data-cmd="npm install @lumen-ticks/react react"`),
 					`${rel} is missing React npm install command`,
 				);
 				assert.ok(
@@ -168,28 +168,28 @@ describe('docs build output', () => {
 		await Promise.all(
 			['getting-started.md', 'frameworks.md'].map(async rel => {
 				const md = await readFile(join(dist, rel), 'utf8');
-				assert.ok(md.includes('pnpm add lumen-charts'), `${rel} should expand pnpm install command`);
-				assert.ok(md.includes('npm install @lumen-charts/react react'), `${rel} should expand npm install command`);
-				assert.ok(md.includes('yarn add @lumen-charts/vue vue'), `${rel} should expand yarn install command`);
-				assert.ok(md.includes('bun add @lumen-charts/solid solid-js'), `${rel} should expand bun install command`);
+				assert.ok(md.includes('pnpm add @lumen-ticks/core'), `${rel} should expand pnpm install command`);
+				assert.ok(md.includes('npm install @lumen-ticks/react react'), `${rel} should expand npm install command`);
+				assert.ok(md.includes('yarn add @lumen-ticks/vue vue'), `${rel} should expand yarn install command`);
+				assert.ok(md.includes('bun add @lumen-ticks/solid solid-js'), `${rel} should expand bun install command`);
 			}),
 		);
 
 		const llmsFull = await readFile(join(dist, 'llms-full.txt'), 'utf8');
 		assert.ok(
-			llmsFull.includes('pnpm add @lumen-charts/react react'),
+			llmsFull.includes('pnpm add @lumen-ticks/react react'),
 			'llms-full.txt should include React install command',
 		);
 		assert.ok(
-			llmsFull.includes('npm install @lumen-charts/vue vue'),
+			llmsFull.includes('npm install @lumen-ticks/vue vue'),
 			'llms-full.txt should include Vue install command',
 		);
 		assert.ok(
-			llmsFull.includes('yarn add @lumen-charts/svelte svelte'),
+			llmsFull.includes('yarn add @lumen-ticks/svelte svelte'),
 			'llms-full.txt should include Svelte install command',
 		);
 		assert.ok(
-			llmsFull.includes('bun add @lumen-charts/solid solid-js'),
+			llmsFull.includes('bun add @lumen-ticks/solid solid-js'),
 			'llms-full.txt should include Solid install command',
 		);
 	});
@@ -256,11 +256,11 @@ describe('docs build output', () => {
 		assert.deepEqual(broken, [], `broken internal links:\n${broken.join('\n')}`);
 	});
 
-	test('wrangler.jsonc configures lumen-charts.studiocyf.app safely as static assets', async () => {
+	test('wrangler.jsonc configures lumen-ticks.studiocyf.app safely as static assets', async () => {
 		const raw = await readFile(join(docsRoot, 'wrangler.jsonc'), 'utf8');
 		assert.ok(
-			raw.includes('"pattern": "lumen-charts.studiocyf.app"'),
-			'custom domain must be lumen-charts.studiocyf.app',
+			raw.includes('"pattern": "lumen-ticks.studiocyf.app"'),
+			'custom domain must be lumen-ticks.studiocyf.app',
 		);
 		assert.ok(raw.includes('"custom_domain": true'), 'must use Workers Custom Domain');
 		assert.ok(raw.includes('"workers_dev": false'), 'must disable workers.dev');

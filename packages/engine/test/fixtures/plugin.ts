@@ -1,5 +1,5 @@
 // A plugin module of indicators, as an application would ship one: definitions only.
-import { type IndicatorDefinition, defineIndicator } from '@lumen-charts/engine';
+import { type IndicatorDefinition, defineIndicator } from '@lumen-ticks/engine';
 
 /** Rows each kernel has computed, so tests can tell a partial recomputation from a full one. */
 export const counts = { momentum: 0, range: 0, decay: 0 };

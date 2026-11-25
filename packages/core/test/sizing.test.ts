@@ -1,4 +1,4 @@
-import { type ChartApi, createChart } from '@lumen-charts/core';
+import { type ChartApi, createChart } from '@lumen-ticks/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /** Stands in for `ResizeObserver`: records what is observed and lets a test report sizes. */

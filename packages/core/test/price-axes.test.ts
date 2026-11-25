@@ -1,4 +1,4 @@
-import { type ChartApi, createChart, themes } from '@lumen-charts/core';
+import { type ChartApi, createChart, themes } from '@lumen-ticks/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { spreadLabels } from '../src/render/label-layout';
 

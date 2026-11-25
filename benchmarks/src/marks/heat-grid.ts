@@ -1,4 +1,4 @@
-import { createChart, type HeatmapSeriesApi, type MarkRenderer } from '@lumen-charts/core';
+import { createChart, type HeatmapSeriesApi, type MarkRenderer } from '@lumen-ticks/core';
 
 /**
  * Whole-chart image comparisons of heatmaps whose grid follows the price: each column has a lower

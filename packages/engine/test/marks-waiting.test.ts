@@ -11,7 +11,7 @@ import {
 	ScatterColumns,
 	type ScatterStore,
 	createEngine,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { blankUpdate, drain, heat, request, trades } from './marks-helpers';
 

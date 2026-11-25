@@ -39,7 +39,7 @@ jobs:
     # Deployment protection: main only, and a maintainer approves every release.
     environment:
       name: npm
-      url: https://www.npmjs.com/package/lumen-charts/v/${{ needs.plan.outputs.version }}
+      url: https://www.npmjs.com/package/@lumen-ticks/core/v/${{ needs.plan.outputs.version }}
     permissions:
       contents: write # release tag and GitHub release
       id-token: write # npm trusted publishing (OIDC) and provenance

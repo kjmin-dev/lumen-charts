@@ -77,27 +77,27 @@ export class SessionCalendar {
 			this.end[s] = end - shift;
 			const kind = session.kind ?? 'regular';
 			if (kind !== 'regular' && kind !== 'pre' && kind !== 'post') {
-				throw new RangeError(`lumen-charts: unknown session kind "${String(kind)}"`);
+				throw new RangeError(`lumen-ticks: unknown session kind "${String(kind)}"`);
 			}
 			kinds.push(kind);
 			this.extended[s] = kind === 'regular' ? 0 : 1;
 			if (s > 0 && this.start[s]! < this.end[s - 1]!) {
-				throw new RangeError(`lumen-charts: session ${s} starts before session ${s - 1} ends`);
+				throw new RangeError(`lumen-ticks: session ${s} starts before session ${s - 1} ends`);
 			}
 		}
 		if (count > 0 && this.end[count - 1]! - this.start[0]! > DAY) {
-			throw new RangeError('lumen-charts: the sessions of a trading day span more than 24 hours');
+			throw new RangeError('lumen-ticks: the sessions of a trading day span more than 24 hours');
 		}
 		this.kinds = kinds;
 		let days = 0;
 		for (const day of schedule.days) {
 			if (!Number.isInteger(day) || day < 0 || day > 6) {
-				throw new RangeError(`lumen-charts: ${String(day)} is not a day of the week (0 to 6)`);
+				throw new RangeError(`lumen-ticks: ${String(day)} is not a day of the week (0 to 6)`);
 			}
 			days |= 1 << day;
 		}
 		if (days === 0 && count > 0) {
-			throw new RangeError('lumen-charts: a session schedule needs at least one day of the week');
+			throw new RangeError('lumen-ticks: a session schedule needs at least one day of the week');
 		}
 		this._days = days;
 		this._holidays = new Set(schedule.holidays.map(date));
@@ -193,7 +193,7 @@ function clock(text: string, end: boolean): number {
 	const seconds = match?.[3] === undefined ? 0 : Number(match[3]);
 	const value = hours * HOUR + minutes * MINUTE + seconds * SECOND;
 	if (!(minutes < 60 && seconds < 60 && (value < DAY || (end && value === DAY)))) {
-		throw new RangeError(`lumen-charts: "${String(text)}" is not a time of day (HH:MM)`);
+		throw new RangeError(`lumen-ticks: "${String(text)}" is not a time of day (HH:MM)`);
 	}
 	return value;
 }
@@ -211,7 +211,7 @@ function date(text: string): number {
 			return days;
 		}
 	}
-	throw new RangeError(`lumen-charts: "${String(text)}" is not a date (YYYY-MM-DD)`);
+	throw new RangeError(`lumen-ticks: "${String(text)}" is not a date (YYYY-MM-DD)`);
 }
 
 /** `YYYY-MM-DD` of a day number. */

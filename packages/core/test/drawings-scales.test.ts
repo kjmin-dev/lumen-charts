@@ -1,4 +1,4 @@
-import type { DrawingApi } from '@lumen-charts/core';
+import type { DrawingApi } from '@lumen-ticks/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Drawing } from '../src/drawings/drawing';
 import { MINUTE, TestChart, candles } from './drawing-helpers';

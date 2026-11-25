@@ -18,7 +18,7 @@ export const GUIDE_EXAMPLES: Readonly<Record<string, readonly GuideCodeTabs[]>> 
 		{
 			blockIndex: 0,
 			match: "theme: 'auto'",
-			react: `import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/react';
+			react: `import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/react';
 import { useEffect, useMemo, useState } from 'react';
 
 export function ThemedChart({ textColor = '#8a93a6' }: { textColor?: string }) {
@@ -54,7 +54,7 @@ export function ThemedChart({ textColor = '#8a93a6' }: { textColor?: string }) {
 	return <LumenChart ref={setChart} options={options} style={{ height: 420 }} />;
 }`,
 			vue: `<script setup lang="ts">
-import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/vue';
+import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/vue';
 import { computed, onMounted, useTemplateRef } from 'vue';
 
 const props = withDefaults(defineProps<{ textColor?: string }>(), { textColor: '#8a93a6' });
@@ -86,7 +86,7 @@ onMounted(() => {
 	<LumenChart ref="chartEl" :options="options" style="height: 420px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import { lumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/svelte';
+	import { lumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/svelte';
 
 	let { textColor = '#8a93a6' }: { textColor?: string } = $props();
 
@@ -110,7 +110,7 @@ onMounted(() => {
 </script>
 
 <div style="height: 420px" use:lumenChart={{ options, onReady }}></div>`,
-			solid: `import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+			solid: `import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 
 export function ThemedChart(props: { textColor?: string }) {
 	const handleReady = (chart: ChartApi) => {
@@ -141,7 +141,7 @@ export function ThemedChart(props: { textColor?: string }) {
 		{
 			blockIndex: 1,
 			match: "redraw: 'full'",
-			react: `import { LumenChart } from '@lumen-charts/react';
+			react: `import { LumenChart } from '@lumen-ticks/react';
 import { useMemo } from 'react';
 
 export function SoftwareSafeChart({ redraw = 'full' }: { redraw?: 'auto' | 'full' }) {
@@ -149,7 +149,7 @@ export function SoftwareSafeChart({ redraw = 'full' }: { redraw?: 'auto' | 'full
 	return <LumenChart options={options} style={{ height: 420 }} />;
 }`,
 			vue: `<script setup lang="ts">
-import { LumenChart } from '@lumen-charts/vue';
+import { LumenChart } from '@lumen-ticks/vue';
 import { computed } from 'vue';
 
 const props = withDefaults(defineProps<{ redraw?: 'auto' | 'full' }>(), { redraw: 'full' });
@@ -160,13 +160,13 @@ const options = computed(() => ({ redraw: props.redraw }));
 	<LumenChart :options="options" style="height: 420px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import { lumenChart } from '@lumen-charts/svelte';
+	import { lumenChart } from '@lumen-ticks/svelte';
 
 	let { redraw = 'full' }: { redraw?: 'auto' | 'full' } = $props();
 </script>
 
 <div style="height: 420px" use:lumenChart={{ options: { redraw } }}></div>`,
-			solid: `import { LumenChart } from '@lumen-charts/solid';
+			solid: `import { LumenChart } from '@lumen-ticks/solid';
 
 export function SoftwareSafeChart(props: { redraw?: 'auto' | 'full' }) {
 	return <LumenChart class="chart-box" options={{ redraw: props.redraw ?? 'full' }} />;
@@ -178,8 +178,8 @@ export function SoftwareSafeChart(props: { redraw?: 'auto' | 'full' }) {
 		{
 			blockIndex: 0,
 			match: "candles.addIndicator('bollinger'",
-			react: `import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/react';
+			react: `import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 
 export function IndicatorsChart({ data }: { data: OhlcColumns }) {
@@ -210,8 +210,8 @@ export function IndicatorsChart({ data }: { data: OhlcColumns }) {
 	return <LumenChart ref={setChart} style={{ height: 420 }} />;
 }`,
 			vue: `<script setup lang="ts">
-import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/vue';
 import { onMounted, useTemplateRef } from 'vue';
 
 const props = defineProps<{ data: OhlcColumns }>();
@@ -242,8 +242,8 @@ onMounted(() => {
 	<LumenChart ref="chartEl" style="height: 420px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import type { OhlcColumns } from '@lumen-charts/core';
-	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import type { OhlcColumns } from '@lumen-ticks/core';
+	import { lumenChart, type ChartApi } from '@lumen-ticks/svelte';
 
 	let { data }: { data: OhlcColumns } = $props();
 
@@ -267,8 +267,8 @@ onMounted(() => {
 </script>
 
 <div style="height: 420px" use:lumenChart={{ onReady }}></div>`,
-			solid: `import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+			solid: `import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 
 export function IndicatorsChart(props: { data: OhlcColumns }) {
 	const handleReady = (chart: ChartApi) => {
@@ -295,8 +295,8 @@ export function IndicatorsChart(props: { data: OhlcColumns }) {
 		{
 			blockIndex: 1,
 			match: 'paneWeight: 0.5',
-			react: `import type { LineColumns, OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/react';
+			react: `import type { LineColumns, OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/react';
 import { useEffect, useMemo, useState } from 'react';
 
 export function MultiPaneChart({
@@ -336,8 +336,8 @@ export function MultiPaneChart({
 	return <LumenChart ref={setChart} options={options} style={{ height: 480 }} />;
 }`,
 			vue: `<script setup lang="ts">
-import type { LineColumns, OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/vue';
+import type { LineColumns, OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/vue';
 import { computed, onMounted, useTemplateRef } from 'vue';
 
 const props = withDefaults(
@@ -368,8 +368,8 @@ onMounted(() => {
 	<LumenChart ref="chartEl" :options="options" style="height: 480px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import type { LineColumns, OhlcColumns } from '@lumen-charts/core';
-	import { lumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/svelte';
+	import type { LineColumns, OhlcColumns } from '@lumen-ticks/core';
+	import { lumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/svelte';
 
 	let {
 		bars,
@@ -395,8 +395,8 @@ onMounted(() => {
 </script>
 
 <div style="height: 480px" use:lumenChart={{ options, onReady }}></div>`,
-			solid: `import type { LineColumns, OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+			solid: `import type { LineColumns, OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 
 export function MultiPaneChart(props: {
 	bars: OhlcColumns;
@@ -432,8 +432,8 @@ export function MultiPaneChart(props: {
 		{
 			blockIndex: 1,
 			match: 'chart.registerIndicators(',
-			react: `import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/react';
+			react: `import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 
 const moduleUrl = new URL('./my-indicators.js', import.meta.url);
@@ -462,8 +462,8 @@ export function CustomIndicatorChart({ bars }: { bars: OhlcColumns }) {
 	return <LumenChart ref={setChart} style={{ height: 420 }} />;
 }`,
 			vue: `<script setup lang="ts">
-import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/vue';
 import { onBeforeUnmount, onMounted, useTemplateRef } from 'vue';
 
 const props = defineProps<{ bars: OhlcColumns }>();
@@ -491,8 +491,8 @@ onBeforeUnmount(() => {
 	<LumenChart ref="chartEl" style="height: 420px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import type { OhlcColumns } from '@lumen-charts/core';
-	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import type { OhlcColumns } from '@lumen-ticks/core';
+	import { lumenChart, type ChartApi } from '@lumen-ticks/svelte';
 	import { onDestroy } from 'svelte';
 
 	let { bars }: { bars: OhlcColumns } = $props();
@@ -513,8 +513,8 @@ onBeforeUnmount(() => {
 </script>
 
 <div style="height: 420px" use:lumenChart={{ onReady }}></div>`,
-			solid: `import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+			solid: `import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 import { onCleanup } from 'solid-js';
 
 const moduleUrl = new URL('./my-indicators.js', import.meta.url);
@@ -543,7 +543,7 @@ export function CustomIndicatorChart(props: { bars: OhlcColumns }) {
 		{
 			blockIndex: 0,
 			match: "priceScale: { mode: 'logarithmic' }",
-			react: `import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/react';
+			react: `import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 
 const options: DeepPartial<ChartOptions> = {
@@ -581,7 +581,7 @@ export function MultiScaleChart() {
 	return <LumenChart ref={setChart} options={options} style={{ height: 420 }} />;
 }`,
 			vue: `<script setup lang="ts">
-import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/vue';
+import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/vue';
 import { onMounted, useTemplateRef } from 'vue';
 
 const chartEl = useTemplateRef<{ chart: ChartApi | null }>('chartEl');
@@ -612,7 +612,7 @@ onMounted(() => {
 	<LumenChart ref="chartEl" :options="options" style="height: 420px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import { lumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/svelte';
+	import { lumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/svelte';
 
 	const options: DeepPartial<ChartOptions> = {
 		priceScale: { mode: 'logarithmic' },
@@ -636,7 +636,7 @@ onMounted(() => {
 </script>
 
 <div style="height: 420px" use:lumenChart={{ options, onReady }}></div>`,
-			solid: `import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/solid';
+			solid: `import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/solid';
 
 const options: DeepPartial<ChartOptions> = {
 	priceScale: { mode: 'logarithmic' },
@@ -668,7 +668,7 @@ export function MultiScaleChart() {
 		{
 			blockIndex: 0,
 			match: "timeZone: 'America/New_York'",
-			react: `import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/react';
+			react: `import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/react';
 import { useEffect, useMemo, useState } from 'react';
 
 export function SessionChart({ timeZone = 'America/New_York' }: { timeZone?: string }) {
@@ -705,7 +705,7 @@ export function SessionChart({ timeZone = 'America/New_York' }: { timeZone?: str
 	return <LumenChart ref={setChart} options={options} style={{ height: 420 }} />;
 }`,
 			vue: `<script setup lang="ts">
-import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/vue';
+import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/vue';
 import { computed, onMounted, useTemplateRef } from 'vue';
 
 const props = withDefaults(defineProps<{ timeZone?: string }>(), { timeZone: 'America/New_York' });
@@ -741,7 +741,7 @@ onMounted(() => {
 	<LumenChart ref="chartEl" :options="options" style="height: 420px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import { lumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/svelte';
+	import { lumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/svelte';
 
 	let { timeZone = 'America/New_York' }: { timeZone?: string } = $props();
 
@@ -770,7 +770,7 @@ onMounted(() => {
 </script>
 
 <div style="height: 420px" use:lumenChart={{ options, onReady }}></div>`,
-			solid: `import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+			solid: `import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 
 export function SessionChart(props: { timeZone?: string }) {
 	const handleReady = (chart: ChartApi) => {
@@ -809,8 +809,8 @@ export function SessionChart(props: { timeZone?: string }) {
 		{
 			blockIndex: 0,
 			match: "drawings.startTool('trendLine'",
-			react: `import type { DrawingApi } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/react';
+			react: `import type { DrawingApi } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 
 export function DrawingChart({ t1, t2 }: { t1: number; t2: number }) {
@@ -854,8 +854,8 @@ export function DrawingChart({ t1, t2 }: { t1: number; t2: number }) {
 	);
 }`,
 			vue: `<script setup lang="ts">
-import type { DrawingApi } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import type { DrawingApi } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/vue';
 import { onBeforeUnmount, onMounted, shallowRef, useTemplateRef } from 'vue';
 
 const props = defineProps<{ t1: number; t2: number }>();
@@ -901,8 +901,8 @@ function startTrendLine() {
 	<LumenChart ref="chartEl" style="height: 420px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import type { DrawingApi } from '@lumen-charts/core';
-	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import type { DrawingApi } from '@lumen-ticks/core';
+	import { lumenChart, type ChartApi } from '@lumen-ticks/svelte';
 	import { onDestroy } from 'svelte';
 
 	let { t1, t2 }: { t1: number; t2: number } = $props();
@@ -942,8 +942,8 @@ function startTrendLine() {
 </button>
 {#if selected}<span>Selected: {selected.type}</span>{/if}
 <div style="height: 420px" use:lumenChart={{ onReady }}></div>`,
-			solid: `import type { DrawingApi } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+			solid: `import type { DrawingApi } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 import { createSignal, onCleanup, Show } from 'solid-js';
 
 export function DrawingChart(props: { t1: number; t2: number }) {
@@ -992,8 +992,8 @@ export function DrawingChart(props: { t1: number; t2: number }) {
 		{
 			blockIndex: 0,
 			match: 'chart.attachPrimitive(new SessionBox',
-			react: `import type { DrawTarget, OhlcColumns, SeriesItems } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/react';
+			react: `import type { DrawTarget, OhlcColumns, SeriesItems } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 // Uses the same SessionBox PanePrimitive class shown in the Vanilla tab.
 
@@ -1026,8 +1026,8 @@ export function PrimitiveChart({ bars, open, close }: { bars: OhlcColumns; open:
 	return <LumenChart ref={setChart} style={{ height: 420 }} />;
 }`,
 			vue: `<script setup lang="ts">
-import type { DrawTarget, OhlcColumns, SeriesItems } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import type { DrawTarget, OhlcColumns, SeriesItems } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/vue';
 import { onBeforeUnmount, onMounted, useTemplateRef } from 'vue';
 // Uses the same SessionBox PanePrimitive class shown in the Vanilla tab.
 
@@ -1063,8 +1063,8 @@ onBeforeUnmount(() => {
 	<LumenChart ref="chartEl" style="height: 420px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import type { DrawTarget, OhlcColumns, SeriesItems } from '@lumen-charts/core';
-	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import type { DrawTarget, OhlcColumns, SeriesItems } from '@lumen-ticks/core';
+	import { lumenChart, type ChartApi } from '@lumen-ticks/svelte';
 	// Uses the same SessionBox PanePrimitive class shown in the Vanilla tab.
 
 	let { bars, open, close }: { bars: OhlcColumns; open: number; close: number } = $props();
@@ -1087,8 +1087,8 @@ onBeforeUnmount(() => {
 </script>
 
 <div style="height: 420px" use:lumenChart={{ onReady }}></div>`,
-			solid: `import type { DrawTarget, OhlcColumns, SeriesItems } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+			solid: `import type { DrawTarget, OhlcColumns, SeriesItems } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 // Uses the same SessionBox PanePrimitive class shown in the Vanilla tab.
 
 export function PrimitiveChart(props: { bars: OhlcColumns; open: number; close: number }) {
@@ -1117,8 +1117,8 @@ export function PrimitiveChart(props: { bars: OhlcColumns; open: number; close: 
 		{
 			blockIndex: 0,
 			match: "chart.addSeries('scatter'",
-			react: `import type { HeatmapData, OhlcColumns, ScatterData } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/react';
+			react: `import type { HeatmapData, OhlcColumns, ScatterData } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 
 export function OrderBookChart({
@@ -1159,8 +1159,8 @@ export function OrderBookChart({
 	return <LumenChart ref={setChart} style={{ height: 440 }} />;
 }`,
 			vue: `<script setup lang="ts">
-import type { HeatmapData, OhlcColumns, ScatterData } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import type { HeatmapData, OhlcColumns, ScatterData } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/vue';
 import { onMounted, useTemplateRef } from 'vue';
 
 const props = defineProps<{ bars: OhlcColumns; tradeData: ScatterData; bookData: HeatmapData }>();
@@ -1186,8 +1186,8 @@ onMounted(() => {
 	<LumenChart ref="chartEl" style="height: 440px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import type { HeatmapData, OhlcColumns, ScatterData } from '@lumen-charts/core';
-	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import type { HeatmapData, OhlcColumns, ScatterData } from '@lumen-ticks/core';
+	import { lumenChart, type ChartApi } from '@lumen-ticks/svelte';
 
 	let { bars, tradeData, bookData }: { bars: OhlcColumns; tradeData: ScatterData; bookData: HeatmapData } = $props();
 
@@ -1206,8 +1206,8 @@ onMounted(() => {
 </script>
 
 <div style="height: 440px" use:lumenChart={{ onReady }}></div>`,
-			solid: `import type { HeatmapData, OhlcColumns, ScatterData } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+			solid: `import type { HeatmapData, OhlcColumns, ScatterData } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 
 export function OrderBookChart(props: { bars: OhlcColumns; tradeData: ScatterData; bookData: HeatmapData }) {
 	const handleReady = (chart: ChartApi) => {
@@ -1229,8 +1229,8 @@ export function OrderBookChart(props: { bars: OhlcColumns; tradeData: ScatterDat
 		{
 			blockIndex: 2,
 			match: 'getMarks:',
-			react: `import type { ScatterData } from '@lumen-charts/core';
-import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/react';
+			react: `import type { ScatterData } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 
 const options: DeepPartial<ChartOptions> = { memoryLimit: 64 * 1024 * 1024 };
@@ -1250,8 +1250,8 @@ export function MarkDatafeedChart({ symbol, history }: { symbol: string; history
 	return <LumenChart ref={setChart} options={options} style={{ height: 420 }} />;
 }`,
 			vue: `<script setup lang="ts">
-import type { ScatterData } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import type { ScatterData } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/vue';
 import { onMounted, useTemplateRef } from 'vue';
 
 const props = defineProps<{ symbol: string; history: ScatterData }>();
@@ -1272,8 +1272,8 @@ onMounted(() => {
 	<LumenChart ref="chartEl" :options="options" style="height: 420px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import type { ScatterData } from '@lumen-charts/core';
-	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import type { ScatterData } from '@lumen-ticks/core';
+	import { lumenChart, type ChartApi } from '@lumen-ticks/svelte';
 
 	let { symbol, history }: { symbol: string; history: ScatterData } = $props();
 
@@ -1286,8 +1286,8 @@ onMounted(() => {
 </script>
 
 <div style="height: 420px" use:lumenChart={{ options: { memoryLimit: 64 * 1024 * 1024 }, onReady }}></div>`,
-			solid: `import type { ScatterData } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+			solid: `import type { ScatterData } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 
 export function MarkDatafeedChart(props: { symbol: string; history: ScatterData }) {
 	const handleReady = (chart: ChartApi) => {
@@ -1303,8 +1303,8 @@ export function MarkDatafeedChart(props: { symbol: string; history: ScatterData 
 		{
 			blockIndex: 5,
 			match: "markRenderer: 'webgpu'",
-			react: `import type { HeatmapData, MarkRenderer, ScatterData } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/react';
+			react: `import type { HeatmapData, MarkRenderer, ScatterData } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/react';
 import { useEffect, useMemo, useState } from 'react';
 
 export function MarkBackendChart({ points, grid }: { points: ScatterData; grid: HeatmapData }) {
@@ -1339,8 +1339,8 @@ export function MarkBackendChart({ points, grid }: { points: ScatterData; grid: 
 	);
 }`,
 			vue: `<script setup lang="ts">
-import type { HeatmapData, MarkRenderer, ScatterData } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import type { HeatmapData, MarkRenderer, ScatterData } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/vue';
 import { computed, onMounted, ref, useTemplateRef } from 'vue';
 
 const props = defineProps<{ points: ScatterData; grid: HeatmapData }>();
@@ -1365,8 +1365,8 @@ onMounted(async () => {
 	<LumenChart ref="chartEl" :options="options" style="height: 420px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import type { HeatmapData, MarkRenderer, ScatterData } from '@lumen-charts/core';
-	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import type { HeatmapData, MarkRenderer, ScatterData } from '@lumen-ticks/core';
+	import { lumenChart, type ChartApi } from '@lumen-ticks/svelte';
 
 	let { points, grid }: { points: ScatterData; grid: HeatmapData } = $props();
 	let markRenderer = $state<MarkRenderer>('webgpu');
@@ -1383,8 +1383,8 @@ onMounted(async () => {
 
 <button type="button" onclick={() => (markRenderer = 'canvas2d')}>Use Canvas 2D</button>
 <div style="height: 420px" use:lumenChart={{ options: { markRenderer }, onReady }}></div>`,
-			solid: `import type { HeatmapData, MarkRenderer, ScatterData } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+			solid: `import type { HeatmapData, MarkRenderer, ScatterData } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 import { createSignal } from 'solid-js';
 
 export function MarkBackendChart(props: { points: ScatterData; grid: HeatmapData }) {
@@ -1415,7 +1415,7 @@ export function MarkBackendChart(props: { points: ScatterData; grid: HeatmapData
 		{
 			blockIndex: 0,
 			match: "chart.subscribe('crosshairMove'",
-			react: `import { LumenChart, type ChartApi } from '@lumen-charts/react';
+			react: `import { LumenChart, type ChartApi } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 
 export function LegendChart() {
@@ -1449,7 +1449,7 @@ export function LegendChart() {
 	);
 }`,
 			vue: `<script setup lang="ts">
-import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import { LumenChart, type ChartApi } from '@lumen-ticks/vue';
 import { onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue';
 
 const chartEl = useTemplateRef<{ chart: ChartApi | null }>('chartEl');
@@ -1483,7 +1483,7 @@ onBeforeUnmount(() => {
 	<LumenChart ref="chartEl" style="height: 420px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import { lumenChart, type ChartApi } from '@lumen-ticks/svelte';
 	import { onDestroy } from 'svelte';
 
 	let legend = $state('');
@@ -1511,7 +1511,7 @@ onBeforeUnmount(() => {
 
 <output>{legend}</output>
 <div style="height: 420px" use:lumenChart={{ onReady }}></div>`,
-			solid: `import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+			solid: `import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 import { createSignal, onCleanup } from 'solid-js';
 
 export function LegendChart() {
@@ -1546,7 +1546,7 @@ export function LegendChart() {
 		{
 			blockIndex: 6,
 			match: 'const charts = [prices, volume];',
-			react: `import { LumenChart, type ChartApi } from '@lumen-charts/react';
+			react: `import { LumenChart, type ChartApi } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 
 export function SyncedCharts() {
@@ -1584,7 +1584,7 @@ export function SyncedCharts() {
 	);
 }`,
 			vue: `<script setup lang="ts">
-import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import { LumenChart, type ChartApi } from '@lumen-ticks/vue';
 import { onBeforeUnmount, onMounted, useTemplateRef } from 'vue';
 
 const pricesEl = useTemplateRef<{ chart: ChartApi | null }>('pricesEl');
@@ -1623,7 +1623,7 @@ onBeforeUnmount(() => {
 	<LumenChart ref="volumeEl" style="height: 140px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import { lumenChart, type ChartApi } from '@lumen-ticks/svelte';
 
 	let prices = $state<ChartApi | null>(null);
 	let volume = $state<ChartApi | null>(null);
@@ -1654,7 +1654,7 @@ onBeforeUnmount(() => {
 
 <div style="height: 280px" use:lumenChart={{ onReady: c => (prices = c) }}></div>
 <div style="height: 140px" use:lumenChart={{ onReady: c => (volume = c) }}></div>`,
-			solid: `import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+			solid: `import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 import { createEffect, createSignal, onCleanup } from 'solid-js';
 
 export function SyncedCharts() {
@@ -1700,8 +1700,8 @@ export function SyncedCharts() {
 		{
 			blockIndex: 0,
 			match: 'getBars:',
-			react: `import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/react';
+			react: `import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 
 const options: DeepPartial<ChartOptions> = { memoryLimit: 64 * 1024 * 1024 };
@@ -1723,8 +1723,8 @@ export function DatafeedChart({ symbol, history }: { symbol: string; history: Oh
 	return <LumenChart ref={setChart} options={options} style={{ height: 420 }} />;
 }`,
 			vue: `<script setup lang="ts">
-import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/vue';
 import { onMounted, useTemplateRef } from 'vue';
 
 const props = defineProps<{ symbol: string; history: OhlcColumns }>();
@@ -1747,8 +1747,8 @@ onMounted(() => {
 	<LumenChart ref="chartEl" :options="options" style="height: 420px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import type { OhlcColumns } from '@lumen-charts/core';
-	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import type { OhlcColumns } from '@lumen-ticks/core';
+	import { lumenChart, type ChartApi } from '@lumen-ticks/svelte';
 
 	let { symbol, history }: { symbol: string; history: OhlcColumns } = $props();
 
@@ -1763,8 +1763,8 @@ onMounted(() => {
 </script>
 
 <div style="height: 420px" use:lumenChart={{ options: { memoryLimit: 64 * 1024 * 1024 }, onReady }}></div>`,
-			solid: `import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+			solid: `import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 
 export function DatafeedChart(props: { symbol: string; history: OhlcColumns }) {
 	const handleReady = (chart: ChartApi) => {
@@ -1785,7 +1785,7 @@ export function DatafeedChart(props: { symbol: string; history: OhlcColumns }) {
 		{
 			blockIndex: 0,
 			match: 'configureWorker({ maxWorkers: 2 })',
-			react: `import { LumenChart, configureWorker, createWorkerPool } from '@lumen-charts/react';
+			react: `import { LumenChart, configureWorker, createWorkerPool } from '@lumen-ticks/react';
 
 configureWorker({ maxWorkers: 2 }); // optional, once before charts mount
 
@@ -1803,7 +1803,7 @@ export function ChartGrid({ symbols }: { symbols: string[] }) {
 	);
 }`,
 			vue: `<script setup lang="ts">
-import { LumenChart, configureWorker, createWorkerPool } from '@lumen-charts/vue';
+import { LumenChart, configureWorker, createWorkerPool } from '@lumen-ticks/vue';
 
 configureWorker({ maxWorkers: 2 }); // optional, once before charts mount
 
@@ -1819,7 +1819,7 @@ defineProps<{ symbols: string[] }>();
 	</div>
 </template>`,
 			svelte: `<script lang="ts">
-	import { configureWorker, createWorkerPool, lumenChart } from '@lumen-charts/svelte';
+	import { configureWorker, createWorkerPool, lumenChart } from '@lumen-ticks/svelte';
 
 	configureWorker({ maxWorkers: 2 }); // optional, once before charts mount
 
@@ -1833,7 +1833,7 @@ defineProps<{ symbols: string[] }>();
 		<div style="height: 260px" use:lumenChart={{ options: { worker: watchlistPool } }}></div>
 	{/each}
 </div>`,
-			solid: `import { LumenChart, configureWorker, createWorkerPool } from '@lumen-charts/solid';
+			solid: `import { LumenChart, configureWorker, createWorkerPool } from '@lumen-ticks/solid';
 import { For } from 'solid-js';
 
 configureWorker({ maxWorkers: 2 }); // optional, once before charts mount
@@ -1855,7 +1855,7 @@ export function ChartGrid(props: { symbols: string[] }) {
 		{
 			blockIndex: 0,
 			match: 'chart.saveState()',
-			react: `import { LumenChart, type ChartApi } from '@lumen-charts/react';
+			react: `import { LumenChart, type ChartApi } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 
 export function PersistedChart() {
@@ -1895,7 +1895,7 @@ export function PersistedChart() {
 	);
 }`,
 			vue: `<script setup lang="ts">
-import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import { LumenChart, type ChartApi } from '@lumen-ticks/vue';
 import { onMounted, useTemplateRef } from 'vue';
 
 const chartEl = useTemplateRef<{ chart: ChartApi | null }>('chartEl');
@@ -1922,7 +1922,7 @@ function saveLayout() {
 	<LumenChart ref="chartEl" style="height: 420px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import { lumenChart, type ChartApi } from '@lumen-ticks/svelte';
 
 	let chart = $state<ChartApi | null>(null);
 
@@ -1944,7 +1944,7 @@ function saveLayout() {
 
 <button type="button" onclick={saveLayout}>Save layout</button>
 <div style="height: 420px" use:lumenChart={{ onReady }}></div>`,
-			solid: `import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+			solid: `import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 
 export function PersistedChart() {
 	let chart: ChartApi | undefined;
@@ -1980,8 +1980,8 @@ export function PersistedChart() {
 		{
 			blockIndex: 0,
 			match: "label: 'EUR/USD hourly'",
-			react: `import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/react';
+			react: `import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 
 const options: DeepPartial<ChartOptions> = {
@@ -2002,8 +2002,8 @@ export function AccessibleChart({ bars }: { bars: OhlcColumns }) {
 	return <LumenChart ref={setChart} options={options} style={{ height: 420 }} />;
 }`,
 			vue: `<script setup lang="ts">
-import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/vue';
+import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/vue';
 import { onMounted, useTemplateRef } from 'vue';
 
 const props = defineProps<{ bars: OhlcColumns }>();
@@ -2024,8 +2024,8 @@ onMounted(() => {
 	<LumenChart ref="chartEl" :options="options" style="height: 420px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import type { OhlcColumns } from '@lumen-charts/core';
-	import { lumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/svelte';
+	import type { OhlcColumns } from '@lumen-ticks/core';
+	import { lumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/svelte';
 
 	let { bars }: { bars: OhlcColumns } = $props();
 	const options: DeepPartial<ChartOptions> = {
@@ -2039,8 +2039,8 @@ onMounted(() => {
 </script>
 
 <div style="height: 420px" use:lumenChart={{ options, onReady }}></div>`,
-			solid: `import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-charts/solid';
+			solid: `import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi, type ChartOptions, type DeepPartial } from '@lumen-ticks/solid';
 
 const options: DeepPartial<ChartOptions> = {
 	accessibility: { label: 'EUR/USD hourly', description: 'Prices in US dollars per euro.' },
@@ -2058,7 +2058,7 @@ export function AccessibleChart(props: { bars: OhlcColumns }) {
 		{
 			blockIndex: 1,
 			match: 'keyBindings:',
-			react: `import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/react';
+			react: `import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-ticks/react';
 
 const options: DeepPartial<ChartOptions> = {
 	accessibility: {
@@ -2076,7 +2076,7 @@ export function CustomShortcutsChart() {
 	return <LumenChart options={options} style={{ height: 420 }} />;
 }`,
 			vue: `<script setup lang="ts">
-import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/vue';
+import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-ticks/vue';
 
 const options: DeepPartial<ChartOptions> = {
 	accessibility: {
@@ -2095,7 +2095,7 @@ const options: DeepPartial<ChartOptions> = {
 	<LumenChart :options="options" style="height: 420px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import { lumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/svelte';
+	import { lumenChart, type ChartOptions, type DeepPartial } from '@lumen-ticks/svelte';
 
 	const options: DeepPartial<ChartOptions> = {
 		accessibility: {
@@ -2111,7 +2111,7 @@ const options: DeepPartial<ChartOptions> = {
 </script>
 
 <div style="height: 420px" use:lumenChart={{ options }}></div>`,
-			solid: `import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-charts/solid';
+			solid: `import { LumenChart, type ChartOptions, type DeepPartial } from '@lumen-ticks/solid';
 
 const options: DeepPartial<ChartOptions> = {
 	accessibility: {
@@ -2135,7 +2135,7 @@ export function CustomShortcutsChart() {
 		{
 			blockIndex: 0,
 			match: "chart.subscribe('error'",
-			react: `import { LumenChart, type ChartApi } from '@lumen-charts/react';
+			react: `import { LumenChart, type ChartApi } from '@lumen-ticks/react';
 import { useEffect, useState } from 'react';
 
 export function ResilientChart() {
@@ -2167,7 +2167,7 @@ export function ResilientChart() {
 	);
 }`,
 			vue: `<script setup lang="ts">
-import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import { LumenChart, type ChartApi } from '@lumen-ticks/vue';
 import { onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue';
 
 const chartEl = useTemplateRef<{ chart: ChartApi | null }>('chartEl');
@@ -2200,7 +2200,7 @@ onBeforeUnmount(() => unsubscribe?.());
 	<LumenChart ref="chartEl" style="height: 420px" />
 </template>`,
 			svelte: `<script lang="ts">
-	import { lumenChart, type ChartApi } from '@lumen-charts/svelte';
+	import { lumenChart, type ChartApi } from '@lumen-ticks/svelte';
 	import { onDestroy } from 'svelte';
 
 	let workerFailed = $state(false);
@@ -2229,7 +2229,7 @@ onBeforeUnmount(() => unsubscribe?.());
 	<div role="alert">Data worker stopped — reload the chart to resume live updates.</div>
 {/if}
 <div style="height: 420px" use:lumenChart={{ onReady }}></div>`,
-			solid: `import { LumenChart, type ChartApi } from '@lumen-charts/solid';
+			solid: `import { LumenChart, type ChartApi } from '@lumen-ticks/solid';
 import { createSignal, onCleanup, Show } from 'solid-js';
 
 export function ResilientChart() {

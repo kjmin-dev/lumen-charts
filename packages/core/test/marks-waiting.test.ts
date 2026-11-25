@@ -1,5 +1,5 @@
-import type { ChartError, PanePrimitive, PaneView } from '@lumen-charts/core';
-import type { EngineClient, EngineEvent, MarksData } from '@lumen-charts/engine';
+import type { ChartError, PanePrimitive, PaneView } from '@lumen-ticks/core';
+import type { EngineClient, EngineEvent, MarksData } from '@lumen-ticks/engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type FetchingSeries, MarkFetches } from '../src/marks/fetches';
 import { TestChart, candles } from './drawing-helpers';

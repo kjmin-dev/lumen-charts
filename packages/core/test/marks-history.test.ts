@@ -1,4 +1,4 @@
-import type { HeatmapOptions, HeatmapSeriesApi, PanePrimitive, PaneView, ScatterSeriesApi } from '@lumen-charts/core';
+import type { HeatmapOptions, HeatmapSeriesApi, PanePrimitive, PaneView, ScatterSeriesApi } from '@lumen-ticks/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeWorker } from '../../engine/test/fake-worker';
 import { MINUTE, TestChart, candles } from './drawing-helpers';

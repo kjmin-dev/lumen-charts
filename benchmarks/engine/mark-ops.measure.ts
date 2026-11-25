@@ -12,7 +12,7 @@ import {
 	type MarksChunk,
 	type ScatterRows,
 	ScatterStore,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import { expect, it } from 'vitest';
 
 const MIN = 60_000;

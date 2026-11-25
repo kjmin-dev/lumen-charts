@@ -1,4 +1,4 @@
-import type { EngineClient, EngineEvent, MarksData, MarksFetchRequest } from '@lumen-charts/engine';
+import type { EngineClient, EngineEvent, MarksData, MarksFetchRequest } from '@lumen-ticks/engine';
 
 /** Marks the chart asks a datafeed for: those with times in `[from, to]` (UTC milliseconds, inclusive). */
 export interface MarksDatafeedRequest {
@@ -83,7 +83,7 @@ export class MarkFetches {
 				} else {
 					if (restored.outcome === 'mismatch') {
 						console.warn(
-							'lumen-charts: the datafeed of a heatmap or scatter returned marks that are neither those let go ' +
+							'lumen-ticks: the datafeed of a heatmap or scatter returned marks that are neither those let go ' +
 								'nor those after the removals and corrections waiting for them; they were ignored.',
 						);
 					}

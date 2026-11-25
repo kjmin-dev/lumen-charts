@@ -1,4 +1,4 @@
-import { CHUNK_ROWS, EngineCore, type EngineEvent, type FetchRequest } from '@lumen-charts/engine';
+import { CHUNK_ROWS, EngineCore, type EngineEvent, type FetchRequest } from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { line, run, ticks } from './helpers';
 

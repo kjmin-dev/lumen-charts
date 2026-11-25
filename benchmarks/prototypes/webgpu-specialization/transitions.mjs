@@ -30,8 +30,8 @@ const config = {
 	root: repo,
 	resolve: {
 		alias: {
-			'@lumen-charts/core': join(packages, 'core/src/index.ts'),
-			'@lumen-charts/engine': join(packages, 'engine/src/index.ts'),
+			'@lumen-ticks/core': join(packages, 'core/src/index.ts'),
+			'@lumen-ticks/engine': join(packages, 'engine/src/index.ts'),
 		},
 	},
 	build: {

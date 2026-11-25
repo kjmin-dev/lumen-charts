@@ -4,7 +4,7 @@ import {
 	SCATTER_LEVEL_THRESHOLD,
 	SCATTER_PRICE_BINS,
 	ScatterStore,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { blankUpdate, drain, random, request, rows, trades } from './marks-helpers';
 

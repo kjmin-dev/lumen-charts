@@ -4,7 +4,7 @@ import {
 	type HostMessage,
 	type ReadyMessage,
 	attachEngineHost,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 
 /** A worker that runs the real engine host in this thread and delivers messages asynchronously. */
 export class FakeWorker {

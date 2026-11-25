@@ -1,5 +1,5 @@
 import { HeatRanges, HeatPan } from './heat-ranges';
-import type { EngineClient, HeatmapColumns, MarksData, MarksTimeline, MarksUpdate } from '@lumen-charts/engine';
+import type { EngineClient, HeatmapColumns, MarksData, MarksTimeline, MarksUpdate } from '@lumen-ticks/engine';
 import type { MarksDatafeed } from './fetches';
 import { DEFAULT_PRICE_SCALE_ID, definedOnly } from '../options';
 import type { PriceAxis, PriceScaleApi } from '../price-axes';
@@ -806,7 +806,7 @@ function heatCells(window: MarksWindow, from: number, to: number): number {
 function removeMarks(host: MarkSeriesHost, engineId: number, range: { from: number; to: number }): void {
 	const { from, to } = range;
 	if (typeof from !== 'number' || typeof to !== 'number' || Number.isNaN(from) || Number.isNaN(to) || from > to) {
-		throw new RangeError('lumen-charts: removeMarks needs a range of times with `from` at or before `to`');
+		throw new RangeError('lumen-ticks: removeMarks needs a range of times with `from` at or before `to`');
 	}
 	host.engine()?.changeMarks(engineId, { op: 'delete', from, to });
 }
@@ -814,13 +814,13 @@ function removeMarks(host: MarkSeriesHost, engineId: number, range: { from: numb
 /** The color table of options that are sound; throws a RangeError for those that are not. */
 export function checkOptions(options: AnyMarkOptions, palette = buildPalette(options.palette)): Uint32Array {
 	if ('color' in options && parseColor(options.color) === null) {
-		throw new RangeError(`lumen-charts: cannot read the color "${String(options.color)}"`);
+		throw new RangeError(`lumen-ticks: cannot read the color "${String(options.color)}"`);
 	}
 	if (!(options.maxMarks >= 1)) {
-		throw new RangeError(`lumen-charts: maxMarks must be at least 1, got ${String(options.maxMarks)}`);
+		throw new RangeError(`lumen-ticks: maxMarks must be at least 1, got ${String(options.maxMarks)}`);
 	}
 	if ('colorBy' in options && options.colorBy !== 'value' && options.colorBy !== 'density') {
-		throw new RangeError(`lumen-charts: colorBy must be 'value' or 'density', got "${String(options.colorBy)}"`);
+		throw new RangeError(`lumen-ticks: colorBy must be 'value' or 'density', got "${String(options.colorBy)}"`);
 	}
 	return palette;
 }
@@ -905,7 +905,7 @@ export class ScatterSeries extends MarkSeries implements ScatterSeriesApi {
 			from = range.from;
 			to = range.to;
 			if (typeof from !== 'number' || typeof to !== 'number' || Number.isNaN(from) || Number.isNaN(to) || from > to) {
-				throw new RangeError('lumen-charts: correct needs a range of times with `from` at or before `to`');
+				throw new RangeError('lumen-ticks: correct needs a range of times with `from` at or before `to`');
 			}
 		}
 		const isPoint = !Array.isArray(data) && !('count' in data) && typeof (data as ScatterPoint).time === 'number';
@@ -1405,7 +1405,7 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		const columns = data as HeatmapData;
 		const grid = this._grid;
 		if (grid === null || columns.rows !== grid.rows || columns.priceStep !== grid.priceStep) {
-			throw new RangeError('lumen-charts: a heatmap datafeed returned columns on another grid');
+			throw new RangeError('lumen-ticks: a heatmap datafeed returned columns on another grid');
 		}
 		return packHeatmap(columns, grid);
 	}
@@ -1415,7 +1415,7 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 		const grid = this._grid;
 		if (grid === null || data.rows !== grid.rows || data.priceStep !== grid.priceStep) {
 			throw new Error(
-				`lumen-charts: columns given to a heatmap's \`${op}\` must be on the grid of its last \`setData\``,
+				`lumen-ticks: columns given to a heatmap's \`${op}\` must be on the grid of its last \`setData\``,
 			);
 		}
 		return packHeatmap(data, grid);
@@ -1434,7 +1434,7 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 			columns = this._onGrid(data, 'correct');
 		} else {
 			if (this._grid === null) {
-				throw new Error('lumen-charts: a heatmap gets its price grid from `setData`, which must come before `correct`');
+				throw new Error('lumen-ticks: a heatmap gets its price grid from `setData`, which must come before `correct`');
 			}
 			columns = packHeatmapColumn(this._grid, data);
 		}
@@ -1449,7 +1449,7 @@ export class HeatmapSeries extends MarkSeries implements HeatmapSeriesApi {
 
 	public update(column: HeatmapColumn): void {
 		if (this._grid === null) {
-			throw new Error('lumen-charts: a heatmap gets its price grid from `setData`, which must come before `update`');
+			throw new Error('lumen-ticks: a heatmap gets its price grid from `setData`, which must come before `update`');
 		}
 		this._host.engine()?.changeMarks(this.engineId, { op: 'append', data: packHeatmapColumn(this._grid, column) });
 	}

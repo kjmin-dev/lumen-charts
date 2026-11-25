@@ -9,7 +9,7 @@ import {
 	levelCount,
 	levelFor,
 	levelShift,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { line, ohlcv, random, run, ticks } from './helpers';
 

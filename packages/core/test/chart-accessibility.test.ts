@@ -1,4 +1,4 @@
-import { createChart } from '@lumen-charts/core';
+import { createChart } from '@lumen-ticks/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MINUTE, TestChart, candles } from './drawing-helpers';
 

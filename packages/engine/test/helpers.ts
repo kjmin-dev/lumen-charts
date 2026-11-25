@@ -1,4 +1,4 @@
-import type { Command, EngineCore, EngineEvent } from '@lumen-charts/engine';
+import type { Command, EngineCore, EngineEvent } from '@lumen-ticks/engine';
 
 /** Column-major OHLCV block: bar `i` has time `t0 + i * step` and prices derived from `i`. */
 export function ohlcv(count: number, t0 = 0, step = 60_000, base = 100): Float64Array {

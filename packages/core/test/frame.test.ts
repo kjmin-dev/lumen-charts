@@ -1,4 +1,4 @@
-import { createChart } from '@lumen-charts/core';
+import { createChart } from '@lumen-ticks/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type FrameClient, cancelFrame, requestFrame } from '../src/shared/frame';
 

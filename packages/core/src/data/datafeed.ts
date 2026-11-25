@@ -1,4 +1,4 @@
-import type { EngineClient, EngineEvent, FetchRequest } from '@lumen-charts/engine';
+import type { EngineClient, EngineEvent, FetchRequest } from '@lumen-ticks/engine';
 import type { Series } from '../series';
 import type { WindowCache } from './window-cache';
 
@@ -66,7 +66,7 @@ export class DatafeedFetches {
 				answered.series.fetchBackoff = 0;
 			} else if (restored.outcome === 'mismatch' && answered !== undefined) {
 				console.warn(
-					`lumen-charts: the datafeed returned ${restored.received} bars where ${restored.expected} were expected; ` +
+					`lumen-ticks: the datafeed returned ${restored.received} bars where ${restored.expected} were expected; ` +
 						'they do not match the bars they replace and were ignored.',
 				);
 				failed(answered.series, answered.from, answered.to);

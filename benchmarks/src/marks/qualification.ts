@@ -1,4 +1,4 @@
-import { createChart, getCanvasBudget, setCanvasBudget, type MarkRenderer } from '@lumen-charts/core';
+import { createChart, getCanvasBudget, setCanvasBudget, type MarkRenderer } from '@lumen-ticks/core';
 import { canvasPixelsInUse } from '../../../packages/core/src/shared/canvas-budget';
 const start = 1_731_000_000_000;
 const barTime = (i: number) => start + i * 60_000 + (i >= 48 ? 2 * 86400000 : 0);

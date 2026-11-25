@@ -1,9 +1,9 @@
-# @lumen-charts/vue
+# @lumen-ticks/vue
 
-Vue 3 bindings for [Lumen Charts](https://github.com/kjmin-dev/lumen-charts), a high-performance financial charting engine for the web.
+Vue 3 bindings for [Lumen Ticks](https://github.com/kjmin-dev/lumen-ticks), a high-performance financial charting engine for the web.
 
 ```sh
-npm install @lumen-charts/vue vue
+npm install @lumen-ticks/vue vue
 ```
 
 ## Usage
@@ -12,8 +12,8 @@ npm install @lumen-charts/vue vue
 
 ```vue
 <script setup lang="ts">
-import type { OhlcColumns } from '@lumen-charts/core';
-import { LumenChart, type ChartApi } from '@lumen-charts/vue';
+import type { OhlcColumns } from '@lumen-ticks/core';
+import { LumenChart, type ChartApi } from '@lumen-ticks/vue';
 import { computed, onMounted, useTemplateRef } from 'vue';
 
 const props = defineProps<{ dark: boolean; bars: OhlcColumns }>();
@@ -34,7 +34,7 @@ onMounted(() => {
 </template>
 ```
 
-More examples (live ticks, events, indicators, drawings, and SSR) are in the [Framework bindings guide](https://lumen-charts.studiocyf.app/frameworks/) and the [main README](https://github.com/kjmin-dev/lumen-charts#readme).
+More examples (live ticks, events, indicators, drawings, and SSR) are in the [Framework bindings guide](https://lumen-ticks.studiocyf.app/frameworks/) and the [main README](https://github.com/kjmin-dev/lumen-ticks#readme).
 
 ## License
 

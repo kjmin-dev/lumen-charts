@@ -6,7 +6,7 @@ import {
 	type FetchRequest,
 	levelCount,
 	levelShift,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { WindowCache } from '../src/data/window-cache';
 

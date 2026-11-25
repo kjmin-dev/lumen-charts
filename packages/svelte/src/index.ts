@@ -1,4 +1,4 @@
-import { type ChartApi, type ChartOptions, type DeepPartial, createChart } from '@lumen-charts/core';
+import { type ChartApi, type ChartOptions, type DeepPartial, createChart } from '@lumen-ticks/core';
 import type { ActionReturn } from 'svelte/action';
 
 export interface LumenChartParams {
@@ -42,4 +42,4 @@ export {
 	getMaxWorkers,
 	getWorkerConfig,
 	setMaxWorkers,
-} from '@lumen-charts/core';
+} from '@lumen-ticks/core';

@@ -10,7 +10,7 @@ import {
 	columnCount,
 	createEngine,
 	levelFor,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import type { ChartIndicators } from '../indicators';
 import { INVALIDATE_LIGHT, type Invalidation } from '../model/invalidation';
 import type { TimeDisplay } from '../model/time-display';

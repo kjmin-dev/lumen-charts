@@ -71,11 +71,11 @@ const NO_VALUE = new Float32Array(0);
  * go in part and leave the rest of it zero, without a word.
  */
 function evictedRead(): never {
-	throw new Error('lumen-charts: a row of marks let go under the memory limit was read');
+	throw new Error('lumen-ticks: a row of marks let go under the memory limit was read');
 }
 
 function evictedWrite(): never {
-	throw new Error('lumen-charts: a chunk of marks let go under the memory limit was written in part');
+	throw new Error('lumen-ticks: a chunk of marks let go under the memory limit was written in part');
 }
 
 /**
@@ -311,7 +311,7 @@ export class ScatterColumns {
 		const chunk = this._chunks[n - this._base]!;
 		const summary = chunk.summary;
 		if (summary === null) {
-			throw new Error('lumen-charts: a chunk of marks held was given its rows again');
+			throw new Error('lumen-ticks: a chunk of marks held was given its rows again');
 		}
 		const fresh = this._newChunk();
 		chunk.time = fresh.time;

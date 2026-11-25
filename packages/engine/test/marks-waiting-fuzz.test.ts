@@ -8,7 +8,7 @@ import {
 	type MarksUpdate,
 	type ScatterRows,
 	type ScatterStore,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { blankUpdate, drain, random, request } from './marks-helpers';
 

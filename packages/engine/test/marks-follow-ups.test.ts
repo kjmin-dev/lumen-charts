@@ -10,7 +10,7 @@ import {
 	type ScatterRows,
 	ScatterStore,
 	createEngine,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { blankUpdate, drain, heat, random, request, rows, trades } from './marks-helpers';
 

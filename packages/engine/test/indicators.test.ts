@@ -14,7 +14,7 @@ import {
 	stochastic,
 	vwap,
 	wma,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { random } from './helpers';
 

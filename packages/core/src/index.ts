@@ -104,7 +104,7 @@ export {
 	type IndicatorOutputInfo,
 	type IndicatorParam,
 	defineIndicator,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 export {
 	type WorkerConfig,
 	type WorkerConstructor,
@@ -118,4 +118,4 @@ export {
 	getMaxWorkers,
 	getWorkerConfig,
 	setMaxWorkers,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';

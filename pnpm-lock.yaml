@@ -62,28 +62,25 @@ importers:
       '@astrojs/starlight':
         specifier: ^0.43.1
         version: 0.43.1(astro@7.4.13(@types/node@26.6.6)(esbuild@0.28.2)(yaml@2.9.1))(supports-color@10.2.2)(typescript@7.0.2)
-      '@lumen-charts/core':
+      '@lumen-ticks/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@lumen-charts/engine':
+      '@lumen-ticks/engine':
         specifier: workspace:*
         version: link:../../packages/engine
       astro:
         specifier: ^7.4.13
         version: 7.4.13(@types/node@26.6.6)(esbuild@0.28.2)(yaml@2.9.1)
-      lumen-charts:
-        specifier: workspace:*
-        version: link:../../packages/lumen-charts
       starlight-llms-txt:
         specifier: ^0.12.0
         version: 0.12.0(@astrojs/markdown-satteri@0.4.10)(@astrojs/starlight@0.43.1(astro@7.4.13(@types/node@26.6.6)(esbuild@0.28.2)(yaml@2.9.1))(supports-color@10.2.2)(typescript@7.0.2))(astro@7.4.13(@types/node@26.6.6)(esbuild@0.28.2)(yaml@2.9.1))(supports-color@10.2.2)
 
   benchmarks:
     dependencies:
-      '@lumen-charts/core':
+      '@lumen-ticks/core':
         specifier: workspace:*
         version: link:../packages/core
-      '@lumen-charts/engine':
+      '@lumen-ticks/engine':
         specifier: workspace:*
         version: link:../packages/engine
       lightweight-charts:
@@ -102,30 +99,30 @@ importers:
 
   examples/vanilla:
     dependencies:
-      '@lumen-charts/core':
+      '@lumen-ticks/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@lumen-charts/engine':
+      '@lumen-ticks/engine':
         specifier: workspace:*
         version: link:../../packages/engine
 
   packages/core:
     dependencies:
-      '@lumen-charts/engine':
+      '@lumen-ticks/engine':
         specifier: workspace:*
         version: link:../engine
 
   packages/engine: {}
 
-  packages/lumen-charts:
+  packages/lumenticks:
     dependencies:
-      '@lumen-charts/core':
+      '@lumen-ticks/core':
         specifier: workspace:*
         version: link:../core
 
   packages/react:
     dependencies:
-      '@lumen-charts/core':
+      '@lumen-ticks/core':
         specifier: workspace:*
         version: link:../core
       react:
@@ -134,7 +131,7 @@ importers:
 
   packages/solid:
     dependencies:
-      '@lumen-charts/core':
+      '@lumen-ticks/core':
         specifier: workspace:*
         version: link:../core
       solid-js:
@@ -143,7 +140,7 @@ importers:
 
   packages/svelte:
     dependencies:
-      '@lumen-charts/core':
+      '@lumen-ticks/core':
         specifier: workspace:*
         version: link:../core
       svelte:
@@ -152,7 +149,7 @@ importers:
 
   packages/vue:
     dependencies:
-      '@lumen-charts/core':
+      '@lumen-ticks/core':
         specifier: workspace:*
         version: link:../core
       vue:

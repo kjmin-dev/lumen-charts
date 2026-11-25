@@ -23,8 +23,8 @@ const SLICE = 1 << 20;
  * Faults of the store, which would otherwise read cells let go as NaN, or write a chunk let go in
  * part and leave its other columns without cells, without a word.
  */
-const EVICTED_READ = 'lumen-charts: cells of marks let go under the memory limit were read';
-const EVICTED_WRITE = 'lumen-charts: a chunk of marks let go under the memory limit was written in part';
+const EVICTED_READ = 'lumen-ticks: cells of marks let go under the memory limit were read';
+const EVICTED_WRITE = 'lumen-ticks: a chunk of marks let go under the memory limit was written in part';
 
 /**
  * Up to `size` columns, each a time, the grid row of its first cell, its number of cells and the

@@ -1,4 +1,4 @@
-import type { HeatmapColumns, MarksRequest, MarksUpdate, ScatterRows } from '@lumen-charts/engine';
+import type { HeatmapColumns, MarksRequest, MarksUpdate, ScatterRows } from '@lumen-ticks/engine';
 
 /** Runs a store's generator to its end and returns what it returns. */
 export function drain<T>(run: Generator<undefined, T, undefined>): T {

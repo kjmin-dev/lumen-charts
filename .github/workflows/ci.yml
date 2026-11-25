@@ -28,7 +28,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm --filter @lumen-charts/benchmarks exec playwright install --with-deps chromium
+      - run: pnpm --filter @lumen-ticks/benchmarks exec playwright install --with-deps chromium
       - name: Check keyboard navigation and the accessibility tree
         run: node benchmarks/runner/accessibility.mjs
       - name: Compare mark renderers and exercise GPU fallback
@@ -51,5 +51,5 @@ jobs:
       - run: pnpm docs:typecheck
       - run: pnpm docs:build
         env:
-          DOCS_SITE: https://lumen-charts.studiocyf.app
+          DOCS_SITE: https://lumen-ticks.studiocyf.app
       - run: pnpm docs:test

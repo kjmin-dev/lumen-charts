@@ -1,4 +1,4 @@
-import { HEATMAP_LEVEL_COLUMNS, HeatmapStore, type MarksUpdate } from '@lumen-charts/engine';
+import { HEATMAP_LEVEL_COLUMNS, HeatmapStore, type MarksUpdate } from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { blankUpdate, drain, heat, request } from './marks-helpers';
 

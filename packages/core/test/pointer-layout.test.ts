@@ -1,4 +1,4 @@
-import { type ChartApi, createChart } from '@lumen-charts/core';
+import { type ChartApi, createChart } from '@lumen-ticks/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TimeScale } from '../src/model/time-scale';
 

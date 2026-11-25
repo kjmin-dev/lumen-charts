@@ -9,7 +9,7 @@ import {
 	type MarksOutcome,
 	type ScatterRows,
 	createEngine,
-} from '@lumen-charts/engine';
+} from '@lumen-ticks/engine';
 import { describe, expect, it } from 'vitest';
 import { drain, heat, request, trades } from './marks-helpers';
 

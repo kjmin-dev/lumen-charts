@@ -30,7 +30,7 @@ export function isMarkType(type: unknown): type is MarkSeriesType {
 }
 
 function fail(path: string, reason: string): never {
-	throw new Error(`lumen-charts: invalid chart state: ${path} ${reason}`);
+	throw new Error(`lumen-ticks: invalid chart state: ${path} ${reason}`);
 }
 
 const CHOICES: Readonly<Record<string, readonly string[]>> = {

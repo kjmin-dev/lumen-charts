@@ -51,13 +51,13 @@ export const adapters: readonly AdapterEntry[] = [
 	},
 	{
 		id: 'lumen-worker',
-		description: 'Lumen Charts (workspace sources) with the data engine in a worker (default)',
+		description: 'Lumen Ticks (workspace sources) with the data engine in a worker (default)',
 		capabilities: LUMEN_CAPABILITIES,
 		load: async () => (await import('./lumen.ts')).lumenWorker,
 	},
 	{
 		id: 'lumen-main',
-		description: 'Lumen Charts (workspace sources) with the data engine on the main thread',
+		description: 'Lumen Ticks (workspace sources) with the data engine on the main thread',
 		capabilities: LUMEN_CAPABILITIES,
 		load: async () => (await import('./lumen.ts')).lumenMain,
 	},

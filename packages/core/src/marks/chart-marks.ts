@@ -1,5 +1,5 @@
 import type { MarkRenderer } from './backend';
-import type { EngineClient, MarksTimeline, MarksUpdate } from '@lumen-charts/engine';
+import type { EngineClient, MarksTimeline, MarksUpdate } from '@lumen-ticks/engine';
 import type { PanePrimitives } from '../drawings/pane-primitives';
 import type { FrameModel } from '../model/frame-model';
 import type { TimeScale } from '../model/time-scale';
@@ -109,7 +109,7 @@ export class ChartMarks implements MarkSeriesHost {
 			const step = interval ?? (type === 'heatmap' ? 0 : DEFAULT_INTERVAL);
 			if (!(step >= 0) || !Number.isFinite(step) || (type === 'scatter' && step === 0)) {
 				throw new RangeError(
-					`lumen-charts: the timeline of a ${type} needs an interval in milliseconds above 0${type === 'heatmap' ? ', or 0 for a bar per column' : ''}`,
+					`lumen-ticks: the timeline of a ${type} needs an interval in milliseconds above 0${type === 'heatmap' ? ', or 0 for a bar per column' : ''}`,
 				);
 			}
 			if (this._timelineSeries < 0) {

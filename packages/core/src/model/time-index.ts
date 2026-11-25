@@ -1,4 +1,4 @@
-import type { TimelineResolution } from '@lumen-charts/engine';
+import type { TimelineResolution } from '@lumen-ticks/engine';
 import type { LevelWindow } from '../data/window-cache';
 
 /** The position is right for the current timeline. */

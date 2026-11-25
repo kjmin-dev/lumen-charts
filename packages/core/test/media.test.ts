@@ -1,4 +1,4 @@
-import { createChart, themes } from '@lumen-charts/core';
+import { createChart, themes } from '@lumen-ticks/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('shared media queries', () => {
