@@ -11,14 +11,13 @@ How the packages get to npm. The pipeline is built for three things:
 | Package               | Contents                     |
 | --------------------- | ---------------------------- |
 | `@lumen-ticks/core`   | The chart                    |
-| `lumenticks`          | Alias of `@lumen-ticks/core` |
 | `@lumen-ticks/engine` | Data engine and worker entry |
 | `@lumen-ticks/react`  | React binding                |
 | `@lumen-ticks/vue`    | Vue binding                  |
 | `@lumen-ticks/svelte` | Svelte binding               |
 | `@lumen-ticks/solid`  | Solid binding                |
 
-**Versioning:** all seven packages are released together under one version: a Changesets `fixed` group.
+**Versioning:** all six packages are released together under one version: a Changesets `fixed` group.
 
 **Not published:** the example and the benchmark harness are private.
 
@@ -100,7 +99,7 @@ Running `pnpm version-packages` by hand costs one command. Publishing still runs
 
    A local publish has no provenance; only this first version lacks it.
 
-3. **Add the trusted publisher.** For each of the seven packages: package settings → _Publishing access_ → _Trusted publisher_ → GitHub Actions, with:
+3. **Add the trusted publisher.** For each of the six packages: package settings → _Publishing access_ → _Trusted publisher_ → GitHub Actions, with:
    - organization or user: `kjmin-dev`
    - repository: `lumen-ticks`
    - workflow file: `release.yml`

@@ -67,7 +67,6 @@ Each has a guide:
 | `@lumen-ticks/vue`    | `LumenChart` component                                      |
 | `@lumen-ticks/svelte` | `lumenChart` action                                         |
 | `@lumen-ticks/solid`  | `LumenChart` component (client-side)                        |
-| `lumenticks`          | Alias of `@lumen-ticks/core`                                |
 
 Bindings stay thin: they create the chart on mount, forward option changes to
 `applyOptions`, and destroy it on unmount. Data goes through the chart API, never through props.
